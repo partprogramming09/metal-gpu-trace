@@ -1,0 +1,63 @@
+{
+  "about": "Apple silicon GPU families Apple7 to Apple10: chips, first family with each feature, and limits that differ. Facts restated from Apple's public documents, not Apple's text. Check a device with MTLDevice.supportsFamily; families nest, so an Apple9 GPU also supports Apple7 and Apple8.",
+  "sources": {
+    "families": "https://developer.apple.com/documentation/metal/mtlgpufamily",
+    "feature_set_tables": "https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf",
+    "feature_set_tables_date": "2026-05-21",
+    "m3_tech_talk": "https://developer.apple.com/videos/play/tech-talks/111375/"
+  },
+  "guards": {
+    "M1 only": "Apple7 && !Apple8",
+    "before M3": "!Apple9"
+  },
+  "families": {
+    "Apple7": {
+      "mac_chips": ["M1", "M1 Pro", "M1 Max", "M1 Ultra"],
+      "other_chips": ["A14"],
+      "adds": ["mesh shading", "SIMD-scoped and quad-scoped reductions", "SIMD-scoped matrix multiply",
+               "floating-point atomics", "primitive ID", "barycentric coordinates", "border color",
+               "layered rendering to multisample textures", "MetalFX temporal upscaling",
+               "acquire/release memory ordering atomics", "Metal 4"],
+      "limits": {"mesh_grid_threadgroups": 1024, "argument_buffer_samplers_per_stage": 996,
+                 "mesh_payload_and_geometry_per_draw": "up to 4 GB", "texture_2d_px": 16384}
+    },
+    "Apple8": {
+      "mac_chips": ["M2 series"],
+      "other_chips": ["A15", "A16"],
+      "adds": ["lossy texture compression", "SIMD shift and fill", "sparse depth/stencil on every device",
+               "placement sparse on every device", "query texture LOD on every device",
+               "64-bit atomic min/max on ulong in buffers and textures, macOS only"],
+      "limits": {"mesh_grid_threadgroups": 1024, "argument_buffer_samplers_per_stage": 996,
+                 "mesh_payload_and_geometry_per_draw": "up to 4 GB", "texture_2d_px": 16384}
+    },
+    "Apple9": {
+      "mac_chips": ["M3 series", "M4 series"],
+      "other_chips": ["A17 Pro", "A18"],
+      "adds": ["full 64-bit atomics", "BC pixel formats on every device", "mesh draws in indirect command buffers",
+               "indirect mesh draw arguments", "ICB memory barriers for rendering",
+               "row-major matrices in acceleration structures", "per-component motion in ray tracing",
+               "MetalFX denoised upscaling", "Dynamic Caching (registers allocated as the program runs)"],
+      "limits": {"mesh_grid_threadgroups": 1048575, "argument_buffer_samplers_per_stage": 500000,
+                 "mesh_payload_and_geometry_per_draw": "not stated", "texture_2d_px": 16384}
+    },
+    "Apple10": {
+      "mac_chips": ["M5 series"],
+      "other_chips": ["A19"],
+      "adds": ["depth bounds testing", "sampler min/max reduction", "sampler LOD bias",
+               "pre-raster per-vertex values", "ICB raster and depth/stencil state", "atomics on cube map textures",
+               "universal texture compression", "32 768 px textures", "16x16 tiles with 8x MSAA"],
+      "limits": {"mesh_grid_threadgroups": 4194303, "argument_buffer_samplers_per_stage": 500000,
+                 "mesh_payload_and_geometry_per_draw": "not stated", "texture_2d_px": 32768}
+    }
+  },
+  "same_on_all": {"threads_per_threadgroup": 1024, "threadgroup_memory_bytes": 32768,
+                  "mesh_pipeline_payload_bytes": 16384,
+                  "argument_buffer_textures_or_buffers_per_stage": 1000000},
+  "footnotes": [
+    "64-bit atomics: none on Apple7; Apple8 has only ulong min/max, only on macOS; the full set starts with Apple9.",
+    "Mesh draws in indirect command buffers start with Apple9; earlier families refuse such mesh pipelines.",
+    "Inline constexpr samplers count toward the argument buffer sampler limit.",
+    "Mesh shaders on Apple7 and Apple8 can use up to 4 GB of payload and mesh geometry per draw.",
+    "Function pointers and ray tracing in render pipelines are not compatible with mesh shading."
+  ]
+}
