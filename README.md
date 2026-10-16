@@ -36,10 +36,73 @@ Each recording keeps a JSON summary and three CSVs, about 2 MB for 10 s (most of
 
 ## MCP server
 
+### Install
+
 ```sh
-claude mcp add metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -e METAL_TRACE_WINE=/path/to/wine \
-  -- python3 -I /path/to/metal-gpu-trace/metal_trace_mcp.py
+git clone https://github.com/partprogramming09/metal-gpu-trace ~/metal-gpu-trace
+python3 -I ~/metal-gpu-trace/test_metal_trace_mcp.py
 ```
+
+The second line prints `ok`. Recording also needs Xcode installed (`xcrun xctrace version` prints a version).
+
+The server reads these environment variables:
+
+| Variable | What it sets |
+| --- | --- |
+| `METAL_TRACE_OUT` | Where recordings go. Give an absolute path: the default, `./perf-runs`, depends on the client's working directory. |
+| `METAL_TRACE_WINE` | The Wine directory (holding `bin/wine`) that `perf_record` uses when the call names none. |
+| `WINEPREFIX` | The Wine prefix used when the call names none; `~/.wine` otherwise. |
+| `METAL_TRACE_READ` | More directories the tools may read, separated by `:`. |
+| `METAL_TRACE_LOG` | `off` silences the one-line stderr log per call. |
+
+### Claude Code
+
+```sh
+claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -e METAL_TRACE_WINE=/path/to/wine \
+  -- python3 -I $HOME/metal-gpu-trace/metal_trace_mcp.py
+claude mcp list
+```
+
+`claude mcp list` shows `metal-trace` as connected. `--scope user` makes it available in every project; leave it out
+to add it to the current project only.
+
+### Claude Desktop, Cursor and other JSON clients
+
+These apps do not expand `~` or `$HOME`: write absolute paths.
+
+```json
+{
+  "mcpServers": {
+    "metal-trace": {
+      "command": "/usr/bin/python3",
+      "args": ["-I", "/absolute/path/to/metal-gpu-trace/metal_trace_mcp.py"],
+      "env": {
+        "METAL_TRACE_OUT": "/absolute/path/to/perf-runs",
+        "METAL_TRACE_WINE": "/absolute/path/to/wine"
+      }
+    }
+  }
+}
+```
+
+| Client | File |
+| --- | --- |
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` (Settings, Developer, Edit Config); restart the app |
+| Cursor | `~/.cursor/mcp.json` |
+| VS Code | `.vscode/mcp.json` in the project; the top key is `servers` instead of `mcpServers`, and the server adds `"type": "stdio"` |
+
+### Codex CLI
+
+In `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.metal-trace]
+command = "/usr/bin/python3"
+args = ["-I", "/absolute/path/to/metal-gpu-trace/metal_trace_mcp.py"]
+env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/absolute/path/to/wine" }
+```
+
+### Tools
 
 | Tool | Reads or records |
 | --- | --- |
