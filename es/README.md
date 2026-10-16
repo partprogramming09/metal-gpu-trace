@@ -40,13 +40,16 @@ más recientes.
 
 ### Instalar
 
+El servidor corre con [`uvx`](https://docs.astral.sh/uv/) directamente desde este repo, sin clonar nada
+(`brew install uv` lo instala). Para grabar hace falta además Xcode instalado (`xcrun xctrace version` imprime una
+versión).
+
 ```sh
-git clone https://github.com/partprogramming09/metal-gpu-trace ~/metal-gpu-trace
-python3 -I ~/metal-gpu-trace/test_metal_trace_mcp.py
+uvx --from git+https://github.com/partprogramming09/metal-gpu-trace metal-gpu-trace
 ```
 
-La segunda línea imprime `ok`. Para grabar hace falta además Xcode instalado (`xcrun xctrace version` imprime una
-versión).
+Es el comando que lanza cada cliente de abajo. Las apps de escritorio no ven el `PATH` de Homebrew: dales la ruta
+completa que imprime `which uvx` (`/opt/homebrew/bin/uvx` en Apple silicon).
 
 El servidor lee estas variables de entorno:
 
@@ -62,7 +65,7 @@ El servidor lee estas variables de entorno:
 
 ```sh
 claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -e METAL_TRACE_WINE=/ruta/a/wine \
-  -- python3 -I $HOME/metal-gpu-trace/metal_trace_mcp.py
+  -- uvx --from git+https://github.com/partprogramming09/metal-gpu-trace metal-gpu-trace
 claude mcp list
 ```
 
@@ -77,8 +80,8 @@ Estas apps no expanden `~` ni `$HOME`: escribe rutas absolutas.
 {
   "mcpServers": {
     "metal-trace": {
-      "command": "/usr/bin/python3",
-      "args": ["-I", "/ruta/absoluta/a/metal-gpu-trace/metal_trace_mcp.py"],
+      "command": "/opt/homebrew/bin/uvx",
+      "args": ["--from", "git+https://github.com/partprogramming09/metal-gpu-trace", "metal-gpu-trace"],
       "env": {
         "METAL_TRACE_OUT": "/ruta/absoluta/a/perf-runs",
         "METAL_TRACE_WINE": "/ruta/absoluta/a/wine"
@@ -100,8 +103,8 @@ En `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.metal-trace]
-command = "/usr/bin/python3"
-args = ["-I", "/ruta/absoluta/a/metal-gpu-trace/metal_trace_mcp.py"]
+command = "/opt/homebrew/bin/uvx"
+args = ["--from", "git+https://github.com/partprogramming09/metal-gpu-trace", "metal-gpu-trace"]
 env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/ruta/absoluta/a/wine" }
 ```
 

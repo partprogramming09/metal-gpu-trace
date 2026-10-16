@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "metal-gpu-trace"
+version = "0.1.0"
+description = "Measure Wine and macOS programs' GPU use on Apple silicon with Metal System Trace, from the shell or an MCP client"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+
+[project.scripts]
+metal-gpu-trace = "metal_gpu_trace.metal_trace_mcp:main"
+
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
+
+[tool.hatch.build.targets.wheel.force-include]
+"metal_trace_mcp.py" = "metal_gpu_trace/metal_trace_mcp.py"
+"gputrace_read.py" = "metal_gpu_trace/gputrace_read.py"
+"perf_report.py" = "metal_gpu_trace/perf_report.py"
+"perf_record.sh" = "metal_gpu_trace/perf_record.sh"
+"data" = "metal_gpu_trace/data"
