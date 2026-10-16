@@ -8,6 +8,8 @@ recordings kept; METAL_TRACE_LOG=off silences the one stderr line per call.
 import json
 import os
 import pathlib
+import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -21,6 +23,8 @@ OUT = pathlib.Path(os.environ.get("METAL_TRACE_OUT", "perf-runs")).resolve()
 READ = [OUT] + [pathlib.Path(p).resolve() for p in os.environ.get("METAL_TRACE_READ", "").split(":") if p]
 FAMILIES = json.loads((TOOLS_DIR / "data" / "apple-gpu-families.json").read_text())
 MAX_LIMIT = 500
+# newest first; initialize answers with the client's version when listed here, else the first
+PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 # results stay under Claude Code's 50 000-character limit, above which it saves them to a file
 MAX_TEXT = 40_000
 
@@ -68,12 +72,25 @@ def tool_perf_record(label, program, seconds=20, wine=None, prefix=None, workdir
     prefix = pathlib.Path(prefix or os.environ.get("WINEPREFIX", "~/.wine")).expanduser()
     env = dict(os.environ, PERF_OUT=str(OUT))
     before = set(OUT.glob(f"{label}_*.json"))
-    proc = subprocess.run(["zsh", str(TOOLS_DIR / "perf_record.sh"), label, str(int(seconds)), str(wine), str(prefix),
-                           str(workdir), str(program) if wine == "native" else program.name, *args.split()],
-                          capture_output=True, text=True, timeout=int(seconds) + 300, env=env)
+    proc = subprocess.Popen(["zsh", str(TOOLS_DIR / "perf_record.sh"), label, str(int(seconds)), str(wine),
+                             str(prefix), str(workdir), str(program.resolve()), *shlex.split(args)],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+                            start_new_session=True)
+    try:
+        _, stderr = proc.communicate(timeout=int(seconds) + 300)
+    except subprocess.TimeoutExpired:
+        # shortcut: cleanup not exercised by a test yet; add one with a hanging stub xcrun if it misbehaves
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+        if wine != "native":
+            subprocess.run([str(pathlib.Path(wine) / "bin" / "wineserver"), "-k"], env=dict(env, WINEPREFIX=str(prefix)),
+                           capture_output=True, timeout=30)
+        if (OUT / ".recording").is_dir():
+            (OUT / ".recording").rmdir()
+        raise ToolError(f"the recording took over {int(seconds) + 300} s and was stopped; nothing was saved")
     new = sorted(set(OUT.glob(f"{label}_*.json")) - before)
     if proc.returncode or not new:
-        reason = (proc.stderr.strip().splitlines() or ["no summary was written"])[-1]
+        reason = (stderr.strip().splitlines() or ["no summary was written"])[-1]
         raise ToolError(f"recording failed (exit {proc.returncode}): {reason}")
     return json.loads(new[-1].read_text())
 
@@ -197,7 +214,7 @@ TOOLS = {
          "program": {**S, "description": "path of the .exe, or of the macOS binary with wine=native"},
          "seconds": {**I, "description": "recording length, default 20; use 30 under Wine, whose start-up takes part of it; the export afterwards takes about a minute"},
          "wine": {**S, "description": "Wine directory holding bin/wine, or native"}, "prefix": S, "workdir": S,
-         "args": {**S, "description": "program arguments separated by spaces"}}, ["label", "program"]), False),
+         "args": {**S, "description": "program arguments as in a shell, quotes included"}}, ["label", "program"]), False),
     "perf_runs": (tool_perf_runs, schema(PAGE), True),
     "perf_compare": (tool_perf_compare, schema({"a": S, "b": S}, ["a", "b"]), True),
     "trace_tables": (tool_trace_tables, schema({"trace": S}, ["trace"]), True),
@@ -237,15 +254,22 @@ def call(name, arguments):
 
 def handle(message):
     """Answers one JSON-RPC request; returns None for notifications."""
+    if not isinstance(message, dict):
+        return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
     method, mid, params = message.get("method"), message.get("id"), message.get("params") or {}
     if mid is None:
         return None
+    if not isinstance(params, dict):
+        return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32600, "message": "params must be an object"}}
     if method == "initialize":
-        result = {"protocolVersion": params.get("protocolVersion", "2025-06-18"),
+        asked = params.get("protocolVersion")
+        result = {"protocolVersion": asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
                   "capabilities": {"tools": {}, "resources": {}},
-                  "serverInfo": {"name": "metal-trace", "version": "0.1"}}
+                  "serverInfo": {"name": "metal-trace", "version": "0.2.0"}}
     elif method == "ping":
         result = {}
+    elif method == "resources/templates/list":
+        result = {"resourceTemplates": []}
     elif method == "resources/list":
         result = {"resources": [{"uri": uri, "name": name, "description": about, "mimeType": "application/json"}
                                 for uri, (name, about, _) in RESOURCES.items()]}
@@ -279,6 +303,9 @@ def main():
             reply = handle(json.loads(line))
         except json.JSONDecodeError:
             reply = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}}
+        except Exception as error:  # a malformed request must not stop the server
+            log(f"internal error {type(error).__name__}")
+            reply = {"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": "internal error"}}
         if reply is not None:
             sys.stdout.write(json.dumps(reply) + "\n")
             sys.stdout.flush()

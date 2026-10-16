@@ -74,12 +74,22 @@ def check_server(tmp):
         {"jsonrpc": "2.0", "id": 11, "method": "resources/list"},
         {"jsonrpc": "2.0", "id": 12, "method": "resources/read", "params": {"uri": "metal-trace://gpu-families/apple9"}},
         {"jsonrpc": "2.0", "id": 13, "method": "resources/read", "params": {"uri": "metal-trace://nope"}},
+        {"jsonrpc": "2.0", "id": 14, "method": "initialize", "params": {"protocolVersion": "1999-01-01"}},
+        [1],
+        {"jsonrpc": "2.0", "id": 15, "method": "ping"},
+        {"jsonrpc": "2.0", "id": 16, "method": "tools/list", "params": [1]},
+        {"jsonrpc": "2.0", "id": 17, "method": "resources/templates/list"},
     ]
     proc = subprocess.run([sys.executable, "-I", str(TOOLS / "metal_trace_mcp.py")], text=True, capture_output=True,
                           input="\n".join(json.dumps(r) for r in requests) + "\n", timeout=60,
                           env=dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="info"))
-    replies = {r["id"]: r for r in map(json.loads, proc.stdout.splitlines())}
-    assert sorted(replies) == list(range(1, 14)), replies
+    lines = [json.loads(line) for line in proc.stdout.splitlines()]
+    replies = {r["id"]: r for r in lines if r["id"] is not None}
+    assert sorted(replies) == list(range(1, 18)), (replies, proc.stderr)
+    assert [r["error"]["code"] for r in lines if r["id"] is None] == [-32600], lines
+    assert replies[14]["result"]["protocolVersion"] == "2025-06-18"
+    assert replies[15]["result"] == {} and replies[16]["error"]["code"] == -32600
+    assert replies[17]["result"] == {"resourceTemplates": []}
     assert len(replies[2]["result"]["tools"]) == 8
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     m1 = replies[9]["result"]["structuredContent"]

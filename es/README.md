@@ -49,7 +49,8 @@ uvx --from git+https://github.com/partprogramming09/metal-gpu-trace metal-gpu-tr
 ```
 
 Es el comando que lanza cada cliente de abajo. Las apps de escritorio no ven el `PATH` de Homebrew: dales la ruta
-completa que imprime `which uvx` (`/opt/homebrew/bin/uvx` en Apple silicon).
+completa que imprime `which uvx` (`/opt/homebrew/bin/uvx` en Apple silicon). `uvx` se queda con la versión que bajó
+la primera vez; para tener la última, corre el comando una vez con `--refresh` después de `uvx`.
 
 El servidor lee estas variables de entorno:
 
@@ -60,6 +61,9 @@ El servidor lee estas variables de entorno:
 | `WINEPREFIX` | El prefijo de Wine si la llamada no indica otro; si no, `~/.wine`. |
 | `METAL_TRACE_READ` | Más directorios que las herramientas pueden leer, separados por `:`. |
 | `METAL_TRACE_LOG` | `off` apaga la línea de log por llamada en stderr. |
+| `KEEP_TRACE` | `1` guarda el `.trace` de cada grabación, para `trace_tables`, `trace_query` o Instruments. |
+| `KEEP_RUNS` | Guarda solo las N grabaciones más recientes. |
+| `PERF_ENV` | Pares `NOMBRE=VALOR`, separados por espacios, que recibe el programa grabado. |
 
 ### Claude Code
 

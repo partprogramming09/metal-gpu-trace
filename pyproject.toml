@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "metal-gpu-trace"
-version = "0.1.0"
+version = "0.2.0"
 description = "Measure Wine and macOS programs' GPU use on Apple silicon with Metal System Trace, from the shell or an MCP client"
 readme = "README.md"
 license = { text = "MIT" }
