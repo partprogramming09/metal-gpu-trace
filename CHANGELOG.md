@@ -3,6 +3,12 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## 0.7.1 — 2026-10-18
+
+- `trace_count` and `trace_query` read an empty table whose export xctrace 27.1 cuts right after the schema
+  (`time-profile` under Wine with `PERF_INSTRUMENTS="Time Profiler"`) as 0 rows instead of failing with
+  `exit -5: no message`.
+
 ## 0.7.0 — 2026-10-18
 
 - `PERF_INSTRUMENTS="Time Profiler;Metal GPU Counters"` adds Instruments to the Metal System Trace recording; their

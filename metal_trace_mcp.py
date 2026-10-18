@@ -19,7 +19,7 @@ import tarfile
 import tempfile
 import time
 
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 TOOLS_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 import gputrace_read  # noqa: E402

@@ -7,12 +7,12 @@
     "url": "https://github.com/partprogramming09/metal-gpu-trace",
     "source": "github"
   },
-  "version": "0.7.0",
+  "version": "0.7.1",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "metal-gpu-trace",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

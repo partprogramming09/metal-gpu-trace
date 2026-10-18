@@ -67,6 +67,10 @@ def test_report(tmp_path):
                                                                '</mnemonic></col></schema><row><n>1</n></row>\n')
         cut_rows = list(perf_report.rows(perf_report.export(tmp_path / "x.trace", xpath="/x")))
         assert len(cut_rows) == 1 and cut_rows[0]["n"].text == "1", cut_rows
+        # cut right after the schema, as xctrace 27.1 leaves an empty time-profile: zero rows, not an error
+        perf_report.subprocess.run = crash_after_writing(None, '<trace-query-result><node><schema><col><mnemonic>n'
+                                                               '</mnemonic></col></schema>')
+        assert list(perf_report.rows(perf_report.export(tmp_path / "x.trace", xpath="/x"))) == []
         perf_report.subprocess.run = crash_after_writing(None, "<trace-query-result><node>")
         try:
             perf_report.export(tmp_path / "x.trace", xpath="/x")

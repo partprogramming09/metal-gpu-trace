@@ -30,7 +30,7 @@ def export(trace, xpath=None, toc=False, timeout=600):
     cmd += ["--toc"] if toc else ["--xpath", xpath]
     proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=timeout)
     if proc.returncode and complete_xml(out.name):
-        return out.name  # xctrace 27.1 writes some tables whole and then dies with SIGTRAP (exit 133)
+        return out.name  # xctrace 27.1 writes some tables whole and then dies with SIGTRAP (exit 133, or -5 here)
     if proc.returncode:
         os.unlink(out.name)
         reason = (proc.stderr.strip().splitlines() or ["no message"])[-1]
@@ -39,13 +39,13 @@ def export(trace, xpath=None, toc=False, timeout=600):
 
 
 def complete_xml(path):
-    """Returns whether the file ends with the export's closing tag or at a row boundary, so a crash after writing
-    the rows loses nothing."""
+    """Returns whether the file ends with the export's closing tag, at a row boundary or right after the schema of an
+    empty table, so a crash after writing the rows loses nothing."""
     try:
         with open(path, "rb") as f:
             f.seek(max(0, os.path.getsize(path) - 64))
             tail = f.read().rstrip()
-        return tail.endswith((b"</trace-query-result>", b"</trace-toc>", b"</row>"))
+        return tail.endswith((b"</trace-query-result>", b"</trace-toc>", b"</row>", b"</schema>"))
     except OSError:
         return False
 
