@@ -1,0 +1,20 @@
+{
+  "about": "Test programs that workload_fetch downloads. Each is built from source by .github/workflows/workloads.yml; its BUILD.txt lists the commits.",
+  "workloads": {
+    "drawstress": {
+      "title": "bgfx 17-drawstress",
+      "about": "Draws a grid of cubes, dim^3 draw calls per frame (64 000 at dim 40): measures what one draw costs in native Metal and through a translation layer. Shaders are inside the program.",
+      "license": "BSD-2-Clause (bgfx, Branimir Karadzic); LICENSE-bgfx in the archive",
+      "url": "https://github.com/partprogramming09/metal-gpu-trace/releases/download/workloads-1/drawstress-workloads-1.tar.gz",
+      "sha256": "f7e25cbb8c4a47da7e83010c93a8cb042180d39a102ea388d1e3e79cca63453c",
+      "bytes": 7547937,
+      "dir": "drawstress",
+      "dim_variable": "DRAWSTRESS_DIM",
+      "apis": {
+        "mtl": {"program": "drawstress", "args": "--mtl", "wine": false},
+        "d3d11": {"program": "drawstress.exe", "args": "--d3d11", "wine": true},
+        "d3d12": {"program": "drawstress.exe", "args": "--d3d12", "wine": true}
+      }
+    }
+  }
+}

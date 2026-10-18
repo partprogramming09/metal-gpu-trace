@@ -127,6 +127,16 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | `capture_summary` | Resume un `.gputrace`; lista sus 100 llamadas más frecuentes de `calls_total` |
 | `capture_records` | Una página de los registros de un `.gputrace` |
 | `gpu_family` | Los datos de Apple de una familia o chip (`Apple7`, `M1 Pro`, `M3 Max`) |
+| `workload_list` | Lista los programas de prueba que `workload_fetch` puede descargar |
+| `workload_fetch` | Descarga un programa de prueba una vez, comprueba su SHA-256 y lo guarda en `~/Library/Caches/metal-gpu-trace`; Claude Code pregunta antes de cada uso |
+
+`perf_record` acepta `workload`, `api` (`mtl`, `d3d11` o `d3d12`) y `dim` en vez de `program`, para grabar un
+programa de prueba descargado. El primero es
+[17-drawstress](https://github.com/partprogramming09/metal-gpu-trace/releases/tag/workloads-1) de bgfx (BSD-2,
+7,5 MB), compilado desde su código por `.github/workflows/workloads.yml`: una rejilla de cubos, `dim`³ dibujos por
+cuadro, con sus shaders dentro del programa. El prompt `compare-layer` (`/metal-trace:compare-layer drawstress d3d12`
+en Claude Code) lo graba en Metal nativo y bajo el Wine de `METAL_TRACE_WINE`, y después corre `perf_diagnose` y
+`perf_compare`.
 
 Los mismos datos están como resources de MCP: `metal-trace://gpu-families` (todos) y
 `metal-trace://gpu-families/apple7` a `apple10`. Repiten con otras palabras las

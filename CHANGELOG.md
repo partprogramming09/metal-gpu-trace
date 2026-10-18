@@ -3,6 +3,18 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## 0.5.0 — 2026-10-17
+
+- `workload_list` and `workload_fetch`: download a test program once from this project's releases, check the
+  SHA-256 this package pins and keep it in `~/Library/Caches/metal-gpu-trace`. Claude Code asks before every
+  download (`anthropic/requiresUserInteraction`).
+- `perf_record` records a fetched test program with `workload`, `api` and `dim`.
+- First test program: bgfx 17-drawstress for macOS arm64 and Windows x64, built from source by
+  `.github/workflows/workloads.yml` (release `workloads-1`). Recorded on an M1 Pro, it gives the same encoders per
+  frame as a local build (2 in native Metal, 7 in D3D12 under Mullion) and FPS within 4 %.
+- `compare-layer` prompt: records a test program in native Metal and under a translation layer, then diagnoses and
+  compares both runs.
+
 ## 0.4.0 — 2026-10-17
 
 - `perf_diagnose`: says whether a recording splits its GPU work into too many short encoders, as translation layers

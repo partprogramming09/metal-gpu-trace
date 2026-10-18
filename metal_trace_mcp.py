@@ -3,8 +3,10 @@ Metal System Trace and reads the recordings and Metal .gputrace captures.
 
 Environment: METAL_TRACE_OUT is where recordings go (default ./perf-runs); METAL_TRACE_READ lists more directories,
 separated by ':', whose files the tools may read; METAL_TRACE_WINE is the default Wine directory; KEEP_RUNS caps the
-recordings kept; METAL_TRACE_LOG=off silences the one stderr line per call.
+recordings kept; METAL_TRACE_LOG=off silences the one stderr line per call. Test programs that workload_fetch
+downloads go to ~/Library/Caches/metal-gpu-trace.
 """
+import hashlib
 import json
 import os
 import pathlib
@@ -13,9 +15,11 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 TOOLS_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 import gputrace_read  # noqa: E402
@@ -24,6 +28,8 @@ import perf_report  # noqa: E402
 OUT = pathlib.Path(os.environ.get("METAL_TRACE_OUT", "perf-runs")).resolve()
 READ = [OUT] + [pathlib.Path(p).resolve() for p in os.environ.get("METAL_TRACE_READ", "").split(":") if p]
 FAMILIES = json.loads((TOOLS_DIR / "data" / "apple-gpu-families.json").read_text())
+WORKLOADS = json.loads((TOOLS_DIR / "data" / "workloads.json").read_text())["workloads"]
+CACHE = pathlib.Path("~/Library/Caches/metal-gpu-trace").expanduser()
 MAX_LIMIT = 500
 # newest first; initialize answers with the client's version when listed here, else the first
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
@@ -34,8 +40,10 @@ INSTRUCTIONS = (
     "the Mac while it records. Under Wine record 30 s or more: Wine's start-up takes part of the recording. Reading a "
     "recording back takes 1 to 9 s per recorded second. Compare only recordings with 100 frames or more, and repeat "
     "a run before calling a change real. perf_diagnose says whether a run splits its GPU work into too many short "
-    "encoders, as translation layers do; perf_compare says how much two runs differ. trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. "
-    "When perf_record ends it stops every program of its Wine prefix, or every process named like a native program."
+    "encoders, as translation layers do; perf_compare says how much two runs differ. trace_tables and trace_query "
+    "need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, "
+    "or every process named like a native program. To compare native Metal with a translation layer without a game "
+    "of one's own: workload_list, workload_fetch, then perf_record with workload and api, or the compare-layer prompt."
 )
 
 
@@ -82,10 +90,17 @@ def page(items, offset, limit):
     return {"total": len(items), "offset": offset, "rows": rows, "next_offset": offset + len(rows) if more else None}
 
 
-def tool_perf_record(label, program, seconds=20, wine=None, prefix=None, workdir=None, args=""):
-    """Records `program` (an .exe under Wine, or a macOS binary with wine="native") for `seconds` with Metal System
-    Trace and returns its summary: GPU ms per frame, frame intervals, FPS, Metal and resident memory. When it ends it
-    stops every program of that Wine prefix (wineserver -k), or every process named like the program with native."""
+def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, workdir=None, args="", workload=None,
+                     api=None, dim=None):
+    """Records `program` (an .exe under Wine, or a macOS binary with wine="native"), or a test program fetched with
+    workload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per
+    frame, frame intervals, FPS, Metal and resident memory. When it ends it stops every program of that Wine prefix
+    (wineserver -k), or every process named like the program with native."""
+    program_env = ""
+    if workload:
+        program, wine, args, program_env = workload_command(workload, api, dim, wine, args)
+    if not program:
+        raise ToolError("pass program, or workload and api (workload_list lists them)")
     wine = wine or os.environ.get("METAL_TRACE_WINE")
     if not wine:
         raise ToolError("pass wine (a Wine directory holding bin/wine, or native) or set METAL_TRACE_WINE")
@@ -94,7 +109,75 @@ def tool_perf_record(label, program, seconds=20, wine=None, prefix=None, workdir
         raise ToolError(f"no program at {program.name}")
     workdir = pathlib.Path(workdir).expanduser() if workdir else program.parent
     prefix = pathlib.Path(prefix or os.environ.get("WINEPREFIX", "~/.wine")).expanduser()
-    return record(label, seconds, wine, prefix, workdir, [str(program.resolve()), *shlex.split(args)])
+    return record(label, seconds, wine, prefix, workdir, [str(program.resolve()), *shlex.split(args)], program_env)
+
+
+def workload_entry(name):
+    """Returns a test program's entry in data/workloads.json and the directory it is fetched into."""
+    if name not in WORKLOADS:
+        raise ToolError(f"no workload {name!r}; workload_list lists them")
+    entry = WORKLOADS[name]
+    return entry, CACHE / f"{name}-{entry['sha256'][:12]}"
+
+
+def workload_command(name, api, dim, wine, args):
+    """Returns the program, Wine, arguments and program environment that run a fetched workload with `api`."""
+    entry, target = workload_entry(name)
+    if api not in entry["apis"]:
+        raise ToolError(f"api is one of {', '.join(entry['apis'])} for {name}")
+    if not target.is_dir():
+        raise ToolError(f"{name} is not downloaded yet; call workload_fetch first")
+    run = entry["apis"][api]
+    program_env = f"{entry['dim_variable']}={int(dim)}" if dim else ""
+    return (target / entry["dir"] / run["program"], wine if run["wine"] else "native",
+            " ".join(filter(None, [run["args"], args])), program_env)
+
+
+def tool_workload_list():
+    """Lists the test programs workload_fetch can download, such as bgfx's drawstress: what each measures, its size,
+    license and APIs, and whether it is already downloaded."""
+    rows = []
+    for name, entry in WORKLOADS.items():
+        rows.append({"name": name, "title": entry["title"], "about": entry["about"], "bytes": entry["bytes"],
+                     "license": entry["license"], "apis": list(entry["apis"]),
+                     "fetched": workload_entry(name)[1].is_dir()})
+    return {"workloads": rows}
+
+
+def download(url, path, max_bytes):
+    """Saves `url` to `path` over https with curl, which uses the system's certificates; fails above `max_bytes`."""
+    proc = subprocess.run(["curl", "-fsSL", "--proto", "=https", "--max-filesize", str(max_bytes), "--max-time", "600",
+                           "-o", str(path), url], capture_output=True, text=True)
+    if proc.returncode:
+        raise ToolError(f"the download failed (curl exit {proc.returncode}); check the network and try again")
+
+
+def unpack(archive, target):
+    """Extracts a .tar.gz into `target`, refusing links and any member that would land outside it."""
+    with tarfile.open(archive) as tar:
+        for member in tar.getmembers():
+            if not (member.isfile() or member.isdir()) or member.name.startswith("/") or ".." in member.name.split("/"):
+                raise ToolError(f"the archive holds {member.name!r}, which may not be extracted; nothing was saved")
+        tar.extractall(target, **({"filter": "data"} if hasattr(tarfile, "data_filter") else {}))
+
+
+def tool_workload_fetch(name):
+    """Downloads a test program from this project's GitHub releases once, checks its SHA-256 against the one this
+    package pins, and keeps it in ~/Library/Caches/metal-gpu-trace; later calls reuse it. The programs are built
+    from source by the project's workloads workflow."""
+    entry, target = workload_entry(name)
+    if target.is_dir():
+        return {"name": name, "downloaded": False, "fetched": True, "apis": list(entry["apis"])}
+    CACHE.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=CACHE) as tmp:
+        archive = pathlib.Path(tmp) / "archive.tar.gz"
+        download(entry["url"], archive, entry["bytes"])
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        if digest != entry["sha256"]:
+            raise ToolError(f"{name}'s download does not match the SHA-256 this package pins; nothing was saved")
+        unpack(archive, pathlib.Path(tmp) / "out")
+        (pathlib.Path(tmp) / "out").rename(target)
+    return {"name": name, "downloaded": True, "fetched": True, "bytes": entry["bytes"], "apis": list(entry["apis"])}
 
 
 def tool_perf_attach(label, process, seconds=20):
@@ -109,12 +192,13 @@ def deadline(seconds):
     return int(seconds) * 10 + 120
 
 
-def record(label, seconds, wine, prefix, workdir, command):
+def record(label, seconds, wine, prefix, workdir, command, program_env=""):
     """Runs perf_record.sh and returns the summary it wrote, stopping the whole recording and deleting its files if
-    it overruns."""
+    it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV."""
     if not name_ok(label):
         raise ToolError("label holds only letters, digits, '.', '_' and '-'")
-    env = dict(os.environ, PERF_OUT=str(OUT))
+    env = dict(os.environ, PERF_OUT=str(OUT),
+               PERF_ENV=" ".join(filter(None, [os.environ.get("PERF_ENV", ""), program_env])))
     before = set(OUT.glob(f"{label}_*"))
     proc = subprocess.Popen(["zsh", str(TOOLS_DIR / "perf_record.sh"), label, str(int(seconds)), str(wine),
                              str(prefix), str(workdir), *command],
@@ -282,12 +366,12 @@ def schema(properties, required=()):
     return {"type": "object", "properties": properties, "required": list(required)}
 
 
-def hints(title, destructive=None):
+def hints(title, destructive=None, idempotent=False, open_world=False):
     """Returns a tool's MCP annotations: read-only unless `destructive` says whether its writes stop programs."""
     if destructive is None:
-        return {"title": title, "readOnlyHint": True, "openWorldHint": False}
-    return {"title": title, "readOnlyHint": False, "destructiveHint": destructive, "idempotentHint": False,
-            "openWorldHint": False}
+        return {"title": title, "readOnlyHint": True, "openWorldHint": open_world}
+    return {"title": title, "readOnlyHint": False, "destructiveHint": destructive, "idempotentHint": idempotent,
+            "openWorldHint": open_world}
 
 
 TOOLS = {
@@ -298,7 +382,12 @@ TOOLS = {
          "wine": {**S, "description": "Wine directory holding bin/wine, or native"},
          "prefix": {**S, "description": "Wine prefix, default WINEPREFIX or ~/.wine; ignored with native"},
          "workdir": {**S, "description": "directory the program starts in, default the program's own"},
-         "args": {**S, "description": "program arguments as in a shell, quotes included"}}, ["label", "program"]),
+         "args": {**S, "description": "program arguments as in a shell, quotes included"},
+         "workload": {**S, "description": "a test program from workload_list, fetched with workload_fetch, instead "
+                                          "of program"},
+         "api": {**S, "description": "with workload: mtl (native Metal), d3d11 or d3d12 (under wine)"},
+         "dim": {**I, "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame"}},
+        ["label"]),
         hints("Record a program", destructive=True)),
     "perf_attach": (tool_perf_attach, schema(
         {"label": {**S, "description": "name for the run: letters, digits, '.', '_', '-'"},
@@ -329,7 +418,37 @@ TOOLS = {
     "gpu_family": (tool_gpu_family, schema(
         {"name": {**S, "description": "a family (Apple7 to Apple10) or a chip (M1 Pro, M2, M4 Max, A17 Pro)"}},
         ["name"]), hints("Apple GPU family facts")),
+    "workload_list": (tool_workload_list, schema({}), hints("List test programs")),
+    "workload_fetch": (tool_workload_fetch, schema(
+        {"name": {**S, "description": "a workload name from workload_list, such as drawstress"}}, ["name"]),
+        hints("Download a test program", destructive=False, idempotent=True, open_world=True)),
 }
+# Claude Code asks the user before every call of these tools
+META = {"workload_fetch": {"anthropic/requiresUserInteraction": True}}
+
+PROMPTS = {
+    "compare-layer": {
+        "description": "Records a test program in native Metal and under a translation layer, then diagnoses and "
+                       "compares both runs",
+        "arguments": [{"name": "workload", "description": "a workload from workload_list, default drawstress"},
+                      {"name": "api", "description": "the API run under Wine: d3d12 (default) or d3d11"}],
+    },
+}
+
+
+def prompt_compare_layer(workload="drawstress", api="d3d12"):
+    """Returns the steps of the compare-layer prompt for `workload` and `api`."""
+    return (
+        f"Compare {workload} in native Metal with {workload} through {api} under the Wine in METAL_TRACE_WINE, with "
+        "the metal-trace tools:\n"
+        f"1. workload_fetch name={workload} (it is skipped when already downloaded).\n"
+        f"2. perf_record label={workload}-mtl workload={workload} api=mtl seconds=20.\n"
+        f"3. perf_record label={workload}-{api} workload={workload} api={api} seconds=30.\n"
+        "4. perf_diagnose on each run, then perf_compare a=<the mtl run> b=<the other run>.\n"
+        "Report in one table per run: frames, FPS, GPU ms per frame, encoders and command buffers per frame, share "
+        "of short encoders, GPU idle share, and the verdict. Say which runs have under 100 frames, and that one pair "
+        "of runs is not enough to call a difference real: repeat both before concluding."
+    )
 
 
 def log(message):
@@ -369,7 +488,7 @@ def handle(message):
     if method == "initialize":
         asked = params.get("protocolVersion")
         result = {"protocolVersion": asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
-                  "capabilities": {"tools": {}, "resources": {}},
+                  "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
                   "serverInfo": {"name": "metal-trace", "version": __version__}, "instructions": INSTRUCTIONS}
     elif method == "ping":
         result = {}
@@ -386,8 +505,20 @@ def handle(message):
         result = {"contents": [{"uri": uri, "mimeType": "application/json",
                                 "text": json.dumps(RESOURCES[uri][2](), ensure_ascii=False)}]}
     elif method == "tools/list":
-        result = {"tools": [{"name": n, "description": f.__doc__.strip(), "inputSchema": s,
-                             "annotations": hints} for n, (f, s, hints) in TOOLS.items()]}
+        result = {"tools": [{"name": n, "description": f.__doc__.strip(), "inputSchema": s, "annotations": hints}
+                            | ({"_meta": META[n]} if n in META else {}) for n, (f, s, hints) in TOOLS.items()]}
+    elif method == "prompts/list":
+        result = {"prompts": [{"name": name, **p} for name, p in PROMPTS.items()]}
+    elif method == "prompts/get":
+        if params.get("name") not in PROMPTS:
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "unknown prompt"}}
+        arguments = {k: v for k, v in (params.get("arguments") or {}).items() if v and name_ok(str(v))}
+        try:
+            text = prompt_compare_layer(**arguments)
+        except TypeError:
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "unknown prompt argument"}}
+        result = {"description": PROMPTS["compare-layer"]["description"],
+                  "messages": [{"role": "user", "content": {"type": "text", "text": text}}]}
     elif method == "tools/call":
         name = params.get("name")
         if name not in TOOLS:

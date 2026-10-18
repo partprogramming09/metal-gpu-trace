@@ -128,6 +128,15 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `capture_summary` | Summarizes a `.gputrace`; lists its 100 most frequent calls out of `calls_total` |
 | `capture_records` | One page of a `.gputrace`'s records |
 | `gpu_family` | Apple's facts for a family or chip (`Apple7`, `M1 Pro`, `M3 Max`) |
+| `workload_list` | Lists the test programs `workload_fetch` can download |
+| `workload_fetch` | Downloads a test program once, checks its SHA-256 and keeps it in `~/Library/Caches/metal-gpu-trace`; Claude Code asks before every call |
+
+`perf_record` takes `workload`, `api` (`mtl`, `d3d11` or `d3d12`) and `dim` instead of `program`, to record a fetched
+test program. The first one is bgfx's
+[17-drawstress](https://github.com/partprogramming09/metal-gpu-trace/releases/tag/workloads-1) (BSD-2, 7.5 MB),
+built from source by `.github/workflows/workloads.yml`: a grid of cubes, `dim`³ draws per frame, with its shaders
+inside the program. The `compare-layer` prompt (`/metal-trace:compare-layer drawstress d3d12` in Claude Code) records it
+in native Metal and under the Wine in `METAL_TRACE_WINE`, then runs `perf_diagnose` and `perf_compare`.
 
 The same facts are MCP resources: `metal-trace://gpu-families` (all) and `metal-trace://gpu-families/apple7` to
 `apple10`. They restate Apple's [Metal Feature Set Tables](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)

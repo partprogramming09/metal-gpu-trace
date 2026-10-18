@@ -2,6 +2,7 @@
 or with pytest."""
 import json
 import os
+import shutil
 import pathlib
 import struct
 import subprocess
@@ -94,6 +95,62 @@ def test_diagnose(tmp_path):
         mcp.OUT = saved
 
 
+def test_workloads(tmp_path):
+    """workload_fetch keeps an archive whose SHA-256 matches and refuses one that does not or that would extract
+    outside its directory; perf_record turns a fetched workload into its program, Wine and arguments."""
+    import hashlib
+    import tarfile
+    import metal_trace_mcp as mcp
+    source = tmp_path / "src" / "demo"
+    source.mkdir(parents=True)
+    (source / "demo").write_text("#!/bin/sh\n")
+    (source / "demo").chmod(0o755)
+    good, evil = tmp_path / "good.tar.gz", tmp_path / "evil.tar.gz"
+    with tarfile.open(good, "w:gz") as tar:
+        tar.add(source, arcname="demo")
+    with tarfile.open(evil, "w:gz") as tar:
+        tar.add(source / "demo", arcname="../escape")
+    entry = {"title": "t", "about": "a", "license": "l", "url": "https://example.invalid/x.tar.gz", "bytes": 1 << 20,
+             "dir": "demo", "dim_variable": "DIM", "apis": {"mtl": {"program": "demo", "args": "--mtl", "wine": False},
+                                                         "d3d12": {"program": "demo", "args": "--d3d12", "wine": True}}}
+    saved = mcp.WORKLOADS, mcp.CACHE, mcp.download
+    served = {}
+    mcp.CACHE, mcp.download = tmp_path / "cache", lambda url, path, max_bytes: shutil.copy(served["file"], path)
+    try:
+        for archive, sha, words in ((good, "0" * 64, "does not match"),
+                                    (evil, hashlib.sha256(evil.read_bytes()).hexdigest(), "may not be extracted")):
+            mcp.WORKLOADS, served["file"] = {"demo": {**entry, "sha256": sha}}, archive
+            try:
+                mcp.tool_workload_fetch("demo")
+                raise AssertionError(f"{archive.name} must be refused")
+            except mcp.ToolError as error:
+                assert words in str(error), error
+            assert not any(p.name.startswith("demo-") for p in mcp.CACHE.iterdir()), list(mcp.CACHE.iterdir())
+        assert not (tmp_path / "escape").exists()
+        mcp.WORKLOADS, served["file"] = {"demo": {**entry, "sha256": hashlib.sha256(good.read_bytes()).hexdigest()}}, good
+        assert mcp.tool_workload_list()["workloads"][0]["fetched"] is False
+        try:
+            mcp.workload_command("demo", "mtl", None, None, "")
+            raise AssertionError("an unfetched workload must fail")
+        except mcp.ToolError as error:
+            assert "workload_fetch" in str(error), error
+        assert mcp.tool_workload_fetch("demo")["downloaded"] and not mcp.tool_workload_fetch("demo")["downloaded"]
+        program, wine, args, env = mcp.workload_command("demo", "mtl", 20, "/opt/wine", "-x")
+        assert program.is_file() and os.access(program, os.X_OK) and wine == "native", program
+        assert (args, env) == ("--mtl -x", "DIM=20"), (args, env)
+        assert mcp.workload_command("demo", "d3d12", None, "/opt/wine", "")[1:] == ("/opt/wine", "--d3d12", "")
+        for api in ("vulkan", None):
+            try:
+                mcp.workload_command("demo", api, None, None, "")
+                raise AssertionError(f"api {api} must fail")
+            except mcp.ToolError as error:
+                assert "api is one of mtl, d3d12" in str(error), error
+    finally:
+        mcp.WORKLOADS, mcp.CACHE, mcp.download = saved
+    shipped = json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["drawstress"]
+    assert len(shipped["sha256"]) == 64 and shipped["sha256"] != "0" * 64 and shipped["url"].startswith("https://")
+
+
 def test_capture(tmp_path):
     """A small MTSP stream is read record by record, and the summary names the capture without its path."""
     summary = gputrace_read.summarize(write_capture(tmp_path))
@@ -142,21 +199,36 @@ def test_server(tmp_path):
          "params": {"name": "trace_tables", "arguments": {"trace": "run0_x"}}},
         {"jsonrpc": "2.0", "id": 21, "method": "tools/call",
          "params": {"name": "capture_summary", "arguments": {"capture": str(out / "frame.gputrace")}}},
+        {"jsonrpc": "2.0", "id": 22, "method": "prompts/list"},
+        {"jsonrpc": "2.0", "id": 23, "method": "prompts/get",
+         "params": {"name": "compare-layer", "arguments": {"workload": "drawstress", "api": "d3d11"}}},
+        {"jsonrpc": "2.0", "id": 24, "method": "prompts/get",
+         "params": {"name": "compare-layer", "arguments": {"api": "d3d12; rm -rf /"}}},
+        {"jsonrpc": "2.0", "id": 25, "method": "prompts/get", "params": {"name": "nope"}},
     ]
     proc = subprocess.run([sys.executable, "-I", str(TOOLS / "metal_trace_mcp.py")], text=True, capture_output=True,
                           input="\n".join(json.dumps(r) for r in requests) + "\n", timeout=60,
                           env=dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="info"))
     lines = [json.loads(line) for line in proc.stdout.splitlines()]
     replies = {r["id"]: r for r in lines if r["id"] is not None}
-    assert sorted(replies) == list(range(1, 22)), (replies, proc.stderr)
+    assert sorted(replies) == list(range(1, 26)), (replies, proc.stderr)
+    assert [p["name"] for p in replies[22]["result"]["prompts"]] == ["compare-layer"]
+    steps = replies[23]["result"]["messages"][0]["content"]["text"]
+    assert "api=d3d11" in steps and "workload=drawstress" in steps and "perf_diagnose" in steps, steps
+    # an argument that is not a plain name is dropped, so the default api stays
+    assert "rm -rf" not in replies[24]["result"]["messages"][0]["content"]["text"]
+    assert replies[25]["error"]["code"] == -32602
+    assert replies[1]["result"]["capabilities"]["prompts"] == {}
     assert [r["error"]["code"] for r in lines if r["id"] is None] == [-32600], lines
     assert replies[14]["result"]["protocolVersion"] == "2025-06-18"
     assert replies[15]["result"] == {} and replies[16]["error"]["code"] == -32600
     assert replies[17]["result"] == {"resourceTemplates": []}
-    assert len(replies[2]["result"]["tools"]) == 10
+    assert len(replies[2]["result"]["tools"]) == 12
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
+    asks = [t["name"] for t in replies[2]["result"]["tools"] if t.get("_meta", {}).get("anthropic/requiresUserInteraction")]
+    assert asks == ["workload_fetch"] and hints["workload_fetch"]["openWorldHint"], (asks, hints)
     assert hints["perf_record"]["destructiveHint"] and not hints["perf_attach"]["destructiveHint"], hints
     assert hints["perf_runs"]["readOnlyHint"] and all(h["title"] for h in hints.values()), hints
     m1 = replies[9]["result"]["structuredContent"]
@@ -220,7 +292,7 @@ def test_overrun(tmp_path):
 
 
 def main():
-    tests = [test_report, test_encoders, test_diagnose, test_capture, test_server, test_no_runs_directory, test_overrun]
+    tests = [test_report, test_encoders, test_diagnose, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
