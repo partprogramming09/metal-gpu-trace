@@ -1,0 +1,49 @@
+diff --git a/examples/17-drawstress/drawstress.cpp b/examples/17-drawstress/drawstress.cpp
+index 87e4c10..9a1b6da 100644
+--- a/examples/17-drawstress/drawstress.cpp
++++ b/examples/17-drawstress/drawstress.cpp
+@@ -9,6 +9,8 @@
+ #include <bx/thread.h>
+ #include <bx/os.h>
+ #include <bx/pixelformat.h>
++#include <stdio.h>
++#include <stdlib.h>
+ #include "imgui/imgui.h"
+ 
+ #include <bgfx/embedded_shader.h>
+@@ -233,6 +235,14 @@ public:
+ 		const bgfx::Caps* caps = bgfx::getCaps();
+ 		m_maxDim = (int32_t)bx::pow(float(caps->limits.maxDrawCalls), 1.0f/3.0f);
+ 
++		// DRAWSTRESS_DIM fixes the cube grid's side; DRAWSTRESS_LOG appends each second's mean frame time to a file
++		if (const char* dim = getenv("DRAWSTRESS_DIM") )
++		{
++			m_dim = bx::clamp(atoi(dim), 2, m_maxDim);
++		}
++		const char* log = getenv("DRAWSTRESS_LOG");
++		m_log = NULL != log ? fopen(log, "a") : NULL;
++
+ 		// Enable debug text.
+ 		bgfx::setDebug(m_debug);
+ 
+@@ -455,6 +465,12 @@ public:
+ 			{
+ 				m_deltaTimeAvgNs = m_deltaTimeNs / bx::max<int64_t>(1, m_numFrames);
+ 
++				if (NULL != m_log)
++				{
++					fprintf(m_log, "dim %d draws %d frame_us %lld frames %d\n", m_dim, m_dim*m_dim*m_dim, (long long)m_deltaTimeAvgNs, int(m_numFrames));
++					fflush(m_log);
++				}
++
+ 				if (m_autoAdjust)
+ 				{
+ 					if (m_deltaTimeAvgNs < highwm)
+@@ -579,6 +595,7 @@ public:
+ 	uint32_t m_height;
+ 	uint32_t m_debug;
+ 	uint32_t m_reset;
++	FILE*    m_log;
+ 
+ 	bool     m_autoAdjust;
+ 	int32_t  m_scrollArea;

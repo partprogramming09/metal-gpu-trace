@@ -1,0 +1,68 @@
+name: workloads
+
+# builds bgfx 17-drawstress for macOS arm64 and Windows x64 from fixed commits and uploads it to a release
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: release tag that receives the archive
+        default: workloads-1
+
+jobs:
+  drawstress:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      MINGW: ${{ github.workspace }}/llvm-mingw-20260908-ucrt-macos-universal
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sources at fixed commits
+        run: |
+          for pair in GENie:f7055e309a5c2bc28d7abd35960e14b9864fc5ea bgfx:71539c41e7e782ccf30f19ae4498d25ddc7bc68c \
+                      bx:d4e6ed3cf4f75c355bb04088bc1c13cd919aafa6 bimg:671fe06dd7012a1ab85aa931019ed16112909756; do
+            name=${pair%%:*}
+            git init -q "$name"
+            git -C "$name" fetch -q --depth 1 "https://github.com/bkaradzic/$name" "${pair##*:}"
+            git -C "$name" checkout -q FETCH_HEAD
+          done
+          git -C bgfx apply ../workloads/bgfx-drawstress-env.patch
+      - name: llvm-mingw 20260908
+        run: |
+          curl -sSL -o llvm-mingw.tar.xz https://github.com/mstorsjo/llvm-mingw/releases/download/20260908/llvm-mingw-20260908-ucrt-macos-universal.tar.xz
+          echo "d1dc5d1ecf3a3ced5ed5544c72f1acd0c8e84eb3024d520ecc6b143eec62a149  llvm-mingw.tar.xz" | shasum -a 256 -c
+          tar -xf llvm-mingw.tar.xz
+      - name: GENie
+        run: make -C GENie -j3
+      - name: macOS arm64
+        working-directory: bgfx
+        run: |
+          ../GENie/bin/darwin/genie --with-combined-examples --gcc=osx-arm64 gmake
+          make -C .build/projects/gmake-osx-arm64 config=release -j3 example-17-drawstress
+      - name: Windows x64
+        working-directory: bgfx
+        run: |
+          ../GENie/bin/darwin/genie --with-combined-examples --gcc=mingw-gcc gmake
+          # the final strip step fails without harm
+          make -R -C .build/projects/gmake-mingw-gcc config=release64 -j3 AR="$MINGW/bin/llvm-ar" example-17-drawstress || true
+      - name: Archive
+        run: |
+          mkdir drawstress
+          cp "$(find bgfx/.build/osx-arm64/bin -type f -name example-17-drawstressRelease)" drawstress/drawstress
+          cp "$(find bgfx/.build/win64_mingw-gcc/bin -type f -name example-17-drawstressRelease.exe)" drawstress/drawstress.exe
+          cp bgfx/LICENSE drawstress/LICENSE-bgfx
+          cp workloads/bgfx-drawstress-env.patch drawstress/
+          { echo "bgfx 17-drawstress, built by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            for d in GENie bgfx bx bimg; do echo "$d $(git -C $d rev-parse HEAD)"; done
+            echo "llvm-mingw 20260908 ucrt macos-universal"; } > drawstress/BUILD.txt
+          tar -czf "drawstress-${{ inputs.release }}.tar.gz" drawstress
+          shasum -a 256 drawstress-*.tar.gz | tee drawstress.sha256
+          ls -l drawstress drawstress-*.tar.gz
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${{ inputs.release }}" >/dev/null 2>&1 || \
+            gh release create "${{ inputs.release }}" --title "Workloads ${{ inputs.release }}" --prerelease \
+              --notes "Test programs for metal-gpu-trace's workload_fetch. Built from source by the workloads workflow; BUILD.txt lists the commits."
+          gh release upload "${{ inputs.release }}" drawstress-*.tar.gz drawstress.sha256 --clobber
