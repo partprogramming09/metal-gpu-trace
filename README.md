@@ -43,16 +43,16 @@ Each recording keeps a JSON summary and three CSVs, about 2 MB for 10 s (most of
 
 ### Install
 
-The server runs with [`uvx`](https://docs.astral.sh/uv/) straight from this repo, with nothing to clone
+The server runs with [`uvx`](https://docs.astral.sh/uv/) from [PyPI](https://pypi.org/project/metal-gpu-trace/), with nothing to clone
 (`brew install uv` installs it). Recording also needs Xcode installed (`xcrun xctrace version` prints a version).
 
 ```sh
-uvx --from git+https://github.com/partprogramming09/metal-gpu-trace metal-gpu-trace
+uvx metal-gpu-trace
 ```
 
 This is the command each client below runs. Desktop apps do not see Homebrew's `PATH`: give them the full path that
 `which uvx` prints (`/opt/homebrew/bin/uvx` on Apple silicon). `uvx` keeps the version it first downloaded; run
-the command once with `--refresh` after `uvx` to get the latest.
+the command once with `--refresh` after `uvx` to get the latest. `uvx metal-gpu-trace@0.4.0` pins a version.
 
 The server reads these environment variables:
 
@@ -71,7 +71,7 @@ The server reads these environment variables:
 
 ```sh
 claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -e METAL_TRACE_WINE=/path/to/wine \
-  -- uvx --from git+https://github.com/partprogramming09/metal-gpu-trace metal-gpu-trace
+  -- uvx metal-gpu-trace
 claude mcp list
 ```
 
@@ -87,7 +87,7 @@ These apps do not expand `~` or `$HOME`: write absolute paths.
   "mcpServers": {
     "metal-trace": {
       "command": "/opt/homebrew/bin/uvx",
-      "args": ["--from", "git+https://github.com/partprogramming09/metal-gpu-trace", "metal-gpu-trace"],
+      "args": ["metal-gpu-trace"],
       "env": {
         "METAL_TRACE_OUT": "/absolute/path/to/perf-runs",
         "METAL_TRACE_WINE": "/absolute/path/to/wine"
@@ -110,7 +110,7 @@ In `~/.codex/config.toml`:
 ```toml
 [mcp_servers.metal-trace]
 command = "/opt/homebrew/bin/uvx"
-args = ["--from", "git+https://github.com/partprogramming09/metal-gpu-trace", "metal-gpu-trace"]
+args = ["metal-gpu-trace"]
 env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/absolute/path/to/wine" }
 ```
 
