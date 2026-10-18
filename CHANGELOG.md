@@ -3,6 +3,18 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## 0.7.0 — 2026-10-18
+
+- `PERF_INSTRUMENTS="Time Profiler;Metal GPU Counters"` adds Instruments to the Metal System Trace recording; their
+  tables live in the `.trace`, so it pairs with `KEEP_TRACE=1`.
+- `trace_count`: rows of several tables of a kept `.trace`, in all and per process; by default the tables that
+  matter for a translation layer. Measured on drawstress d3d12 under Mullion (M1 Pro, 30 s): 2559
+  `graphics-compiler-spill-events` and 115 compiled shaders for the Wine process, 0 rows in the GPU counter and
+  shader profiler tables.
+- `perf_baseline_record`: records the same program `count` times and saves the runs as a reference in one call.
+- xctrace 27.1 writes `metal-resource-allocations` and `time-profile` whole and then dies with SIGTRAP (exit 133):
+  an export cut at a row boundary is read to its last row instead of failing.
+
 ## 0.6.0 — 2026-10-18
 
 - `perf_baseline` and `perf_check`: a regression reference. `perf_baseline` saves copies of several equal recordings

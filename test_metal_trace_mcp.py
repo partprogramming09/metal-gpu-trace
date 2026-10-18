@@ -47,6 +47,34 @@ def test_report(tmp_path):
         raise AssertionError("a missing .trace must fail before xctrace runs")
     except FileNotFoundError as error:
         assert "KEEP_TRACE" in str(error) and str(tmp_path) not in str(error)
+    # xctrace may write a table whole and then die with SIGTRAP: a complete file is kept, a cut one is an error
+    import subprocess as sp
+
+    def crash_after_writing(cmd, body):
+        def run(c, **kw):
+            pathlib.Path(c[c.index("--output") + 1]).write_text(body)
+            return sp.CompletedProcess(c, 133, "", "")
+        return run
+    saved_run = perf_report.subprocess.run
+    (tmp_path / "x.trace").mkdir()
+    try:
+        perf_report.subprocess.run = crash_after_writing(None, "<trace-query-result><node/></trace-query-result>")
+        kept = perf_report.export(tmp_path / "x.trace", xpath="/x")
+        assert pathlib.Path(kept).exists()
+        os.unlink(kept)
+        # cut right after the last row, as xctrace 27.1 leaves metal-resource-allocations: every row is read
+        perf_report.subprocess.run = crash_after_writing(None, '<trace-query-result><node><schema><col><mnemonic>n'
+                                                               '</mnemonic></col></schema><row><n>1</n></row>\n')
+        cut_rows = list(perf_report.rows(perf_report.export(tmp_path / "x.trace", xpath="/x")))
+        assert len(cut_rows) == 1 and cut_rows[0]["n"].text == "1", cut_rows
+        perf_report.subprocess.run = crash_after_writing(None, "<trace-query-result><node>")
+        try:
+            perf_report.export(tmp_path / "x.trace", xpath="/x")
+            raise AssertionError("a cut export must fail")
+        except RuntimeError as error:
+            assert "exit 133" in str(error), error
+    finally:
+        perf_report.subprocess.run = saved_run
     toc = ET.fromstring('<trace-toc><run><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
     assert perf_report.missing_tables(toc) == ["gpu-performance-state-intervals", "metal-application-encoders-list",
                                                "metal-current-allocated-size"]
@@ -186,6 +214,65 @@ def test_baseline(tmp_path):
             assert "no reference" in str(error)
     finally:
         mcp.OUT, mcp.BASELINES = saved
+
+
+def test_trace_count(tmp_path):
+    """trace_count counts a table's rows in all and per process, names tables the trace lacks, and refuses odd names."""
+    import metal_trace_mcp as mcp
+    table = ('<trace-query-result><node><schema><col><mnemonic>process</mnemonic></col><col><mnemonic>n</mnemonic></col>'
+             '</schema><row><process id="1" fmt="wine (42)"><pid>42</pid></process><n>1</n></row>'
+             '<row><process ref="1"/><n>2</n></row><row><process id="2" fmt="WindowServer (7)"><pid>7</pid></process>'
+             '<n>3</n></row></node></trace-query-result>')
+    calls = []
+
+    def export(trace, xpath=None, **_):
+        calls.append(xpath)
+        path = tmp_path / f"t{len(calls)}.xml"
+        path.write_text(table)
+        return str(path)
+    saved = mcp.perf_report.export, mcp.tool_trace_tables, mcp.OUT
+    mcp.perf_report.export, mcp.tool_trace_tables, mcp.OUT = export, lambda t: {"tables": ["spill-events"]}, tmp_path
+    try:
+        (tmp_path / "r1.trace").mkdir()
+        got = mcp.tool_trace_count("r1", ["spill-events", "time-profile"])
+        assert got["tables"]["spill-events"] == {"rows": 3, "by_process": {"wine (42)": 2, "WindowServer (7)": 1}}, got
+        assert got["tables"]["time-profile"]["rows"] is None and len(calls) == 1, got
+        try:
+            mcp.tool_trace_count("r1", ["x;y"])
+            raise AssertionError("an odd table name must fail")
+        except mcp.ToolError:
+            pass
+    finally:
+        mcp.perf_report.export, mcp.tool_trace_tables, mcp.OUT = saved
+
+
+def test_baseline_record(tmp_path):
+    """perf_baseline_record records count runs named name-1.. with perf_record's arguments and saves them as the
+    reference; count outside 1 to 10 fails before recording."""
+    import metal_trace_mcp as mcp
+    made = []
+
+    def fake_record(label, **kw):
+        made.append((label, kw))
+        (tmp_path / f"{label}_20261018-000000.json").write_text(json.dumps(
+            {"gpu": {"frames": 300, "fps_estimate": 60.0 + len(made), "frame_gpu_ms": {"mean": 4.0}},
+             "encoders": {"per_frame": {"p50": 7}, "command_buffers_per_frame": {"p50": 5}}}))
+    saved = mcp.tool_perf_record, mcp.OUT, mcp.BASELINES
+    mcp.tool_perf_record, mcp.OUT, mcp.BASELINES = fake_record, tmp_path, tmp_path / "baselines.json"
+    try:
+        got = mcp.tool_perf_baseline_record("ds", count=2, workload="drawstress", api="d3d12", seconds=30)
+        assert [m[0] for m in made] == ["ds-1", "ds-2"] and made[0][1] == {"workload": "drawstress", "api": "d3d12", "seconds": 30}
+        assert got["runs"] == ["ds-1_20261018-000000", "ds-2_20261018-000000"], got
+        assert got["range"]["fps"] == {"min": 61.0, "max": 62.0}, got
+        for bad in (0, 11):
+            try:
+                mcp.tool_perf_baseline_record("ds", count=bad)
+                raise AssertionError(bad)
+            except mcp.ToolError:
+                pass
+        assert len(made) == 2
+    finally:
+        mcp.tool_perf_record, mcp.OUT, mcp.BASELINES = saved
 
 
 def test_layer(tmp_path):
@@ -366,7 +453,7 @@ def test_server(tmp_path):
     assert replies[14]["result"]["protocolVersion"] == "2025-06-18"
     assert replies[15]["result"] == {} and replies[16]["error"]["code"] == -32600
     assert replies[17]["result"] == {"resourceTemplates": []}
-    assert len(replies[2]["result"]["tools"]) == 14
+    assert len(replies[2]["result"]["tools"]) == 16
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -435,7 +522,7 @@ def test_overrun(tmp_path):
 
 
 def main():
-    tests = [test_report, test_encoders, test_diagnose, test_compare, test_baseline, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
+    tests = [test_report, test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

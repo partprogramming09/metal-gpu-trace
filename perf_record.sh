@@ -46,6 +46,8 @@ sampler=$!
 # PERF_ENV="NAME=VALUE ..." sets the program's variables (MULLION_DIAG=profile labels Mullion's encoders)
 extra=()
 for pair in ${=PERF_ENV:-}; do extra+=(--env $pair); done
+# PERF_INSTRUMENTS="Time Profiler;Metal GPU Counters" adds Instruments to the Metal System Trace template
+for instrument in ${(s:;:)PERF_INSTRUMENTS:-}; do extra+=(--instrument $instrument); done
 if [[ $wine == attach ]]; then
   xcrun xctrace record --template "Metal System Trace" --time-limit ${seconds}s --output $out/$name.trace \
     --attach $pid || true

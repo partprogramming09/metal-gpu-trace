@@ -19,7 +19,7 @@ import tarfile
 import tempfile
 import time
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 TOOLS_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 import gputrace_read  # noqa: E402
@@ -41,7 +41,7 @@ INSTRUCTIONS = (
     "Records GPU use on Apple silicon with Metal System Trace. One recording runs at a time; keep other GPU work off "
     "the Mac while it records. Under Wine record 30 s or more: Wine's start-up takes part of the recording. Reading a "
     "recording back takes 1 to 9 s per recorded second. Compare only recordings with 100 frames or more, and repeat "
-    "a run before calling a change real. perf_baseline saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short "
+    "a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short "
     "encoders, as translation layers do; perf_compare says how much two runs differ. trace_tables and trace_query "
     "need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, "
     "or every process named like a native program. To compare native Metal with a translation layer without a game "
@@ -576,6 +576,57 @@ def tool_trace_query(trace, schema, offset=0, limit=50, pid=None):
     return page(rows, offset, limit)
 
 
+# the tables of a kept .trace that say most about a translation layer, counted by trace_count when none are named
+COUNTED_TABLES = ["metal-gpu-intervals", "metal-application-encoders-list", "metal-command-buffer-completed",
+                  "graphics-compiler-spill-events", "graphics-compiler-activity-intervals",
+                  "metal-shader-profiler-shader-list", "metal-resource-allocations", "metal-gpu-counter-intervals",
+                  "gpu-shader-profiler-sample", "time-profile"]
+
+
+def tool_trace_count(trace, tables=None):
+    """Counts the rows of several tables of a kept .trace, in all and per process, so a recording's useful tables
+    show before reading them: a table with 0 rows needs another instrument or Xcode, not a bigger page."""
+    tables = tables or COUNTED_TABLES
+    known = set(tool_trace_tables(trace)["tables"])
+    out = {}
+    for schema in tables:
+        if not schema.replace("-", "").isalnum():
+            raise ToolError("a table name holds only letters, digits and '-'; trace_tables lists them")
+        if schema not in known:
+            out[schema] = {"rows": None, "note": "not in this trace"}
+            continue
+        xpath = f'/trace-toc/run[@number="1"]/data/table[@schema="{schema}"]'
+        total, per = 0, {}
+        try:
+            for row in perf_report.rows(perf_report.export(trace_path(trace), xpath=xpath)):
+                total += 1
+                if "process" in row and row["process"] is not None:
+                    name = row["process"].attrib.get("fmt") or str(perf_report.pid_of(row["process"]))
+                    per[name] = per.get(name, 0) + 1
+        except (RuntimeError, subprocess.TimeoutExpired) as error:  # one table's export failing leaves the others
+            out[schema] = {"rows": None, "note": str(error)}
+            continue
+        out[schema] = {"rows": total, "by_process": dict(sorted(per.items(), key=lambda kv: -kv[1])[:10])}
+    return {"trace": trace, "tables": out}
+
+
+def tool_perf_baseline_record(name, count=3, **record):
+    """Records the same program `count` times in a row with perf_record's arguments and saves the runs as the
+    reference `name` for perf_check, returning the range each number spans across them. Runs are named
+    `name`-1, `name`-2, ... Each recording takes its seconds plus about a minute to read back."""
+    if not name_ok(name):
+        raise ToolError("a reference name holds only letters, digits, '.', '_' and '-'")
+    count = int(count)
+    if not 1 <= count <= 10:
+        raise ToolError("count is 1 to 10")
+    runs = []
+    for i in range(1, count + 1):
+        before = set(OUT.glob(f"{name}-{i}_*.json"))
+        tool_perf_record(f"{name}-{i}", **record)
+        runs.append(next(iter(set(OUT.glob(f"{name}-{i}_*.json")) - before)).stem)
+    return tool_perf_baseline(name, runs)
+
+
 def tool_capture_summary(capture):
     """Reads a Metal .gputrace capture without Xcode: command buffers, encoders, draws, debug groups, and the 100
     most frequent call ids out of calls_total."""
@@ -640,9 +691,7 @@ def hints(title, destructive=None, idempotent=False, open_world=False):
             "openWorldHint": open_world}
 
 
-TOOLS = {
-    "perf_record": (tool_perf_record, schema(
-        {"label": {**S, "description": "name for the run: letters, digits, '.', '_', '-'"},
+RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits, '.', '_', '-'"},
          "program": {**S, "description": "path of the .exe, or of the macOS binary with wine=native"},
          "seconds": {**I, "description": "recording length, default 20; use 30 under Wine, whose start-up takes part of it; the export afterwards takes about a minute"},
          "wine": {**S, "description": "Wine directory holding bin/wine, or native"},
@@ -652,9 +701,15 @@ TOOLS = {
          "workload": {**S, "description": "a test program from workload_list, fetched with workload_fetch, instead "
                                           "of program"},
          "api": {**S, "description": "with workload: mtl (native Metal), d3d11 or d3d12 (under wine)"},
-         "dim": {**I, "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame"}},
-        ["label"]),
-        hints("Record a program", destructive=True)),
+         "dim": {**I, "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame"}}
+
+TOOLS = {
+    "perf_record": (tool_perf_record, schema(RECORD_PROPS, ["label"]), hints("Record a program", destructive=True)),
+    "perf_baseline_record": (tool_perf_baseline_record, schema(
+        {"name": {**S, "description": "reference name: letters, digits, '.', '_', '-'"},
+         "count": {**I, "description": "equal recordings to make, default 3"},
+         **{k: v for k, v in RECORD_PROPS.items() if k != "label"}}, ["name"]),
+        hints("Record a reference", destructive=True)),
     "perf_attach": (tool_perf_attach, schema(
         {"label": {**S, "description": "name for the run: letters, digits, '.', '_', '-'"},
          "process": {**S, "description": "pid, or a name in the program's command line such as Game.exe"},
@@ -687,6 +742,11 @@ TOOLS = {
                                                           "default 0.25"}}, ["run"]),
         hints("Diagnose encoder use")),
     "trace_tables": (tool_trace_tables, schema({"trace": TRACE}, ["trace"]), hints("List a trace's tables")),
+    "trace_count": (tool_trace_count, schema(
+        {"trace": TRACE,
+         "tables": {"type": "array", "items": S, "description": "table names from trace_tables; default the tables "
+                                                                 "that matter for a translation layer"}}, ["trace"]),
+                    hints("Count a trace's rows")),
     "trace_query": (tool_trace_query, schema(
         {"trace": TRACE, "schema": {**S, "description": "a table name that trace_tables lists, such as metal-gpu-intervals"},
          "pid": {**I, "description": "keep only this process's rows"}, **PAGE}, ["trace", "schema"]),

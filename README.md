@@ -66,6 +66,7 @@ The server reads these environment variables:
 | `KEEP_TRACE` | `1` keeps each recording's `.trace`, for `trace_tables`, `trace_query` or Instruments. |
 | `KEEP_RUNS` | Keeps only the newest N recordings. |
 | `PERF_ENV` | `NAME=VALUE` pairs, separated by spaces, set for the recorded program. |
+| `PERF_INSTRUMENTS` | Instruments added to the Metal System Trace template, separated by `;` (`xcrun xctrace list instruments` names them); their tables need the `.trace`, so pair it with `KEEP_TRACE=1`. |
 
 ### Claude Code
 
@@ -123,9 +124,11 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `perf_runs` | Lists recordings, newest first, one page at a time, whether each kept its `.trace`, and the translation layer it ran on (a fingerprint of its Direct3D DLLs, and its Wine) |
 | `perf_compare` | Compares two recordings: headline numbers, encoders, GPU idle time and each encoder label's GPU ms per frame, largest change first; flags those under 100 frames |
 | `perf_baseline` | Saves several equal recordings as a named reference and returns the range each number spans across them; alone, lists the references |
+| `perf_baseline_record` | Records the same program `count` times (default 3) with `perf_record`'s arguments and saves the runs as a reference in one call |
 | `perf_check` | Judges a recording against a reference: `regressed` when FPS falls under the range by more than `margin_pct` (default 3), GPU ms per frame rises over it, or encoders or command buffers per frame exceed it; `improved` or `same` otherwise, with the reasons and the full comparison |
 | `perf_diagnose` | Says whether a recording splits its GPU work into too many short encoders, as translation layers do, with encoders and command buffers per frame, the labels with the most GPU time and the GPU's idle time |
 | `trace_tables` | Lists the tables of a kept `.trace`, named by its run or its path |
+| `trace_count` | Counts the rows of several tables of a kept `.trace`, in all and per process; by default the tables that matter for a translation layer (GPU intervals, encoders, compiler spills, compiled shaders, allocations, counters, Time Profiler), so an empty one shows before reading it |
 | `trace_query` | One page of rows of one table, optionally one process |
 | `capture_summary` | Summarizes a `.gputrace`; lists its 100 most frequent calls out of `calls_total` |
 | `capture_records` | One page of a `.gputrace`'s records |

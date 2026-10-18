@@ -65,6 +65,7 @@ El servidor lee estas variables de entorno:
 | `KEEP_TRACE` | `1` guarda el `.trace` de cada grabación, para `trace_tables`, `trace_query` o Instruments. |
 | `KEEP_RUNS` | Guarda solo las N grabaciones más recientes. |
 | `PERF_ENV` | Pares `NOMBRE=VALOR`, separados por espacios, que recibe el programa grabado. |
+| `PERF_INSTRUMENTS` | Instrumentos que se añaden a la plantilla Metal System Trace, separados por `;` (`xcrun xctrace list instruments` los nombra); sus tablas necesitan el `.trace`, así que va con `KEEP_TRACE=1`. |
 
 ### Claude Code
 
@@ -122,9 +123,11 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | `perf_runs` | Lista las grabaciones, la más reciente primero, por páginas, si cada una guardó su `.trace`, y la capa de traducción con que corrió (una huella de sus DLL de Direct3D, y su Wine) |
 | `perf_compare` | Compara dos grabaciones: cifras principales, encoders, tiempo ocioso de la GPU y los ms de GPU por cuadro de cada etiqueta de encoder, el mayor cambio primero; marca las de menos de 100 frames |
 | `perf_baseline` | Guarda varias grabaciones iguales como referencia con nombre y devuelve el rango que abarca cada cifra entre ellas; sola, lista las referencias |
+| `perf_baseline_record` | Graba el mismo programa `count` veces (3 por defecto) con los argumentos de `perf_record` y guarda las corridas como referencia en una sola llamada |
 | `perf_check` | Juzga una grabación contra una referencia: `regressed` si los FPS bajan del rango más de `margin_pct` (3 por defecto), los ms de GPU por cuadro lo superan, o los encoders o command buffers por cuadro lo exceden; `improved` o `same` si no, con las razones y la comparación completa |
 | `perf_diagnose` | Dice si una grabación reparte su trabajo de GPU en demasiados encoders cortos, como hacen las capas de traducción, con encoders y command buffers por cuadro, las etiquetas con más tiempo de GPU y el tiempo ocioso de la GPU |
 | `trace_tables` | Lista las tablas de un `.trace` guardado, por el nombre de su grabación o su ruta |
+| `trace_count` | Cuenta las filas de varias tablas de un `.trace` guardado, en total y por proceso; por defecto las que importan para una capa de traducción (intervalos de GPU, encoders, derrames del compilador, shaders compilados, asignaciones, contadores, Time Profiler), para ver una vacía antes de leerla |
 | `trace_query` | Una página de filas de una tabla, opcionalmente de un proceso |
 | `capture_summary` | Resume un `.gputrace`; lista sus 100 llamadas más frecuentes de `calls_total` |
 | `capture_records` | Una página de los registros de un `.gputrace` |
