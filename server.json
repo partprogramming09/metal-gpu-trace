@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.partprogramming09/metal-gpu-trace",
+  "title": "Metal GPU Trace",
+  "description": "Measure Wine and macOS programs' GPU use on Apple silicon with Metal System Trace",
+  "repository": {
+    "url": "https://github.com/partprogramming09/metal-gpu-trace",
+    "source": "github"
+  },
+  "version": "0.4.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "metal-gpu-trace",
+      "version": "0.4.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "METAL_TRACE_OUT",
+          "description": "Absolute path of the directory where recordings go",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "METAL_TRACE_WINE",
+          "description": "Wine directory holding bin/wine, used when a recording names none",
+          "isRequired": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

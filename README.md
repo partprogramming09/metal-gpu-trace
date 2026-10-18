@@ -1,7 +1,12 @@
 # metal-gpu-trace
 
+[![test](https://github.com/partprogramming09/metal-gpu-trace/actions/workflows/test.yml/badge.svg)](https://github.com/partprogramming09/metal-gpu-trace/actions/workflows/test.yml)
+
+<!-- mcp-name: io.github.partprogramming09/metal-gpu-trace -->
+
 Measure how a Wine or macOS program uses the GPU on an Apple silicon Mac, from the command line or through an AI
-coding agent: GPU time per frame, frame pacing, FPS and memory, recorded with Instruments' Metal System Trace; Metal
+coding agent: GPU time per frame, frame pacing, FPS and memory, recorded with Instruments' Metal System Trace; whether
+a translation layer (DXMT, Mullion, MoltenVK) splits the work into too many short encoders; Metal
 `.gputrace` captures read without Xcode; and Apple's published facts on each GPU family to read the numbers against.
 Python 3.9+ standard library, `zsh`, and Xcode (for `xctrace`). MIT license. [Español](es/README.md).
 
@@ -12,7 +17,7 @@ Python 3.9+ standard library, `zsh`, and Xcode (for `xctrace`). MIT license. [Es
 | `gputrace_read.py` | Reads a Metal `.gputrace` capture without Xcode: command buffers, encoders, draws, debug groups. Call names marked `probable` are not confirmed. |
 | `data/apple-gpu-families.json` | Apple7 to Apple10: chips, what each family adds, limits that differ, with Apple's sources. |
 | `metal_trace_mcp.py` | An MCP server over all of the above. |
-| `test_metal_trace_mcp.py` | Self-check without Instruments: `python3 -I test_metal_trace_mcp.py` prints `ok`. |
+| `test_metal_trace_mcp.py` | Self-check without Instruments: `python3 -I test_metal_trace_mcp.py` prints `ok`; `pytest` runs the same tests. |
 
 ## Recording
 
@@ -23,8 +28,8 @@ PERF_OUT=~/perf-runs zsh perf_record.sh app-metal 30 native - /path/to/app ./app
 
 Arguments: label, seconds, a Wine directory holding `bin/wine` (or `native`), the Wine prefix, the working directory,
 the program and its arguments. Without `PERF_OUT`, runs go to `./perf-runs`. Reading the trace afterwards takes about
-a minute on an M1 Pro (87 s for a 10 s recording); through the MCP server the whole call times out 300 s after the
-recording. One recording runs at a time; keep other GPU work off the Mac while it records.
+a minute on an M1 Pro (87 s for a 10 s recording); through the MCP server the whole call times out after 10 s per
+recorded second plus 120 s, and an overrun recording leaves no files behind. One recording runs at a time; keep other GPU work off the Mac while it records.
 
 Under Wine, give it 30 s: Wine's start-up takes part of the recording. A recording with under 100 frames is too short
 to compare.
@@ -113,12 +118,14 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 
 | Tool | Reads or records |
 | --- | --- |
-| `perf_record` | Records a program and returns its summary |
-| `perf_runs` | Lists recordings, newest first, one page at a time |
+| `perf_record` | Records a program and returns its summary; when it ends it stops every program of its Wine prefix, or every process named like a native program |
+| `perf_attach` | Records a program that is already running, by pid or name, and leaves it running |
+| `perf_runs` | Lists recordings, newest first, one page at a time, and whether each kept its `.trace` |
 | `perf_compare` | Compares two recordings; flags those under 100 frames |
-| `trace_tables` | Lists the tables of a kept `.trace` |
+| `perf_diagnose` | Says whether a recording splits its GPU work into too many short encoders, as translation layers do, with encoders and command buffers per frame, the labels with the most GPU time and the GPU's idle time |
+| `trace_tables` | Lists the tables of a kept `.trace`, named by its run or its path |
 | `trace_query` | One page of rows of one table, optionally one process |
-| `capture_summary` | Summarizes a `.gputrace` |
+| `capture_summary` | Summarizes a `.gputrace`; lists its 100 most frequent calls out of `calls_total` |
 | `capture_records` | One page of a `.gputrace`'s records |
 | `gpu_family` | Apple's facts for a family or chip (`Apple7`, `M1 Pro`, `M3 Max`) |
 

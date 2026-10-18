@@ -1,6 +1,6 @@
 """Reads the command stream of a Metal .gputrace bundle directly, without Xcode, and summarizes it as JSON.
 
-Usage: python3 -I tools/gputrace_read.py <capture.gputrace> [--records]
+Usage: python3 -I gputrace_read.py <capture.gputrace> [--records]
 The `capture` file is "MTSP": a 4-byte magic and a 4-byte word, then records of
 [u32 size][i32 call id][...][u32 at +0x20][signature at +0x24, NUL-padded][arguments].
 The record layout follows tmc/gputrace (MIT, https://github.com/tmc/gputrace); the 8-byte header, the call ids

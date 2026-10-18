@@ -2,7 +2,8 @@
 
 Mide cómo usa la GPU un programa de Wine o de macOS en un Mac con Apple silicon, desde la terminal o con un agente
 de programación con IA: tiempo de GPU por frame, ritmo de frames, FPS y memoria, grabados con Metal System Trace de
-Instruments; capturas `.gputrace` de Metal leídas sin Xcode; y los datos que publica Apple de cada familia de GPU
+Instruments; si una capa de traducción (DXMT, Mullion, MoltenVK) reparte el trabajo en demasiados encoders cortos;
+capturas `.gputrace` de Metal leídas sin Xcode; y los datos que publica Apple de cada familia de GPU
 para interpretar las cifras. Biblioteca estándar de Python 3.9+, `zsh` y Xcode (por `xctrace`). Licencia MIT.
 [English](../README.md).
 
@@ -13,7 +14,7 @@ para interpretar las cifras. Biblioteca estándar de Python 3.9+, `zsh` y Xcode 
 | `gputrace_read.py` | Lee una captura `.gputrace` de Metal sin Xcode: command buffers, encoders, dibujos, grupos de depuración. Los nombres marcados `probable` no están confirmados. |
 | `data/apple-gpu-families.json` | Apple7 a Apple10: chips, qué añade cada familia y los límites que cambian, con las fuentes de Apple. |
 | `metal_trace_mcp.py` | Un servidor MCP sobre todo lo anterior. |
-| `test_metal_trace_mcp.py` | Comprobación sin Instruments: `python3 -I test_metal_trace_mcp.py` imprime `ok`. |
+| `test_metal_trace_mcp.py` | Comprobación sin Instruments: `python3 -I test_metal_trace_mcp.py` imprime `ok`; `pytest` corre las mismas pruebas. |
 
 ## Grabar
 
@@ -25,7 +26,7 @@ PERF_OUT=~/perf-runs zsh perf_record.sh app-metal 30 native - /ruta/a/app ./app
 Argumentos: etiqueta, segundos, un directorio de Wine con `bin/wine` (o `native`), el prefijo de Wine, el directorio
 de trabajo, el programa y sus argumentos. Sin `PERF_OUT`, las grabaciones van a `./perf-runs`. Leer la traza después
 tarda cerca de un minuto en un M1 Pro (87 s para una grabación de 10 s); con el servidor MCP la llamada entera se
-corta 300 s después de la grabación. Solo corre una grabación a la vez; no uses la GPU para otra cosa mientras graba.
+corta tras 10 s por segundo grabado más 120 s, y una grabación cortada no deja archivos. Solo corre una grabación a la vez; no uses la GPU para otra cosa mientras graba.
 
 Con Wine, dale 30 s: el arranque de Wine ocupa parte de la grabación. Una grabación de menos de 100 frames es
 demasiado corta para comparar.
@@ -116,12 +117,14 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 
 | Herramienta | Lee o graba |
 | --- | --- |
-| `perf_record` | Graba un programa y devuelve su resumen |
-| `perf_runs` | Lista las grabaciones, la más reciente primero, por páginas |
+| `perf_record` | Graba un programa y devuelve su resumen; al terminar cierra todo programa de su prefijo de Wine, o todo proceso con el nombre de un programa nativo |
+| `perf_attach` | Graba un programa que ya corre, por pid o nombre, y lo deja corriendo |
+| `perf_runs` | Lista las grabaciones, la más reciente primero, por páginas, y si cada una guardó su `.trace` |
 | `perf_compare` | Compara dos grabaciones; marca las de menos de 100 frames |
-| `trace_tables` | Lista las tablas de un `.trace` guardado |
+| `perf_diagnose` | Dice si una grabación reparte su trabajo de GPU en demasiados encoders cortos, como hacen las capas de traducción, con encoders y command buffers por cuadro, las etiquetas con más tiempo de GPU y el tiempo ocioso de la GPU |
+| `trace_tables` | Lista las tablas de un `.trace` guardado, por el nombre de su grabación o su ruta |
 | `trace_query` | Una página de filas de una tabla, opcionalmente de un proceso |
-| `capture_summary` | Resume un `.gputrace` |
+| `capture_summary` | Resume un `.gputrace`; lista sus 100 llamadas más frecuentes de `calls_total` |
 | `capture_records` | Una página de los registros de un `.gputrace` |
 | `gpu_family` | Los datos de Apple de una familia o chip (`Apple7`, `M1 Pro`, `M3 Max`) |
 
