@@ -119,8 +119,10 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | --- | --- |
 | `perf_record` | Graba un programa y devuelve su resumen; al terminar cierra todo programa de su prefijo de Wine, o todo proceso con el nombre de un programa nativo |
 | `perf_attach` | Graba un programa que ya corre, por pid o nombre, y lo deja corriendo |
-| `perf_runs` | Lista las grabaciones, la más reciente primero, por páginas, y si cada una guardó su `.trace` |
-| `perf_compare` | Compara dos grabaciones; marca las de menos de 100 frames |
+| `perf_runs` | Lista las grabaciones, la más reciente primero, por páginas, si cada una guardó su `.trace`, y la capa de traducción con que corrió (una huella de sus DLL de Direct3D, y su Wine) |
+| `perf_compare` | Compara dos grabaciones: cifras principales, encoders, tiempo ocioso de la GPU y los ms de GPU por cuadro de cada etiqueta de encoder, el mayor cambio primero; marca las de menos de 100 frames |
+| `perf_baseline` | Guarda varias grabaciones iguales como referencia con nombre y devuelve el rango que abarca cada cifra entre ellas; sola, lista las referencias |
+| `perf_check` | Juzga una grabación contra una referencia: `regressed` si los FPS bajan del rango más de `margin_pct` (3 por defecto), los ms de GPU por cuadro lo superan, o los encoders o command buffers por cuadro lo exceden; `improved` o `same` si no, con las razones y la comparación completa |
 | `perf_diagnose` | Dice si una grabación reparte su trabajo de GPU en demasiados encoders cortos, como hacen las capas de traducción, con encoders y command buffers por cuadro, las etiquetas con más tiempo de GPU y el tiempo ocioso de la GPU |
 | `trace_tables` | Lista las tablas de un `.trace` guardado, por el nombre de su grabación o su ruta |
 | `trace_query` | Una página de filas de una tabla, opcionalmente de un proceso |

@@ -19,7 +19,7 @@ import tarfile
 import tempfile
 import time
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 TOOLS_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 import gputrace_read  # noqa: E402
@@ -31,6 +31,8 @@ FAMILIES = json.loads((TOOLS_DIR / "data" / "apple-gpu-families.json").read_text
 WORKLOADS = json.loads((TOOLS_DIR / "data" / "workloads.json").read_text())["workloads"]
 CACHE = pathlib.Path("~/Library/Caches/metal-gpu-trace").expanduser()
 MAX_LIMIT = 500
+# named references for perf_check: copies of their runs' summaries, so KEEP_RUNS deleting a run does not break them
+BASELINES = OUT / "baselines.json"
 # newest first; initialize answers with the client's version when listed here, else the first
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 # results stay under Claude Code's 50 000-character limit, above which it saves them to a file
@@ -39,7 +41,7 @@ INSTRUCTIONS = (
     "Records GPU use on Apple silicon with Metal System Trace. One recording runs at a time; keep other GPU work off "
     "the Mac while it records. Under Wine record 30 s or more: Wine's start-up takes part of the recording. Reading a "
     "recording back takes 1 to 9 s per recorded second. Compare only recordings with 100 frames or more, and repeat "
-    "a run before calling a change real. perf_diagnose says whether a run splits its GPU work into too many short "
+    "a run before calling a change real. perf_baseline saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short "
     "encoders, as translation layers do; perf_compare says how much two runs differ. trace_tables and trace_query "
     "need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, "
     "or every process named like a native program. To compare native Metal with a translation layer without a game "
@@ -69,7 +71,7 @@ def run_path(run):
     if not name_ok(run):
         raise ToolError("a run name holds only letters, digits, '.', '_' and '-'; take it from perf_runs")
     path = OUT / f"{run}.json"
-    if not path.exists():
+    if path == BASELINES or not path.exists():
         raise ToolError(f"no run {run}; perf_runs lists them")
     return path
 
@@ -172,8 +174,7 @@ def tool_workload_fetch(name):
     with tempfile.TemporaryDirectory(dir=CACHE) as tmp:
         archive = pathlib.Path(tmp) / "archive.tar.gz"
         download(entry["url"], archive, entry["bytes"])
-        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-        if digest != entry["sha256"]:
+        if file_id(archive)["sha256"] != entry["sha256"]:
             raise ToolError(f"{name}'s download does not match the SHA-256 this package pins; nothing was saved")
         unpack(archive, pathlib.Path(tmp) / "out")
         (pathlib.Path(tmp) / "out").rename(target)
@@ -185,6 +186,106 @@ def tool_perf_attach(label, process, seconds=20):
     for `seconds` and returns the same summary as perf_record; the program keeps running. For games started by
     Steam, CrossOver, NotProton or any launcher: start the game or its benchmark there first."""
     return record(label, seconds, "attach", "-", "-", [str(process)])
+
+
+# the Direct3D DLLs a translation layer replaces (Mullion's README lists the same five for its overrides)
+LAYER_DLLS = ("d3d12", "d3d12core", "d3d11", "d3d10core", "dxgi")
+
+
+def file_id(path):
+    """Returns a file's size and SHA-256, read in 1 MiB blocks, or None when there is no such file."""
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return {"bytes": path.stat().st_size, "sha256": digest.hexdigest()}
+
+
+def registry_overrides(prefix):
+    """Returns the prefix's [Software\\Wine\\DllOverrides] entries for LAYER_DLLS from its user.reg."""
+    reg, found, inside = prefix / "user.reg", {}, False
+    if not reg.is_file():
+        return found
+    for line in reg.read_text(errors="replace").splitlines():
+        if line.startswith("["):
+            inside = line.lower().startswith("[software\\\\wine\\\\dlloverrides]")
+        elif inside and line.startswith('"') and "=" in line:
+            name, value = (part.strip().strip('"') for part in line.split("=", 1))
+            if name.lstrip("*").lower() in LAYER_DLLS:
+                found[name] = value
+    return found
+
+
+def layer_of(wine, prefix, program_env=""):
+    """Returns what identifies the translation layer a recording runs on: the Wine version, the overrides in force
+    and the size and SHA-256 of LAYER_DLLS in Wine and in the prefix, with a short fingerprint of all of it. Which of
+    the two copies Wine loads is not known: Instruments does not keep Wine's own log."""
+    # NAME=/an/absolute/path keeps only the file name, so summaries can be shared
+    pairs = [pair.partition("=") for pair in program_env.split()]
+    env = " ".join(f"{k}={pathlib.Path(v).name}" if s and v.startswith("/") else k + s + v for k, s, v in pairs)
+    if wine == "native":
+        return {"none": "native Metal, no translation layer", "program_env": env}
+    if wine == "attach":
+        return {"unknown": "an attached process's Wine and prefix are not known", "program_env": env}
+    wine, prefix = pathlib.Path(wine), pathlib.Path(prefix)
+    try:
+        version = subprocess.run([str(wine / "bin" / "wine"), "--version"], capture_output=True, text=True,
+                                 timeout=30).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        version = None
+    caller = os.environ.get("WINEDLLOVERRIDES")
+    identity = {
+        "wine": wine.name, "wine_version": version,
+        # what perf_record.sh passes, then the prefix's registry entries
+        "overrides": {"environment": f"{caller};mscoree=;mshtml=" if caller else "mscoree=;mshtml=",
+                      "registry": registry_overrides(prefix)},
+        "dlls": {name: {"builtin": file_id(wine / "lib" / "wine" / "x86_64-windows" / f"{name}.dll"),
+                        "prefix": file_id(prefix / "drive_c" / "windows" / "system32" / f"{name}.dll")}
+                 for name in LAYER_DLLS},
+    }
+    # a prefix copy identical to Wine's (Wine's first boot makes one) is the same DLL, so it changes nothing
+    fingerprint = hashlib.sha256(json.dumps({**identity, "dlls": effective_dlls(identity)},
+                                            sort_keys=True).encode()).hexdigest()[:12]
+    return {"fingerprint": fingerprint, **identity, "program_env": env}
+
+
+def effective_dlls(layer):
+    """Returns, per DLL, the copy Wine most likely loads: the prefix's when it exists, else Wine's own."""
+    return {name: copies.get("prefix") or copies.get("builtin") for name, copies in (layer.get("dlls") or {}).items()}
+
+
+def layer_label(layer):
+    """Returns a short name for a summary's layer: native, attached, or its fingerprint and Wine; None if absent."""
+    if not layer:
+        return None
+    if "none" in layer:
+        return "native"
+    if "unknown" in layer:
+        return "attached"
+    return f"{layer['fingerprint']} {layer['wine']} {layer['wine_version'] or ''}".strip()
+
+
+def layer_change(sa, sb, a, b):
+    """Returns whether two runs share a translation layer, which DLLs differ and whether the program's variables
+    differ; a run recorded before 0.6.0, or with perf_record.sh by hand, is named in missing_in."""
+    la, lb = sa.get("layer"), sb.get("layer")
+    missing = [r for r, layer in ((a, la), (b, lb)) if not layer]
+    if missing:
+        return {"missing_in": missing, "hint": "runs recorded before version 0.6.0, or with perf_record.sh by hand, "
+                                               "do not name their layer"}
+    def identity(layer):
+        return (layer_label(layer).split(" ", 1)[-1], layer.get("overrides"), effective_dlls(layer))
+    same = layer_label(la) == layer_label(lb) if "fingerprint" not in la or "fingerprint" not in lb \
+        else identity(la) == identity(lb)
+    out = {"same": same, "a": layer_label(la), "b": layer_label(lb),
+           "differs": [d for d in LAYER_DLLS if effective_dlls(la).get(d) != effective_dlls(lb).get(d)],
+           "note": "same layer: the change comes from the program, its settings or run-to-run noise" if same else
+                   "different layers: this compares two layers, not one change"}
+    if la.get("program_env") != lb.get("program_env"):
+        out["program_env"] = {"a": la.get("program_env"), "b": lb.get("program_env")}
+    return out
 
 
 def deadline(seconds):
@@ -199,6 +300,7 @@ def record(label, seconds, wine, prefix, workdir, command, program_env=""):
         raise ToolError("label holds only letters, digits, '.', '_' and '-'")
     env = dict(os.environ, PERF_OUT=str(OUT),
                PERF_ENV=" ".join(filter(None, [os.environ.get("PERF_ENV", ""), program_env])))
+    layer = layer_of(wine, prefix, env["PERF_ENV"])
     before = set(OUT.glob(f"{label}_*"))
     proc = subprocess.Popen(["zsh", str(TOOLS_DIR / "perf_record.sh"), label, str(int(seconds)), str(wine),
                              str(prefix), str(workdir), *command],
@@ -222,13 +324,19 @@ def record(label, seconds, wine, prefix, workdir, command, program_env=""):
     if proc.returncode or not new:
         reason = (stderr.strip().splitlines() or ["no summary was written"])[-1]
         raise ToolError(f"recording failed (exit {proc.returncode}): {reason}")
-    return json.loads(new[-1].read_text())
+    summary = json.loads(new[-1].read_text())
+    summary["layer"] = layer
+    new[-1].write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
+    return summary
 
 
 def tool_perf_runs(offset=0, limit=50):
-    """Lists the saved recordings, newest first, with frames, FPS, GPU ms per frame and memory peaks."""
+    """Lists the saved recordings, newest first, with frames, FPS, GPU ms per frame, memory peaks and the translation
+    layer each ran on (fingerprint and Wine, or native)."""
     runs = []
     for path in sorted(OUT.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        if path.name == BASELINES.name:
+            continue
         try:
             s = json.loads(path.read_text())
         except ValueError:  # a summary still being written
@@ -239,14 +347,23 @@ def tool_perf_runs(offset=0, limit=50):
                      "gpu_ms_mean": (gpu.get("frame_gpu_ms") or {}).get("mean"),
                      "metal_mib_peak": (s.get("metal_memory_mib") or {}).get("peak"),
                      "rss_mib_max": (s.get("process_rss_mib") or {}).get("max"),
-                     "trace_kept": path.with_suffix(".trace").is_dir()})
+                     "trace_kept": path.with_suffix(".trace").is_dir(), "layer": layer_label(s.get("layer"))})
     return page(runs, offset, limit)
 
 
-def tool_perf_compare(a, b):
-    """Compares two saved recordings (names from perf_runs): each headline number, its change and change in %.
-    Recordings with under 100 frames are flagged: too short to compare."""
+def tool_perf_compare(a, b, short_us=25):
+    """Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the
+    headline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and
+    command buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's
+    count and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:
+    with different layers it compares layers, not one change. Recordings with under 100 frames are flagged: too
+    short to compare."""
     sa, sb = (json.loads(run_path(r).read_text()) for r in (a, b))
+    return compare_summaries(sa, sb, a, b, short_us)
+
+
+def compare_summaries(sa, sb, a, b, short_us=25):
+    """perf_compare over two loaded summaries named a and b."""
     metrics = {
         "fps": lambda s: s["gpu"].get("fps_estimate"),
         "gpu_ms_mean": lambda s: s["gpu"]["frame_gpu_ms"].get("mean"),
@@ -258,14 +375,163 @@ def tool_perf_compare(a, b):
     out = {}
     for name, get in metrics.items():
         try:
-            va, vb = get(sa), get(sb)
+            out[name] = change(get(sa), get(sb))
         except (KeyError, TypeError):
-            va = vb = None
-        change = None if va is None or vb is None else round(vb - va, 3)
-        out[name] = {"a": va, "b": vb, "change": change,
-                     "change_pct": None if change is None or not va else round(100 * change / va, 1)}
+            out[name] = change(None, None)
     short = [r for r, s in ((a, sa), (b, sb)) if (s.get("gpu") or {}).get("frames", 0) < 100]
-    return {"a": a, "b": b, "metrics": out, "too_short": short}
+    result = {"a": a, "b": b, "layer": layer_change(sa, sb, a, b), "metrics": out, "too_short": short}
+    missing = [r for r, s in ((a, sa), (b, sb)) if not s.get("encoders")]
+    if missing:
+        result["encoders"] = {"missing_in": missing, "hint": "summaries written before version 0.4.0 have no encoder "
+                                                             "numbers; record these runs again"}
+        return result
+    cut = str(int(short_us))
+    if cut not in sa["encoders"]["short_share"] or cut not in sb["encoders"]["short_share"]:
+        raise ToolError(f"short_us is one of {', '.join(map(str, perf_report.SHORT_US))}")
+    gpu_idle = lambda s: s.get("gpu_idle") or {}
+    work = {
+        "encoders_per_frame_p50": lambda s: s["encoders"]["per_frame"].get("p50"),
+        "command_buffers_per_frame_p50": lambda s: s["encoders"]["command_buffers_per_frame"].get("p50"),
+        "short_encoder_share": lambda s: s["encoders"]["short_share"][cut],
+        "gpu_idle_share": lambda s: gpu_idle(s).get("idle_share"),
+        "idle_ms_per_frame_p50": lambda s: (gpu_idle(s).get("idle_ms_per_frame") or {}).get("p50"),
+    }
+    # a change in % of a share reads wrong (1.9 % to 49.7 % is +2516 %): shares give their change in points only
+    result["encoders"] = {name: change(get(sa), get(sb), share=name.endswith("_share")) for name, get in work.items()}
+    result["labels"] = label_changes(sa, sb)
+    return result
+
+
+# what decides a perf_check verdict: the metric, where it lives in a summary, and whether higher is worse
+CHECKED = {
+    "fps": (lambda s: s["gpu"].get("fps_estimate"), False),
+    "gpu_ms_mean": (lambda s: s["gpu"]["frame_gpu_ms"].get("mean"), True),
+    "encoders_per_frame_p50": (lambda s: s["encoders"]["per_frame"].get("p50"), True),
+    "command_buffers_per_frame_p50": (lambda s: s["encoders"]["command_buffers_per_frame"].get("p50"), True),
+}
+
+
+def load_baselines():
+    """Returns the saved references, by name."""
+    return json.loads(BASELINES.read_text()) if BASELINES.exists() else {}
+
+
+def tool_perf_baseline(name=None, runs=None):
+    """Names a reference for perf_check, or lists them. With name and runs (names from perf_runs, several runs of the
+    same program recorded with no change between them), it saves copies of their summaries as the reference `name`,
+    replacing a previous one, and returns the range each number spans across them: that range, not one run, is what
+    perf_check judges against, since repeated runs differ by a few percent. With name alone it shows that reference;
+    with nothing it lists them."""
+    baselines = load_baselines()
+    if name is not None and not name_ok(name):
+        raise ToolError("a reference name holds only letters, digits, '.', '_' and '-'")
+    if runs:
+        if name is None:
+            raise ToolError("runs need a name for the reference")
+        if isinstance(runs, str):
+            runs = [runs]
+        summaries = [json.loads(run_path(r).read_text()) for r in runs]
+        baselines[name] = {"runs": list(runs), "set": time.strftime("%Y-%m-%d"), "summaries": summaries}
+        OUT.mkdir(parents=True, exist_ok=True)
+        BASELINES.write_text(json.dumps(baselines))
+    if name is not None:
+        if name not in baselines:
+            raise ToolError(f"no reference {name}; perf_baseline with no arguments lists them")
+        b = baselines[name]
+        return {"name": name, "runs": b["runs"], "set": b["set"], "range": ranges(b["summaries"])}
+    return {"baselines": [{"name": n, "runs": b["runs"], "set": b["set"]} for n, b in baselines.items()]}
+
+
+def ranges(summaries):
+    """Returns the lowest and highest value of each checked metric across the summaries; None where one lacks it."""
+    out = {}
+    for metric, (get, _) in CHECKED.items():
+        values = []
+        for s in summaries:
+            try:
+                values.append(get(s))
+            except (KeyError, TypeError):
+                values.append(None)
+        out[metric] = None if None in values else {"min": min(values), "max": max(values)}
+    return out
+
+
+def tool_perf_check(run, baseline, margin_pct=3):
+    """Judges a recording against a reference saved with perf_baseline: regressed when FPS falls under the
+    reference's lowest FPS by more than margin_pct, GPU ms per frame rises over its highest by more than margin_pct,
+    or encoders or command buffers per frame exceed its highest; improved when a number leaves the range the other
+    way and none regressed; same otherwise. Frame pacing, short encoders and GPU idle time are reported by the
+    comparison but do not decide: they vary too much between equal runs. Returns the reasons and perf_compare's
+    full comparison against the reference's first run."""
+    baselines = load_baselines()
+    if baseline not in baselines:
+        raise ToolError(f"no reference {baseline}; perf_baseline with no arguments lists them")
+    ref = baselines[baseline]
+    s = json.loads(run_path(run).read_text())
+    span = ranges(ref["summaries"])
+    worse, better, unchecked = [], [], []
+    for metric, (get, higher_is_worse) in CHECKED.items():
+        try:
+            value = get(s)
+        except (KeyError, TypeError):
+            value = None
+        if value is None or span[metric] is None:
+            unchecked.append(metric)
+            continue
+        lo, hi = span[metric]["min"], span[metric]["max"]
+        margin = 0 if metric.endswith("_p50") else margin_pct / 100
+        if higher_is_worse and value > hi * (1 + margin):
+            worse.append(reason(metric, value, lo, hi))
+        elif not higher_is_worse and value < lo * (1 - margin):
+            worse.append(reason(metric, value, lo, hi))
+        elif higher_is_worse and value < lo * (1 - margin) or not higher_is_worse and value > hi * (1 + margin):
+            better.append(reason(metric, value, lo, hi))
+    verdict = "regressed" if worse else "improved" if better else "same"
+    result = {"run": run, "baseline": baseline, "verdict": verdict, "margin_pct": margin_pct, "regressed": worse,
+              "improved": better, "unchecked": unchecked, "range": span,
+              "comparison": compare_summaries(ref["summaries"][0], s, ref["runs"][0], run)}
+    if (s.get("gpu") or {}).get("frames", 0) < 100:
+        result["hint"] = "under 100 frames: too short to judge; record 30 s or more"
+    if unchecked:
+        result["hint_unchecked"] = "a summary written before version 0.4.0 has no encoder numbers; record it again"
+    return result
+
+
+def reason(metric, value, lo, hi):
+    """Returns one verdict reason: the metric, the run's value and the reference's range."""
+    return {"metric": metric, "value": value, "range_min": lo, "range_max": hi}
+
+
+def change(va, vb, share=False):
+    """Returns a number's value in a and b, its change and, unless it is a share, its change in %."""
+    delta = None if va is None or vb is None else round(vb - va, 3)
+    pct = None if share or delta is None or not va else round(100 * delta / va, 1)
+    return {"a": va, "b": vb, "change": delta, "change_pct": pct}
+
+
+def label_changes(sa, sb, top=20):
+    """Returns each encoder label's count and GPU ms per frame in two summaries, largest change in ms per frame
+    first. A label missing from a summary that holds the full 20 labels may only have fallen out of that list, so it
+    is outside_top_20 rather than new or gone."""
+    def per_frame(s):
+        frames = (s.get("gpu") or {}).get("frames") or 1
+        labels = s["encoders"]["by_label"]
+        return {l["label"]: (l["per_frame"], round(l["total_ms"] / frames, 4)) for l in labels}, len(labels) >= top
+    (la, full_a), (lb, full_b) = per_frame(sa), per_frame(sb)
+    rows = []
+    for name in sorted(la.keys() | lb.keys()):
+        (count_a, ms_a), (count_b, ms_b) = la.get(name, (None, None)), lb.get(name, (None, None))
+        if name not in lb:
+            state = "outside_top_20" if full_b else "gone"
+        elif name not in la:
+            state = "outside_top_20" if full_a else "new"
+        else:
+            state = "same" if (count_a, ms_a) == (count_b, ms_b) else "changed"
+        delta = None if state == "outside_top_20" else round((ms_b or 0) - (ms_a or 0), 4)
+        rows.append({"label": name, "state": state, "per_frame_a": count_a, "per_frame_b": count_b,
+                     "ms_per_frame_a": ms_a, "ms_per_frame_b": ms_b, "ms_per_frame_change": delta})
+    rows.sort(key=lambda r: -abs(r["ms_per_frame_change"] or 0))
+    return rows[:top]
 
 
 def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
@@ -397,8 +663,21 @@ TOOLS = {
     "perf_runs": (tool_perf_runs, schema(PAGE), hints("List recordings")),
     "perf_compare": (tool_perf_compare, schema(
         {"a": {**S, "description": "run name from perf_runs: the reference, such as the run before a change"},
-         "b": {**S, "description": "run name from perf_runs: the run to compare against a"}}, ["a", "b"]),
+         "b": {**S, "description": "run name from perf_runs: the run to compare against a"},
+         "short_us": {**I, "description": "an encoder under this GPU time counts as short: 10, 25 (default), 50, 100, "
+                                          "250, 500 or 1000"}}, ["a", "b"]),
         hints("Compare two recordings")),
+    "perf_baseline": (tool_perf_baseline, schema(
+        {"name": {**S, "description": "reference name: letters, digits, '.', '_', '-'; alone, shows that reference"},
+         "runs": {"type": "array", "items": S, "description": "run names from perf_runs to save as this reference, "
+                                                             "ideally 3 or more equal runs; replaces a previous one"}}),
+        hints("Name a reference", destructive=False, idempotent=True)),
+    "perf_check": (tool_perf_check, schema(
+        {"run": {**S, "description": "a run name from perf_runs"},
+         "baseline": {**S, "description": "a reference name from perf_baseline"},
+         "margin_pct": {"type": "number", "description": "how far outside the reference's range FPS or GPU ms per "
+                                                         "frame may fall before counting, default 3"}},
+        ["run", "baseline"]), hints("Check a run against a reference")),
     "perf_diagnose": (tool_perf_diagnose, schema(
         {"run": {**S, "description": "a run name from perf_runs"},
          "min_encoders": {**I, "description": "encoders per frame (median) from which the verdict can be yes, default 4"},
@@ -444,10 +723,10 @@ def prompt_compare_layer(workload="drawstress", api="d3d12"):
         f"1. workload_fetch name={workload} (it is skipped when already downloaded).\n"
         f"2. perf_record label={workload}-mtl workload={workload} api=mtl seconds=20.\n"
         f"3. perf_record label={workload}-{api} workload={workload} api={api} seconds=30.\n"
-        "4. perf_diagnose on each run, then perf_compare a=<the mtl run> b=<the other run>.\n"
-        "Report in one table per run: frames, FPS, GPU ms per frame, encoders and command buffers per frame, share "
-        "of short encoders, GPU idle share, and the verdict. Say which runs have under 100 frames, and that one pair "
-        "of runs is not enough to call a difference real: repeat both before concluding."
+        "4. perf_compare a=<the mtl run> b=<the other run>, and perf_diagnose on the other run for its verdict.\n"
+        "Report perf_compare's metrics and encoders as one table (a, b, change), then its labels with the largest "
+        "change in GPU ms per frame, then the verdict. Say which runs are in too_short, and that one pair of runs is "
+        "not enough to call a difference real: repeat both before concluding."
     )
 
 

@@ -120,8 +120,10 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | --- | --- |
 | `perf_record` | Records a program and returns its summary; when it ends it stops every program of its Wine prefix, or every process named like a native program |
 | `perf_attach` | Records a program that is already running, by pid or name, and leaves it running |
-| `perf_runs` | Lists recordings, newest first, one page at a time, and whether each kept its `.trace` |
-| `perf_compare` | Compares two recordings; flags those under 100 frames |
+| `perf_runs` | Lists recordings, newest first, one page at a time, whether each kept its `.trace`, and the translation layer it ran on (a fingerprint of its Direct3D DLLs, and its Wine) |
+| `perf_compare` | Compares two recordings: headline numbers, encoders, GPU idle time and each encoder label's GPU ms per frame, largest change first; flags those under 100 frames |
+| `perf_baseline` | Saves several equal recordings as a named reference and returns the range each number spans across them; alone, lists the references |
+| `perf_check` | Judges a recording against a reference: `regressed` when FPS falls under the range by more than `margin_pct` (default 3), GPU ms per frame rises over it, or encoders or command buffers per frame exceed it; `improved` or `same` otherwise, with the reasons and the full comparison |
 | `perf_diagnose` | Says whether a recording splits its GPU work into too many short encoders, as translation layers do, with encoders and command buffers per frame, the labels with the most GPU time and the GPU's idle time |
 | `trace_tables` | Lists the tables of a kept `.trace`, named by its run or its path |
 | `trace_query` | One page of rows of one table, optionally one process |

@@ -54,8 +54,10 @@ elif [[ $wine == native ]]; then
     $extra --launch -- "$@" || true
   pkill -x $exe || true
 else
+  # the caller's overrides (a Mullion built for system32 needs d3d12,...=n) come before Wine's own
+  overrides="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}mscoree=;mshtml="
   xcrun xctrace record --template "Metal System Trace" --time-limit ${seconds}s --output $out/$name.trace \
-    --env WINEPREFIX=$prefix --env WINEDEBUG=-all --env "WINEDLLOVERRIDES=mscoree=;mshtml=" $extra \
+    --env WINEPREFIX=$prefix --env WINEDEBUG=-all --env "WINEDLLOVERRIDES=$overrides" $extra \
     --launch -- $wine/bin/wine "$@" || true
   # the program outlives the recording; stop what is left of its Wine
   WINEPREFIX=$prefix $wine/bin/wineserver -k || true

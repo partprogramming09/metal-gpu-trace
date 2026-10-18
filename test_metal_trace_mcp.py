@@ -95,6 +95,149 @@ def test_diagnose(tmp_path):
         mcp.OUT = saved
 
 
+def test_compare(tmp_path):
+    """perf_compare reports encoder and idle changes and each label's change in GPU ms per frame, largest first,
+    and names a run summarized before encoders existed instead of returning nothing for it."""
+    import metal_trace_mcp as mcp
+
+    def summary(frames, encoders, buffers, short, idle, labels):
+        return {"gpu": {"frames": frames, "fps_estimate": 100.0},
+                "encoders": {"per_frame": {"p50": encoders}, "command_buffers_per_frame": {"p50": buffers},
+                             "short_share": {"25": short, "50": short},
+                             "by_label": [{"label": n, "per_frame": c, "total_ms": t} for n, c, t in labels]},
+                "gpu_idle": {"idle_share": idle, "idle_ms_per_frame": {"p50": idle * 10}}}
+    saved, mcp.OUT = mcp.OUT, tmp_path
+    try:
+        # a: 100 frames; b: 200 frames, so Blit's total doubles while its ms per frame stays
+        (tmp_path / "a.json").write_text(json.dumps(summary(100, 2, 1, 0.02, 0.4, [
+            ("Render Command", 1.0, 500.0), ("Blit Command", 1.0, 10.0), ("Old Pass", 1.0, 50.0)])))
+        (tmp_path / "b.json").write_text(json.dumps(summary(200, 7, 5, 0.5, 0.75, [
+            ("Render Command", 3.0, 800.0), ("Blit Command", 4.0, 20.0), ("New Pass", 1.0, 400.0)])))
+        (tmp_path / "old.json").write_text(json.dumps({"gpu": {"frames": 300, "fps_estimate": 90.0}}))
+        got = mcp.tool_perf_compare("a", "b")
+        assert got["encoders"]["encoders_per_frame_p50"] == {"a": 2, "b": 7, "change": 5, "change_pct": 250.0}
+        assert got["encoders"]["short_encoder_share"] == {"a": 0.02, "b": 0.5, "change": 0.48, "change_pct": None}
+        assert got["encoders"]["gpu_idle_share"]["change"] == 0.35, got["encoders"]
+        assert [(r["label"], r["state"], r["ms_per_frame_change"]) for r in got["labels"]] == [
+            ("New Pass", "new", 2.0), ("Render Command", "changed", -1.0), ("Old Pass", "gone", -0.5),
+            ("Blit Command", "changed", 0.0)], got["labels"]
+        assert got["metrics"]["fps"]["change"] == 0.0 and got["too_short"] == []
+        old = mcp.tool_perf_compare("old", "b")
+        assert old["encoders"]["missing_in"] == ["old"] and "labels" not in old, old
+        assert old["metrics"]["fps"] == {"a": 90.0, "b": 100.0, "change": 10.0, "change_pct": 11.1}, old["metrics"]
+        try:
+            mcp.tool_perf_compare("a", "b", short_us=30)
+            raise AssertionError("short_us 30 must fail")
+        except mcp.ToolError as error:
+            assert "short_us is one of" in str(error), error
+    finally:
+        mcp.OUT = saved
+
+
+def test_baseline(tmp_path):
+    """perf_baseline saves copies of several runs as a reference with their range, perf_runs leaves the reference
+    file out, and perf_check judges a run against that range: same inside it, regressed when FPS falls below it by
+    more than the margin or an encoder per frame is added, improved when FPS rises above it, and still usable once
+    the reference's runs are deleted."""
+    import metal_trace_mcp as mcp
+
+    def summary(fps, gpu_ms, encoders, frames=300):
+        return {"gpu": {"frames": frames, "fps_estimate": fps, "frame_gpu_ms": {"mean": gpu_ms, "p95": gpu_ms * 2},
+                        "frame_interval_ms": {"p95": 20.0}},
+                "encoders": {"per_frame": {"p50": encoders}, "command_buffers_per_frame": {"p50": 5},
+                             "short_share": {"25": 0.5}, "by_label": [{"label": "Render", "per_frame": 1.0, "total_ms": 1.0}]},
+                "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 4}}}
+    saved, (mcp.OUT, mcp.BASELINES) = (mcp.OUT, mcp.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        for name, fps in (("r1", 60.0), ("r2", 62.0), ("r3", 61.0)):
+            (tmp_path / f"{name}.json").write_text(json.dumps(summary(fps, 4.3, 7)))
+        got = mcp.tool_perf_baseline("ds", ["r1", "r2", "r3"])
+        assert got["range"]["fps"] == {"min": 60.0, "max": 62.0} and got["runs"] == ["r1", "r2", "r3"], got
+        assert [r["run"] for r in mcp.tool_perf_runs()["rows"]] == ["r3", "r2", "r1"]
+        assert mcp.tool_perf_baseline()["baselines"][0]["name"] == "ds"
+        cases = {"same": summary(59.0, 4.4, 7), "regressed_fps": summary(55.0, 4.3, 7),
+                 "regressed_enc": summary(61.0, 4.3, 8), "improved": summary(65.0, 4.3, 7),
+                 "short": summary(61.0, 4.3, 7, frames=50), "old": {"gpu": {"frames": 300, "fps_estimate": 61.0}}}
+        for name, s in cases.items():
+            (tmp_path / f"{name}.json").write_text(json.dumps(s))
+        assert mcp.tool_perf_check("same", "ds")["verdict"] == "same"
+        fps = mcp.tool_perf_check("regressed_fps", "ds")
+        assert fps["verdict"] == "regressed" and fps["regressed"][0]["metric"] == "fps", fps
+        enc = mcp.tool_perf_check("regressed_enc", "ds")
+        assert [r["metric"] for r in enc["regressed"]] == ["encoders_per_frame_p50"], enc
+        assert enc["comparison"]["encoders"]["encoders_per_frame_p50"]["b"] == 8
+        assert mcp.tool_perf_check("improved", "ds")["verdict"] == "improved"
+        assert "hint" in mcp.tool_perf_check("short", "ds")
+        old = mcp.tool_perf_check("old", "ds")
+        assert old["verdict"] == "same" and "encoders_per_frame_p50" in old["unchecked"], old
+        for name in ("r1", "r2", "r3"):
+            (tmp_path / f"{name}.json").unlink()
+        assert mcp.tool_perf_check("same", "ds")["verdict"] == "same", "a reference outlives its runs"
+        for bad in (("bad name!", ["same"]), ("nope", None), (None, ["same"])):
+            try:
+                mcp.tool_perf_baseline(*bad)
+                raise AssertionError(bad)
+            except mcp.ToolError:
+                pass
+        try:
+            mcp.tool_perf_check("same", "nope")
+            raise AssertionError("missing reference must fail")
+        except mcp.ToolError as error:
+            assert "no reference" in str(error)
+    finally:
+        mcp.OUT, mcp.BASELINES = saved
+
+
+def test_layer(tmp_path):
+    """A recording's layer fingerprint is stable, changes with any Direct3D DLL, carries the overrides and program
+    variables, and perf_compare tells two layers from one."""
+    import metal_trace_mcp as mcp
+    wine, prefix = tmp_path / "mullion-wine", tmp_path / "prefix"
+    (wine / "bin").mkdir(parents=True)
+    (wine / "bin" / "wine").write_text("#!/bin/sh\necho wine-11.0\n")
+    (wine / "bin" / "wine").chmod(0o755)
+    builtin, system32 = wine / "lib" / "wine" / "x86_64-windows", prefix / "drive_c" / "windows" / "system32"
+    builtin.mkdir(parents=True)
+    system32.mkdir(parents=True)
+    for name in mcp.LAYER_DLLS:
+        (builtin / f"{name}.dll").write_bytes(name.encode())
+    (system32 / "d3d12.dll").write_bytes(b"d3d12")
+    (prefix / "user.reg").write_text('[Software\\\\Wine\\\\DllOverrides] 1\n"*d3d12"="native,builtin"\n"comctl32"="n"\n'
+                                     '[Software\\\\Wine\\\\Other] 2\n"dxgi"="n"\n')
+    saved = os.environ.get("WINEDLLOVERRIDES")
+    os.environ["WINEDLLOVERRIDES"] = "d3d11=n"
+    try:
+        one = mcp.layer_of(str(wine), str(prefix), "MULLION_DIAG=profile LOG=/tmp/x/log.txt")
+        assert one == mcp.layer_of(str(wine), str(prefix), "MULLION_DIAG=profile LOG=/tmp/x/log.txt")
+    finally:
+        os.environ.pop("WINEDLLOVERRIDES") if saved is None else os.environ.update(WINEDLLOVERRIDES=saved)
+    assert one["wine"] == "mullion-wine" and one["wine_version"] == "wine-11.0", one
+    assert one["overrides"] == {"environment": "d3d11=n;mscoree=;mshtml=", "registry": {"*d3d12": "native,builtin"}}
+    assert one["dlls"]["d3d12"]["prefix"]["bytes"] == 5 and one["dlls"]["dxgi"]["prefix"] is None, one["dlls"]
+    assert one["program_env"] == "MULLION_DIAG=profile LOG=log.txt" and str(tmp_path) not in json.dumps(one)
+    (builtin / "d3d11.dll").write_bytes(b"other build")
+    two = mcp.layer_of(str(wine), str(prefix))
+    assert two["fingerprint"] != one["fingerprint"]
+    # Wine's first boot copies its own DLLs into the prefix: the same DLL, so nothing changes
+    (system32 / "dxgi.dll").write_bytes(b"dxgi")
+    assert mcp.layer_of(str(wine), str(prefix))["fingerprint"] == two["fingerprint"]
+    (system32 / "dxgi.dll").write_bytes(b"other dxgi")
+    three = mcp.layer_of(str(wine), str(prefix))
+    assert three["fingerprint"] != two["fingerprint"]
+    assert mcp.layer_change({"layer": two}, {"layer": three}, "a", "b")["differs"] == ["dxgi"]
+    (system32 / "dxgi.dll").unlink()
+    assert mcp.layer_of("native", "-") == {"none": "native Metal, no translation layer", "program_env": ""}
+    runs = {"one": one, "one-again": one, "two": two, "native": mcp.layer_of("native", "-"), "old": None}
+    same = mcp.layer_change({"layer": runs["one"]}, {"layer": runs["one-again"]}, "a", "b")
+    assert same["same"] and same["differs"] == [] and "program_env" not in same, same
+    other = mcp.layer_change({"layer": runs["one"]}, {"layer": runs["two"]}, "a", "b")
+    assert not other["same"] and other["differs"] == ["d3d11"] and "two layers" in other["note"], other
+    assert other["program_env"] == {"a": "MULLION_DIAG=profile LOG=log.txt", "b": ""}
+    assert not mcp.layer_change({"layer": runs["native"]}, {"layer": runs["one"]}, "a", "b")["same"]
+    assert mcp.layer_change({}, {"layer": runs["one"]}, "old", "b")["missing_in"] == ["old"]
+    assert mcp.layer_label(runs["native"]) == "native" and mcp.layer_label(one).endswith("mullion-wine wine-11.0")
+
+
 def test_workloads(tmp_path):
     """workload_fetch keeps an archive whose SHA-256 matches and refuses one that does not or that would extract
     outside its directory; perf_record turns a fetched workload into its program, Wine and arguments."""
@@ -214,7 +357,7 @@ def test_server(tmp_path):
     assert sorted(replies) == list(range(1, 26)), (replies, proc.stderr)
     assert [p["name"] for p in replies[22]["result"]["prompts"]] == ["compare-layer"]
     steps = replies[23]["result"]["messages"][0]["content"]["text"]
-    assert "api=d3d11" in steps and "workload=drawstress" in steps and "perf_diagnose" in steps, steps
+    assert all(w in steps for w in ("api=d3d11", "workload=drawstress", "perf_compare a=", "labels")), steps
     # an argument that is not a plain name is dropped, so the default api stays
     assert "rm -rf" not in replies[24]["result"]["messages"][0]["content"]["text"]
     assert replies[25]["error"]["code"] == -32602
@@ -223,7 +366,7 @@ def test_server(tmp_path):
     assert replies[14]["result"]["protocolVersion"] == "2025-06-18"
     assert replies[15]["result"] == {} and replies[16]["error"]["code"] == -32600
     assert replies[17]["result"] == {"resourceTemplates": []}
-    assert len(replies[2]["result"]["tools"]) == 12
+    assert len(replies[2]["result"]["tools"]) == 14
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -292,7 +435,7 @@ def test_overrun(tmp_path):
 
 
 def main():
-    tests = [test_report, test_encoders, test_diagnose, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
+    tests = [test_report, test_encoders, test_diagnose, test_compare, test_baseline, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
