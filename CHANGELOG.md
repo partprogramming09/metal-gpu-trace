@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.8.0 — 2026-11-01
 
 - `perf_report.py` exports the table of contents and its tables at the same time instead of one after another, so a
   summary takes about as long as the slowest export; an optional table the trace lacks is skipped, and a failure
