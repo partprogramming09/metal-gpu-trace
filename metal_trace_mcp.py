@@ -24,12 +24,17 @@ TOOLS_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 import gputrace_read  # noqa: E402
 import perf_report  # noqa: E402
+if sys.platform == "win32":
+    import perf_record_windows  # noqa: E402
 
 OUT = pathlib.Path(os.environ.get("METAL_TRACE_OUT", "perf-runs")).resolve()
-READ = [OUT] + [pathlib.Path(p).resolve() for p in os.environ.get("METAL_TRACE_READ", "").split(":") if p]
-FAMILIES = json.loads((TOOLS_DIR / "data" / "apple-gpu-families.json").read_text())
-WORKLOADS = json.loads((TOOLS_DIR / "data" / "workloads.json").read_text())["workloads"]
-CACHE = pathlib.Path("~/Library/Caches/metal-gpu-trace").expanduser()
+READ = [OUT] + [pathlib.Path(p).resolve() for p in os.environ.get("METAL_TRACE_READ", "").split(os.pathsep) if p]
+FAMILIES = json.loads((TOOLS_DIR / "data" / "apple-gpu-families.json").read_text(encoding="utf-8"))
+WORKLOADS = json.loads((TOOLS_DIR / "data" / "workloads.json").read_text(encoding="utf-8"))["workloads"]
+if sys.platform == "win32":
+    CACHE = pathlib.Path(os.environ.get("LOCALAPPDATA", "~/.cache")).expanduser() / "metal-gpu-trace"
+else:
+    CACHE = pathlib.Path("~/Library/Caches/metal-gpu-trace").expanduser()
 MAX_LIMIT = 500
 # named references for perf_check: copies of their runs' summaries, so KEEP_RUNS deleting a run does not break them
 BASELINES = OUT / "baselines.json"
@@ -107,14 +112,16 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
         raise ToolError("pass program, or workload and api (workload_list lists them)")
     wine = wine or os.environ.get("METAL_TRACE_WINE")
     if not wine:
-        raise ToolError("pass wine (a Wine directory holding bin/wine, or native) or set METAL_TRACE_WINE")
+        if sys.platform != "win32":
+            raise ToolError("pass wine (a Wine directory holding bin/wine, or native) or set METAL_TRACE_WINE")
+        wine = "native"
     program = pathlib.Path(program).expanduser()
     if not program.exists():
         raise ToolError(f"no program at {program.name}")
     workdir = pathlib.Path(workdir).expanduser() if workdir else program.parent
     prefix = pathlib.Path(prefix or os.environ.get("WINEPREFIX", "~/.wine")).expanduser()
-    return record(label, seconds, wine, prefix, workdir, [str(program.resolve()), *shlex.split(args)], program_env,
-                  memory)
+    return record(label, seconds, wine, prefix, workdir,
+                  [str(program.resolve()), *shlex.split(args, posix=sys.platform != "win32")], program_env, memory)
 
 
 def workload_entry(name):
@@ -134,7 +141,8 @@ def workload_command(name, api, dim, wine, args):
         raise ToolError(f"{name} is not downloaded yet; call workload_fetch first")
     run = entry["apis"][api]
     program_env = f"{entry['dim_variable']}={int(dim)}" if dim else ""
-    return (target / entry["dir"] / run["program"], wine if run["wine"] else "native",
+    use_wine = run["wine"] and sys.platform != "win32"
+    return (target / entry["dir"] / run["program"], wine if use_wine else "native",
             " ".join(filter(None, [run["args"], args])), program_env)
 
 
@@ -307,6 +315,19 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
     if not memory:
         env["PERF_MEMORY"] = "0"
     layer = layer_of(wine, prefix, env["PERF_ENV"])
+    if sys.platform == "win32":
+        try:
+            summary, json_path = perf_record_windows.record_windows(
+                label, int(seconds), wine, prefix, workdir, command, env["PERF_ENV"],
+                out_dir=OUT, timeout=deadline(seconds)
+            )
+        except (RuntimeError, ValueError) as error:
+            raise ToolError(str(error)) from error
+        except OSError as error:
+            raise ToolError(f"recording failed: {error}") from error
+        summary["layer"] = layer
+        json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        return summary
     before = set(OUT.glob(f"{label}_*"))
     tmp = pathlib.Path(os.environ.get("TMPDIR", "/tmp"))
     ktraces = set(tmp.glob("instruments*.ktrace"))
@@ -332,9 +353,9 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
     if proc.returncode or not new:
         reason = (stderr.strip().splitlines() or ["no summary was written"])[-1]
         raise ToolError(f"recording failed (exit {proc.returncode}): {reason}")
-    summary = json.loads(new[-1].read_text())
+    summary = json.loads(new[-1].read_text(encoding="utf-8"))
     summary["layer"] = layer
-    new[-1].write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
+    new[-1].write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return summary
 
 
@@ -346,7 +367,7 @@ def tool_perf_runs(offset=0, limit=50):
         if path.name == BASELINES.name:
             continue
         try:
-            s = json.loads(path.read_text())
+            s = json.loads(path.read_text(encoding="utf-8"))
         except ValueError:  # a summary still being written
             continue
         gpu = s.get("gpu", {})
@@ -366,7 +387,7 @@ def tool_perf_compare(a, b, short_us=25):
     count and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:
     with different layers it compares layers, not one change. Recordings with under 100 frames are flagged: too
     short to compare."""
-    sa, sb = (json.loads(run_path(r).read_text()) for r in (a, b))
+    sa, sb = (json.loads(run_path(r).read_text(encoding="utf-8")) for r in (a, b))
     return compare_summaries(sa, sb, a, b, short_us)
 
 
@@ -421,7 +442,7 @@ CHECKED = {
 
 def load_baselines():
     """Returns the saved references, by name."""
-    return json.loads(BASELINES.read_text()) if BASELINES.exists() else {}
+    return json.loads(BASELINES.read_text(encoding="utf-8")) if BASELINES.exists() else {}
 
 
 def tool_perf_baseline(name=None, runs=None):
@@ -438,10 +459,10 @@ def tool_perf_baseline(name=None, runs=None):
             raise ToolError("runs need a name for the reference")
         if isinstance(runs, str):
             runs = [runs]
-        summaries = [json.loads(run_path(r).read_text()) for r in runs]
+        summaries = [json.loads(run_path(r).read_text(encoding="utf-8")) for r in runs]
         baselines[name] = {"runs": list(runs), "set": time.strftime("%Y-%m-%d"), "summaries": summaries}
         OUT.mkdir(parents=True, exist_ok=True)
-        BASELINES.write_text(json.dumps(baselines))
+        BASELINES.write_text(json.dumps(baselines), encoding="utf-8")
     if name is not None:
         if name not in baselines:
             raise ToolError(f"no reference {name}; perf_baseline with no arguments lists them")
@@ -475,7 +496,7 @@ def tool_perf_check(run, baseline, margin_pct=3):
     if baseline not in baselines:
         raise ToolError(f"no reference {baseline}; perf_baseline with no arguments lists them")
     ref = baselines[baseline]
-    s = json.loads(run_path(run).read_text())
+    s = json.loads(run_path(run).read_text(encoding="utf-8"))
     span = ranges(ref["summaries"])
     worse, better, unchecked = [], [], []
     for metric, (get, higher_is_worse) in CHECKED.items():
@@ -548,7 +569,7 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     share of short encoders, the labels with the most GPU time and the GPU's idle time. Read the idle time together
     with the FPS: a program waiting for vsync idles too. Defaults come from bgfx 17-drawstress on an M1 Pro: 7
     encoders per frame and 50% under 25 us under Mullion, 2 and 2% in native Metal."""
-    s = json.loads(run_path(run).read_text())
+    s = json.loads(run_path(run).read_text(encoding="utf-8"))
     encoders = s.get("encoders")
     if not encoders:
         raise ToolError(f"{run} was summarized before version 0.4.0 and has no encoder numbers; record it again")
@@ -883,6 +904,8 @@ def main():
     if sys.argv[1:] == ["--version"]:
         print(f"metal-gpu-trace {__version__}")
         return
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
     for line in sys.stdin:
         if not line.strip():
             continue

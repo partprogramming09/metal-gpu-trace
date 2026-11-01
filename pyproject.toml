@@ -16,6 +16,7 @@ classifiers = [
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
   "Programming Language :: Python :: 3",
   "Topic :: Software Development :: Testing",
   "Topic :: System :: Benchmark",
@@ -40,4 +41,5 @@ bypass-selection = true
 "gputrace_read.py" = "metal_gpu_trace/gputrace_read.py"
 "perf_report.py" = "metal_gpu_trace/perf_report.py"
 "perf_record.sh" = "metal_gpu_trace/perf_record.sh"
+"perf_record_windows.py" = "metal_gpu_trace/perf_record_windows.py"
 "data" = "metal_gpu_trace/data"

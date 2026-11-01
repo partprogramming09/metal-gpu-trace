@@ -81,6 +81,24 @@ claude mcp list
 `claude mcp list` shows `metal-trace` as connected. `--scope user` makes it available in every project; leave it out
 to add it to the current project only.
 
+### Windows
+
+On Windows the server records native programs through the DWM compositor (`perf_record_windows.py`); no Wine and no Metal. `METAL_TRACE_WINE` is not needed: `perf_record` and `perf_attach` use `native`. `METAL_TRACE_READ` is separated by `;`.
+
+```powershell
+winget install --id=astral-sh.uv -e
+claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=%USERPROFILE%\perf-runs -- uvx metal-gpu-trace
+claude mcp list
+```
+
+To run from a clone instead of PyPI (needs Python 3.9 or newer):
+
+```powershell
+claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=%USERPROFILE%\perf-runs -- python C:\path\to\metal-gpu-trace\metal_trace_mcp.py
+```
+
+In JSON clients use `"command": "uvx"` (or the full path `where uvx` prints) and Windows paths with doubled backslashes. Claude Desktop reads `%APPDATA%\Claude\claude_desktop_config.json`. Run the Windows tests with `python -m pytest test_perf_record_windows.py`.
+
 ### Claude Desktop, Cursor and other JSON clients
 
 These apps do not expand `~` or `$HOME`: write absolute paths.
