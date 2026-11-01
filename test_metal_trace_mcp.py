@@ -25,6 +25,27 @@ def write_capture(directory):
     return capture
 
 
+def test_no_memory(tmp_path):
+    """summarize() asks for the Metal memory table by default and leaves it out with memory=False."""
+    asked = []
+
+    def fake(trace, schemas, optional=()):
+        asked.append(schemas)
+        raise RuntimeError("stop")
+
+    saved = perf_report.toc_and_tables
+    perf_report.toc_and_tables = fake
+    try:
+        for memory in (True, False):
+            try:
+                perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=memory)
+            except RuntimeError:
+                pass
+    finally:
+        perf_report.toc_and_tables = saved
+    assert perf_report.MEMORY in asked[0] and perf_report.MEMORY not in asked[1], asked
+
+
 def test_toc_and_tables(tmp_path):
     """The table of contents and every table are exported together; an optional table the trace lacks is dropped and
     its file deleted, and a failing export leaves no file behind."""
@@ -554,7 +575,7 @@ def test_overrun(tmp_path):
 
 
 def main():
-    tests = [test_toc_and_tables, test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
+    tests = [test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

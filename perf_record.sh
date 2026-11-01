@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Records a Wine or macOS program with Metal System Trace into $PERF_OUT, keeping the newest KEEP_RUNS runs.
-# Usage: [PERF_OUT=dir] [KEEP_TRACE=1] [KEEP_RUNS=N] perf_record.sh <label> <seconds> <wine dir|native> <prefix> <working dir> <program> [args...]
+# Usage: [PERF_OUT=dir] [KEEP_TRACE=1] [KEEP_RUNS=N] [PERF_MEMORY=0 skips the Metal memory table] perf_record.sh <label> <seconds> <wine dir|native> <prefix> <working dir> <program> [args...]
 #    or: perf_record.sh <label> <seconds> attach - - <pid|name>   (records a running program, left running afterwards)
 set -euo pipefail
 
@@ -67,7 +67,9 @@ fi
 kill $sampler 2>/dev/null || true
 [ -d $out/$name.trace ] || { echo "no recording at $out/$name.trace" >&2; exit 1; }
 
-python3 -I $here/perf_report.py $out/$name.trace --label $name --out $out
+report=(--label $name --out $out)
+[[ ${PERF_MEMORY:-1} == 0 ]] && report+=(--no-memory)
+python3 -I $here/perf_report.py $out/$name.trace $report
 # the .trace goes once its numbers are in the .json; KEEP_TRACE=1 keeps it for trace_tables, trace_query or Instruments
 [[ ${KEEP_TRACE:-0} == 1 ]] || rm -rf $out/$name.trace
 if [[ ${KEEP_RUNS:-} == <1-> ]]; then

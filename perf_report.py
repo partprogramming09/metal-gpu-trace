@@ -1,6 +1,6 @@
 """Summarizes an Instruments "Metal System Trace" recording of one launched program: GPU time per frame and memory.
 
-Usage: python3 -I perf_report.py <recording.trace> [--label NAME] [--out DIR]
+Usage: python3 -I perf_report.py <recording.trace> [--label NAME] [--out DIR] [--no-memory]
 Writes <out>/<label>.json (summary), <label>.frames.csv (one row per GPU frame) and <label>.metal_memory.csv (Metal
 memory over time). A <recording>.rss.csv beside the trace adds the process's resident memory.
 """
@@ -19,7 +19,8 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 # the tables a summary reads, one xpath each (a multi-table xpath keeps the first table's columns only)
-TABLES = ("metal-gpu-intervals", "metal-current-allocated-size", "gpu-performance-state-intervals")
+MEMORY = "metal-current-allocated-size"
+TABLES = ("metal-gpu-intervals", MEMORY, "gpu-performance-state-intervals")
 # read only when the trace has it: without it encoders go without labels
 OPTIONAL = ("metal-application-encoders-list",)
 
@@ -222,14 +223,16 @@ def idle_gaps(spans):
             "idle_share": round(sum(gaps) / whole, 3) if whole else None}
 
 
-def summarize(trace, label=None, out=None):
-    """Summarizes `trace`, writes the JSON and CSV files into `out` (default: beside it) and returns the summary."""
+def summarize(trace, label=None, out=None, memory=True):
+    """Summarizes `trace`, writes the JSON and CSV files into `out` (default: beside it) and returns the summary.
+    With `memory` false the Metal memory table, the slowest to read, is skipped: no metal_memory_mib and no CSV."""
     trace = pathlib.Path(trace)
     label = label or trace.stem
     out = pathlib.Path(out) if out else trace.parent
     out.mkdir(parents=True, exist_ok=True)
 
-    toc, tables = toc_and_tables(trace, TABLES + OPTIONAL, optional=OPTIONAL)
+    schemas = [t for t in TABLES if memory or t != MEMORY]
+    toc, tables = toc_and_tables(trace, tuple(schemas) + OPTIONAL, optional=OPTIONAL)
     try:
         launched = next((p for p in toc.iter("process") if p.attrib.get("type") in ("launched", "attached")), None)
         if launched is None:
@@ -293,21 +296,22 @@ def summarize(trace, label=None, out=None):
         summary["gpu_idle"] = idle_gaps(spans)
 
         # Metal memory the launched process holds over time
-        allocated = []
-        for row in rows(tables["metal-current-allocated-size"]):
-            size, start = number(row.get("current-allocated-size")), number(row.get("start"))
-            if pid_of(row.get("process")) == pid and size is not None and start is not None:
-                allocated.append((start / 1e6, size))
-        allocated.sort()
-        mib = [size / 2**20 for _, size in allocated]
-        summary["metal_memory_mib"] = (
-            {"samples": len(mib), "peak": round(max(mib), 2), "final": round(mib[-1], 2), "mean": round(statistics.fmean(mib), 2)}
-            if mib else {"samples": 0}
-        )
-        with open(out / f"{label}.metal_memory.csv", "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["time_ms", "metal_allocated_bytes"])
-            writer.writerows((round(t, 3), size) for t, size in allocated)
+        if memory:
+            allocated = []
+            for row in rows(tables[MEMORY]):
+                size, start = number(row.get("current-allocated-size")), number(row.get("start"))
+                if pid_of(row.get("process")) == pid and size is not None and start is not None:
+                    allocated.append((start / 1e6, size))
+            allocated.sort()
+            mib = [size / 2**20 for _, size in allocated]
+            summary["metal_memory_mib"] = (
+                {"samples": len(mib), "peak": round(max(mib), 2), "final": round(mib[-1], 2), "mean": round(statistics.fmean(mib), 2)}
+                if mib else {"samples": 0}
+            )
+            with open(out / f"{label}.metal_memory.csv", "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["time_ms", "metal_allocated_bytes"])
+                writer.writerows((round(t, 3), size) for t, size in allocated)
 
         # the process's resident memory, sampled by perf_record.sh beside the trace
         rss_csv = trace.with_suffix(".rss.csv")
@@ -344,9 +348,10 @@ def main():
     parser.add_argument("trace", type=pathlib.Path)
     parser.add_argument("--label", help="name of the output files; defaults to the trace's name")
     parser.add_argument("--out", type=pathlib.Path, help="output directory; defaults to the trace's directory")
+    parser.add_argument("--no-memory", action="store_true", help="skip the Metal memory table, the slowest to read")
     args = parser.parse_args()
     try:
-        summary = summarize(args.trace, args.label, args.out)
+        summary = summarize(args.trace, args.label, args.out, memory=not args.no_memory)
     except (ValueError, FileNotFoundError, RuntimeError) as error:
         sys.exit(str(error))
     print(json.dumps({k: summary.get(k) for k in ("gpu", "metal_memory_mib", "process_rss_mib")}, indent=2))

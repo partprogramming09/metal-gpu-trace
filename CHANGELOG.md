@@ -3,6 +3,12 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `PERF_MEMORY=0` (and `perf_report.py --no-memory`) skips the Metal memory table, the slowest to read: 41 % less time
+  to summarize a 626 MB Wine D3D12 trace (about 70 s to 42 s, median of 3). The summary then has no `metal_memory_mib`
+  and no `.metal_memory.csv`; everything else is identical. Memory stays on by default.
+
 ## 0.8.1 — 2026-11-01
 
 - `perf_record` waits up to 15 s per recorded second plus 180 s (was 10 s plus 120 s) before stopping a recording.
