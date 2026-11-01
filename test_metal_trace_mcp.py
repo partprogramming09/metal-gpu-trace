@@ -528,9 +528,9 @@ def test_no_runs_directory(tmp_path):
 
 def test_overrun(tmp_path):
     """A recording that overruns its deadline is stopped and leaves no files and no lock behind, and the deadline
-    covers reading back a 60 s recording (87 s per 10 s on an M1 Pro)."""
+    covers a 30 s Wine D3D12 recording (more than 407 s in all on an M1 Pro) and reading back a 60 s one."""
     import metal_trace_mcp as mcp
-    assert mcp.deadline(60) > 87 * 6
+    assert mcp.deadline(30) > 407 and mcp.deadline(60) > 87 * 6
     stubs, out = tmp_path / "stubs", tmp_path / "overrun"
     stubs.mkdir()
     out.mkdir()

@@ -19,7 +19,7 @@ import tarfile
 import tempfile
 import time
 
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 TOOLS_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 import gputrace_read  # noqa: E402
@@ -40,7 +40,7 @@ MAX_TEXT = 40_000
 INSTRUCTIONS = (
     "Records GPU use on Apple silicon with Metal System Trace. One recording runs at a time; keep other GPU work off "
     "the Mac while it records. Under Wine record 30 s or more: Wine's start-up takes part of the recording. Reading a "
-    "recording back takes 1 to 9 s per recorded second. Compare only recordings with 100 frames or more, and repeat "
+    "recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat "
     "a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short "
     "encoders, as translation layers do; perf_compare says how much two runs differ. trace_tables and trace_query "
     "need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, "
@@ -289,8 +289,9 @@ def layer_change(sa, sb, a, b):
 
 
 def deadline(seconds):
-    """Returns the seconds a recording of `seconds` may take in all; reading it back takes about 9 s per second."""
-    return int(seconds) * 10 + 120
+    """Returns the seconds a recording of `seconds` may take in all; closing and reading back a Wine D3D12 trace takes
+    up to 14 s per recorded second on an M1 Pro."""
+    return int(seconds) * 15 + 180
 
 
 def record(label, seconds, wine, prefix, workdir, command, program_env=""):
@@ -693,7 +694,7 @@ def hints(title, destructive=None, idempotent=False, open_world=False):
 
 RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits, '.', '_', '-'"},
          "program": {**S, "description": "path of the .exe, or of the macOS binary with wine=native"},
-         "seconds": {**I, "description": "recording length, default 20; use 30 under Wine, whose start-up takes part of it; the export afterwards takes about a minute"},
+         "seconds": {**I, "description": "recording length, default 20; use 30 under Wine, whose start-up takes part of it; the export afterwards takes several minutes under Wine"},
          "wine": {**S, "description": "Wine directory holding bin/wine, or native"},
          "prefix": {**S, "description": "Wine prefix, default WINEPREFIX or ~/.wine; ignored with native"},
          "workdir": {**S, "description": "directory the program starts in, default the program's own"},
@@ -713,7 +714,7 @@ TOOLS = {
     "perf_attach": (tool_perf_attach, schema(
         {"label": {**S, "description": "name for the run: letters, digits, '.', '_', '-'"},
          "process": {**S, "description": "pid, or a name in the program's command line such as Game.exe"},
-         "seconds": {**I, "description": "recording length, default 20; the export afterwards takes about a minute"}},
+         "seconds": {**I, "description": "recording length, default 20; the export afterwards takes several minutes under Wine"}},
         ["label", "process"]), hints("Record a running program", destructive=False)),
     "perf_runs": (tool_perf_runs, schema(PAGE), hints("List recordings")),
     "perf_compare": (tool_perf_compare, schema(

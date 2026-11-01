@@ -3,6 +3,12 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## 0.8.1 — 2026-11-01
+
+- `perf_record` waits up to 15 s per recorded second plus 180 s (was 10 s plus 120 s) before stopping a recording.
+  A 30 s Wine D3D12 recording (a 614 MB trace that `xctrace` takes minutes to close, then 93 s to read) overran the old
+  420 s limit and saved nothing; it now has 630 s.
+
 ## 0.8.0 — 2026-11-01
 
 - `perf_report.py` exports the table of contents and its tables at the same time instead of one after another, so a
