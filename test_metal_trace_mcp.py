@@ -25,6 +25,34 @@ def write_capture(directory):
     return capture
 
 
+def test_toc_and_tables(tmp_path):
+    """The table of contents and every table are exported together; an optional table the trace lacks is dropped and
+    its file deleted, and a failing export leaves no file behind."""
+    toc = ET.fromstring('<trace-toc><run><data><table schema="a"/></data></run></trace-toc>')
+
+    def fake_export(trace, xpath=None, toc=False, timeout=600):
+        if "fail" in xpath:
+            raise RuntimeError("boom")
+        path = tmp_path / (xpath.split('"')[-2] + ".xml")
+        path.write_text("<x/>")
+        return str(path)
+
+    saved = perf_report.export, perf_report.toc_of
+    perf_report.export, perf_report.toc_of = fake_export, lambda trace: toc
+    try:
+        got_toc, tables = perf_report.toc_and_tables("t", ("a",), optional=("b",))
+        assert got_toc is toc and set(tables) == {"a"} and pathlib.Path(tables["a"]).exists()
+        got_toc, tables = perf_report.toc_and_tables("t", ("a", "b"), optional=("b",))
+        assert set(tables) == {"a"} and not (tmp_path / "b.xml").exists(), "the missing optional table's file goes"
+        try:
+            perf_report.toc_and_tables("t", ("a", "fail"), optional=())
+            raise AssertionError("a failing export must raise")
+        except RuntimeError:
+            assert not (tmp_path / "a.xml").exists(), "the exports that did finish are deleted"
+    finally:
+        perf_report.export, perf_report.toc_of = saved
+
+
 def test_report(tmp_path):
     """Exported rows resolve xctrace's refs, the export file goes once read, shared summaries hold no paths, and a
     trace without the GPU intervals table fails with a hint."""
@@ -526,7 +554,7 @@ def test_overrun(tmp_path):
 
 
 def main():
-    tests = [test_report, test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
+    tests = [test_toc_and_tables, test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

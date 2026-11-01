@@ -6,6 +6,7 @@ memory over time). A <recording>.rss.csv beside the trace adds the process's res
 """
 import argparse
 import collections
+import concurrent.futures
 import csv
 import json
 import os
@@ -16,6 +17,11 @@ import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+
+# the tables a summary reads, one xpath each (a multi-table xpath keeps the first table's columns only)
+TABLES = ("metal-gpu-intervals", "metal-current-allocated-size", "gpu-performance-state-intervals")
+# read only when the trace has it: without it encoders go without labels
+OPTIONAL = ("metal-application-encoders-list",)
 
 
 def export(trace, xpath=None, toc=False, timeout=600):
@@ -57,6 +63,41 @@ def toc_of(trace):
         return ET.parse(path).getroot()
     finally:
         os.unlink(path)
+
+
+def table_xpath(schema):
+    """Returns the xpath that selects one table of the first run."""
+    return f'/trace-toc/run[@number="1"]/data/table[@schema="{schema}"]'
+
+
+def toc_and_tables(trace, schemas, optional=()):
+    """Returns the table of contents' root element and one exported file per schema, all xctrace calls in flight at
+    once: each spends its time reading the trace, so together they take about as long as the longest, not the sum.
+    A schema in `optional` that the table of contents lacks is left out of the files (xctrace fails on a table that is
+    not there). The caller owns the table files; nothing is left behind if a call fails."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(schemas) + 1) as pool:
+        toc_future = pool.submit(toc_of, trace)
+        futures = {schema: pool.submit(export, trace, table_xpath(schema)) for schema in schemas}
+        concurrent.futures.wait([*futures.values(), toc_future])
+
+    def discard():
+        for future in futures.values():
+            if future.done() and future.exception() is None and os.path.exists(future.result()):
+                os.unlink(future.result())
+
+    try:
+        toc = toc_future.result()
+        present = {t.attrib.get("schema") for t in toc.iter("table")}
+        tables = {}
+        for schema, future in futures.items():
+            if schema in present or schema not in optional:
+                tables[schema] = future.result()
+            elif future.exception() is None:
+                os.unlink(future.result())  # exported even without its table: keep nothing
+        return toc, tables
+    except Exception:
+        discard()
+        raise
 
 
 def rows(path):
@@ -188,101 +229,106 @@ def summarize(trace, label=None, out=None):
     out = pathlib.Path(out) if out else trace.parent
     out.mkdir(parents=True, exist_ok=True)
 
-    toc = toc_of(trace)
-    launched = next((p for p in toc.iter("process") if p.attrib.get("type") in ("launched", "attached")), None)
-    if launched is None:
-        raise ValueError("the trace has no launched or attached process; record it with xctrace --launch or --attach")
-    pid = int(launched.attrib["pid"])
-    summary = {
-        "label": label,
-        "trace": trace.name,
-        "process": {k: launched.attrib.get(k) for k in ("name", "pid", "termination-reason")}
-                   | {"arguments": public_arguments(launched.attrib.get("arguments"))},
-        # the machine's name and UUID stay out: these summaries are meant to be shared
-        "device": {
-            k: v
-            for k, v in (toc.find(".//device").attrib.items() if toc.find(".//device") is not None else [])
-            if k in ("platform", "model", "memory-size", "os-version")
-        },
-        "template": toc.findtext(".//template-name"),
-        "duration_s": float(toc.findtext(".//summary/duration") or 0),
-        # their numbers come out empty
-        "missing_tables": missing_tables(toc),
-    }
+    toc, tables = toc_and_tables(trace, TABLES + OPTIONAL, optional=OPTIONAL)
+    try:
+        launched = next((p for p in toc.iter("process") if p.attrib.get("type") in ("launched", "attached")), None)
+        if launched is None:
+            raise ValueError("the trace has no launched or attached process; record it with xctrace --launch or --attach")
+        pid = int(launched.attrib["pid"])
+        summary = {
+            "label": label,
+            "trace": trace.name,
+            "process": {k: launched.attrib.get(k) for k in ("name", "pid", "termination-reason")}
+                       | {"arguments": public_arguments(launched.attrib.get("arguments"))},
+            # the machine's name and UUID stay out: these summaries are meant to be shared
+            "device": {
+                k: v
+                for k, v in (toc.find(".//device").attrib.items() if toc.find(".//device") is not None else [])
+                if k in ("platform", "model", "memory-size", "os-version")
+            },
+            "template": toc.findtext(".//template-name"),
+            "duration_s": float(toc.findtext(".//summary/duration") or 0),
+            # their numbers come out empty
+            "missing_tables": missing_tables(toc),
+        }
 
-    # GPU work of the launched process, per frame and per channel (vertex, fragment, compute)
-    frames = collections.defaultdict(lambda: collections.defaultdict(float))
-    first_start = {}
-    intervals = 0
-    spans = []
-    for row in rows(export(trace, xpath='/trace-toc/run[@number="1"]/data/table[@schema="metal-gpu-intervals"]')):
-        if pid_of(row.get("process")) != pid:
-            continue
-        frame, start, duration = number(row.get("frame-number")), number(row.get("start")), number(row.get("duration"))
-        if frame is None or duration is None:
-            continue
-        channel = (row.get("channel-name").text or "?").strip() if row.get("channel-name") is not None else "?"
-        frames[frame][channel] += duration / 1e6
-        first_start[frame] = min(first_start.get(frame, start), start)
-        intervals += 1
-        if start is not None:
-            spans.append((frame, start, duration, text(row.get("encoder-id")), text(row.get("cmdbuffer-id"))))
+        # GPU work of the launched process, per frame and per channel (vertex, fragment, compute)
+        frames = collections.defaultdict(lambda: collections.defaultdict(float))
+        first_start = {}
+        intervals = 0
+        spans = []
+        for row in rows(tables["metal-gpu-intervals"]):
+            if pid_of(row.get("process")) != pid:
+                continue
+            frame, start, duration = number(row.get("frame-number")), number(row.get("start")), number(row.get("duration"))
+            if frame is None or duration is None:
+                continue
+            channel = (row.get("channel-name").text or "?").strip() if row.get("channel-name") is not None else "?"
+            frames[frame][channel] += duration / 1e6
+            first_start[frame] = min(first_start.get(frame, start), start)
+            intervals += 1
+            if start is not None:
+                spans.append((frame, start, duration, text(row.get("encoder-id")), text(row.get("cmdbuffer-id"))))
 
-    ordered = sorted(frames)
-    channels = sorted({c for f in frames.values() for c in f})
-    totals = [sum(frames[f].values()) for f in ordered]
-    starts = [first_start[f] / 1e6 for f in ordered]
-    gaps = [b - a for a, b in zip(starts, starts[1:]) if b > a]
-    summary["gpu"] = {
-        "intervals": intervals,
-        "frames": len(ordered),
-        "frame_gpu_ms": stats(totals),
-        "per_channel_ms": {c: stats([frames[f].get(c, 0.0) for f in ordered]) for c in channels},
-        "frame_interval_ms": stats(gaps),
-        "fps_estimate": round(1000 / statistics.median(gaps), 1) if gaps else None,
-    }
+        ordered = sorted(frames)
+        channels = sorted({c for f in frames.values() for c in f})
+        totals = [sum(frames[f].values()) for f in ordered]
+        starts = [first_start[f] / 1e6 for f in ordered]
+        gaps = [b - a for a, b in zip(starts, starts[1:]) if b > a]
+        summary["gpu"] = {
+            "intervals": intervals,
+            "frames": len(ordered),
+            "frame_gpu_ms": stats(totals),
+            "per_channel_ms": {c: stats([frames[f].get(c, 0.0) for f in ordered]) for c in channels},
+            "frame_interval_ms": stats(gaps),
+            "fps_estimate": round(1000 / statistics.median(gaps), 1) if gaps else None,
+        }
 
-    # how the work splits into encoders, and when the GPU waits for it
-    labels = {}
-    if "metal-application-encoders-list" not in summary["missing_tables"]:
-        xpath = '/trace-toc/run[@number="1"]/data/table[@schema="metal-application-encoders-list"]'
-        labels = {text(row.get("encoder-id")): text(row.get("encoder-label-indexed"))
-                  for row in rows(export(trace, xpath=xpath))}
-    summary["encoders"] = encoder_stats(spans, labels)
-    summary["gpu_idle"] = idle_gaps(spans)
+        # how the work splits into encoders, and when the GPU waits for it
+        labels = {}
+        if "metal-application-encoders-list" in tables:
+            labels = {text(row.get("encoder-id")): text(row.get("encoder-label-indexed"))
+                      for row in rows(tables["metal-application-encoders-list"])}
+        summary["encoders"] = encoder_stats(spans, labels)
+        summary["gpu_idle"] = idle_gaps(spans)
 
-    # Metal memory the launched process holds over time
-    allocated = []
-    for row in rows(export(trace, xpath='/trace-toc/run[@number="1"]/data/table[@schema="metal-current-allocated-size"]')):
-        size, start = number(row.get("current-allocated-size")), number(row.get("start"))
-        if pid_of(row.get("process")) == pid and size is not None and start is not None:
-            allocated.append((start / 1e6, size))
-    allocated.sort()
-    mib = [size / 2**20 for _, size in allocated]
-    summary["metal_memory_mib"] = (
-        {"samples": len(mib), "peak": round(max(mib), 2), "final": round(mib[-1], 2), "mean": round(statistics.fmean(mib), 2)}
-        if mib else {"samples": 0}
-    )
-    with open(out / f"{label}.metal_memory.csv", "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["time_ms", "metal_allocated_bytes"])
-        writer.writerows((round(t, 3), size) for t, size in allocated)
+        # Metal memory the launched process holds over time
+        allocated = []
+        for row in rows(tables["metal-current-allocated-size"]):
+            size, start = number(row.get("current-allocated-size")), number(row.get("start"))
+            if pid_of(row.get("process")) == pid and size is not None and start is not None:
+                allocated.append((start / 1e6, size))
+        allocated.sort()
+        mib = [size / 2**20 for _, size in allocated]
+        summary["metal_memory_mib"] = (
+            {"samples": len(mib), "peak": round(max(mib), 2), "final": round(mib[-1], 2), "mean": round(statistics.fmean(mib), 2)}
+            if mib else {"samples": 0}
+        )
+        with open(out / f"{label}.metal_memory.csv", "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["time_ms", "metal_allocated_bytes"])
+            writer.writerows((round(t, 3), size) for t, size in allocated)
 
-    # the process's resident memory, sampled by perf_record.sh beside the trace
-    rss_csv = trace.with_suffix(".rss.csv")
-    if rss_csv.exists():
-        with open(rss_csv) as f:
-            rss = [int(r["rss_kib"]) / 1024 for r in csv.DictReader(f) if r["rss_kib"].isdigit()]
-        summary["process_rss_mib"] = stats(rss) if rss else {"count": 0}
+        # the process's resident memory, sampled by perf_record.sh beside the trace
+        rss_csv = trace.with_suffix(".rss.csv")
+        if rss_csv.exists():
+            with open(rss_csv) as f:
+                rss = [int(r["rss_kib"]) / 1024 for r in csv.DictReader(f) if r["rss_kib"].isdigit()]
+            summary["process_rss_mib"] = stats(rss) if rss else {"count": 0}
 
-    # the GPU's clock states over the recording, as a share of time
-    states = collections.Counter()
-    for row in rows(export(trace, xpath='/trace-toc/run[@number="1"]/data/table[@schema="gpu-performance-state-intervals"]')):
-        state, duration = row.get("gpu-performance-state"), number(row.get("duration"))
-        if state is not None and duration:
-            states[(state.attrib.get("fmt") or state.text or "?").strip()] += duration
-    total_state = sum(states.values())
-    summary["gpu_performance_state_share"] = {k: round(v / total_state, 3) for k, v in states.most_common()} if total_state else {}
+        # the GPU's clock states over the recording, as a share of time
+        states = collections.Counter()
+        for row in rows(tables["gpu-performance-state-intervals"]):
+            state, duration = row.get("gpu-performance-state"), number(row.get("duration"))
+            if state is not None and duration:
+                states[(state.attrib.get("fmt") or state.text or "?").strip()] += duration
+        total_state = sum(states.values())
+        summary["gpu_performance_state_share"] = {k: round(v / total_state, 3) for k, v in states.most_common()} if total_state else {}
+    finally:
+        # rows() deletes each table's file once read; one left unread by a failure is removed here
+        for path in tables.values():
+            if os.path.exists(path):
+                os.unlink(path)
 
     with open(out / f"{label}.frames.csv", "w", newline="") as f:
         writer = csv.writer(f)

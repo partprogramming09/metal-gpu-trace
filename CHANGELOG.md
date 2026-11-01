@@ -3,6 +3,12 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `perf_report.py` exports the table of contents and its tables at the same time instead of one after another, so a
+  summary takes about as long as the slowest export; an optional table the trace lacks is skipped, and a failure
+  leaves no temporary file behind.
+
 ## 0.7.1 — 2026-10-18
 
 - `trace_count` and `trace_query` read an empty table whose export xctrace 27.1 cuts right after the schema
