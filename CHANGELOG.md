@@ -3,6 +3,11 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `perf_record` and `perf_baseline_record` take `memory` (default true): `memory=false` sets `PERF_MEMORY=0` for that
+  recording, so a client no longer needs the variable in the server's environment.
+
 ## 0.8.2 — 2026-11-01
 
 - `PERF_MEMORY=0` (and `perf_report.py --no-memory`) skips the Metal memory table, the slowest to read: 41 % less time

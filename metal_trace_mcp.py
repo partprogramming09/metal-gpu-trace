@@ -93,11 +93,12 @@ def page(items, offset, limit):
 
 
 def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, workdir=None, args="", workload=None,
-                     api=None, dim=None):
+                     api=None, dim=None, memory=True):
     """Records `program` (an .exe under Wine, or a macOS binary with wine="native"), or a test program fetched with
     workload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per
-    frame, frame intervals, FPS, Metal and resident memory. When it ends it stops every program of that Wine prefix
-    (wineserver -k), or every process named like the program with native."""
+    frame, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest
+    to read). When it ends it stops every program of that Wine prefix (wineserver -k), or every process named like
+    the program with native."""
     program_env = ""
     if workload:
         program, wine, args, program_env = workload_command(workload, api, dim, wine, args)
@@ -111,7 +112,8 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
         raise ToolError(f"no program at {program.name}")
     workdir = pathlib.Path(workdir).expanduser() if workdir else program.parent
     prefix = pathlib.Path(prefix or os.environ.get("WINEPREFIX", "~/.wine")).expanduser()
-    return record(label, seconds, wine, prefix, workdir, [str(program.resolve()), *shlex.split(args)], program_env)
+    return record(label, seconds, wine, prefix, workdir, [str(program.resolve()), *shlex.split(args)], program_env,
+                  memory)
 
 
 def workload_entry(name):
@@ -294,13 +296,15 @@ def deadline(seconds):
     return int(seconds) * 15 + 180
 
 
-def record(label, seconds, wine, prefix, workdir, command, program_env=""):
+def record(label, seconds, wine, prefix, workdir, command, program_env="", memory=True):
     """Runs perf_record.sh and returns the summary it wrote, stopping the whole recording and deleting its files if
-    it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV."""
+    it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV, and `memory` false sets PERF_MEMORY=0."""
     if not name_ok(label):
         raise ToolError("label holds only letters, digits, '.', '_' and '-'")
     env = dict(os.environ, PERF_OUT=str(OUT),
                PERF_ENV=" ".join(filter(None, [os.environ.get("PERF_ENV", ""), program_env])))
+    if not memory:
+        env["PERF_MEMORY"] = "0"
     layer = layer_of(wine, prefix, env["PERF_ENV"])
     before = set(OUT.glob(f"{label}_*"))
     proc = subprocess.Popen(["zsh", str(TOOLS_DIR / "perf_record.sh"), label, str(int(seconds)), str(wine),
@@ -702,7 +706,9 @@ RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits
          "workload": {**S, "description": "a test program from workload_list, fetched with workload_fetch, instead "
                                           "of program"},
          "api": {**S, "description": "with workload: mtl (native Metal), d3d11 or d3d12 (under wine)"},
-         "dim": {**I, "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame"}}
+         "dim": {**I, "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame"},
+         "memory": {"type": "boolean", "description": "default true; false skips the Metal memory table, the slowest "
+                                                      "to read (about 40 % faster summary): no metal_mib_peak"}}
 
 TOOLS = {
     "perf_record": (tool_perf_record, schema(RECORD_PROPS, ["label"]), hints("Record a program", destructive=True)),

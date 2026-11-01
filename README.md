@@ -39,6 +39,7 @@ to compare.
 Each recording keeps a JSON summary and three CSVs, about 2 MB for 10 s (most of it the Metal memory samples). The
 `.trace` (tens to hundreds of MB) is deleted unless `KEEP_TRACE=1`. `KEEP_RUNS=N` keeps only the newest N recordings. `PERF_MEMORY=0` skips the Metal memory table, the slowest to read:
 the summary then has no `metal_memory_mib` and there is no memory CSV (41 % faster to summarize a 626 MB trace).
+The MCP tools `perf_record` and `perf_baseline_record` offer the same as `memory=false`.
 
 ## MCP server
 

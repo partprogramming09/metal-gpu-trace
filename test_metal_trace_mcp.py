@@ -25,6 +25,23 @@ def write_capture(directory):
     return capture
 
 
+def test_memory_param(tmp_path):
+    """perf_record passes memory=false on to the recording, which sets PERF_MEMORY=0, and offers it in its schema."""
+    import metal_trace_mcp as mcp
+    seen = []
+    saved = mcp.record
+    mcp.record = lambda *args, **kw: seen.append(args[-1]) or {}
+    program = tmp_path / "prog"
+    program.write_text("")
+    try:
+        mcp.tool_perf_record("m", str(program), wine="native")
+        mcp.tool_perf_record("m", str(program), wine="native", memory=False)
+    finally:
+        mcp.record = saved
+    assert seen == [True, False], seen
+    assert mcp.RECORD_PROPS["memory"]["type"] == "boolean"
+
+
 def test_no_memory(tmp_path):
     """summarize() asks for the Metal memory table by default and leaves it out with memory=False."""
     asked = []
@@ -575,7 +592,7 @@ def test_overrun(tmp_path):
 
 
 def main():
-    tests = [test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
+    tests = [test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
