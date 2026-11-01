@@ -39,7 +39,8 @@ PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 MAX_TEXT = 40_000
 INSTRUCTIONS = (
     "Records GPU use on Apple silicon with Metal System Trace. One recording runs at a time; keep other GPU work off "
-    "the Mac while it records. Under Wine record 30 s or more: Wine's start-up takes part of the recording. Reading a "
+    "the Mac while it records. Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk "
+    "per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a "
     "recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat "
     "a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short "
     "encoders, as translation layers do; perf_compare says how much two runs differ. trace_tables and trace_query "
@@ -307,6 +308,8 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
         env["PERF_MEMORY"] = "0"
     layer = layer_of(wine, prefix, env["PERF_ENV"])
     before = set(OUT.glob(f"{label}_*"))
+    tmp = pathlib.Path(os.environ.get("TMPDIR", "/tmp"))
+    ktraces = set(tmp.glob("instruments*.ktrace"))
     proc = subprocess.Popen(["zsh", str(TOOLS_DIR / "perf_record.sh"), label, str(int(seconds)), str(wine),
                              str(prefix), str(workdir), *command],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
@@ -322,7 +325,7 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
         if (OUT / ".recording").is_dir():
             (OUT / ".recording").rmdir()
         # the partial .trace and CSVs of this run
-        for path in set(OUT.glob(f"{label}_*")) - before:
+        for path in (set(OUT.glob(f"{label}_*")) - before) | (set(tmp.glob("instruments*.ktrace")) - ktraces):
             shutil.rmtree(path) if path.is_dir() else path.unlink()
         raise ToolError(f"the recording took over {deadline(seconds)} s and was stopped; nothing was saved")
     new = sorted(set(OUT.glob(f"{label}_*.json")) - before)

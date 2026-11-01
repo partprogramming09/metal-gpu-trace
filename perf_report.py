@@ -23,6 +23,8 @@ MEMORY = "metal-current-allocated-size"
 TABLES = ("metal-gpu-intervals", MEMORY, "gpu-performance-state-intervals")
 # read only when the trace has it: without it encoders go without labels
 OPTIONAL = ("metal-application-encoders-list",)
+# each xctrace export keeps a temporary store of gigabytes on a big trace: two at a time bound the disk it needs
+EXPORT_WORKERS = 2
 
 
 def export(trace, xpath=None, toc=False, timeout=600):
@@ -72,11 +74,11 @@ def table_xpath(schema):
 
 
 def toc_and_tables(trace, schemas, optional=()):
-    """Returns the table of contents' root element and one exported file per schema, all xctrace calls in flight at
-    once: each spends its time reading the trace, so together they take about as long as the longest, not the sum.
+    """Returns the table of contents' root element and one exported file per schema, with at most EXPORT_WORKERS
+    xctrace calls in flight: they overlap a little, and each keeps a temporary store of gigabytes on a big trace.
     A schema in `optional` that the table of contents lacks is left out of the files (xctrace fails on a table that is
     not there). The caller owns the table files; nothing is left behind if a call fails."""
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(schemas) + 1) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=EXPORT_WORKERS) as pool:
         toc_future = pool.submit(toc_of, trace)
         futures = {schema: pool.submit(export, trace, table_xpath(schema)) for schema in schemas}
         concurrent.futures.wait([*futures.values(), toc_future])

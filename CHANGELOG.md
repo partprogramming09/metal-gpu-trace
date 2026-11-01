@@ -3,6 +3,18 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- Recording no longer fills the disk. `xctrace record` leaves a temporary `instruments*.ktrace` (5 to 16 GB for a
+  Wine D3D12 recording) in `$TMPDIR` that nothing deleted: 14 of them, 65 GB, filled a Mac in one afternoon.
+  `perf_record.sh` now deletes the ones its own run created, even when the run fails, and the server does the same
+  when it stops a recording that overran its deadline.
+- `perf_record.sh` checks the free disk in `$TMPDIR` and beside the recording before it starts, and refuses (exit 4)
+  below `2 + 0.8 GB per second` (26 GB for 30 s, 50 GB for 60 s; 48 GB peak measured for 60 s of Wine D3D12).
+  `PERF_MIN_FREE_GB` overrides it. The server's instructions say so.
+- `perf_report.py` runs at most 2 `xctrace export` at a time (`EXPORT_WORKERS`), not one per table: each keeps a
+  temporary store of gigabytes, and running them in parallel saved only about 8 s out of 64.
+
 ## 0.8.3 — 2026-11-01
 
 - `perf_record` and `perf_baseline_record` take `memory` (default true): `memory=false` sets `PERF_MEMORY=0` for that

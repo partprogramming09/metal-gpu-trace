@@ -21,11 +21,25 @@ name=${label}_$(date +%Y%m%d-%H%M%S)
 out=${PERF_OUT:-${here:h}/logs/perf}
 [[ -n ${PERF_OUT:-} || -d $out ]] || out=$PWD/perf-runs
 mkdir -p $out
+tmp=${TMPDIR:-/tmp}
+
+# Instruments' temporary files peak at about 0.8 GB per recorded second (48 GB measured for 60 s of Wine D3D12)
+need=$(( ${PERF_MIN_FREE_GB:-2 + (seconds * 8 + 9) / 10} ))
+for dir in $tmp $out; do
+  free=$(( $(df -k $dir | awk 'NR == 2 {print $4}') / 1048576 ))
+  (( free >= need )) || { echo "not enough free disk on $dir: $free GB free, $need GB needed (PERF_MIN_FREE_GB overrides)" >&2; exit 4; }
+done
 
 # one recording at a time: two programs sharing the GPU spoil both measurements
 lock=$out/.recording
 mkdir $lock 2>/dev/null || { echo "another recording is running ($lock); remove it if none is" >&2; exit 3; }
-trap 'rmdir $lock 2>/dev/null' EXIT
+before=(${tmp%/}/instruments*.ktrace(N))
+# Frees the lock and the temporary .ktrace files that xctrace left in $TMPDIR during this run.
+cleanup() {
+  rmdir $lock 2>/dev/null
+  for k in ${tmp%/}/instruments*.ktrace(N); do (( ${before[(Ie)$k]} )) || rm -rf $k; done
+}
+trap cleanup EXIT
 
 [[ $wine == attach ]] || cd $workdir
 # the resident memory of the program's Wine process, once a second, while Instruments records

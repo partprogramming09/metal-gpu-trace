@@ -63,12 +63,35 @@ def test_no_memory(tmp_path):
     assert perf_report.MEMORY in asked[0] and perf_report.MEMORY not in asked[1], asked
 
 
+def test_disk_guard(tmp_path):
+    """perf_record.sh refuses to start, before locking or recording, when the disk lacks the space Instruments needs."""
+    script = TOOLS / "perf_record.sh"
+    env = {**os.environ, "PERF_OUT": str(tmp_path), "PERF_MIN_FREE_GB": "99999999"}
+    proc = subprocess.run(["zsh", str(script), "g", "30", "native", "-", "-", "/bin/true"], env=env,
+                          capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 4 and "not enough free disk" in proc.stderr and "99999999 GB needed" in proc.stderr, proc
+    assert not (tmp_path / ".recording").exists(), "no lock is left behind"
+    default = subprocess.run(["zsh", str(script), "g", "60", "native", "-", "-", "/bin/true"],
+                             env={**os.environ, "PERF_OUT": str(tmp_path), "TMPDIR": "/nonexistent"},
+                             capture_output=True, text=True, timeout=60)
+    assert default.returncode != 0, "a missing TMPDIR volume must not pass the guard"
+
+
 def test_toc_and_tables(tmp_path):
-    """The table of contents and every table are exported together; an optional table the trace lacks is dropped and
-    its file deleted, and a failing export leaves no file behind."""
+    """At most EXPORT_WORKERS exports run at once; an optional table the trace lacks is dropped and its file
+    deleted, and a failing export leaves no file behind."""
+    import threading
+    import time
     toc = ET.fromstring('<trace-toc><run><data><table schema="a"/></data></run></trace-toc>')
+    running, peak, lock = [0], [0], threading.Lock()
 
     def fake_export(trace, xpath=None, toc=False, timeout=600):
+        with lock:
+            running[0] += 1
+            peak[0] = max(peak[0], running[0])
+        time.sleep(0.05)
+        with lock:
+            running[0] -= 1
         if "fail" in xpath:
             raise RuntimeError("boom")
         path = tmp_path / (xpath.split('"')[-2] + ".xml")
@@ -78,6 +101,10 @@ def test_toc_and_tables(tmp_path):
     saved = perf_report.export, perf_report.toc_of
     perf_report.export, perf_report.toc_of = fake_export, lambda trace: toc
     try:
+        got_toc, tables = perf_report.toc_and_tables("t", ("a", "c", "d", "e"), optional=("c", "d", "e"))
+        assert peak[0] <= perf_report.EXPORT_WORKERS, peak
+        for name in ("c", "d", "e"):
+            assert not (tmp_path / f"{name}.xml").exists()
         got_toc, tables = perf_report.toc_and_tables("t", ("a",), optional=("b",))
         assert got_toc is toc and set(tables) == {"a"} and pathlib.Path(tables["a"]).exists()
         got_toc, tables = perf_report.toc_and_tables("t", ("a", "b"), optional=("b",))
@@ -592,7 +619,7 @@ def test_overrun(tmp_path):
 
 
 def main():
-    tests = [test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
+    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
