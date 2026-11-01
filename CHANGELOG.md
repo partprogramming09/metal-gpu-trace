@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.8.3 — 2026-11-01
 
 - `perf_record` and `perf_baseline_record` take `memory` (default true): `memory=false` sets `PERF_MEMORY=0` for that
   recording, so a client no longer needs the variable in the server's environment.
