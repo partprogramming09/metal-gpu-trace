@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.8.4 — 2026-11-01
 
 - Recording no longer fills the disk. `xctrace record` leaves a temporary `instruments*.ktrace` (5 to 16 GB for a
   Wine D3D12 recording) in `$TMPDIR` that nothing deleted: 14 of them, 65 GB, filled a Mac in one afternoon.
