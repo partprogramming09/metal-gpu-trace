@@ -115,9 +115,10 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
     frame, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest
     to read). When it ends it stops every program of that Wine prefix (wineserver -k), or every process named like
     the program with native."""
-    program_env = ""
+    program_env, layer = "", None
     if workload:
         program, wine, args, program_env = workload_command(workload, api, dim, wine, args)
+        layer = workload_layer(workload, api, dim)
     if not program:
         raise ToolError("pass program, or workload and api (workload_list lists them)")
     wine = wine or os.environ.get("METAL_TRACE_WINE")
@@ -131,7 +132,7 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
     workdir = pathlib.Path(workdir).expanduser() if workdir else program.parent
     prefix = pathlib.Path(prefix or os.environ.get("WINEPREFIX", "~/.wine")).expanduser()
     return record(label, seconds, wine, prefix, workdir,
-                  [str(program.resolve()), *split_args(args)], program_env, memory)
+                  [str(program.resolve()), *split_args(args)], program_env, memory, layer=layer)
 
 
 def split_args(text):
@@ -149,6 +150,30 @@ def workload_entry(name):
     return entry, CACHE / f"{name}-{entry['sha256'][:12]}"
 
 
+def moltenvk_dir():
+    """Returns the directory METAL_TRACE_MOLTENVK names. It must hold libMoltenVK.dylib (arm64) and no spaces, because
+    the program's environment is passed to Instruments as space-separated NAME=VALUE pairs."""
+    raw = os.environ.get("METAL_TRACE_MOLTENVK")
+    if not raw:
+        raise ToolError("api vk runs through MoltenVK: set METAL_TRACE_MOLTENVK to the directory holding libMoltenVK.dylib")
+    path = pathlib.Path(raw).expanduser().resolve()
+    if not (path / "libMoltenVK.dylib").is_file():
+        raise ToolError("METAL_TRACE_MOLTENVK holds no libMoltenVK.dylib")
+    if any(c.isspace() for c in str(path)):
+        raise ToolError("the METAL_TRACE_MOLTENVK path may not contain spaces: copy libMoltenVK.dylib to another directory")
+    return path
+
+
+def workload_layer(name, api, dim):
+    """Returns the translation layer a workload's api runs through (MoltenVK, with its size and SHA-256), or None when
+    the api is native Metal or goes through Wine."""
+    if not workload_entry(name)[0]["apis"].get(api, {}).get("moltenvk"):
+        return None
+    entry = workload_entry(name)[0]
+    return {"moltenvk": "Vulkan on Metal through MoltenVK", "dylib": file_id(moltenvk_dir() / "libMoltenVK.dylib"),
+            "program_env": f"{entry['dim_variable']}={int(dim)}" if dim else ""}
+
+
 def workload_command(name, api, dim, wine, args):
     """Returns the program, Wine, arguments and program environment that run a fetched workload with `api`."""
     entry, target = workload_entry(name)
@@ -158,6 +183,8 @@ def workload_command(name, api, dim, wine, args):
         raise ToolError(f"{name} is not downloaded yet; call workload_fetch first")
     run = entry["apis"][api]
     program_env = f"{entry['dim_variable']}={int(dim)}" if dim else ""
+    if run.get("moltenvk"):
+        program_env = " ".join(filter(None, [program_env, f"DYLD_LIBRARY_PATH={moltenvk_dir()}"]))
     use_wine = run["wine"] and sys.platform != "win32"
     return (target / entry["dir"] / run["program"], wine if use_wine else "native",
             " ".join(filter(None, [run["args"], args])), program_env)
@@ -320,6 +347,8 @@ def layer_label(layer):
         return "native"
     if "unknown" in layer:
         return "attached"
+    if "moltenvk" in layer:
+        return f"moltenvk {((layer.get('dylib') or {}).get('sha256') or '')[:12]}".strip()
     return f"{layer['fingerprint']} {layer['wine']} {layer['wine_version'] or ''}".strip()
 
 
@@ -378,16 +407,17 @@ def deadline(seconds):
     return int(seconds) * 15 + 180
 
 
-def record(label, seconds, wine, prefix, workdir, command, program_env="", memory=True):
+def record(label, seconds, wine, prefix, workdir, command, program_env="", memory=True, layer=None):
     """Runs perf_record.sh and returns the summary it wrote, stopping the whole recording and deleting its files if
-    it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV, and `memory` false sets PERF_MEMORY=0."""
+    it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV, `memory` false sets PERF_MEMORY=0, and `layer`
+    names the translation layer a native run goes through (MoltenVK) instead of "native Metal"."""
     if not name_ok(label):
         raise ToolError("label holds only letters, digits, '.', '_' and '-'")
     env = dict(os.environ, PERF_OUT=str(OUT), PERF_PARENT_PID=str(os.getpid()),
                PERF_ENV=" ".join(filter(None, [os.environ.get("PERF_ENV", ""), program_env])))
     if not memory:
         env["PERF_MEMORY"] = "0"
-    layer = layer_of(wine, prefix, env["PERF_ENV"])
+    layer = layer or layer_of(wine, prefix, env["PERF_ENV"])
     if sys.platform == "win32":
         try:
             summary, json_path = perf_record_windows.record_windows(
@@ -930,7 +960,8 @@ RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits
          "args": {**S, "description": "program arguments as in a shell, quotes included"},
          "workload": {**S, "description": "a test program from workload_list, fetched with workload_fetch, instead "
                                           "of program"},
-         "api": {**S, "description": "with workload: mtl (native Metal), d3d11 or d3d12 (under wine)"},
+         "api": {**S, "description": "with workload: mtl (native Metal), vk (Vulkan through MoltenVK: set "
+                                                        "METAL_TRACE_MOLTENVK), d3d11 or d3d12 (under wine)"},
          "dim": {**I, "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame"},
          "memory": {"type": "boolean", "description": "default true; false skips the Metal memory table, the slowest "
                                                       "to read (about 40 % faster summary): no metal_mib_peak"}}

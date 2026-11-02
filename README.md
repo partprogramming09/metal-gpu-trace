@@ -162,12 +162,19 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `workload_list` | Lists the test programs `workload_fetch` can download |
 | `workload_fetch` | Downloads a test program once, checks its SHA-256 and keeps it in `~/Library/Caches/metal-gpu-trace`; Claude Code asks before every call |
 
-`perf_record` takes `workload`, `api` (`mtl`, `d3d11` or `d3d12`) and `dim` instead of `program`, to record a fetched
+`perf_record` takes `workload`, `api` (`mtl`, `vk`, `d3d11` or `d3d12`) and `dim` instead of `program`, to record a fetched
 test program. The first one is bgfx's
 [17-drawstress](https://github.com/partprogramming09/metal-gpu-trace/releases/tag/workloads-1) (BSD-2, 7.5 MB),
 built from source by `.github/workflows/workloads.yml`: a grid of cubes, `dim`³ draws per frame, with its shaders
 inside the program. The `compare-layer` prompt (`/metal-trace:compare-layer drawstress d3d12` in Claude Code) records it
 in native Metal and under the Wine in `METAL_TRACE_WINE`, then runs `perf_diagnose` and `perf_compare`.
+
+`api=vk` runs the same program through Vulkan on MoltenVK. MoltenVK is not shipped: set `METAL_TRACE_MOLTENVK` to a
+directory (no spaces) holding an arm64 `libMoltenVK.dylib`, such as the one in a Vulkan SDK or `brew install molten-vk`.
+The run's `layer` names MoltenVK with the library's SHA-256, so `perf_compare` against a native Metal run says it
+compares two layers. In one measurement at `dim=20`, 10 s each: native Metal 2 encoders per frame; MoltenVK 13, 91 % of
+them short, and the GPU idle 89 % of the time (`perf_diagnose`: `too_many_short_encoders` true). One pair of runs, not a
+benchmark.
 
 The same facts are MCP resources: `metal-trace://gpu-families` (all) and `metal-trace://gpu-families/apple7` to Each saved run is a resource too: `metal-trace://runs/<run>` reads its summary.
 `apple10`. They restate Apple's [Metal Feature Set Tables](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
