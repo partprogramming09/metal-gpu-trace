@@ -691,7 +691,8 @@ def kill_process_tree(pid):
         pass
 
 
-def record_windows(label, seconds, wine, prefix, workdir, command, program_env="", out_dir=None, timeout=None):
+def record_windows(label, seconds, wine, prefix, workdir, command, program_env="", out_dir=None, timeout=None,
+                   cancelled=None, progress=None):
     """Records a native Windows program, drawstress workload, or attached process.
 
     Returns (summary_dict, json_path).
@@ -811,12 +812,15 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
         start_mono = time.monotonic()
         t = 0
         rss_samples = []
-        timed_out = False
+        timed_out = was_cancelled = False
 
         while t <= seconds:
             now_mono = time.monotonic()
             if (now_mono - start_mono) > deadline_limit:
                 timed_out = True
+                break
+            if cancelled and cancelled():
+                was_cancelled = True
                 break
 
             rss_kib = get_process_rss_kib(pid)
@@ -831,6 +835,8 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             t += 1
             if t > seconds:
                 break
+            if progress and t % 5 == 0:
+                progress(t, seconds, f"recording: {t} s of {seconds} s")
 
             target_time = start_mono + t
             sleep_sec = target_time - time.monotonic()
@@ -856,7 +862,7 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             presentmon_err.unlink(missing_ok=True)
 
         # Check deadline overrun
-        if timed_out or (time.monotonic() - start_mono) > deadline_limit:
+        if was_cancelled or timed_out or (time.monotonic() - start_mono) > deadline_limit:
             # Terminate tree forcibly
             if presentmon_proc is not None and presentmon_proc.poll() is None:
                 presentmon_proc.kill()
@@ -874,6 +880,8 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
                     p.unlink()
                 except OSError:
                     pass
+            if was_cancelled:
+                raise RuntimeError("the recording was cancelled; nothing was saved")
             raise RuntimeError(f"the recording took over {deadline_limit} s and was stopped; nothing was saved")
 
         # Duration complete: if launched, terminate process
