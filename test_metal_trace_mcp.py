@@ -583,7 +583,7 @@ def test_server(tmp_path):
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
     asks = [t["name"] for t in replies[2]["result"]["tools"] if t.get("_meta", {}).get("anthropic/requiresUserInteraction")]
-    assert asks == ["workload_fetch"] and hints["workload_fetch"]["openWorldHint"], (asks, hints)
+    assert asks == ["workload_fetch", "presentmon_install"] and hints["workload_fetch"]["openWorldHint"], (asks, hints)
     assert hints["perf_record"]["destructiveHint"] and not hints["perf_attach"]["destructiveHint"], hints
     assert hints["perf_runs"]["readOnlyHint"] and all(h["title"] for h in hints.values()), hints
     m1 = replies[9]["result"]["structuredContent"]
