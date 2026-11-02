@@ -726,8 +726,42 @@ def test_progress_and_cancel(tmp_path):
     assert not list(out.iterdir()), list(out.iterdir())
 
 
+def test_check_cli(tmp_path):
+    """`metal-gpu-trace check` exits 0 for same or improved, 1 for regressed, 2 for a run that cannot be judged, and
+    prints one JSON line without the full comparison."""
+    import metal_trace_mcp as mcp
+
+    def summary(fps, frames=300):
+        return {"gpu": {"frames": frames, "fps_estimate": fps, "frame_gpu_ms": {"mean": 4.3, "p95": 8.0},
+                        "frame_interval_ms": {"p95": 20.0}},
+                "encoders": {"per_frame": {"p50": 7}, "command_buffers_per_frame": {"p50": 5},
+                             "short_share": {"25": 0.5}, "by_label": []},
+                "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 4}}}
+    for name, s in {"r1": summary(60.0), "r2": summary(62.0), "ok": summary(61.0), "bad": summary(40.0),
+                    "short": summary(61.0, frames=50)}.items():
+        (tmp_path / f"{name}.json").write_text(json.dumps(s))
+    saved, (mcp.OUT, mcp.BASELINES) = (mcp.OUT, mcp.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        mcp.tool_perf_baseline("ds", ["r1", "r2"])
+    finally:
+        mcp.OUT, mcp.BASELINES = saved
+
+    def check(*args):
+        proc = subprocess.run([sys.executable, "-I", str(TOOLS / "metal_trace_mcp.py"), "check", *args], text=True,
+                              capture_output=True, env=dict(os.environ, METAL_TRACE_OUT=str(tmp_path)))
+        return proc.returncode, proc.stdout, proc.stderr
+    code, out, _ = check("ok", "ds")
+    assert code == 0 and json.loads(out)["verdict"] == "same" and "comparison" not in out, (code, out)
+    code, out, _ = check("bad", "ds")
+    assert code == 1 and json.loads(out)["regressed"][0]["metric"] == "fps", (code, out)
+    assert check("bad", "ds", "--margin-pct", "99")[0] == 0, "a wide margin lets it pass"
+    assert check("short", "ds")[0] == 2, "a run under 100 frames cannot be judged"
+    for bad in (("nope", "ds"), ("ok", "nope"), ("ok",), ("ok", "ds", "--margin-pct", "x")):
+        assert check(*bad)[0] == 2, bad
+
+
 def main():
-    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel]
+    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

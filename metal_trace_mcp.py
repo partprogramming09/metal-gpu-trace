@@ -1073,11 +1073,39 @@ def handle(message):
     return {"jsonrpc": "2.0", "id": mid, "result": result}
 
 
+def check_cli(args):
+    """Runs `check RUN BASELINE [--margin-pct N]` for CI: prints perf_check's verdict, reasons and hints as one JSON
+    line and returns 0 when the run is the same or improved, 1 when it regressed, 2 when it could not be judged
+    (no such run or reference), or too short to judge (under 100 frames)."""
+    run, baseline, margin = (args + [None, None])[:2] + [3.0]
+    if "--margin-pct" in args:
+        try:
+            margin = float(args[args.index("--margin-pct") + 1])
+        except (IndexError, ValueError):
+            print("usage: metal-gpu-trace check RUN BASELINE [--margin-pct N]", file=sys.stderr)
+            return 2
+    if not run or not baseline or run.startswith("--") or baseline.startswith("--"):
+        print("usage: metal-gpu-trace check RUN BASELINE [--margin-pct N]", file=sys.stderr)
+        return 2
+    try:
+        result = tool_perf_check(run, baseline, margin)
+    except (ToolError, FileNotFoundError, ValueError) as error:
+        print(f"metal-gpu-trace: {error}", file=sys.stderr)
+        return 2
+    print(json.dumps({k: v for k, v in result.items() if k not in ("comparison", "range")}))
+    if "hint" in result:
+        return 2
+    return 1 if result["verdict"] == "regressed" else 0
+
+
 def main():
-    """Serves newline-delimited JSON-RPC on stdin and stdout until stdin closes; --version prints the version."""
+    """Serves newline-delimited JSON-RPC on stdin and stdout until stdin closes; --version prints the version, and
+    `check` judges a run for CI (see check_cli)."""
     if sys.argv[1:] == ["--version"]:
         print(f"metal-gpu-trace {__version__}")
         return
+    if sys.argv[1:2] == ["check"]:
+        sys.exit(check_cli(sys.argv[2:]))
     for stream in (sys.stdin, sys.stdout):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")

@@ -185,6 +185,22 @@ How it follows the [MCP specification](https://modelcontextprotocol.io/specifica
   absolute paths to file names, so they can be shared.
 - Every `xctrace` call has a timeout.
 
+## CI gate
+
+`metal-gpu-trace check RUN BASELINE [--margin-pct N]` runs `perf_check` without a client and prints one JSON line
+(verdict, reasons, hints). Exit code 0: same or improved; 1: regressed; 2: could not be judged (no such run or
+reference, or under 100 frames). Runs are read from `METAL_TRACE_OUT`. Recording needs Instruments, so the job runs on
+a self-hosted macOS runner:
+
+```yaml
+jobs:
+  perf:
+    runs-on: [self-hosted, macOS, ARM64]
+    steps:
+      - run: zsh perf_record.sh pr native - . ./app
+      - run: metal-gpu-trace check "$(ls -t ~/perf-runs/pr_*.json | head -1 | xargs basename -s .json)" main-ref
+```
+
 ## Credits
 
 - The record layout of a `.gputrace` command stream follows [tmc/gputrace](https://github.com/tmc/gputrace) (MIT); no
