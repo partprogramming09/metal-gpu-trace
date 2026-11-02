@@ -199,6 +199,34 @@ def tool_workload_fetch(name):
     return {"name": name, "downloaded": True, "fetched": True, "bytes": entry["bytes"], "apis": list(entry["apis"])}
 
 
+# the PresentMon console application perf_record uses on Windows, pinned by size and SHA-256
+PRESENTMON = {
+    "version": "2.6.0", "bytes": 980320,
+    "sha256": "b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af",
+    "url": "https://github.com/GameTechDev/PresentMon/releases/download/v2.6.0/PresentMon-2.6.0-x64.exe",
+}
+
+
+def tool_presentmon_install():
+    """Windows only: downloads Intel's PresentMon console application (MIT) from its GitHub release, checks its
+    SHA-256 against the one this package pins, and keeps it in %LOCALAPPDATA%\\metal-gpu-trace, where perf_record and
+    perf_attach find it; later calls reuse it. It needs administrator rights or the Performance Log Users group to run."""
+    if sys.platform != "win32":
+        raise ToolError("PresentMon runs only on Windows")
+    target_dir = perf_record_windows.presentmon_dir()
+    target = target_dir / f"PresentMon-{PRESENTMON['version']}-x64.exe"
+    if target.is_file() and file_id(target)["sha256"] == PRESENTMON["sha256"]:
+        return {"installed": False, "path": str(target), "version": PRESENTMON["version"]}
+    target_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=target_dir) as tmp:
+        part = pathlib.Path(tmp) / "PresentMon.exe"
+        download(PRESENTMON["url"], part, PRESENTMON["bytes"] * 2)
+        if file_id(part)["sha256"] != PRESENTMON["sha256"]:
+            raise ToolError("PresentMon's download does not match the SHA-256 this package pins; nothing was saved")
+        part.replace(target)
+    return {"installed": True, "path": str(target), "version": PRESENTMON["version"], "bytes": PRESENTMON["bytes"]}
+
+
 def tool_perf_attach(label, process, seconds=20):
     """Records a program that is already running, by pid or by a name in its command line (Game.exe under Wine),
     for `seconds` and returns the same summary as perf_record; the program keeps running. For games started by
@@ -873,9 +901,12 @@ TOOLS = {
     "workload_fetch": (tool_workload_fetch, schema(
         {"name": {**S, "description": "a workload name from workload_list, such as drawstress"}}, ["name"]),
         hints("Download a test program", destructive=False, idempotent=True, open_world=True)),
+    "presentmon_install": (tool_presentmon_install, schema({}),
+                           hints("Install PresentMon (Windows)", destructive=False, idempotent=True, open_world=True)),
 }
 # Claude Code asks the user before every call of these tools
-META = {"workload_fetch": {"anthropic/requiresUserInteraction": True}}
+META = {"workload_fetch": {"anthropic/requiresUserInteraction": True},
+        "presentmon_install": {"anthropic/requiresUserInteraction": True}}
 
 PROMPTS = {
     "compare-layer": {

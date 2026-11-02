@@ -408,6 +408,11 @@ def sample_dwm_frame_times(pid, stop_event, frame_samples):
 
 
 
+def presentmon_dir():
+    """Returns the directory presentmon_install saves PresentMon in: %LOCALAPPDATA%\\metal-gpu-trace."""
+    return pathlib.Path(os.environ.get("LOCALAPPDATA", "~")).expanduser() / "metal-gpu-trace"
+
+
 def find_presentmon():
     """Returns the path of Intel's PresentMon console application, or None: $PRESENTMON_EXE, then
     %LOCALAPPDATA%\\metal-gpu-trace\\PresentMon*.exe, then PATH."""
@@ -415,7 +420,7 @@ def find_presentmon():
     explicit = os.environ.get("PRESENTMON_EXE")
     if explicit:
         return explicit if pathlib.Path(explicit).is_file() else None
-    cache = pathlib.Path(os.environ.get("LOCALAPPDATA", "~")).expanduser() / "metal-gpu-trace"
+    cache = presentmon_dir()
     for candidate in sorted(cache.glob("PresentMon*.exe"), reverse=True):
         return str(candidate)
     return shutil.which("PresentMon") or shutil.which("PresentMon-x64")
@@ -954,13 +959,15 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             rss_csv_path.unlink(missing_ok=True)
             presentmon_csv.unlink(missing_ok=True)
             if presentmon_proc is not None:
+                detail = presentmon_error.replace("�", "").strip()
                 raise RuntimeError(
-                    "no frame data: PresentMon recorded no frames of this process"
-                    + (f" ({presentmon_error.strip().splitlines()[-1]})" if presentmon_error.strip() else "")
+                    "no frame data: PresentMon saw no Present() calls from this process; it is idle, minimized, "
+                    "or a launcher whose game runs in another process (use perf_attach on the game)"
+                    + (f" ({detail.splitlines()[-1]})" if detail else "")
                 )
             raise RuntimeError(
                 "no frame data: the program wrote no DRAWSTRESS_LOG, PresentMon is not installed "
-                "(set PRESENTMON_EXE) and DWM gave no samples "
+                "(call presentmon_install) and DWM gave no samples "
                 "(DwmGetCompositionTimingInfo needs the interactive desktop session, not SSH or a service)"
             )
 
