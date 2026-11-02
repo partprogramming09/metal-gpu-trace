@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.9.0 — 2026-11-02
 
 - Progress and cancellation. A client that sends a `progressToken` with `tools/call` gets `notifications/progress`
   every 5 s while `perf_record`, `perf_attach` or `perf_baseline_record` run (seconds elapsed of the deadline), instead
