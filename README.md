@@ -202,6 +202,15 @@ request whose Host or Origin is not localhost or 127.0.0.1 (DNS rebinding), and 
 a running call with `notifications/cancelled` from another connection. There is no progress stream over HTTP, and no
 remote access: reach another Mac through an SSH tunnel (`ssh -L 8765:127.0.0.1:8765 mac`), not by opening the port.
 
+## Windows tests on a real machine
+
+GitHub's `windows-latest` has no GPU and no desktop session, so PresentMon and DWM recordings are only tested on a real
+Windows machine. `windows/winbridge-run-tests.ps1` updates a checkout there and runs `test_perf_record_windows.py`; it is
+written as a [WinBridge](https://github.com/partprogramming09/winbridge) task (fixed name, script pinned by SHA-256, no
+arguments). To register it, copy it to the laptop, set `$repo` to the checkout's path, take its hash there with
+`Get-FileHash <file> -Algorithm SHA256` (Git may have changed the line endings, so the hash of the copy in this repo is
+not the one to use), and add a `[tasks.<name>]` table with `script` and `sha256` to the agent's TOML.
+
 ## CI gate
 
 `metal-gpu-trace check RUN BASELINE [--margin-pct N]` runs `perf_check` without a client and prints one JSON line

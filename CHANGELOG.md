@@ -3,6 +3,11 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `windows/winbridge-run-tests.ps1`: a script that updates a checkout on a real Windows machine and runs
+  `test_perf_record_windows.py`, written as a WinBridge `RunTask` task. The README says how to register it.
+
 ## 0.10.2 — 2026-11-02
 
 - Workload `drawstress` takes `api=vk`: the same program through Vulkan on MoltenVK (bgfx's Vulkan backend, already in
