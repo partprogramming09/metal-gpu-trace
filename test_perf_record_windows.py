@@ -418,6 +418,7 @@ def test_diagnose_bottlenecks_and_recommendations(tmp_path):
     try:
         def make_summary(frame_gpu_mean, interval_mean, idle_share, rss_max, stutter_rate, jitter, encoders_p50=2, short_share=0.05, throttling_detected=False):
             return {
+                "template": "Windows Native Trace",
                 "gpu": {
                     "frames": 200,
                     "fps_estimate": round(1000.0 / interval_mean, 1) if interval_mean else 60.0,

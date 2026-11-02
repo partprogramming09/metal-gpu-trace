@@ -189,8 +189,9 @@ def test_report(tmp_path):
     finally:
         perf_report.subprocess.run = saved_run
     toc = ET.fromstring('<trace-toc><run><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
-    assert perf_report.missing_tables(toc) == ["gpu-performance-state-intervals", "metal-application-encoders-list",
-                                               "metal-current-allocated-size"]
+    assert perf_report.missing_tables(toc) == ["device-thermal-state-intervals", "gpu-performance-state-intervals",
+                                               "graphics-compiler-activity-intervals",
+                                               "metal-application-encoders-list", "metal-current-allocated-size"]
     try:
         perf_report.missing_tables(ET.fromstring("<trace-toc/>"))
         raise AssertionError("a trace without metal-gpu-intervals must fail")
@@ -214,6 +215,32 @@ def test_encoders(tmp_path):
     assert idle["idle_share"] == round(1.89 / 3.005, 3), idle
 
 
+def test_pacing_and_hitches():
+    """Pacing numbers come out exact for hand-made frames, and each slow frame gets the cause the trace shows."""
+    gaps = [10.0] * 98 + [30.0, 10.0]
+    got = perf_report.frame_pacing(gaps, [5.0] * 100)
+    assert got["fps_1pct_low"] == 33.3 and got["fps_01pct_low"] is None, got
+    assert got["stutter_rate_pct"] == 1.0 and got["frame_jitter_ms"] == 2.0, got
+    assert got["throttling_analysis"]["thermal_throttling_detected"] is False, got
+    assert perf_report.frame_pacing([], []) == {}
+    uncapped = [1.8] * 90 + [3.0] * 9 + [24.0]
+    quiet = perf_report.frame_pacing(uncapped, [1.0] * 100)
+    assert quiet["stutter_rate_pct"] == 1.0, quiet
+    starts = [sum(uncapped[:i]) for i in range(101)]
+    noise = perf_report.attribute_hitches(list(range(101)), starts, [1.0] * 101, [], [], [])
+    assert noise["count"] == 1 and noise["threshold_ms"] == 8.0 and noise["worst"][0]["interval_ms"] == 24.0, noise
+    starts = [0, 10, 20, 50, 60, 100, 110, 150, 160, 200, 210]
+    frames = list(range(len(starts)))
+    totals = [5] * len(starts)
+    totals[8] = 39
+    memory = [(0, 0), (160, 0), (200, 20 * 2**20)]
+    got = perf_report.attribute_hitches(frames, starts, totals, [(25, 30)], [(70, 80)], memory)
+    assert got["count"] == 5 and got["threshold_ms"] == 15.0, got
+    assert [h["cause"] for h in sorted(got["worst"], key=lambda h: h["frame"])] == [
+        "shader_compile", "thermal", "cpu_or_wait", "gpu_heavy", "memory_growth"], got
+    assert perf_report.attribute_hitches([1], [0], [1], [], [], []) == {"count": 0, "causes": {}, "worst": []}
+
+
 def test_diagnose(tmp_path):
     """perf_diagnose gives a verdict from a summary's encoder numbers and asks to record again an older summary."""
     import metal_trace_mcp as mcp
@@ -235,6 +262,15 @@ def test_diagnose(tmp_path):
         (tmp_path / "pm.json").write_text(json.dumps(no_spans))
         got = mcp.tool_perf_diagnose("pm")
         assert got["bottleneck"] == "UNKNOWN" and got["stutter_analysis"]["verdict"] == "SMOOTH", got
+        busy = {**no_spans, "gpu_idle": {"idle_ms_per_frame": {"count": 1}, "gaps_over_1ms": 0, "idle_share": 0.4},
+                "hitches": {"count": 3, "causes": {"shader_compile": 3}, "worst": []}}
+        (tmp_path / "cpu.json").write_text(json.dumps(busy))
+        got = mcp.tool_perf_diagnose("cpu")
+        assert got["bottleneck"] == "CPU_SUBMISSION_BOUND" and got["hitches"]["count"] == 3, got
+        assert any("compilador gráfico" in r for r in got["recommendations"]), got
+        assert not any("FlipQueueSize" in r for r in got["recommendations"]), got
+        (tmp_path / "winbusy.json").write_text(json.dumps({**busy, "template": "Windows Native Trace"}))
+        assert any("FlipQueueSize" in r for r in mcp.tool_perf_diagnose("winbusy")["recommendations"])
         assert not mcp.tool_perf_diagnose("new", min_encoders=8)["too_many_short_encoders"]
         for run, kwargs, words in (("old", {}, "record it again"), ("new", {"short_us": 30}, "short_us is one of")):
             try:
@@ -398,6 +434,39 @@ def test_baseline_record(tmp_path):
         assert len(made) == 2
     finally:
         mcp.tool_perf_record, mcp.OUT, mcp.BASELINES = saved
+
+
+def test_perf_ab(tmp_path):
+    """perf_ab records A B B A, passes each side's env on, and calls a metric better or worse only when every B value
+    lies outside A's range; a bad env or rounds fails before recording."""
+    import metal_trace_mcp as mcp
+    made = []
+
+    def fake_record(label, **kw):
+        made.append((label, kw["env"]))
+        fps = 100.0 if label.split("-")[-1][0] == "a" else 150.0
+        (tmp_path / f"{label}_20261018-000000.json").write_text(json.dumps(
+            {"gpu": {"frames": 300, "fps_estimate": fps + len(made) / 10, "frame_gpu_ms": {"mean": 4.0},
+                     "stutter_rate_pct": 2.0}}))
+    saved = mcp.tool_perf_record, mcp.OUT
+    mcp.tool_perf_record, mcp.OUT = fake_record, tmp_path
+    try:
+        got = mcp.tool_perf_ab("t", "", "MULLION_X=1", seconds=30, label="ignored")
+        assert made == [("t-a1", ""), ("t-b1", "MULLION_X=1"), ("t-b2", "MULLION_X=1"), ("t-a2", "")], made
+        assert got["metrics"]["fps_estimate"]["verdict"] == "better", got
+        assert got["metrics"]["frame_gpu_ms_mean"]["verdict"] == "same", got
+        assert got["metrics"]["fps_1pct_low"]["verdict"] == "unknown" and not got["too_short"], got
+        for kwargs in ({"env_b": "NOT A PAIR"}, {"rounds": 0}, {"rounds": 6}):
+            try:
+                mcp.tool_perf_ab("t", **({"env_a": "", "env_b": ""} | kwargs))
+                raise AssertionError(kwargs)
+            except mcp.ToolError:
+                pass
+        assert len(made) == 4
+    finally:
+        mcp.tool_perf_record, mcp.OUT = saved
+    assert mcp.ab_verdict([10, 12], [11, 20], True) == "same"
+    assert mcp.ab_verdict([10, 12], [5, 9], True) == "worse" and mcp.ab_verdict([10, 12], [5, 9], False) == "better"
 
 
 @macos_only
@@ -589,7 +658,7 @@ def test_server(tmp_path):
     assert [x["uriTemplate"] for x in replies[17]["result"]["resourceTemplates"]] == ["metal-trace://runs/{run}"]
     assert json.loads(replies[26]["result"]["contents"][0]["text"]) == {"gpu": {"frames": 100}}
     assert replies[27]["error"]["code"] == replies[28]["error"]["code"] == -32002, "a bad run name is not found"
-    assert len(replies[2]["result"]["tools"]) == 18
+    assert len(replies[2]["result"]["tools"]) == 19
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -850,7 +919,7 @@ def test_http(tmp_path):
         assert post(ping, path="/other")[0] == 404
         assert post({"jsonrpc": "2.0", "method": "notifications/initialized"}) == (202, None)
         code, tools = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        assert code == 200 and len(tools["result"]["tools"]) == 18
+        assert code == 200 and len(tools["result"]["tools"]) == 19
         code, runs = post({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                            "params": {"name": "perf_runs", "arguments": {}, "_meta": {"progressToken": "x"}}})
         assert code == 200 and runs["result"]["structuredContent"]["total"] == 0, runs

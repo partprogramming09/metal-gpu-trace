@@ -19,6 +19,8 @@ import subprocess
 import threading
 import time
 
+import perf_report
+
 
 SHORT_US = (10, 25, 50, 100, 250, 500, 1000)
 
@@ -502,81 +504,19 @@ def stats(values):
 
 
 def compute_precision_telemetry(gaps, totals):
-    """Computes professional telemetry metrics: 1% Low, 0.1% Low, stutter rate, jitter, and throttling drift.
-
-    Args:
-        gaps: List of frame interval durations in milliseconds (from start-to-start delta).
-        totals: List of GPU execution durations in milliseconds per frame.
-    """
-    if not gaps:
-        return {
-            "fps_estimate": None,
-            "fps_1pct_low": None,
-            "fps_01pct_low": None,
-            "stutter_rate_pct": None,
-            "frame_jitter_ms": None,
-            "throttling_analysis": {
-                "thermal_throttling_detected": None,
-                "fps_initial": None,
-                "fps_final": None,
-                "fps_drift_pct": None,
-            },
-        }
-
-    med = statistics.median(gaps)
-    fps_estimate = round(1000.0 / med, 1) if med > 0 else None
-
-    # A percentile low needs enough frames behind it: with fewer, it is just the worst frame.
-    ordered = sorted(gaps)
-    p99_idx = min(len(ordered) - 1, int(len(ordered) * 0.99))
-    p99 = ordered[p99_idx]
-    fps_1pct_low = round(1000.0 / p99, 1) if p99 > 0 and len(gaps) >= 100 else None
-
-    p999_idx = min(len(ordered) - 1, int(len(ordered) * 0.999))
-    p999 = ordered[p999_idx]
-    fps_01pct_low = round(1000.0 / p999, 1) if p999 > 0 and len(gaps) >= 1000 else None
-
-    stutter_rate_pct = None
-    frame_jitter_ms = None
-    if len(gaps) > 1:
-        stutter_count = sum(1 for g in gaps if g > 1.5 * med) if med > 0 else 0
-        stutter_rate_pct = round((stutter_count / len(gaps)) * 100.0, 2)
-        frame_jitter_ms = round(statistics.pstdev(gaps), 3)
-
-    if len(gaps) >= 5:
-        k = max(1, int(len(gaps) * 0.20))
-        med_init = statistics.median(gaps[:k])
-        med_final = statistics.median(gaps[-k:])
-        fps_init = round(1000.0 / med_init, 1) if med_init > 0 else None
-        fps_fin = round(1000.0 / med_final, 1) if med_final > 0 else None
-        drift = round(((fps_init - fps_fin) / fps_init) * 100.0, 1) if (fps_init and fps_fin and fps_init > 0) else 0.0
-
-        # Throttling is a verdict about GPU time; without GPU times it is unknown, not "no".
-        k_tot = max(1, int(len(totals) * 0.20)) if totals else 0
-        throttling = None
-        if k_tot:
-            throttling = bool(drift > 10.0 and statistics.mean(totals[-k_tot:]) > statistics.mean(totals[:k_tot]))
-        throttling_analysis = {
-            "thermal_throttling_detected": throttling,
-            "fps_initial": fps_init,
-            "fps_final": fps_fin,
-            "fps_drift_pct": drift,
-        }
-    else:
-        throttling_analysis = {
-            "thermal_throttling_detected": None,
-            "fps_initial": fps_estimate,
-            "fps_final": fps_estimate,
-            "fps_drift_pct": None,
-        }
-
+    """Returns FPS, 1% and 0.1% lows, stutter rate, jitter and throttling drift from frame intervals (ms, start to
+    start) and GPU ms per frame, as perf_report.frame_pacing computes them, with None for what cannot be judged."""
+    pacing = perf_report.frame_pacing(gaps, totals)
+    med = statistics.median(gaps) if gaps else 0
+    fps = round(1000.0 / med, 1) if med > 0 else None
     return {
-        "fps_estimate": fps_estimate,
-        "fps_1pct_low": fps_1pct_low,
-        "fps_01pct_low": fps_01pct_low,
-        "stutter_rate_pct": stutter_rate_pct,
-        "frame_jitter_ms": frame_jitter_ms,
-        "throttling_analysis": throttling_analysis,
+        "fps_estimate": fps,
+        "fps_1pct_low": pacing.get("fps_1pct_low"),
+        "fps_01pct_low": pacing.get("fps_01pct_low"),
+        "stutter_rate_pct": pacing.get("stutter_rate_pct"),
+        "frame_jitter_ms": pacing.get("frame_jitter_ms"),
+        "throttling_analysis": pacing.get("throttling_analysis") or {
+            "thermal_throttling_detected": None, "fps_initial": fps, "fps_final": fps, "fps_drift_pct": None},
     }
 
 
