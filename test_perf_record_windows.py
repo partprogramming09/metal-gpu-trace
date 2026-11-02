@@ -36,6 +36,17 @@ def dwm_available():
     return bool(samples)
 
 
+def record_or_skip(*args, **kwargs):
+    """Runs record_windows and skips the test when the desktop was idle: DWM counts a frame only when the screen
+    changes, so an idle desktop gives no samples."""
+    try:
+        return prw.record_windows(*args, **kwargs)
+    except RuntimeError as err:
+        if "no frame data" in str(err):
+            pytest.skip("the desktop was idle during the recording: DWM produced no frames")
+        raise
+
+
 needs_dwm = pytest.mark.skipif(sys.platform != "win32" or not dwm_available(), reason="no DWM samples: run from the interactive desktop session")
 
 
@@ -66,7 +77,7 @@ def test_attach_existing_process(tmp_path):
     """Attaching to a running process records RSS and leaves the process running."""
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"])
     try:
-        summary, json_path = prw.record_windows("test_attach_live", 1, "attach", "-", "-", [str(proc.pid)], out_dir=tmp_path)
+        summary, json_path = record_or_skip("test_attach_live", 1, "attach", "-", "-", [str(proc.pid)], out_dir=tmp_path)
         assert json_path.exists()
         assert summary["process"]["pid"] == proc.pid
         assert summary["process"]["termination-reason"] == "running"
@@ -538,7 +549,7 @@ def test_attach_zenless_zone_zero_real_dwm(tmp_path):
     proc = subprocess.Popen([str(zzz_exe), "-c", "import time; time.sleep(15)"])
 
     try:
-        summary, json_path = prw.record_windows(
+        summary, json_path = record_or_skip(
             "test_zzz_capture",
             3,
             "attach",
