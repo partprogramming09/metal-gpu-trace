@@ -18,6 +18,26 @@ import metal_trace_mcp as mcp
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="needs Windows (ctypes.windll, DWM)")
 
+# a program that reports its own frame times, the way the drawstress workload does
+LOG_PROGRAM = [sys.executable, "-c",
+               "import os, time; open(os.environ['DRAWSTRESS_LOG'], 'w').write("
+               "'dim 1 draws 1 frame_us 16666 frames 120\\n'); time.sleep(2)"]
+
+
+def dwm_available():
+    """Returns whether DwmGetCompositionTimingInfo yields frame samples here: false over SSH or in a service."""
+    import threading
+    stop, samples = threading.Event(), []
+    thread = threading.Thread(target=prw.sample_dwm_frame_times, args=(0, stop, samples), daemon=True)
+    thread.start()
+    time.sleep(1.0)
+    stop.set()
+    thread.join(timeout=2)
+    return bool(samples)
+
+
+needs_dwm = pytest.mark.skipif(sys.platform != "win32" or not dwm_available(), reason="no DWM samples: run from the interactive desktop session")
+
 
 def test_attach_nonexistent_process(tmp_path):
     """Detection of nonexistent process in attach mode (both by name and by PID)."""
@@ -41,6 +61,7 @@ def test_attach_nonexistent_process(tmp_path):
     assert not (tmp_path / ".recording").exists()
 
 
+@needs_dwm
 def test_attach_existing_process(tmp_path):
     """Attaching to a running process records RSS and leaves the process running."""
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(10)"])
@@ -72,7 +93,7 @@ def test_lock_handling(tmp_path):
     lock_file.rmdir()
 
     # Normal run must acquire lock and release it cleanly
-    summary, json_path = prw.record_windows("test_lock_ok", 1, "native", "-", tmp_path, [sys.executable, "-c", "pass"], out_dir=tmp_path)
+    summary, json_path = prw.record_windows("test_lock_ok", 1, "native", "-", tmp_path, LOG_PROGRAM, out_dir=tmp_path)
     assert not lock_file.exists(), "Lock must be removed after successful run"
 
 
@@ -84,7 +105,7 @@ def test_recording_and_schema_verification(tmp_path):
         "native",
         "-",
         tmp_path,
-        [sys.executable, "-c", "import time; time.sleep(2)"],
+        LOG_PROGRAM,
         out_dir=tmp_path,
     )
 
@@ -488,6 +509,27 @@ def test_dwm_timing_structures_and_query(tmp_path):
         assert hr in (0, -2003304304)
 
 
+def test_no_frame_data_is_an_error(tmp_path, monkeypatch):
+    """Without a frame log and without DWM samples the recording fails and leaves no files; it never invents frames."""
+    monkeypatch.setattr(prw, "sample_dwm_frame_times", lambda pid, stop, samples: None)
+    with pytest.raises(RuntimeError, match="no frame data"):
+        prw.record_windows("test_none", 1, "native", "-", tmp_path, [sys.executable, "-c", "pass"], out_dir=tmp_path)
+    assert not list(tmp_path.iterdir()), list(tmp_path.iterdir())
+
+
+def test_dwm_run_does_not_report_gpu_time(tmp_path, monkeypatch):
+    """A DWM recording reports composition intervals and says the GPU time was not measured."""
+    monkeypatch.setattr(prw, "sample_dwm_frame_times",
+                        lambda pid, stop, samples: samples.extend([16.0, 17.5, 16.2] * 40))
+    summary, _ = prw.record_windows("test_dwm", 1, "native", "-", tmp_path, LOG_PROGRAM[:2] + ["import time; time.sleep(1)"],
+                                    out_dir=tmp_path)
+    gpu = summary["gpu"]
+    assert gpu["source"] == "dwm-composition"
+    assert gpu["frame_gpu_ms"] == {"count": 0}
+    assert gpu["frame_interval_ms"]["count"] > 0 and gpu["frame_jitter_ms"] > 0
+
+
+@needs_dwm
 def test_attach_zenless_zone_zero_real_dwm(tmp_path):
     """5-second attach to ZenlessZoneZero.exe verifying real DWM presentation timing and low percentiles."""
     import shutil
