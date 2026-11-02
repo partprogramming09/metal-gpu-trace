@@ -649,7 +649,8 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     has_frame_data = bool(frame_gpu_ms.get("count", 0) > 0 or frame_interval_ms.get("count", 0) > 0)
 
     if has_frame_data and high_variance and high_memory:
-        bottleneck = "MEMORY_BANDWIDTH_PRESSURE"
+        # Inferred from a large working set plus uneven frame times; memory bandwidth itself is not measured.
+        bottleneck = "MEMORY_PRESSURE_SUSPECTED"
     elif idle_share is None:
         bottleneck = "UNKNOWN"
     elif has_frame_data and (idle_share >= 0.25 or (too_many_short and idle_share >= 0.20)):
@@ -667,9 +668,9 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     elif bottleneck == "CPU_SUBMISSION_BOUND":
         recommendations.append("Fijar FlipQueueSize=3 en el controlador AMD o DirectX para amortiguar el despacho de la CPU.")
         recommendations.append("Consolidar draw calls mediante instancing o reducir complejidad de geometría y objetos dinámicos.")
-    elif bottleneck == "MEMORY_BANDWIDTH_PRESSURE":
-        recommendations.append("Reducir resolución de sombras de 2048 a 1024 para aliviar el bus UMA.")
-        recommendations.append("Limitar cascadas de sombras a 2 en exteriores para mitigar el consumo de ancho de banda en memoria unificada.")
+    elif bottleneck == "MEMORY_PRESSURE_SUSPECTED":
+        recommendations.append("Hipótesis (el ancho de banda no se mide): reducir resolución de sombras de 2048 a 1024 para aliviar el bus UMA.")
+        recommendations.append("Hipótesis: limitar cascadas de sombras a 2 en exteriores para mitigar el consumo de memoria unificada.")
     if too_many_short:
         recommendations.append("Consolidar render passes y reducir encoders breves para mitigar sobrecarga en la capa de traducción.")
     if stutter_verdict in ("MICRO_STUTTER", "SEVERE_STUTTER"):

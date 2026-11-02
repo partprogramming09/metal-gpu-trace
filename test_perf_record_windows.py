@@ -178,10 +178,10 @@ def test_recording_and_schema_verification(tmp_path):
         assert stat_field in gpu["frame_gpu_ms"], f"Missing {stat_field} in frame_gpu_ms"
         assert stat_field in gpu["per_channel_ms"]["draw"], f"Missing {stat_field} in per_channel_ms.draw"
     assert gpu["fps_estimate"] is not None and gpu["fps_estimate"] > 0
-    assert gpu["fps_1pct_low"] is not None and gpu["fps_1pct_low"] > 0
-    assert gpu["fps_01pct_low"] is not None and gpu["fps_01pct_low"] > 0
-    assert "stutter_rate_pct" in gpu and gpu["stutter_rate_pct"] >= 0.0
-    assert "frame_jitter_ms" in gpu and gpu["frame_jitter_ms"] >= 0.0
+    # The drawstress log holds per-line means, so no frame-level distribution is reported.
+    assert gpu["frame_times"] == "per-line mean of the drawstress log"
+    for absent in ("fps_1pct_low", "fps_01pct_low", "stutter_rate_pct", "frame_jitter_ms"):
+        assert absent in gpu and gpu[absent] is None, absent
     assert "throttling_analysis" in gpu
     throttling = gpu["throttling_analysis"]
     assert "thermal_throttling_detected" in throttling
@@ -353,9 +353,20 @@ def test_vegaflow_telemetry_bridge(tmp_path):
 
 def test_precision_telemetry_calculation(tmp_path):
     """Validation of 1% Low, 0.1% Low, stutter rate, frame jitter, and thermal throttling drift."""
-    # 1. 100 perfectly paced 60 FPS frames (16.666 ms)
-    gaps_60 = [16.666] * 100
-    totals_60 = [10.0] * 100
+    # 0. Too few frames for a percentile low, and nothing to judge stutter or throttling from
+    few = prw.compute_precision_telemetry([16.666] * 99, [10.0] * 99)
+    assert few["fps_1pct_low"] is None and few["fps_01pct_low"] is None
+    mid = prw.compute_precision_telemetry([16.666] * 999, [10.0] * 999)
+    assert mid["fps_1pct_low"] == 60.0 and mid["fps_01pct_low"] is None
+    single = prw.compute_precision_telemetry([16.666], [])
+    assert single["stutter_rate_pct"] is None and single["frame_jitter_ms"] is None
+    assert prw.compute_precision_telemetry([], [])["stutter_rate_pct"] is None
+    no_gpu = prw.compute_precision_telemetry([16.666] * 200, [])
+    assert no_gpu["throttling_analysis"]["thermal_throttling_detected"] is None
+
+    # 1. 1000 perfectly paced 60 FPS frames (16.666 ms)
+    gaps_60 = [16.666] * 1000
+    totals_60 = [10.0] * 1000
     res = prw.compute_precision_telemetry(gaps_60, totals_60)
     assert res["fps_estimate"] == 60.0
     assert res["fps_1pct_low"] == 60.0
@@ -366,7 +377,7 @@ def test_precision_telemetry_calculation(tmp_path):
     assert res["throttling_analysis"]["fps_drift_pct"] == 0.0
 
     # 2. Injected stutters (4 frames of 40ms > 1.5 * 16.666 = 25ms)
-    gaps_stutter = [16.666] * 96 + [40.0] * 4
+    gaps_stutter = [16.666] * 960 + [40.0] * 40
     res_stutter = prw.compute_precision_telemetry(gaps_stutter, totals_60)
     assert res_stutter["stutter_rate_pct"] == 4.0
     assert res_stutter["frame_jitter_ms"] > 0.0
@@ -431,10 +442,10 @@ def test_diagnose_bottlenecks_and_recommendations(tmp_path):
         assert diag_cpu["stutter_analysis"]["verdict"] == "MICRO_STUTTER"
         assert any("FlipQueueSize=3" in r for r in diag_cpu["recommendations"])
 
-        # 3. MEMORY_BANDWIDTH_PRESSURE
+        # 3. MEMORY_PRESSURE_SUSPECTED (a hypothesis: bandwidth is not measured)
         (tmp_path / "mem_bound.json").write_text(json.dumps(make_summary(12.0, 16.6, 0.18, 2500.0, 8.5, 5.5)))
         diag_mem = mcp.tool_perf_diagnose("mem_bound")
-        assert diag_mem["bottleneck"] == "MEMORY_BANDWIDTH_PRESSURE"
+        assert diag_mem["bottleneck"] == "MEMORY_PRESSURE_SUSPECTED"
         assert diag_mem["stutter_analysis"]["verdict"] == "SEVERE_STUTTER"
         assert any("sombras de 2048 a 1024" in r for r in diag_mem["recommendations"])
         assert any("cascadas de sombras a 2" in r for r in diag_mem["recommendations"])
@@ -533,6 +544,19 @@ def test_presentmon_install_checks_the_pinned_hash(tmp_path, monkeypatch):
     assert first["installed"] and pathlib.Path(first["path"]).is_file()
     assert mcp.tool_presentmon_install()["installed"] is False
     assert prw.find_presentmon() == first["path"]
+
+
+def test_drawstress_reads_microseconds_and_skips_empty_lines(tmp_path):
+    """frame_us is microseconds; a line with no time or no frames adds nothing instead of inventing 0.001 ms."""
+    log_lines = ("dim 1 draws 1 frame_us 8000 frames 50\\n"
+                 "dim 2 draws 1 frame_us 0 frames 10\\n"
+                 "dim 3 draws 1 frame_us 9000 frames 0\\n")
+    code = ("import os, time; open(os.environ['DRAWSTRESS_LOG'], 'w').write('" + log_lines + "'); time.sleep(2)")
+    summary, _ = prw.record_windows("test_units", 1, "native", "-", tmp_path, [sys.executable, "-c", code],
+                                    out_dir=tmp_path)
+    gpu = summary["gpu"]
+    assert gpu["frames"] == 50
+    assert gpu["frame_gpu_ms"]["mean"] == 8.0 and gpu["frame_gpu_ms"]["min" if "min" in gpu["frame_gpu_ms"] else "max"] == 8.0
 
 
 def test_split_args_keeps_backslashes_and_drops_quotes():
@@ -664,7 +688,7 @@ def test_dwm_combat_stutter_simulation(tmp_path):
     baseline_frames = [16.6] * 80
     combat_drop_frames = [25.0, 28.5, 33.3, 40.0, 42.0] * 4  # combat spikes
     recovery_frames = [16.6] * 40
-    combat_gaps = baseline_frames + combat_drop_frames + recovery_frames
+    combat_gaps = (baseline_frames + combat_drop_frames + recovery_frames) * 8  # 1120 frames: enough for the lows
     combat_totals = [g * 0.7 for g in combat_gaps]
 
     pacing = prw.compute_precision_telemetry(combat_gaps, combat_totals)

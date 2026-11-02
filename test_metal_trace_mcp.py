@@ -300,8 +300,10 @@ def test_baseline(tmp_path):
                 "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 4}}}
     saved, (mcp.OUT, mcp.BASELINES) = (mcp.OUT, mcp.BASELINES), (tmp_path, tmp_path / "baselines.json")
     try:
-        for name, fps in (("r1", 60.0), ("r2", 62.0), ("r3", 61.0)):
-            (tmp_path / f"{name}.json").write_text(json.dumps(summary(fps, 4.3, 7)))
+        for tick, (name, fps) in enumerate((("r1", 60.0), ("r2", 62.0), ("r3", 61.0))):
+            path = tmp_path / f"{name}.json"
+            path.write_text(json.dumps(summary(fps, 4.3, 7)))
+            os.utime(path, (1_000_000 + tick, 1_000_000 + tick))  # distinct times: file clocks can tie on Windows
         got = mcp.tool_perf_baseline("ds", ["r1", "r2", "r3"])
         assert got["range"]["fps"] == {"min": 60.0, "max": 62.0} and got["runs"] == ["r1", "r2", "r3"], got
         assert [r["run"] for r in mcp.tool_perf_runs()["rows"]] == ["r3", "r2", "r1"]

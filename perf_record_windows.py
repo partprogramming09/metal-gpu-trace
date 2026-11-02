@@ -394,12 +394,11 @@ def sample_dwm_frame_times(pid, stop_event, frame_samples):
                 cur_vblank = getattr(dti, "qpcVBlank", 0)
                 if cur_vblank > 0 and cur_vblank == last_vblank:
                     continue
-                delta_frames = max(1, dti.cFrame - last_cFrame) if cur_vblank == 0 else 1
+                # Only an interval between two consecutive composed frames is a measurement; a jump of several
+                # frames is dropped instead of being split into equal parts.
                 dt_ms = (cur_qpc.value - last_qpc) * 1000.0 / qpc_freq
-                if dt_ms > 0:
-                    frame_dt = dt_ms / delta_frames
-                    for _ in range(delta_frames):
-                        frame_samples.append(frame_dt)
+                if dt_ms > 0 and dti.cFrame - last_cFrame == 1:
+                    frame_samples.append(dt_ms)
                 last_cFrame = dti.cFrame
                 last_vblank = cur_vblank
                 last_qpc = cur_qpc.value
@@ -514,32 +513,35 @@ def compute_precision_telemetry(gaps, totals):
             "fps_estimate": None,
             "fps_1pct_low": None,
             "fps_01pct_low": None,
-            "stutter_rate_pct": 0.0,
-            "frame_jitter_ms": 0.0,
+            "stutter_rate_pct": None,
+            "frame_jitter_ms": None,
             "throttling_analysis": {
-                "thermal_throttling_detected": False,
+                "thermal_throttling_detected": None,
                 "fps_initial": None,
                 "fps_final": None,
-                "fps_drift_pct": 0.0,
+                "fps_drift_pct": None,
             },
         }
 
     med = statistics.median(gaps)
     fps_estimate = round(1000.0 / med, 1) if med > 0 else None
 
+    # A percentile low needs enough frames behind it: with fewer, it is just the worst frame.
     ordered = sorted(gaps)
     p99_idx = min(len(ordered) - 1, int(len(ordered) * 0.99))
     p99 = ordered[p99_idx]
-    fps_1pct_low = round(1000.0 / p99, 1) if p99 > 0 else None
+    fps_1pct_low = round(1000.0 / p99, 1) if p99 > 0 and len(gaps) >= 100 else None
 
     p999_idx = min(len(ordered) - 1, int(len(ordered) * 0.999))
     p999 = ordered[p999_idx]
-    fps_01pct_low = round(1000.0 / p999, 1) if p999 > 0 else None
+    fps_01pct_low = round(1000.0 / p999, 1) if p999 > 0 and len(gaps) >= 1000 else None
 
-    stutter_count = sum(1 for g in gaps if g > 1.5 * med) if med > 0 else 0
-    stutter_rate_pct = round((stutter_count / len(gaps)) * 100.0, 2)
-
-    frame_jitter_ms = round(statistics.pstdev(gaps), 3) if len(gaps) > 1 else 0.0
+    stutter_rate_pct = None
+    frame_jitter_ms = None
+    if len(gaps) > 1:
+        stutter_count = sum(1 for g in gaps if g > 1.5 * med) if med > 0 else 0
+        stutter_rate_pct = round((stutter_count / len(gaps)) * 100.0, 2)
+        frame_jitter_ms = round(statistics.pstdev(gaps), 3)
 
     if len(gaps) >= 5:
         k = max(1, int(len(gaps) * 0.20))
@@ -549,10 +551,11 @@ def compute_precision_telemetry(gaps, totals):
         fps_fin = round(1000.0 / med_final, 1) if med_final > 0 else None
         drift = round(((fps_init - fps_fin) / fps_init) * 100.0, 1) if (fps_init and fps_fin and fps_init > 0) else 0.0
 
+        # Throttling is a verdict about GPU time; without GPU times it is unknown, not "no".
         k_tot = max(1, int(len(totals) * 0.20)) if totals else 0
-        gpu_init = statistics.mean(totals[:k_tot]) if k_tot else 0.0
-        gpu_final = statistics.mean(totals[-k_tot:]) if k_tot else 0.0
-        throttling = bool(drift > 10.0 and gpu_final > gpu_init)
+        throttling = None
+        if k_tot:
+            throttling = bool(drift > 10.0 and statistics.mean(totals[-k_tot:]) > statistics.mean(totals[:k_tot]))
         throttling_analysis = {
             "thermal_throttling_detected": throttling,
             "fps_initial": fps_init,
@@ -561,10 +564,10 @@ def compute_precision_telemetry(gaps, totals):
         }
     else:
         throttling_analysis = {
-            "thermal_throttling_detected": False,
+            "thermal_throttling_detected": None,
             "fps_initial": fps_estimate,
             "fps_final": fps_estimate,
-            "fps_drift_pct": 0.0,
+            "fps_drift_pct": None,
         }
 
     return {
@@ -914,10 +917,10 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
 
         if entries:
             for entry in entries:
-                f_us = entry["frame_us"]
-                gpu_ms = f_us / 1e6 if f_us > 1_000_000 else f_us / 1000.0
-                if gpu_ms <= 0:
-                    gpu_ms = 0.001
+                # frame_us is microseconds by its name; a line without a positive time or frame count is skipped.
+                if entry["frame_us"] <= 0 or entry["frames"] <= 0:
+                    continue
+                gpu_ms = entry["frame_us"] / 1000.0
                 num_frames = entry["frames"]
                 for _ in range(num_frames):
                     frame_idx += 1
@@ -988,6 +991,10 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
 
 
         pacing = compute_precision_telemetry(gaps, totals)
+        if entries:
+            # Each log line is the mean of its frames, so a frame-level distribution cannot be computed from it.
+            pacing = {**pacing, "fps_1pct_low": None, "fps_01pct_low": None,
+                      "stutter_rate_pct": None, "frame_jitter_ms": None}
 
         gpu_stats = {
             "intervals": len(frames_data),
@@ -1003,6 +1010,8 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             "throttling_analysis": pacing["throttling_analysis"],
             "source": "drawstress-log" if entries else "presentmon" if pm_intervals else "dwm-composition",
         }
+        if entries:
+            gpu_stats["frame_times"] = "per-line mean of the drawstress log"
 
         enc_stats = encoder_stats(spans, labels)
         idle_stats = idle_gaps(spans)
