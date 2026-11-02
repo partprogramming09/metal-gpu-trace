@@ -545,8 +545,7 @@ def test_dwm_run_does_not_report_gpu_time(tmp_path, monkeypatch):
 def test_presentmon_frames_and_gpu_time(tmp_path, monkeypatch):
     """With PresentMon, intervals come from MsBetweenPresents and GPU time from MsGPUTime, per Present() call."""
     fake = tmp_path / "pm.bat"
-    rows = "\r\n".join(f" echo game.exe,1,{i},{ms},{gpu}" for i, (ms, gpu) in
-                       enumerate([(16.0, 9.5), (17.5, 10.0), (33.0, 12.0)] * 20))
+    rows = "\r\n".join(f" echo game.exe,1,{ms},{gpu}" for ms, gpu in [(16.0, 9.5), (17.5, 10.0), (33.0, 12.0)] * 20)
     fake.write_text(f"@echo off\r\n(\r\n echo Application,ProcessID,MsBetweenPresents,MsGPUTime\r\n{rows}\r\n)>\"%~4\"\r\n")
     monkeypatch.setenv("PRESENTMON_EXE", str(fake))
     summary, _ = prw.record_windows("test_pm", 1, "native", "-", tmp_path,
