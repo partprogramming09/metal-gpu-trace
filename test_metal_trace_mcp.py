@@ -649,8 +649,81 @@ def test_overrun(tmp_path):
     assert not list(out.iterdir()), list(out.iterdir())
 
 
+def hang_stubs(tmp_path):
+    """Returns (stubs directory, runs directory, program) for a recording whose xctrace starts and never finishes."""
+    stubs, out = tmp_path / "stubs", tmp_path / "runs"
+    stubs.mkdir()
+    out.mkdir()
+    xcrun = stubs / "xcrun"
+    xcrun.write_text("#!/bin/zsh\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\nsleep 60\n")
+    xcrun.chmod(0o755)
+    program = tmp_path / "hang-4242"
+    program.touch()
+    pkill = stubs / "pkill"  # records which program the stop path kills
+    pkill.write_text(f"#!/bin/zsh\necho $@ >> {tmp_path}/pkill.log\n")
+    pkill.chmod(0o755)
+    return stubs, out, program
+
+
+def test_progress_and_cancel(tmp_path):
+    """A recording reports progress to a client that sent a progressToken and stops, leaving no files, when the client
+    cancels it; ping is answered while it runs."""
+    import threading
+    import time
+    import metal_trace_mcp as mcp
+    stubs, out, program = hang_stubs(tmp_path)
+    seen, cancel = [], threading.Event()
+    saved = mcp.OUT, mcp.PROGRESS_TICKS, os.environ["PATH"]
+    mcp.OUT, mcp.PROGRESS_TICKS = out, 1
+    os.environ["PATH"] = f"{stubs}:{saved[2]}"
+    mcp.RUN.cancel, mcp.RUN.progress = cancel, lambda *a: seen.append(a) or (len(seen) == 2 and cancel.set())
+    try:
+        mcp.tool_perf_record("hang", str(program), seconds=1, wine="native")
+        raise AssertionError("a cancelled recording must fail")
+    except mcp.ToolError as error:
+        assert "cancelled" in str(error), error
+    finally:
+        mcp.OUT, mcp.PROGRESS_TICKS, os.environ["PATH"] = saved
+        mcp.RUN.cancel = mcp.RUN.progress = None
+    assert (tmp_path / "pkill.log").read_text().split() == ["-x", "hang-4242"], "the launched program must be killed"
+    assert len(seen) == 2 and seen[1][0] > seen[0][0] and seen[0][1] == mcp.deadline(1), seen
+    assert not list(out.iterdir()), list(out.iterdir())
+    import io
+    real, sys.stdout = sys.stdout, io.StringIO()
+    mcp.TOOLS["t"] = (lambda: mcp.progress(1, 2, "half") or {}, None, None)
+    try:
+        mcp.call("t", {}, 7, "tok")
+        line = sys.stdout.getvalue()
+    finally:
+        sys.stdout = real
+        del mcp.TOOLS["t"]
+    assert json.loads(line) == {"jsonrpc": "2.0", "method": "notifications/progress", "params": {
+        "progressToken": "tok", "progress": 1, "total": 2, "message": "half"}}, line
+    # over stdio: the cancel notification ends the call while the server still answers ping
+    proc = subprocess.Popen([sys.executable, "-I", str(TOOLS / "metal_trace_mcp.py")], text=True, bufsize=1,
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            env=dict(os.environ, METAL_TRACE_OUT=str(out), PATH=f"{stubs}:{os.environ['PATH']}"))
+    def say(message):
+        proc.stdin.write(json.dumps(message) + "\n")
+        proc.stdin.flush()
+    try:
+        say({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+            "name": "perf_record", "_meta": {"progressToken": "t"},
+            "arguments": {"label": "hang", "program": str(program), "seconds": 1, "wine": "native"}}})
+        time.sleep(2)
+        say({"jsonrpc": "2.0", "id": 2, "method": "ping"})
+        assert json.loads(proc.stdout.readline())["id"] == 2, "ping must be answered during a recording"
+        say({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 1}})
+        reply = json.loads(proc.stdout.readline())
+        assert reply["id"] == 1 and reply["result"]["isError"] and "cancelled" in reply["result"]["content"][0]["text"]
+    finally:
+        proc.kill()
+        proc.wait()
+    assert not list(out.iterdir()), list(out.iterdir())
+
+
 def main():
-    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun]
+    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

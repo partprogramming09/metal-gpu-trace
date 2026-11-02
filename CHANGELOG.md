@@ -3,6 +3,14 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- Progress and cancellation. A client that sends a `progressToken` with `tools/call` gets `notifications/progress`
+  every 5 s while `perf_record`, `perf_attach` or `perf_baseline_record` run (seconds elapsed of the deadline), instead
+  of silence for up to 630 s. `notifications/cancelled` stops the recording, deletes its partial `.trace` and
+  `instruments*.ktrace`, and answers the call with an error. Tool calls now run on a worker thread, one at a time, so
+  `ping` and cancellation are read while a recording runs. On Windows the recording is not cancellable or reported yet.
+
 ## 0.8.4 — 2026-11-01
 
 - Recording no longer fills the disk. `xctrace record` leaves a temporary `instruments*.ktrace` (5 to 16 GB for a

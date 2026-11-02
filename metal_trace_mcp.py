@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 
 __version__ = "0.8.4"
@@ -334,6 +335,23 @@ def layer_change(sa, sb, a, b):
     return out
 
 
+PROGRESS_TICKS = 5  # seconds between progress notifications while a recording runs
+RUN = threading.local()  # the cancel event and progress sender of the tool call this thread is serving
+
+
+def cancelled():
+    """Returns whether the client cancelled the tool call this thread is serving."""
+    event = getattr(RUN, "cancel", None)
+    return bool(event and event.is_set())
+
+
+def progress(done, total, message):
+    """Tells the client how far the running tool call is, when it asked for progress; a no-op otherwise."""
+    send = getattr(RUN, "progress", None)
+    if send:
+        send(done, total, message)
+
+
 def deadline(seconds):
     """Returns the seconds a recording of `seconds` may take in all; closing and reading back a Wine D3D12 trace takes
     up to 14 s per recorded second on an M1 Pro."""
@@ -370,20 +388,33 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
                              str(prefix), str(workdir), *command],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
                             start_new_session=True)
-    try:
-        _, stderr = proc.communicate(timeout=deadline(seconds))
-    except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGKILL)
-        proc.wait()
-        if wine not in ("native", "attach"):
-            subprocess.run([str(pathlib.Path(wine) / "bin" / "wineserver"), "-k"], env=dict(env, WINEPREFIX=str(prefix)),
-                           capture_output=True, timeout=30)
-        if (OUT / ".recording").is_dir():
-            (OUT / ".recording").rmdir()
-        # the partial .trace and CSVs of this run
-        for path in (set(OUT.glob(f"{label}_*")) - before) | (set(tmp.glob("instruments*.ktrace")) - ktraces):
-            shutil.rmtree(path) if path.is_dir() else path.unlink()
-        raise ToolError(f"the recording took over {deadline(seconds)} s and was stopped; nothing was saved")
+    limit, started, ticks = deadline(seconds), time.monotonic(), 0
+    while True:
+        left = limit - (time.monotonic() - started)
+        if left <= 0 or cancelled():
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            if wine == "native":
+                subprocess.run(["pkill", "-x", pathlib.Path(command[0]).name], capture_output=True, timeout=30)
+            elif wine != "attach":
+                subprocess.run([str(pathlib.Path(wine) / "bin" / "wineserver"), "-k"],
+                               env=dict(env, WINEPREFIX=str(prefix)), capture_output=True, timeout=30)
+            if (OUT / ".recording").is_dir():
+                (OUT / ".recording").rmdir()
+            # the partial .trace and CSVs of this run
+            for path in (set(OUT.glob(f"{label}_*")) - before) | (set(tmp.glob("instruments*.ktrace")) - ktraces):
+                shutil.rmtree(path) if path.is_dir() else path.unlink()
+            if left > 0:
+                raise ToolError("the recording was cancelled; nothing was saved")
+            raise ToolError(f"the recording took over {limit} s and was stopped; nothing was saved")
+        try:
+            _, stderr = proc.communicate(timeout=min(1, left))
+            break
+        except subprocess.TimeoutExpired:
+            ticks += 1
+            if ticks % PROGRESS_TICKS == 0:
+                done = time.monotonic() - started
+                progress(done, limit, f"recording and reading back: {int(done)} s of up to {limit} s")
     new = sorted(set(OUT.glob(f"{label}_*.json")) - before)
     if proc.returncode or not new:
         reason = (stderr.strip().splitlines() or ["no summary was written"])[-1]
@@ -934,16 +965,34 @@ def prompt_compare_layer(workload="drawstress", api="d3d12"):
     )
 
 
+CALLS = {}  # request id -> cancel event, for the tool calls in flight
+OUT_LOCK, TOOL_LOCK = threading.Lock(), threading.Lock()
+
+
+def send(message):
+    """Writes one JSON-RPC message to stdout; the lock keeps lines from different threads whole."""
+    with OUT_LOCK:
+        sys.stdout.write(json.dumps(message) + "\n")
+        sys.stdout.flush()
+
+
 def log(message):
     """Writes one line to stderr, the only log channel a stdio server may use."""
     if os.environ.get("METAL_TRACE_LOG") != "off":
         print(f"metal-trace: {message}", file=sys.stderr, flush=True)
 
 
-def call(name, arguments):
-    """Runs one tool and returns its MCP result, with failures as isError results that say what to do."""
+def call(name, arguments, request_id=None, token=None):
+    """Runs one tool and returns its MCP result, with failures as isError results that say what to do. A client's
+    notifications/cancelled for `request_id` stops it; `token` is the client's progressToken, if it sent one."""
     started = time.monotonic()
+    RUN.cancel = CALLS.setdefault(request_id, threading.Event()) if request_id is not None else None
+    RUN.progress = None if token is None else lambda done, total, message: send(
+        {"jsonrpc": "2.0", "method": "notifications/progress",
+         "params": {"progressToken": token, "progress": done, "total": total, "message": message}})
     try:
+        if cancelled():
+            raise ToolError("the call was cancelled before it started")
         value = TOOLS[name][0](**arguments)
         text = json.dumps(value, ensure_ascii=False)
         if len(text) > MAX_TEXT:
@@ -955,6 +1004,7 @@ def call(name, arguments):
         result = {"content": [{"type": "text", "text": str(error)}], "isError": True}
     except Exception as error:  # an unexpected failure is reported to the client, not fatal to the server
         result = {"content": [{"type": "text", "text": f"internal error: {type(error).__name__}"}], "isError": True}
+    CALLS.pop(request_id, None)
     log(f"{name} {'error' if result.get('isError') else 'ok'} in {time.monotonic() - started:.1f} s")
     return result
 
@@ -1006,7 +1056,8 @@ def handle(message):
         name = params.get("name")
         if name not in TOOLS:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": f"unknown tool {name}"}}
-        result = call(name, params.get("arguments") or {})
+        result = call(name, params.get("arguments") or {}, mid if isinstance(mid, (str, int)) else None,
+                      (params.get("_meta") or {}).get("progressToken"))
     else:
         return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"unknown method {method}"}}
     return {"jsonrpc": "2.0", "id": mid, "result": result}
@@ -1020,19 +1071,47 @@ def main():
     for stream in (sys.stdin, sys.stdout):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
+    workers = []
     for line in sys.stdin:
         if not line.strip():
             continue
         try:
-            reply = handle(json.loads(line))
+            message = json.loads(line)
+            if isinstance(message, dict) and message.get("method") == "notifications/cancelled":
+                event = CALLS.get((message.get("params") or {}).get("requestId"))
+                if event:
+                    event.set()
+                continue
+            if isinstance(message, dict) and message.get("method") == "tools/call" and \
+                    isinstance(message.get("id"), (str, int)):
+                # a tool call runs on its own thread so ping and notifications/cancelled are read meanwhile; calls
+                # still run one at a time, as only one recording may run at once
+                CALLS[message["id"]] = threading.Event()
+                workers.append(threading.Thread(target=serve, args=(message,)))
+                workers[-1].start()
+                continue
+            reply = handle(message)
         except json.JSONDecodeError:
             reply = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}}
         except Exception as error:  # a malformed request must not stop the server
             log(f"internal error {type(error).__name__}")
             reply = {"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": "internal error"}}
         if reply is not None:
-            sys.stdout.write(json.dumps(reply) + "\n")
-            sys.stdout.flush()
+            send(reply)
+    for worker in workers:
+        worker.join()
+
+
+def serve(message):
+    """Answers one tools/call on a worker thread, after the call before it."""
+    with TOOL_LOCK:
+        try:
+            reply = handle(message)
+        except Exception as error:  # a malformed request must not stop the server
+            log(f"internal error {type(error).__name__}")
+            CALLS.pop(message.get("id"), None)
+            reply = {"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32603, "message": "internal error"}}
+    send(reply)
 
 
 if __name__ == "__main__":
