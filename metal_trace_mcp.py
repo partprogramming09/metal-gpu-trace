@@ -91,6 +91,13 @@ def trace_path(trace):
     return allowed(trace)
 
 
+OBJECT = {"type": "object"}
+PAGED = {"type": "object", "required": ["total", "offset", "rows", "next_offset"],
+         "properties": {"total": {"type": "integer"}, "offset": {"type": "integer"}, "rows": {"type": "array"},
+                        "next_offset": {"type": ["integer", "null"]}}}
+PAGED_TOOLS = ("perf_runs", "trace_query", "capture_records")  # the tools that return page()
+
+
 def page(items, offset, limit):
     """Returns one page of `items` with the total and the offset of the next page (None at the end)."""
     offset, limit = max(0, int(offset)), min(max(1, int(limit)), MAX_LIMIT)
@@ -994,6 +1001,8 @@ def call(name, arguments, request_id=None, token=None):
         if cancelled():
             raise ToolError("the call was cancelled before it started")
         value = TOOLS[name][0](**arguments)
+        if not isinstance(value, dict):
+            raise RuntimeError(f"{name} returned {type(value).__name__}, not an object")
         text = json.dumps(value, ensure_ascii=False)
         if len(text) > MAX_TEXT:
             raise ToolError(f"the result has {len(text)} characters; ask for a smaller page with limit")
@@ -1038,7 +1047,8 @@ def handle(message):
         result = {"contents": [{"uri": uri, "mimeType": "application/json",
                                 "text": json.dumps(RESOURCES[uri][2](), ensure_ascii=False)}]}
     elif method == "tools/list":
-        result = {"tools": [{"name": n, "description": f.__doc__.strip(), "inputSchema": s, "annotations": hints}
+        result = {"tools": [{"name": n, "description": f.__doc__.strip(), "inputSchema": s,
+                             "outputSchema": PAGED if n in PAGED_TOOLS else OBJECT, "annotations": hints}
                             | ({"_meta": META[n]} if n in META else {}) for n, (f, s, hints) in TOOLS.items()]}
     elif method == "prompts/list":
         result = {"prompts": [{"name": name, **p} for name, p in PROMPTS.items()]}

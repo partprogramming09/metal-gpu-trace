@@ -569,6 +569,10 @@ def test_server(tmp_path):
     lines = [json.loads(line) for line in proc.stdout.splitlines()]
     replies = {r["id"]: r for r in lines if r["id"] is not None}
     assert sorted(replies) == list(range(1, 26)), (replies, proc.stderr)
+    tools = {t["name"]: t for t in replies[2]["result"]["tools"]}
+    assert all("outputSchema" in t for t in tools.values()), "every tool declares its output"
+    paged = replies[3]["result"]["structuredContent"]
+    assert set(tools["perf_runs"]["outputSchema"]["required"]) <= set(paged), paged
     assert [p["name"] for p in replies[22]["result"]["prompts"]] == ["compare-layer"]
     steps = replies[23]["result"]["messages"][0]["content"]["text"]
     assert all(w in steps for w in ("api=d3d11", "workload=drawstress", "perf_compare a=", "labels")), steps

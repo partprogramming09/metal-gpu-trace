@@ -10,6 +10,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   of silence for up to 630 s. `notifications/cancelled` stops the recording, deletes its partial `.trace` and
   `instruments*.ktrace`, and answers the call with an error. Tool calls now run on a worker thread, one at a time, so
   `ping` and cancellation are read while a recording runs. On Windows the recording is not cancellable or reported yet.
+- `tools/list` gives every tool an `outputSchema` (an object; `perf_runs`, `trace_query` and `capture_records` name
+  their page fields), so clients can validate `structuredContent`. A tool that returns anything but an object is an
+  error, not a malformed result.
 
 ## 0.8.4 — 2026-11-01
 
