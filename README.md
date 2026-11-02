@@ -87,6 +87,8 @@ On Windows the server records native programs (`perf_record_windows.py`); no Win
 
 Frames come from Intel's [PresentMon](https://github.com/GameTechDev/PresentMon) console application (MIT): one row per `Present()` of the process, with `MsBetweenPresents` and the GPU time `MsGPUTime`. Download `PresentMon-<version>-x64.exe` from its releases, check its SHA-256 against the one GitHub shows, and call the `presentmon_install` tool, or put it in `%LOCALAPPDATA%\metal-gpu-trace` or on `PATH`, or point `PRESENTMON_EXE` at it. The user must be an administrator or in the "Performance Log Users" group. Without PresentMon the summary falls back to DWM composition intervals (`gpu.source` is `dwm-composition`): they cover the whole desktop, miss games in exclusive full screen, and carry no GPU time. With neither a frame log, PresentMon nor DWM samples, a recording fails; it never invents frames.
 
+What cannot be measured is `null`, not zero: the 1% low needs 100 frames and the 0.1% low 1000; stutter rate and jitter need two frames; `thermal_throttling_detected` needs GPU times; a drawstress log holds one mean per line, so its summary (`gpu.frame_times`) has no frame-level percentiles, stutter or jitter. DWM keeps only intervals between consecutive composed frames and drops a jump of several frames. `perf_diagnose` calls a large working set with uneven frame times `MEMORY_PRESSURE_SUSPECTED`: a suspicion, since memory bandwidth is not measured.
+
 ```powershell
 winget install --id=astral-sh.uv -e
 claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=%USERPROFILE%\perf-runs -- uvx metal-gpu-trace
