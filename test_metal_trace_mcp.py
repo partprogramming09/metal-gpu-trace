@@ -83,11 +83,11 @@ def test_disk_guard(tmp_path):
     """perf_record.sh refuses to start, before locking or recording, when the disk lacks the space Instruments needs."""
     script = TOOLS / "perf_record.sh"
     env = {**os.environ, "PERF_OUT": str(tmp_path), "PERF_MIN_FREE_GB": "99999999"}
-    proc = subprocess.run(["zsh", str(script), "g", "30", "native", "-", "-", "/bin/true"], env=env,
+    proc = subprocess.run(["zsh", str(script), "g", "30", "native", "-", "-", sys.executable], env=env,
                           capture_output=True, text=True, timeout=60)
     assert proc.returncode == 4 and "not enough free disk" in proc.stderr and "99999999 GB needed" in proc.stderr, proc
     assert not (tmp_path / ".recording").exists(), "no lock is left behind"
-    default = subprocess.run(["zsh", str(script), "g", "60", "native", "-", "-", "/bin/true"],
+    default = subprocess.run(["zsh", str(script), "g", "60", "native", "-", "-", sys.executable],
                              env={**os.environ, "PERF_OUT": str(tmp_path), "TMPDIR": "/nonexistent"},
                              capture_output=True, text=True, timeout=60)
     assert default.returncode != 0, "a missing TMPDIR volume must not pass the guard"
@@ -645,6 +645,7 @@ def test_overrun(tmp_path):
     xcrun.chmod(0o755)
     program = tmp_path / "hang-4242"
     program.touch()
+    program.chmod(0o755)
     saved = mcp.OUT, mcp.deadline, os.environ["PATH"]
     mcp.OUT, mcp.deadline = out, lambda seconds: 3
     os.environ["PATH"] = f"{stubs}:{saved[2]}"
@@ -668,6 +669,7 @@ def hang_stubs(tmp_path):
     xcrun.chmod(0o755)
     program = tmp_path / "hang-4242"
     program.touch()
+    program.chmod(0o755)
     pkill = stubs / "pkill"  # records which program the stop path kills
     pkill.write_text(f"#!/bin/zsh\necho $@ >> {tmp_path}/pkill.log\n")
     pkill.chmod(0o755)
@@ -963,8 +965,36 @@ def test_kill_program_and_watchdog(tmp_path):
     assert not list(out.iterdir()), f"the lock and the partial files must go: {list(out.iterdir())} {logfile.read_text()[-400:]!r}"
 
 
+def test_script_failure_cleanup(tmp_path):
+    """perf_record.sh frees its lock and deletes its partial files when a recording fails, and refuses a program that
+    is not an executable file before it starts Instruments."""
+    stubs, out = tmp_path / "stubs", tmp_path / "runs"
+    stubs.mkdir()
+    out.mkdir()
+    xcrun = stubs / "xcrun"  # an xctrace that fails at once
+    xcrun.write_text("#!/bin/zsh\nexit 1\n")
+    xcrun.chmod(0o755)
+    program, text = tmp_path / "prog", tmp_path / "notes.txt"
+    program.touch()
+    program.chmod(0o755)
+    text.write_text("x")
+    env = dict(os.environ, PERF_OUT=str(out), PATH=f"{stubs}:{os.environ['PATH']}")
+
+    def run(path):
+        return subprocess.run(["zsh", str(TOOLS / "perf_record.sh"), "f", "2", "native", "-", str(tmp_path), str(path)],
+                              capture_output=True, text=True, env=env, timeout=60)
+    failed = run(program)
+    assert failed.returncode == 1 and "no recording" in failed.stderr, failed
+    assert not list(out.iterdir()), f"a failed recording left {list(out.iterdir())}"
+    for bad in (text, tmp_path, tmp_path / "missing"):
+        refused = run(bad)
+        assert refused.returncode == 2 and "not an executable file" in refused.stderr, (bad, refused)
+        assert str(tmp_path) not in refused.stderr, "the error must not carry a local path"
+    assert not list(out.iterdir())
+
+
 def main():
-    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog]
+    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

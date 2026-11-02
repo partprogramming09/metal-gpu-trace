@@ -10,6 +10,7 @@ shift 5
 [[ $label =~ '^[A-Za-z0-9._-]+$' ]] || { echo "label may hold only letters, digits, '.', '_' and '-'" >&2; exit 2; }
 [[ $seconds == <1-3600> ]] || { echo "seconds must be 1 to 3600" >&2; exit 2; }
 [[ $wine == (native|attach) || -x $wine/bin/wine ]] || { echo "no Wine at $wine/bin/wine (or pass native or attach)" >&2; exit 2; }
+[[ $wine != native || ( -f $1 && -x $1 ) ]] || { echo "${1:t} is not an executable file" >&2; exit 2; }
 if [[ $wine == attach ]]; then
   pid=$1
   # a name matches the newest process whose command line holds it, such as Game.exe under Wine
@@ -36,10 +37,12 @@ mkdir $lock 2>/dev/null || { echo "another recording is running ($lock); remove 
 before=(${tmp%/}/instruments*.ktrace(N))
 # Frees the lock and the temporary .ktrace files that xctrace left in $TMPDIR during this run.
 cleanup() {
-  [[ -n ${watchdog:-} ]] && kill $watchdog 2>/dev/null
-  [[ -n ${sampler:-} ]] && kill $sampler 2>/dev/null
+  local rc=$?
+  kill ${watchdog:-} ${sampler:-} 2>/dev/null || true
   rmdir $lock 2>/dev/null
   for k in ${tmp%/}/instruments*.ktrace(N); do (( ${before[(Ie)$k]} )) || rm -rf $k; done
+  # a failed recording leaves no partial files behind
+  if (( rc )); then rm -rf $out/$name.*(N); fi
 }
 trap cleanup EXIT
 trap 'rm -rf $out/$name.*(N); exit 143' TERM
