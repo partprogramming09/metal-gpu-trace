@@ -1164,6 +1164,13 @@ def main():
         return
     if sys.argv[1:2] == ["check"]:
         sys.exit(check_cli(sys.argv[2:]))
+    if sys.argv[1:2] == ["--http"]:
+        try:
+            port = int(sys.argv[3]) if sys.argv[2:3] == ["--port"] else 8765
+        except (IndexError, ValueError):
+            print("usage: metal-gpu-trace --http [--port N]", file=sys.stderr)
+            sys.exit(2)
+        sys.exit(serve_http(port))
     for stream in (sys.stdin, sys.stdout):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
@@ -1198,16 +1205,107 @@ def main():
         worker.join()
 
 
-def serve(message):
-    """Answers one tools/call on a worker thread, after the call before it."""
+def answer(message):
+    """Returns the reply to one tools/call, after the call before it."""
     with TOOL_LOCK:
         try:
-            reply = handle(message)
+            return handle(message)
         except Exception as error:  # a malformed request must not stop the server
             log(f"internal error {type(error).__name__}")
             CALLS.pop(message.get("id"), None)
-            reply = {"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32603, "message": "internal error"}}
-    send(reply)
+            return {"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32603, "message": "internal error"}}
+
+
+def serve(message):
+    """Answers one tools/call on a worker thread and writes the reply to stdout."""
+    send(answer(message))
+
+
+MIN_TOKEN = 16
+MAX_BODY = 1_000_000
+
+
+def local_host(value):
+    """Returns whether a Host or Origin header names this machine's loopback: localhost or 127.0.0.1, with any port."""
+    host = (value or "").split("://", 1)[-1].split("/", 1)[0]
+    return host.partition(":")[0] in ("localhost", "127.0.0.1")
+
+
+def http_handler(token):
+    """Returns the request handler class of the Streamable HTTP endpoint POST /mcp: one JSON-RPC message in, one JSON
+    reply out (202 for a notification). A request needs the bearer `token`, a loopback Host and no foreign Origin,
+    which also stops a web page from reaching the server through DNS rebinding."""
+    import hmac
+    from http.server import BaseHTTPRequestHandler
+
+    class Handler(BaseHTTPRequestHandler):
+        def reply(self, code, body=None):
+            data = b"" if body is None else json.dumps(body).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_POST(self):
+            if self.path != "/mcp":
+                return self.reply(404)
+            if not local_host(self.headers.get("Host")) or (self.headers.get("Origin") and
+                                                           not local_host(self.headers.get("Origin"))):
+                return self.reply(403)
+            given = (self.headers.get("Authorization") or "").removeprefix("Bearer ")
+            if not hmac.compare_digest(given.encode(), token.encode()):
+                return self.reply(401)
+            length = int(self.headers.get("Content-Length") or 0) if (self.headers.get("Content-Length") or "0").isdigit() else -1
+            if not 0 <= length <= MAX_BODY:
+                return self.reply(413)
+            try:
+                message = json.loads(self.rfile.read(length))
+            except json.JSONDecodeError:
+                return self.reply(400, {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}})
+            if isinstance(message, dict) and message.get("method") == "notifications/cancelled":
+                event = CALLS.get((message.get("params") or {}).get("requestId"))
+                if event:
+                    event.set()
+                return self.reply(202)
+            if isinstance(message, dict) and message.get("method") == "tools/call" and \
+                    isinstance(message.get("id"), (str, int)):
+                # progress goes out as notifications, which this endpoint does not stream: no progressToken
+                if isinstance(message.get("params"), dict):
+                    message["params"].pop("_meta", None)
+                CALLS[message["id"]] = threading.Event()
+                return self.reply(200, answer(message))
+            try:
+                reply = handle(message)
+            except Exception as error:  # a malformed request must not stop the server
+                log(f"internal error {type(error).__name__}")
+                reply = {"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": "internal error"}}
+            self.reply(202 if reply is None else 200, reply)
+
+        def do_GET(self):
+            self.reply(405)
+
+        def log_message(self, *args):
+            pass
+
+    return Handler
+
+
+def serve_http(port):
+    """Serves the MCP endpoint over HTTP on 127.0.0.1 only, until interrupted. METAL_TRACE_TOKEN (at least MIN_TOKEN
+    characters) is the bearer token every request must carry; without it the server refuses to start."""
+    from http.server import ThreadingHTTPServer
+    token = os.environ.get("METAL_TRACE_TOKEN", "")
+    if len(token) < MIN_TOKEN:
+        print(f"metal-gpu-trace: set METAL_TRACE_TOKEN to a secret of at least {MIN_TOKEN} characters", file=sys.stderr)
+        return 2
+    server = ThreadingHTTPServer(("127.0.0.1", port), http_handler(token))
+    log(f"serving http://127.0.0.1:{server.server_address[1]}/mcp")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
 
 
 if __name__ == "__main__":

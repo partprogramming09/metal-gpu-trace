@@ -3,6 +3,12 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `metal-gpu-trace --http [--port N]` serves the tools over Streamable HTTP at `POST /mcp` on 127.0.0.1 only. It needs
+  `METAL_TRACE_TOKEN` (16+ characters) and a matching bearer token on every request, refuses a foreign Host or Origin,
+  and cancels a running call on `notifications/cancelled`. It does not stream progress.
+
 ## 0.9.1 — 2026-11-02
 
 - On Windows, `perf_record` and `perf_attach` report progress every 5 s and stop on `notifications/cancelled`, deleting

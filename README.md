@@ -186,6 +186,15 @@ How it follows the [MCP specification](https://modelcontextprotocol.io/specifica
   absolute paths to file names, so they can be shared.
 - Every `xctrace` call has a timeout.
 
+## HTTP
+
+`METAL_TRACE_TOKEN=<secret of 16+ characters> metal-gpu-trace --http [--port N]` serves the same tools at
+`POST http://127.0.0.1:8765/mcp` (Streamable HTTP, one JSON reply per request), for a client on the same Mac that cannot
+start a stdio server. Every request needs `Authorization: Bearer <token>`. It listens on 127.0.0.1 only, refuses a
+request whose Host or Origin is not localhost or 127.0.0.1 (DNS rebinding), and does not start without the token. Cancel
+a running call with `notifications/cancelled` from another connection. There is no progress stream over HTTP, and no
+remote access: reach another Mac through an SSH tunnel (`ssh -L 8765:127.0.0.1:8765 mac`), not by opening the port.
+
 ## CI gate
 
 `metal-gpu-trace check RUN BASELINE [--margin-pct N]` runs `perf_check` without a client and prints one JSON line
