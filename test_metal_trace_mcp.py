@@ -1,5 +1,6 @@
 """Self-check of metal_trace_mcp.py, perf_report.py and gputrace_read.py without Instruments: run it with python3 -I,
 or with pytest."""
+import functools
 import json
 import os
 import shutil
@@ -63,6 +64,21 @@ def test_no_memory(tmp_path):
     assert perf_report.MEMORY in asked[0] and perf_report.MEMORY not in asked[1], asked
 
 
+def macos_only(test):
+    """Skips a test that needs macOS tools (zsh, xctrace, a shell-script Wine) when run on Windows."""
+    @functools.wraps(test)
+    def wrapper(tmp_path):
+        if sys.platform == "win32":
+            try:
+                import pytest
+            except ImportError:
+                return None
+            pytest.skip("needs macOS tools")
+        return test(tmp_path)
+    return wrapper
+
+
+@macos_only
 def test_disk_guard(tmp_path):
     """perf_record.sh refuses to start, before locking or recording, when the disk lacks the space Instruments needs."""
     script = TOOLS / "perf_record.sh"
@@ -372,6 +388,7 @@ def test_baseline_record(tmp_path):
         mcp.tool_perf_record, mcp.OUT, mcp.BASELINES = saved
 
 
+@macos_only
 def test_layer(tmp_path):
     """A recording's layer fingerprint is stable, changes with any Direct3D DLL, carries the overrides and program
     variables, and perf_compare tells two layers from one."""
@@ -465,7 +482,8 @@ def test_workloads(tmp_path):
         program, wine, args, env = mcp.workload_command("demo", "mtl", 20, "/opt/wine", "-x")
         assert program.is_file() and os.access(program, os.X_OK) and wine == "native", program
         assert (args, env) == ("--mtl -x", "DIM=20"), (args, env)
-        assert mcp.workload_command("demo", "d3d12", None, "/opt/wine", "")[1:] == ("/opt/wine", "--d3d12", "")
+        layer_wine = "native" if sys.platform == "win32" else "/opt/wine"
+        assert mcp.workload_command("demo", "d3d12", None, "/opt/wine", "")[1:] == (layer_wine, "--d3d12", "")
         for api in ("vulkan", None):
             try:
                 mcp.workload_command("demo", api, None, None, "")
@@ -591,6 +609,7 @@ def test_no_runs_directory(tmp_path):
     assert not out.exists()
 
 
+@macos_only
 def test_overrun(tmp_path):
     """A recording that overruns its deadline is stopped and leaves no files and no lock behind, and the deadline
     covers a 30 s Wine D3D12 recording (more than 407 s in all on an M1 Pro) and reading back a 60 s one."""

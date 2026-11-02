@@ -395,6 +395,10 @@ def compare_summaries(sa, sb, a, b, short_us=25):
     """perf_compare over two loaded summaries named a and b."""
     metrics = {
         "fps": lambda s: s["gpu"].get("fps_estimate"),
+        "fps_1pct_low": lambda s: s["gpu"].get("fps_1pct_low"),
+        "fps_01pct_low": lambda s: s["gpu"].get("fps_01pct_low"),
+        "stutter_rate_pct": lambda s: s["gpu"].get("stutter_rate_pct"),
+        "frame_jitter_ms": lambda s: s["gpu"].get("frame_jitter_ms"),
         "gpu_ms_mean": lambda s: s["gpu"]["frame_gpu_ms"].get("mean"),
         "gpu_ms_p95": lambda s: s["gpu"]["frame_gpu_ms"].get("p95"),
         "frame_interval_ms_p95": lambda s: s["gpu"]["frame_interval_ms"].get("p95"),
@@ -577,12 +581,72 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     if share is None:
         raise ToolError(f"short_us is one of {', '.join(map(str, perf_report.SHORT_US))}")
     per_frame = encoders["per_frame"].get("p50", 0)
-    frames = (s.get("gpu") or {}).get("frames", 0)
-    return {"run": run, "too_many_short_encoders": per_frame >= min_encoders and share >= short_share,
+    gpu = s.get("gpu") or {}
+    frames = gpu.get("frames", 0)
+    too_many_short = per_frame >= min_encoders and share >= short_share
+
+    frame_gpu_ms = gpu.get("frame_gpu_ms") or {}
+    frame_interval_ms = gpu.get("frame_interval_ms") or {}
+    gpu_idle = s.get("gpu_idle") or {}
+    stutter_rate = gpu.get("stutter_rate_pct") or 0.0
+    jitter_ms = gpu.get("frame_jitter_ms") or 0.0
+    worst_spike = frame_interval_ms.get("max") or frame_gpu_ms.get("max") or 0.0
+
+    if stutter_rate > 7.0:
+        stutter_verdict = "SEVERE_STUTTER"
+    elif stutter_rate >= 2.0:
+        stutter_verdict = "MICRO_STUTTER"
+    else:
+        stutter_verdict = "SMOOTH"
+
+    idle_share = gpu_idle.get("idle_share") or 0.0
+    gpu_ms_mean = frame_gpu_ms.get("mean") or 0.0
+    interval_ms_mean = frame_interval_ms.get("mean") or 0.0
+    interval_p50 = frame_interval_ms.get("p50") or 0.0
+    interval_p95 = frame_interval_ms.get("p95") or 0.0
+    mem_working_set = max((s.get("process_rss_mib") or {}).get("max") or 0.0,
+                          (s.get("metal_memory_mib") or {}).get("peak") or 0.0)
+
+    high_variance = jitter_ms >= 3.0 or (interval_p95 - interval_p50) >= 5.0
+    high_memory = mem_working_set >= 1500.0
+    has_frame_data = bool(frame_gpu_ms.get("count", 0) > 0 or frame_interval_ms.get("count", 0) > 0)
+
+    if has_frame_data and high_variance and high_memory:
+        bottleneck = "MEMORY_BANDWIDTH_PRESSURE"
+    elif has_frame_data and (idle_share >= 0.25 or (too_many_short and idle_share >= 0.20)):
+        bottleneck = "CPU_SUBMISSION_BOUND"
+    elif has_frame_data and idle_share <= 0.15 and gpu_ms_mean > 0 and (
+            gpu_ms_mean >= 0.80 * interval_ms_mean if interval_ms_mean > 0 else True):
+        bottleneck = "GPU_BOUND"
+    else:
+        bottleneck = "BALANCED"
+
+    recommendations = []
+    if bottleneck == "GPU_BOUND":
+        recommendations.append("Lower the internal render resolution or post-processing and shader cost, or enable dynamic resolution scaling.")
+    elif bottleneck == "CPU_SUBMISSION_BOUND":
+        recommendations.append("Consolidate draw calls with instancing, or reduce geometry and dynamic object complexity.")
+    elif bottleneck == "MEMORY_BANDWIDTH_PRESSURE":
+        recommendations.append("Reduce shadow resolution and cascades to ease unified-memory bandwidth.")
+    if too_many_short:
+        recommendations.append("Consolidate render passes and reduce short encoders to cut translation-layer overhead.")
+    if stutter_verdict != "SMOOTH":
+        recommendations.append("Use a frame-rate cap or VRR to steady the present intervals.")
+    throttling = gpu.get("throttling_analysis") or {}
+    if throttling.get("thermal_throttling_detected"):
+        recommendations.append(f"Thermal throttling detected ({throttling.get('fps_drift_pct', 0)}% FPS drop): check cooling.")
+    if not recommendations:
+        recommendations.append("Balanced; no critical bottleneck detected.")
+
+    return {"run": run, "too_many_short_encoders": too_many_short,
             "thresholds": {"min_encoders": min_encoders, "short_us": int(short_us), "short_share": short_share},
             "encoders_per_frame_p50": per_frame,
             "command_buffers_per_frame_p50": encoders["command_buffers_per_frame"].get("p50"),
-            "short_encoder_share": share, "fps": (s.get("gpu") or {}).get("fps_estimate"),
+            "short_encoder_share": share, "fps": gpu.get("fps_estimate"),
+            "bottleneck": bottleneck,
+            "stutter_analysis": {"stutter_rate_pct": stutter_rate, "worst_spike_ms": worst_spike,
+                                 "verdict": stutter_verdict},
+            "recommendations": recommendations,
             "gpu_idle": s.get("gpu_idle"), "by_label": encoders["by_label"], "too_short": frames < 100}
 
 
