@@ -721,13 +721,12 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
         dwm_stop_event = threading.Event()
         dwm_thread = None
 
-        if is_attach:
-            dwm_thread = threading.Thread(
-                target=sample_dwm_frame_times,
-                args=(pid, dwm_stop_event, dwm_samples),
-                daemon=True,
-            )
-            dwm_thread.start()
+        dwm_thread = threading.Thread(
+            target=sample_dwm_frame_times,
+            args=(pid, dwm_stop_event, dwm_samples),
+            daemon=True,
+        )
+        dwm_thread.start()
 
         # RSS Sampling
         rss_csv_path = out_dir / f"{name}.rss.csv"
@@ -845,40 +844,23 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
                     cmd_id = f"cmd_{frame_idx}"
                     spans.append((frame_idx, int(start_ms * 1e6), int(gpu_ms * 1e6), enc_id, cmd_id))
                     labels[enc_id] = "draw"
-        elif is_attach and dwm_samples:
-            # Empirical presentation & frame timing measured via Windows DWM and QPC
+        elif dwm_samples:
+            # DWM composition intervals of the whole desktop; GPU time per frame is not measured
             for dt in dwm_samples:
                 frame_idx += 1
-                start_ms = current_time_ms
-                current_time_ms += dt
-                gpu_ms = round(dt * 0.7, 4)
                 frames_data.append({
                     "frame": frame_idx,
-                    "start_ms": start_ms,
-                    "gpu_ms_draw": gpu_ms,
-                    "gpu_ms_total": round(dt, 4),
+                    "start_ms": current_time_ms,
+                    "gpu_ms_draw": None,
+                    "gpu_ms_total": None,
                 })
-                enc_id = f"enc_{frame_idx}"
-                cmd_id = f"cmd_{frame_idx}"
-                spans.append((frame_idx, int(start_ms * 1e6), int(dt * 1e6), enc_id, cmd_id))
-                labels[enc_id] = "draw"
+                current_time_ms += dt
         else:
-            # General process without drawstress log / DWM unavailable: defensive synthetic fallback
-            n_frames = max(1, int(round(elapsed_duration * 60)))
-            interval_ms = (elapsed_duration * 1000.0) / n_frames
-            gpu_ms = round(interval_ms * 0.7, 3)
-            for i in range(1, n_frames + 1):
-                start_ms = (i - 1) * interval_ms
-                frames_data.append({
-                    "frame": i,
-                    "start_ms": start_ms,
-                    "gpu_ms_draw": gpu_ms,
-                    "gpu_ms_total": gpu_ms,
-                })
-                enc_id = f"enc_{i}"
-                cmd_id = f"cmd_{i}"
-                spans.append((i, int(start_ms * 1e6), int(gpu_ms * 1e6), enc_id, cmd_id))
-                labels[enc_id] = "draw"
+            rss_csv_path.unlink(missing_ok=True)
+            raise RuntimeError(
+                "no frame data: the program wrote no DRAWSTRESS_LOG and DWM gave no samples "
+                "(DwmGetCompositionTimingInfo needs the interactive desktop session, not SSH or a service)"
+            )
 
         # Write frames.csv
         frames_csv_path = out_dir / f"{name}.frames.csv"
@@ -886,10 +868,12 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             writer = csv.writer(f_frames)
             writer.writerow(["frame", "start_ms", "gpu_ms_draw", "gpu_ms_total"])
             for row in frames_data:
-                writer.writerow([row["frame"], round(row["start_ms"], 3), round(row["gpu_ms_draw"], 4), round(row["gpu_ms_total"], 4)])
+                writer.writerow([row["frame"], round(row["start_ms"], 3),
+                                 "" if row["gpu_ms_draw"] is None else round(row["gpu_ms_draw"], 4),
+                                 "" if row["gpu_ms_total"] is None else round(row["gpu_ms_total"], 4)])
 
         # Statistics computation
-        totals = [f["gpu_ms_total"] for f in frames_data]
+        totals = [f["gpu_ms_total"] for f in frames_data if f["gpu_ms_total"] is not None]
         starts = [f["start_ms"] for f in frames_data]
         gaps = [round(b - a, 4) for a, b in zip(starts, starts[1:]) if b > a]
 
@@ -908,6 +892,7 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             "stutter_rate_pct": pacing["stutter_rate_pct"],
             "frame_jitter_ms": pacing["frame_jitter_ms"],
             "throttling_analysis": pacing["throttling_analysis"],
+            "source": "drawstress-log" if entries else "dwm-composition",
         }
 
         enc_stats = encoder_stats(spans, labels)
