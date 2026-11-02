@@ -22,7 +22,7 @@ import tempfile
 import threading
 import time
 
-__version__ = "0.10.0"
+__version__ = "0.10.1"
 TOOLS_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 import gputrace_read  # noqa: E402

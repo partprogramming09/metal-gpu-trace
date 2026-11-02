@@ -3,8 +3,10 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.10.1 — 2026-11-02
 
+- `perf_record.sh` refuses a native program that is not an executable file (`X is not an executable file`, exit 2)
+  before it starts Instruments, and a failed recording deletes its partial files and frees its lock.
 - Stability, from a sweep with real Instruments recordings and fuzzed requests:
   - A game that ignores SIGTERM no longer outlives a cancelled or overrun recording: it gets SIGTERM, then SIGKILL.
     One such game kept running for 40 minutes after its server was killed.
