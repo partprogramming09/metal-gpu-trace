@@ -520,6 +520,21 @@ def test_dwm_timing_structures_and_query(tmp_path):
         assert hr in (0, -2003304304)
 
 
+def test_presentmon_install_checks_the_pinned_hash(tmp_path, monkeypatch):
+    """presentmon_install saves a download only when its SHA-256 is the pinned one, and reuses it afterwards."""
+    import hashlib
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(mcp, "download", lambda url, path, max_bytes: path.write_bytes(b"x"))
+    with pytest.raises(mcp.ToolError, match="pins"):
+        mcp.tool_presentmon_install()
+    assert not list((tmp_path / "metal-gpu-trace").glob("*.exe"))
+    monkeypatch.setitem(mcp.PRESENTMON, "sha256", hashlib.sha256(b"x").hexdigest())
+    first = mcp.tool_presentmon_install()
+    assert first["installed"] and pathlib.Path(first["path"]).is_file()
+    assert mcp.tool_presentmon_install()["installed"] is False
+    assert prw.find_presentmon() == first["path"]
+
+
 def test_split_args_keeps_backslashes_and_drops_quotes():
     """Windows argument strings keep paths intact and lose the quotes around a token."""
     assert mcp.split_args('--name "a b" C:\\Games\\x --k=1') == ["--name", "a b", "C:\\Games\\x", "--k=1"]

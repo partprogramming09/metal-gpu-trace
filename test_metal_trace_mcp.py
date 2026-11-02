@@ -578,12 +578,12 @@ def test_server(tmp_path):
     assert replies[14]["result"]["protocolVersion"] == "2025-06-18"
     assert replies[15]["result"] == {} and replies[16]["error"]["code"] == -32600
     assert replies[17]["result"] == {"resourceTemplates": []}
-    assert len(replies[2]["result"]["tools"]) == 16
+    assert len(replies[2]["result"]["tools"]) == 17
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
     asks = [t["name"] for t in replies[2]["result"]["tools"] if t.get("_meta", {}).get("anthropic/requiresUserInteraction")]
-    assert asks == ["workload_fetch"] and hints["workload_fetch"]["openWorldHint"], (asks, hints)
+    assert asks == ["workload_fetch", "presentmon_install"] and hints["workload_fetch"]["openWorldHint"], (asks, hints)
     assert hints["perf_record"]["destructiveHint"] and not hints["perf_attach"]["destructiveHint"], hints
     assert hints["perf_runs"]["readOnlyHint"] and all(h["title"] for h in hints.values()), hints
     m1 = replies[9]["result"]["structuredContent"]
