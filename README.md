@@ -81,6 +81,26 @@ claude mcp list
 `claude mcp list` shows `metal-trace` as connected. `--scope user` makes it available in every project; leave it out
 to add it to the current project only.
 
+### Windows
+
+On Windows the server records native programs (`perf_record_windows.py`); no Wine and no Metal. `METAL_TRACE_WINE` is not needed: `perf_record` and `perf_attach` use `native`. `METAL_TRACE_READ` is separated by `;`.
+
+Frames come from Intel's [PresentMon](https://github.com/GameTechDev/PresentMon) console application (MIT): one row per `Present()` of the process, with `MsBetweenPresents` and the GPU time `MsGPUTime`. Download `PresentMon-<version>-x64.exe` from its releases, check its SHA-256 against the one GitHub shows, and put it in `%LOCALAPPDATA%\metal-gpu-trace`, on `PATH`, or point `PRESENTMON_EXE` at it. The user must be an administrator or in the "Performance Log Users" group. Without PresentMon the summary falls back to DWM composition intervals (`gpu.source` is `dwm-composition`): they cover the whole desktop, miss games in exclusive full screen, and carry no GPU time. With neither a frame log, PresentMon nor DWM samples, a recording fails; it never invents frames.
+
+```powershell
+winget install --id=astral-sh.uv -e
+claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=%USERPROFILE%\perf-runs -- uvx metal-gpu-trace
+claude mcp list
+```
+
+To run from a clone instead of PyPI (needs Python 3.9 or newer):
+
+```powershell
+claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=%USERPROFILE%\perf-runs -- python C:\path\to\metal-gpu-trace\metal_trace_mcp.py
+```
+
+In JSON clients use `"command": "uvx"` (or the full path `where uvx` prints) and Windows paths with doubled backslashes. Claude Desktop reads `%APPDATA%\Claude\claude_desktop_config.json`. Run the Windows tests with `python -m pytest test_perf_record_windows.py`.
+
 ### Claude Desktop, Cursor and other JSON clients
 
 These apps do not expand `~` or `$HOME`: write absolute paths.

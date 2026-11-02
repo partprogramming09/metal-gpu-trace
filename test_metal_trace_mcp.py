@@ -1,5 +1,6 @@
 """Self-check of metal_trace_mcp.py, perf_report.py and gputrace_read.py without Instruments: run it with python3 -I,
 or with pytest."""
+import functools
 import json
 import os
 import shutil
@@ -63,6 +64,21 @@ def test_no_memory(tmp_path):
     assert perf_report.MEMORY in asked[0] and perf_report.MEMORY not in asked[1], asked
 
 
+def macos_only(test):
+    """Skips a test that needs macOS tools (zsh, xctrace, a shell-script Wine) when run on Windows."""
+    @functools.wraps(test)
+    def wrapper(tmp_path):
+        if sys.platform == "win32":
+            try:
+                import pytest
+            except ImportError:
+                return None
+            pytest.skip("needs macOS tools")
+        return test(tmp_path)
+    return wrapper
+
+
+@macos_only
 def test_disk_guard(tmp_path):
     """perf_record.sh refuses to start, before locking or recording, when the disk lacks the space Instruments needs."""
     script = TOOLS / "perf_record.sh"
@@ -209,6 +225,16 @@ def test_diagnose(tmp_path):
         (tmp_path / "old.json").write_text(json.dumps({"gpu": {"frames": 1378}}))
         got = mcp.tool_perf_diagnose("new")
         assert got["too_many_short_encoders"] and not got["too_short"], got
+        assert got["bottleneck"] == "UNKNOWN" and got["stutter_analysis"]["verdict"] == "UNKNOWN", got
+        no_spans = {"gpu": {"frames": 500, "frame_gpu_ms": {"count": 500, "mean": 14.5},
+                            "frame_interval_ms": {"count": 499, "mean": 16.7, "p50": 16.6, "p95": 17.0},
+                            "stutter_rate_pct": 0.0, "frame_jitter_ms": 0.4},
+                    "encoders": {"per_frame": {"count": 0}, "command_buffers_per_frame": {"count": 0},
+                                 "short_share": {"25": 0.0}, "by_label": []},
+                    "gpu_idle": {"idle_ms_per_frame": {"count": 0}, "gaps_over_1ms": 0, "idle_share": None}}
+        (tmp_path / "pm.json").write_text(json.dumps(no_spans))
+        got = mcp.tool_perf_diagnose("pm")
+        assert got["bottleneck"] == "UNKNOWN" and got["stutter_analysis"]["verdict"] == "SMOOTH", got
         assert not mcp.tool_perf_diagnose("new", min_encoders=8)["too_many_short_encoders"]
         for run, kwargs, words in (("old", {}, "record it again"), ("new", {"short_us": 30}, "short_us is one of")):
             try:
@@ -372,6 +398,7 @@ def test_baseline_record(tmp_path):
         mcp.tool_perf_record, mcp.OUT, mcp.BASELINES = saved
 
 
+@macos_only
 def test_layer(tmp_path):
     """A recording's layer fingerprint is stable, changes with any Direct3D DLL, carries the overrides and program
     variables, and perf_compare tells two layers from one."""
@@ -465,7 +492,8 @@ def test_workloads(tmp_path):
         program, wine, args, env = mcp.workload_command("demo", "mtl", 20, "/opt/wine", "-x")
         assert program.is_file() and os.access(program, os.X_OK) and wine == "native", program
         assert (args, env) == ("--mtl -x", "DIM=20"), (args, env)
-        assert mcp.workload_command("demo", "d3d12", None, "/opt/wine", "")[1:] == ("/opt/wine", "--d3d12", "")
+        layer_wine = "native" if sys.platform == "win32" else "/opt/wine"
+        assert mcp.workload_command("demo", "d3d12", None, "/opt/wine", "")[1:] == (layer_wine, "--d3d12", "")
         for api in ("vulkan", None):
             try:
                 mcp.workload_command("demo", api, None, None, "")
@@ -591,6 +619,7 @@ def test_no_runs_directory(tmp_path):
     assert not out.exists()
 
 
+@macos_only
 def test_overrun(tmp_path):
     """A recording that overruns its deadline is stopped and leaves no files and no lock behind, and the deadline
     covers a 30 s Wine D3D12 recording (more than 407 s in all on an M1 Pro) and reading back a 60 s one."""

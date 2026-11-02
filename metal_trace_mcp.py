@@ -24,12 +24,17 @@ TOOLS_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 import gputrace_read  # noqa: E402
 import perf_report  # noqa: E402
+if sys.platform == "win32":
+    import perf_record_windows  # noqa: E402
 
 OUT = pathlib.Path(os.environ.get("METAL_TRACE_OUT", "perf-runs")).resolve()
-READ = [OUT] + [pathlib.Path(p).resolve() for p in os.environ.get("METAL_TRACE_READ", "").split(":") if p]
-FAMILIES = json.loads((TOOLS_DIR / "data" / "apple-gpu-families.json").read_text())
-WORKLOADS = json.loads((TOOLS_DIR / "data" / "workloads.json").read_text())["workloads"]
-CACHE = pathlib.Path("~/Library/Caches/metal-gpu-trace").expanduser()
+READ = [OUT] + [pathlib.Path(p).resolve() for p in os.environ.get("METAL_TRACE_READ", "").split(os.pathsep) if p]
+FAMILIES = json.loads((TOOLS_DIR / "data" / "apple-gpu-families.json").read_text(encoding="utf-8"))
+WORKLOADS = json.loads((TOOLS_DIR / "data" / "workloads.json").read_text(encoding="utf-8"))["workloads"]
+if sys.platform == "win32":
+    CACHE = pathlib.Path(os.environ.get("LOCALAPPDATA", "~/.cache")).expanduser() / "metal-gpu-trace"
+else:
+    CACHE = pathlib.Path("~/Library/Caches/metal-gpu-trace").expanduser()
 MAX_LIMIT = 500
 # named references for perf_check: copies of their runs' summaries, so KEEP_RUNS deleting a run does not break them
 BASELINES = OUT / "baselines.json"
@@ -107,14 +112,23 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
         raise ToolError("pass program, or workload and api (workload_list lists them)")
     wine = wine or os.environ.get("METAL_TRACE_WINE")
     if not wine:
-        raise ToolError("pass wine (a Wine directory holding bin/wine, or native) or set METAL_TRACE_WINE")
+        if sys.platform != "win32":
+            raise ToolError("pass wine (a Wine directory holding bin/wine, or native) or set METAL_TRACE_WINE")
+        wine = "native"
     program = pathlib.Path(program).expanduser()
     if not program.exists():
         raise ToolError(f"no program at {program.name}")
     workdir = pathlib.Path(workdir).expanduser() if workdir else program.parent
     prefix = pathlib.Path(prefix or os.environ.get("WINEPREFIX", "~/.wine")).expanduser()
-    return record(label, seconds, wine, prefix, workdir, [str(program.resolve()), *shlex.split(args)], program_env,
-                  memory)
+    return record(label, seconds, wine, prefix, workdir,
+                  [str(program.resolve()), *split_args(args)], program_env, memory)
+
+
+def split_args(text):
+    """Splits a program's argument string; on Windows backslashes stay and the quotes around a token go."""
+    if sys.platform != "win32":
+        return shlex.split(text)
+    return [a[1:-1] if len(a) > 1 and a[0] == a[-1] == '"' else a for a in shlex.split(text, posix=False)]
 
 
 def workload_entry(name):
@@ -134,7 +148,8 @@ def workload_command(name, api, dim, wine, args):
         raise ToolError(f"{name} is not downloaded yet; call workload_fetch first")
     run = entry["apis"][api]
     program_env = f"{entry['dim_variable']}={int(dim)}" if dim else ""
-    return (target / entry["dir"] / run["program"], wine if run["wine"] else "native",
+    use_wine = run["wine"] and sys.platform != "win32"
+    return (target / entry["dir"] / run["program"], wine if use_wine else "native",
             " ".join(filter(None, [run["args"], args])), program_env)
 
 
@@ -307,6 +322,19 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
     if not memory:
         env["PERF_MEMORY"] = "0"
     layer = layer_of(wine, prefix, env["PERF_ENV"])
+    if sys.platform == "win32":
+        try:
+            summary, json_path = perf_record_windows.record_windows(
+                label, int(seconds), wine, prefix, workdir, command, env["PERF_ENV"],
+                out_dir=OUT, timeout=deadline(seconds)
+            )
+        except (RuntimeError, ValueError) as error:
+            raise ToolError(str(error)) from error
+        except OSError as error:
+            raise ToolError(f"recording failed: {error}") from error
+        summary["layer"] = layer
+        json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        return summary
     before = set(OUT.glob(f"{label}_*"))
     tmp = pathlib.Path(os.environ.get("TMPDIR", "/tmp"))
     ktraces = set(tmp.glob("instruments*.ktrace"))
@@ -332,9 +360,9 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
     if proc.returncode or not new:
         reason = (stderr.strip().splitlines() or ["no summary was written"])[-1]
         raise ToolError(f"recording failed (exit {proc.returncode}): {reason}")
-    summary = json.loads(new[-1].read_text())
+    summary = json.loads(new[-1].read_text(encoding="utf-8"))
     summary["layer"] = layer
-    new[-1].write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
+    new[-1].write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return summary
 
 
@@ -346,7 +374,7 @@ def tool_perf_runs(offset=0, limit=50):
         if path.name == BASELINES.name:
             continue
         try:
-            s = json.loads(path.read_text())
+            s = json.loads(path.read_text(encoding="utf-8"))
         except ValueError:  # a summary still being written
             continue
         gpu = s.get("gpu", {})
@@ -366,7 +394,7 @@ def tool_perf_compare(a, b, short_us=25):
     count and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:
     with different layers it compares layers, not one change. Recordings with under 100 frames are flagged: too
     short to compare."""
-    sa, sb = (json.loads(run_path(r).read_text()) for r in (a, b))
+    sa, sb = (json.loads(run_path(r).read_text(encoding="utf-8")) for r in (a, b))
     return compare_summaries(sa, sb, a, b, short_us)
 
 
@@ -374,6 +402,10 @@ def compare_summaries(sa, sb, a, b, short_us=25):
     """perf_compare over two loaded summaries named a and b."""
     metrics = {
         "fps": lambda s: s["gpu"].get("fps_estimate"),
+        "fps_1pct_low": lambda s: s["gpu"].get("fps_1pct_low"),
+        "fps_01pct_low": lambda s: s["gpu"].get("fps_01pct_low"),
+        "stutter_rate_pct": lambda s: s["gpu"].get("stutter_rate_pct"),
+        "frame_jitter_ms": lambda s: s["gpu"].get("frame_jitter_ms"),
         "gpu_ms_mean": lambda s: s["gpu"]["frame_gpu_ms"].get("mean"),
         "gpu_ms_p95": lambda s: s["gpu"]["frame_gpu_ms"].get("p95"),
         "frame_interval_ms_p95": lambda s: s["gpu"]["frame_interval_ms"].get("p95"),
@@ -421,7 +453,7 @@ CHECKED = {
 
 def load_baselines():
     """Returns the saved references, by name."""
-    return json.loads(BASELINES.read_text()) if BASELINES.exists() else {}
+    return json.loads(BASELINES.read_text(encoding="utf-8")) if BASELINES.exists() else {}
 
 
 def tool_perf_baseline(name=None, runs=None):
@@ -438,10 +470,10 @@ def tool_perf_baseline(name=None, runs=None):
             raise ToolError("runs need a name for the reference")
         if isinstance(runs, str):
             runs = [runs]
-        summaries = [json.loads(run_path(r).read_text()) for r in runs]
+        summaries = [json.loads(run_path(r).read_text(encoding="utf-8")) for r in runs]
         baselines[name] = {"runs": list(runs), "set": time.strftime("%Y-%m-%d"), "summaries": summaries}
         OUT.mkdir(parents=True, exist_ok=True)
-        BASELINES.write_text(json.dumps(baselines))
+        BASELINES.write_text(json.dumps(baselines), encoding="utf-8")
     if name is not None:
         if name not in baselines:
             raise ToolError(f"no reference {name}; perf_baseline with no arguments lists them")
@@ -475,7 +507,7 @@ def tool_perf_check(run, baseline, margin_pct=3):
     if baseline not in baselines:
         raise ToolError(f"no reference {baseline}; perf_baseline with no arguments lists them")
     ref = baselines[baseline]
-    s = json.loads(run_path(run).read_text())
+    s = json.loads(run_path(run).read_text(encoding="utf-8"))
     span = ranges(ref["summaries"])
     worse, better, unchecked = [], [], []
     for metric, (get, higher_is_worse) in CHECKED.items():
@@ -548,7 +580,7 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     share of short encoders, the labels with the most GPU time and the GPU's idle time. Read the idle time together
     with the FPS: a program waiting for vsync idles too. Defaults come from bgfx 17-drawstress on an M1 Pro: 7
     encoders per frame and 50% under 25 us under Mullion, 2 and 2% in native Metal."""
-    s = json.loads(run_path(run).read_text())
+    s = json.loads(run_path(run).read_text(encoding="utf-8"))
     encoders = s.get("encoders")
     if not encoders:
         raise ToolError(f"{run} was summarized before version 0.4.0 and has no encoder numbers; record it again")
@@ -556,12 +588,82 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     if share is None:
         raise ToolError(f"short_us is one of {', '.join(map(str, perf_report.SHORT_US))}")
     per_frame = encoders["per_frame"].get("p50", 0)
-    frames = (s.get("gpu") or {}).get("frames", 0)
-    return {"run": run, "too_many_short_encoders": per_frame >= min_encoders and share >= short_share,
+    gpu = s.get("gpu") or {}
+    frames = gpu.get("frames", 0)
+    too_many_short = per_frame >= min_encoders and share >= short_share
+
+    frame_gpu_ms = gpu.get("frame_gpu_ms") or {}
+    frame_interval_ms = gpu.get("frame_interval_ms") or {}
+    gpu_idle = s.get("gpu_idle") or {}
+    stutter_rate = gpu.get("stutter_rate_pct") or 0.0
+    jitter_ms = gpu.get("frame_jitter_ms") or 0.0
+    worst_spike = frame_interval_ms.get("max") or frame_gpu_ms.get("max") or 0.0
+
+    if gpu.get("stutter_rate_pct") is None:
+        stutter_verdict = "UNKNOWN"
+    elif stutter_rate > 7.0:
+        stutter_verdict = "SEVERE_STUTTER"
+    elif stutter_rate >= 2.0:
+        stutter_verdict = "MICRO_STUTTER"
+    else:
+        stutter_verdict = "SMOOTH"
+
+    idle_share = gpu_idle.get("idle_share")
+    gpu_ms_mean = frame_gpu_ms.get("mean") or 0.0
+    interval_ms_mean = frame_interval_ms.get("mean") or 0.0
+    interval_p50 = frame_interval_ms.get("p50") or 0.0
+    interval_p95 = frame_interval_ms.get("p95") or 0.0
+    mem_working_set = max((s.get("process_rss_mib") or {}).get("max") or 0.0,
+                          (s.get("metal_memory_mib") or {}).get("peak") or 0.0)
+
+    high_variance = jitter_ms >= 3.0 or (interval_p95 - interval_p50) >= 5.0
+    high_memory = mem_working_set >= 1500.0
+    has_frame_data = bool(frame_gpu_ms.get("count", 0) > 0 or frame_interval_ms.get("count", 0) > 0)
+
+    if has_frame_data and high_variance and high_memory:
+        bottleneck = "MEMORY_BANDWIDTH_PRESSURE"
+    elif idle_share is None:
+        bottleneck = "UNKNOWN"
+    elif has_frame_data and (idle_share >= 0.25 or (too_many_short and idle_share >= 0.20)):
+        bottleneck = "CPU_SUBMISSION_BOUND"
+    elif has_frame_data and idle_share <= 0.15 and gpu_ms_mean > 0 and (
+            gpu_ms_mean >= 0.80 * interval_ms_mean if interval_ms_mean > 0 else True):
+        bottleneck = "GPU_BOUND"
+    else:
+        bottleneck = "BALANCED"
+
+    recommendations = []
+    if bottleneck == "GPU_BOUND":
+        recommendations.append("Activar FSR si la GPU está saturada al 100% o usar escalado dinámico de resolución.")
+        recommendations.append("Reducir resolución interna de renderizado, calidad de postprocesado o sombreadores pesados.")
+    elif bottleneck == "CPU_SUBMISSION_BOUND":
+        recommendations.append("Fijar FlipQueueSize=3 en el controlador AMD o DirectX para amortiguar el despacho de la CPU.")
+        recommendations.append("Consolidar draw calls mediante instancing o reducir complejidad de geometría y objetos dinámicos.")
+    elif bottleneck == "MEMORY_BANDWIDTH_PRESSURE":
+        recommendations.append("Reducir resolución de sombras de 2048 a 1024 para aliviar el bus UMA.")
+        recommendations.append("Limitar cascadas de sombras a 2 en exteriores para mitigar el consumo de ancho de banda en memoria unificada.")
+    if too_many_short:
+        recommendations.append("Consolidar render passes y reducir encoders breves para mitigar sobrecarga en la capa de traducción.")
+    if stutter_verdict in ("MICRO_STUTTER", "SEVERE_STUTTER"):
+        recommendations.append("Activar un limitador de FPS (framerate cap) o sincronización vertical/VRR para estabilizar los intervalos de presentación.")
+    throttling = gpu.get("throttling_analysis") or {}
+    if throttling.get("thermal_throttling_detected"):
+        drift_pct = throttling.get("fps_drift_pct", 0)
+        recommendations.append(f"Estrangulamiento térmico detectado ({drift_pct}% caída de FPS): revisar curvas de ventilación y disipación térmica del APU/GPU.")
+    if bottleneck == "UNKNOWN":
+        recommendations.append("Sin datos de actividad de GPU en esta grabación: no hay veredicto de cuello de botella.")
+    elif not recommendations:
+        recommendations.append("Rendimiento equilibrado; no se detectan cuellos de botella críticos.")
+
+    return {"run": run, "too_many_short_encoders": too_many_short,
             "thresholds": {"min_encoders": min_encoders, "short_us": int(short_us), "short_share": short_share},
             "encoders_per_frame_p50": per_frame,
             "command_buffers_per_frame_p50": encoders["command_buffers_per_frame"].get("p50"),
-            "short_encoder_share": share, "fps": (s.get("gpu") or {}).get("fps_estimate"),
+            "short_encoder_share": share, "fps": gpu.get("fps_estimate"),
+            "bottleneck": bottleneck,
+            "stutter_analysis": {"stutter_rate_pct": stutter_rate, "worst_spike_ms": worst_spike,
+                                 "verdict": stutter_verdict},
+            "recommendations": recommendations,
             "gpu_idle": s.get("gpu_idle"), "by_label": encoders["by_label"], "too_short": frames < 100}
 
 
@@ -883,6 +985,9 @@ def main():
     if sys.argv[1:] == ["--version"]:
         print(f"metal-gpu-trace {__version__}")
         return
+    for stream in (sys.stdin, sys.stdout):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     for line in sys.stdin:
         if not line.strip():
             continue
