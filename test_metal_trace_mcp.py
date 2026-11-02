@@ -799,8 +799,77 @@ def test_check_cli(tmp_path):
         assert check(*bad)[0] == 2, bad
 
 
+def test_http(tmp_path):
+    """`--http` serves POST /mcp on 127.0.0.1 only: it refuses to start without a token, answers 401 without the
+    token, 403 for a foreign Host or Origin, 405 for GET and 202 for a notification, serves tools, and a cancel
+    request from a second connection stops a running recording."""
+    import http.client
+    import socket
+    import threading
+    import time
+    stubs, out, program = hang_stubs(tmp_path)
+    script = [sys.executable, "-I", str(TOOLS / "metal_trace_mcp.py"), "--http", "--port"]
+    env = dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="off", PATH=f"{stubs}:{os.environ['PATH']}")
+    without = subprocess.run([*script, "0"], capture_output=True, text=True, timeout=30,
+                             env={k: v for k, v in env.items() if k != "METAL_TRACE_TOKEN"})
+    assert without.returncode == 2 and "METAL_TRACE_TOKEN" in without.stderr, without
+    assert subprocess.run([*script, "0"], capture_output=True, text=True, timeout=30,
+                          env=dict(env, METAL_TRACE_TOKEN="short")).returncode == 2, "a short token is refused"
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    token = "t" * 32
+    proc = subprocess.Popen([*script, str(port)], env=dict(env, METAL_TRACE_TOKEN=token), stderr=subprocess.DEVNULL)
+
+    def post(body, headers=None, path="/mcp", method="POST"):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
+        h = {"Content-Type": "application/json", "Authorization": f"Bearer {token}", **(headers or {})}
+        conn.request(method, path, json.dumps(body) if body is not None else None, h)
+        r = conn.getresponse()
+        data = r.read()
+        conn.close()
+        return r.status, json.loads(data) if data else None
+    try:
+        for _ in range(50):
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=1).close()
+                break
+            except OSError:
+                time.sleep(0.1)
+        ping = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+        assert post(ping) == (200, {"jsonrpc": "2.0", "id": 1, "result": {}})
+        assert post(ping, {"Authorization": "Bearer nope"})[0] == 401
+        assert post(ping, {"Authorization": ""})[0] == 401
+        assert post(ping, {"Origin": "http://evil.example"})[0] == 403
+        assert post(ping, {"Origin": "http://localhost.evil.example"})[0] == 403
+        assert post(ping, {"Host": "evil.example"})[0] == 403
+        assert post(ping, {"Origin": f"http://localhost:{port}"})[0] == 200
+        assert post(None, method="GET")[0] == 405
+        assert post(ping, path="/other")[0] == 404
+        assert post({"jsonrpc": "2.0", "method": "notifications/initialized"}) == (202, None)
+        code, tools = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        assert code == 200 and len(tools["result"]["tools"]) == 18
+        code, runs = post({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                           "params": {"name": "perf_runs", "arguments": {}, "_meta": {"progressToken": "x"}}})
+        assert code == 200 and runs["result"]["structuredContent"]["total"] == 0, runs
+        result = []
+        call = {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {
+            "name": "perf_record", "arguments": {"label": "hang", "program": str(program), "seconds": 1, "wine": "native"}}}
+        thread = threading.Thread(target=lambda: result.append(post(call)))
+        thread.start()
+        time.sleep(2)
+        assert post({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 7}})[0] == 202
+        thread.join(30)
+        code, reply = result[0]
+        assert code == 200 and reply["result"]["isError"] and "cancelled" in reply["result"]["content"][0]["text"], reply
+    finally:
+        proc.kill()
+        proc.wait()
+    assert not list(out.iterdir()), list(out.iterdir())
+
+
 def main():
-    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export]
+    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
