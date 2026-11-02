@@ -176,6 +176,10 @@ compares two layers. In one measurement at `dim=20`, 10 s each: native Metal 2 e
 them short, and the GPU idle 89 % of the time (`perf_diagnose`: `too_many_short_encoders` true). One pair of runs, not a
 benchmark.
 
+`api=vk` is native only. `drawstress.exe --vk` under Wine needs a Wine built with Vulkan: the Wine of DXMT and Apple's
+Game Porting Toolkit were tried and both log `Wine was built without Vulkan support`, so the recording holds no GPU
+frames. CrossOver's Wine has Vulkan but runs only inside one of its bottles, which was not tried.
+
 The same facts are MCP resources: `metal-trace://gpu-families` (all) and `metal-trace://gpu-families/apple7` to Each saved run is a resource too: `metal-trace://runs/<run>` reads its summary.
 `apple10`. They restate Apple's [Metal Feature Set Tables](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
 of 21 May 2026, [`MTLGPUFamily`](https://developer.apple.com/documentation/metal/mtlgpufamily) and the
