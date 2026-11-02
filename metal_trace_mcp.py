@@ -623,20 +623,24 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
 
     recommendations = []
     if bottleneck == "GPU_BOUND":
-        recommendations.append("Lower the internal render resolution or post-processing and shader cost, or enable dynamic resolution scaling.")
+        recommendations.append("Activar FSR si la GPU está saturada al 100% o usar escalado dinámico de resolución.")
+        recommendations.append("Reducir resolución interna de renderizado, calidad de postprocesado o sombreadores pesados.")
     elif bottleneck == "CPU_SUBMISSION_BOUND":
-        recommendations.append("Consolidate draw calls with instancing, or reduce geometry and dynamic object complexity.")
+        recommendations.append("Fijar FlipQueueSize=3 en el controlador AMD o DirectX para amortiguar el despacho de la CPU.")
+        recommendations.append("Consolidar draw calls mediante instancing o reducir complejidad de geometría y objetos dinámicos.")
     elif bottleneck == "MEMORY_BANDWIDTH_PRESSURE":
-        recommendations.append("Reduce shadow resolution and cascades to ease unified-memory bandwidth.")
+        recommendations.append("Reducir resolución de sombras de 2048 a 1024 para aliviar el bus UMA.")
+        recommendations.append("Limitar cascadas de sombras a 2 en exteriores para mitigar el consumo de ancho de banda en memoria unificada.")
     if too_many_short:
-        recommendations.append("Consolidate render passes and reduce short encoders to cut translation-layer overhead.")
+        recommendations.append("Consolidar render passes y reducir encoders breves para mitigar sobrecarga en la capa de traducción.")
     if stutter_verdict != "SMOOTH":
-        recommendations.append("Use a frame-rate cap or VRR to steady the present intervals.")
+        recommendations.append("Activar un limitador de FPS (framerate cap) o sincronización vertical/VRR para estabilizar los intervalos de presentación.")
     throttling = gpu.get("throttling_analysis") or {}
     if throttling.get("thermal_throttling_detected"):
-        recommendations.append(f"Thermal throttling detected ({throttling.get('fps_drift_pct', 0)}% FPS drop): check cooling.")
+        drift_pct = throttling.get("fps_drift_pct", 0)
+        recommendations.append(f"Estrangulamiento térmico detectado ({drift_pct}% caída de FPS): revisar curvas de ventilación y disipación térmica del APU/GPU.")
     if not recommendations:
-        recommendations.append("Balanced; no critical bottleneck detected.")
+        recommendations.append("Rendimiento equilibrado; no se detectan cuellos de botella críticos.")
 
     return {"run": run, "too_many_short_encoders": too_many_short,
             "thresholds": {"min_encoders": min_encoders, "short_us": int(short_us), "short_share": short_share},
