@@ -83,11 +83,11 @@ def test_disk_guard(tmp_path):
     """perf_record.sh refuses to start, before locking or recording, when the disk lacks the space Instruments needs."""
     script = TOOLS / "perf_record.sh"
     env = {**os.environ, "PERF_OUT": str(tmp_path), "PERF_MIN_FREE_GB": "99999999"}
-    proc = subprocess.run(["zsh", str(script), "g", "30", "native", "-", "-", "/bin/true"], env=env,
+    proc = subprocess.run(["zsh", str(script), "g", "30", "native", "-", "-", sys.executable], env=env,
                           capture_output=True, text=True, timeout=60)
     assert proc.returncode == 4 and "not enough free disk" in proc.stderr and "99999999 GB needed" in proc.stderr, proc
     assert not (tmp_path / ".recording").exists(), "no lock is left behind"
-    default = subprocess.run(["zsh", str(script), "g", "60", "native", "-", "-", "/bin/true"],
+    default = subprocess.run(["zsh", str(script), "g", "60", "native", "-", "-", sys.executable],
                              env={**os.environ, "PERF_OUT": str(tmp_path), "TMPDIR": "/nonexistent"},
                              capture_output=True, text=True, timeout=60)
     assert default.returncode != 0, "a missing TMPDIR volume must not pass the guard"
@@ -645,6 +645,7 @@ def test_overrun(tmp_path):
     xcrun.chmod(0o755)
     program = tmp_path / "hang-4242"
     program.touch()
+    program.chmod(0o755)
     saved = mcp.OUT, mcp.deadline, os.environ["PATH"]
     mcp.OUT, mcp.deadline = out, lambda seconds: 3
     os.environ["PATH"] = f"{stubs}:{saved[2]}"
@@ -668,6 +669,7 @@ def hang_stubs(tmp_path):
     xcrun.chmod(0o755)
     program = tmp_path / "hang-4242"
     program.touch()
+    program.chmod(0o755)
     pkill = stubs / "pkill"  # records which program the stop path kills
     pkill.write_text(f"#!/bin/zsh\necho $@ >> {tmp_path}/pkill.log\n")
     pkill.chmod(0o755)
@@ -868,8 +870,131 @@ def test_http(tmp_path):
     assert not list(out.iterdir()), list(out.iterdir())
 
 
+def test_queue(tmp_path):
+    """Tool calls wait in a queue of MAX_QUEUE: one past it is refused at once, and cancelling a queued call answers
+    it at once instead of after the call ahead of it."""
+    import threading
+    import time
+    import metal_trace_mcp as mcp
+    gate, replies, log = threading.Event(), {}, os.environ.get("METAL_TRACE_LOG")
+    os.environ["METAL_TRACE_LOG"] = "off"
+    mcp.TOOLS["slow"] = (lambda: gate.wait(20) and {}, {"type": "object"}, {})
+
+    def submit(i):
+        mcp.CALLS[i] = threading.Event()
+        mcp.submit({"jsonrpc": "2.0", "id": i, "method": "tools/call", "params": {"name": "slow", "arguments": {}}},
+                   lambda r: replies.__setitem__(i, r))
+    try:
+        submit(0)
+        time.sleep(0.3)  # the worker has taken call 0 and waits on the gate
+        for i in range(1, mcp.MAX_QUEUE + 1):
+            submit(i)
+        submit(999)
+        assert "waiting" in replies[999]["result"]["content"][0]["text"] and 999 not in mcp.CALLS, replies.get(999)
+        mcp.cancel_call(5)
+        assert 5 in replies and "cancelled" in replies[5]["result"]["content"][0]["text"], "a queued cancel answers at once"
+        mcp.cancel_call([1])  # an unhashable id is ignored
+        mcp.cancel_call(123456)
+    finally:
+        gate.set()
+        mcp.stop_worker()
+        mcp.WORKER.clear()
+        del mcp.TOOLS["slow"]
+        os.environ.pop("METAL_TRACE_LOG") if log is None else os.environ.__setitem__("METAL_TRACE_LOG", log)
+    assert sorted(replies) == sorted(set(range(mcp.MAX_QUEUE + 1)) | {999}), sorted(replies)
+    assert not mcp.CALLS, mcp.CALLS
+
+
+def test_http_timeout(tmp_path):
+    """A client that stalls in the middle of its request is dropped after HTTP_TIMEOUT instead of holding a thread."""
+    import socket
+    import threading
+    from http.server import ThreadingHTTPServer
+    import metal_trace_mcp as mcp
+    saved, mcp.HTTP_TIMEOUT = mcp.HTTP_TIMEOUT, 1
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), mcp.http_handler("t" * 32))
+    finally:
+        mcp.HTTP_TIMEOUT = saved
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        stalled = socket.create_connection(server.server_address, timeout=3)
+        stalled.sendall(b"POST /mcp HTTP/1.1\\r\\nHost: 127.0.0.1\\r\\n")
+        stalled.settimeout(10)
+        assert stalled.recv(10) == b"", "the server must close a stalled connection"
+        stalled.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_kill_program_and_watchdog(tmp_path):
+    """kill_program ends a program that ignores SIGTERM, and perf_record.sh stops its recording, frees its lock and
+    its program when the server named in PERF_PARENT_PID dies."""
+    import shutil
+    import time
+    import metal_trace_mcp as mcp
+    stubs, out, program = hang_stubs(tmp_path)
+    # a program that ignores SIGTERM, under a name only this test uses
+    stubborn = tmp_path / "ignoreterm-4242"
+    shutil.copy(shutil.which("sleep"), stubborn)
+    proc = subprocess.Popen(["sh", "-c", f"trap '' TERM; exec {stubborn} 60"])
+    time.sleep(0.5)
+    mcp.kill_program("ignoreterm-4242")
+    assert proc.wait(timeout=15) is not None, "kill_program must escalate to SIGKILL"
+    # the recording's parent dies: the script must exit and free its lock
+    parent = subprocess.Popen(["sleep", "60"])
+    (stubs / "pkill").unlink()  # the script needs the real pkill
+    env = dict(os.environ, PERF_OUT=str(out), PERF_PARENT_PID=str(parent.pid), PATH=f"{stubs}:{os.environ['PATH']}")
+    logfile = tmp_path / "script.log"  # a file, not a pipe: the stub's orphaned sleep would hold a pipe open
+    script = subprocess.Popen(["zsh", str(TOOLS / "perf_record.sh"), "orphan", "30", "native", "-", str(tmp_path),
+                               str(program)], env=env, stdout=open(logfile, "w"), stderr=subprocess.STDOUT,
+                              start_new_session=True)
+    try:
+        deadline = time.time() + 15
+        while not (out / ".recording").is_dir() and time.time() < deadline:
+            time.sleep(0.2)
+        assert (out / ".recording").is_dir(), "the recording never started"
+        parent.kill()
+        parent.wait()
+        script.wait(timeout=30)
+    finally:
+        if script.poll() is None:
+            script.kill()
+        subprocess.run(["pkill", "-f", str(stubs / "xcrun")], capture_output=True)
+    assert not list(out.iterdir()), f"the lock and the partial files must go: {list(out.iterdir())} {logfile.read_text()[-400:]!r}"
+
+
+def test_script_failure_cleanup(tmp_path):
+    """perf_record.sh frees its lock and deletes its partial files when a recording fails, and refuses a program that
+    is not an executable file before it starts Instruments."""
+    stubs, out = tmp_path / "stubs", tmp_path / "runs"
+    stubs.mkdir()
+    out.mkdir()
+    xcrun = stubs / "xcrun"  # an xctrace that fails at once
+    xcrun.write_text("#!/bin/zsh\nexit 1\n")
+    xcrun.chmod(0o755)
+    program, text = tmp_path / "prog", tmp_path / "notes.txt"
+    program.touch()
+    program.chmod(0o755)
+    text.write_text("x")
+    env = dict(os.environ, PERF_OUT=str(out), PATH=f"{stubs}:{os.environ['PATH']}")
+
+    def run(path):
+        return subprocess.run(["zsh", str(TOOLS / "perf_record.sh"), "f", "2", "native", "-", str(tmp_path), str(path)],
+                              capture_output=True, text=True, env=env, timeout=60)
+    failed = run(program)
+    assert failed.returncode == 1 and "no recording" in failed.stderr, failed
+    assert not list(out.iterdir()), f"a failed recording left {list(out.iterdir())}"
+    for bad in (text, tmp_path, tmp_path / "missing"):
+        refused = run(bad)
+        assert refused.returncode == 2 and "not an executable file" in refused.stderr, (bad, refused)
+        assert str(tmp_path) not in refused.stderr, "the error must not carry a local path"
+    assert not list(out.iterdir())
+
+
 def main():
-    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http]
+    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

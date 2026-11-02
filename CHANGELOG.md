@@ -3,6 +3,21 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## 0.10.1 — 2026-11-02
+
+- `perf_record.sh` refuses a native program that is not an executable file (`X is not an executable file`, exit 2)
+  before it starts Instruments, and a failed recording deletes its partial files and frees its lock.
+- Stability, from a sweep with real Instruments recordings and fuzzed requests:
+  - A game that ignores SIGTERM no longer outlives a cancelled or overrun recording: it gets SIGTERM, then SIGKILL.
+    One such game kept running for 40 minutes after its server was killed.
+  - `perf_record.sh` stops its recording, program and lock, and deletes the partial files, when the server that started
+    it dies (`PERF_PARENT_PID`, set by the server); the resident-memory sampler no longer outlives the script.
+  - Tool calls wait in one queue of 64 served by one worker thread, instead of one thread per call; a call past the
+    limit is refused at once. Cancelling a call still waiting in the queue answers it at once, not after the call ahead.
+  - `--http` drops a client that stalls in the middle of its request after 15 s, so it cannot hold threads forever.
+  - A `notifications/cancelled` with a malformed `params` or `requestId` is ignored instead of answered with an error.
+- The Windows job of the CI runs only when a file it covers changes.
+
 ## 0.10.0 — 2026-11-02
 
 - `metal-gpu-trace --http [--port N]` serves the tools over Streamable HTTP at `POST /mcp` on 127.0.0.1 only. It needs

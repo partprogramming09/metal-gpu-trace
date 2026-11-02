@@ -10,6 +10,7 @@ shift 5
 [[ $label =~ '^[A-Za-z0-9._-]+$' ]] || { echo "label may hold only letters, digits, '.', '_' and '-'" >&2; exit 2; }
 [[ $seconds == <1-3600> ]] || { echo "seconds must be 1 to 3600" >&2; exit 2; }
 [[ $wine == (native|attach) || -x $wine/bin/wine ]] || { echo "no Wine at $wine/bin/wine (or pass native or attach)" >&2; exit 2; }
+[[ $wine != native || ( -f $1 && -x $1 ) ]] || { echo "${1:t} is not an executable file" >&2; exit 2; }
 if [[ $wine == attach ]]; then
   pid=$1
   # a name matches the newest process whose command line holds it, such as Game.exe under Wine
@@ -36,14 +37,33 @@ mkdir $lock 2>/dev/null || { echo "another recording is running ($lock); remove 
 before=(${tmp%/}/instruments*.ktrace(N))
 # Frees the lock and the temporary .ktrace files that xctrace left in $TMPDIR during this run.
 cleanup() {
+  local rc=$?
+  kill ${watchdog:-} ${sampler:-} 2>/dev/null || true
   rmdir $lock 2>/dev/null
   for k in ${tmp%/}/instruments*.ktrace(N); do (( ${before[(Ie)$k]} )) || rm -rf $k; done
+  # a failed recording leaves no partial files behind
+  if (( rc )); then rm -rf $out/$name.*(N); fi
 }
 trap cleanup EXIT
+trap 'rm -rf $out/$name.*(N); exit 143' TERM
 
 [[ $wine == attach ]] || cd $workdir
 # the resident memory of the program's Wine process, once a second, while Instruments records
 exe=${1:t}
+# stops the program by name: SIGTERM, then SIGKILL for one that ignores it
+stop_program() { pkill -x $exe && { sleep 1; pgrep -x $exe >/dev/null && pkill -KILL -x $exe; }; return 0 }
+# PERF_PARENT_PID is the server that started this recording: when it dies the recording and its program are stopped
+if [[ -n ${PERF_PARENT_PID:-} ]]; then
+  (
+    while kill -0 $PERF_PARENT_PID 2>/dev/null; do sleep 1; done
+    if [[ $wine == native ]]; then stop_program
+    elif [[ $wine != attach ]]; then WINEPREFIX=$prefix $wine/bin/wineserver -k
+    fi
+    pkill -TERM -P $$ -f 'xctrace|perf_report'
+    kill -TERM $$
+  ) &
+  watchdog=$!
+fi
 (
   echo "time_s,rss_kib" > $out/$name.rss.csv
   for ((t = 0; t <= seconds + 5; t++)); do
@@ -68,7 +88,7 @@ if [[ $wine == attach ]]; then
 elif [[ $wine == native ]]; then
   xcrun xctrace record --template "Metal System Trace" --time-limit ${seconds}s --output $out/$name.trace \
     $extra --launch -- "$@" || true
-  pkill -x $exe || true
+  stop_program
 else
   # the caller's overrides (a Mullion built for system32 needs d3d12,...=n) come before Wine's own
   overrides="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}mscoree=;mshtml="

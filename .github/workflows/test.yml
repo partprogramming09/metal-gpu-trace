@@ -16,7 +16,30 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -I test_metal_trace_mcp.py
 
+  # the Windows job runs only when a file it covers changed: a docs-only change does not wait for it
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      windows: ${{ steps.diff.outputs.windows }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            echo "windows=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$BASE" HEAD | grep -qE '^(perf_record_windows\.py|test_perf_record_windows\.py|metal_trace_mcp\.py|\.github/workflows/test\.yml)$'; then
+            echo "windows=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "windows=false" >> "$GITHUB_OUTPUT"
+          fi
+
   windows:
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
