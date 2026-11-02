@@ -3,6 +3,12 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `perf_record.sh` also refuses a native program with the execute bit but no program inside (no Mach-O or `#!` header):
+  `X is not a program the system can run`, exit 2, instead of an unclear `No such file ... .xml`.
+- The CI runs the self-check on macOS too, but only when `perf_record.sh`, `perf_report.py` or the server change.
+
 ## 0.10.1 — 2026-11-02
 
 - `perf_record.sh` refuses a native program that is not an executable file (`X is not an executable file`, exit 2)

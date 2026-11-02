@@ -644,7 +644,7 @@ def test_overrun(tmp_path):
     xcrun.write_text("#!/bin/zsh\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\nsleep 60\n")
     xcrun.chmod(0o755)
     program = tmp_path / "hang-4242"
-    program.touch()
+    program.write_text("#!/bin/sh\n")
     program.chmod(0o755)
     saved = mcp.OUT, mcp.deadline, os.environ["PATH"]
     mcp.OUT, mcp.deadline = out, lambda seconds: 3
@@ -668,7 +668,7 @@ def hang_stubs(tmp_path):
     xcrun.write_text("#!/bin/zsh\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\nsleep 60\n")
     xcrun.chmod(0o755)
     program = tmp_path / "hang-4242"
-    program.touch()
+    program.write_text("#!/bin/sh\n")
     program.chmod(0o755)
     pkill = stubs / "pkill"  # records which program the stop path kills
     pkill.write_text(f"#!/bin/zsh\necho $@ >> {tmp_path}/pkill.log\n")
@@ -975,7 +975,7 @@ def test_script_failure_cleanup(tmp_path):
     xcrun.write_text("#!/bin/zsh\nexit 1\n")
     xcrun.chmod(0o755)
     program, text = tmp_path / "prog", tmp_path / "notes.txt"
-    program.touch()
+    program.write_text("#!/bin/sh\n")
     program.chmod(0o755)
     text.write_text("x")
     env = dict(os.environ, PERF_OUT=str(out), PATH=f"{stubs}:{os.environ['PATH']}")
@@ -986,6 +986,12 @@ def test_script_failure_cleanup(tmp_path):
     failed = run(program)
     assert failed.returncode == 1 and "no recording" in failed.stderr, failed
     assert not list(out.iterdir()), f"a failed recording left {list(out.iterdir())}"
+    empty = tmp_path / "empty"  # the execute bit, but no program inside
+    empty.touch()
+    empty.chmod(0o755)
+    refused = run(empty)
+    assert refused.returncode == 2 and "not a program the system can run" in refused.stderr, refused
+    assert not list(out.iterdir())
     for bad in (text, tmp_path, tmp_path / "missing"):
         refused = run(bad)
         assert refused.returncode == 2 and "not an executable file" in refused.stderr, (bad, refused)
