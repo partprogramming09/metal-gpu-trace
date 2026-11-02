@@ -6,6 +6,7 @@ separated by ':', whose files the tools may read; METAL_TRACE_WINE is the defaul
 recordings kept; METAL_TRACE_LOG=off silences the one stderr line per call. Test programs that workload_fetch
 downloads go to ~/Library/Caches/metal-gpu-trace.
 """
+import collections
 import csv
 import hashlib
 import json
@@ -360,6 +361,17 @@ def progress(done, total, message):
         send(done, total, message)
 
 
+def kill_program(name):
+    """Stops every process named `name`: SIGTERM first, then SIGKILL for the ones that ignore it (a game that catches
+    SIGTERM kept running for 40 minutes after its recording was cancelled)."""
+    subprocess.run(["pkill", "-x", name], capture_output=True, timeout=30)
+    for _ in range(6):
+        if subprocess.run(["pgrep", "-x", name], capture_output=True, timeout=30).returncode:
+            return
+        time.sleep(0.5)
+    subprocess.run(["pkill", "-KILL", "-x", name], capture_output=True, timeout=30)
+
+
 def deadline(seconds):
     """Returns the seconds a recording of `seconds` may take in all; closing and reading back a Wine D3D12 trace takes
     up to 14 s per recorded second on an M1 Pro."""
@@ -371,7 +383,7 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
     it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV, and `memory` false sets PERF_MEMORY=0."""
     if not name_ok(label):
         raise ToolError("label holds only letters, digits, '.', '_' and '-'")
-    env = dict(os.environ, PERF_OUT=str(OUT),
+    env = dict(os.environ, PERF_OUT=str(OUT), PERF_PARENT_PID=str(os.getpid()),
                PERF_ENV=" ".join(filter(None, [os.environ.get("PERF_ENV", ""), program_env])))
     if not memory:
         env["PERF_MEMORY"] = "0"
@@ -403,7 +415,7 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait()
             if wine == "native":
-                subprocess.run(["pkill", "-x", pathlib.Path(command[0]).name], capture_output=True, timeout=30)
+                kill_program(pathlib.Path(command[0]).name)
             elif wine != "attach":
                 subprocess.run([str(pathlib.Path(wine) / "bin" / "wineserver"), "-k"],
                                env=dict(env, WINEPREFIX=str(prefix)), capture_output=True, timeout=30)
@@ -1019,7 +1031,70 @@ def prompt_compare_layer(workload="drawstress", api="d3d12"):
 
 
 CALLS = {}  # request id -> cancel event, for the tool calls in flight
-OUT_LOCK, TOOL_LOCK = threading.Lock(), threading.Lock()
+OUT_LOCK = threading.Lock()
+QUEUE, WAKE, WORKER = collections.deque(), threading.Condition(), []  # tool calls waiting for the one worker thread
+MAX_QUEUE = 64
+
+
+def error_result(request_id, text):
+    """Returns a tools/call reply that failed with `text`."""
+    return {"jsonrpc": "2.0", "id": request_id, "result": {"content": [{"type": "text", "text": text}], "isError": True}}
+
+
+def submit(message, reply):
+    """Queues a tools/call for the worker thread, which runs calls one at a time; `reply` receives its JSON-RPC reply.
+    A queue of MAX_QUEUE calls is answered at once with an error instead of growing without limit."""
+    with WAKE:
+        full = len(QUEUE) >= MAX_QUEUE
+        if not full:
+            QUEUE.append((message, reply))
+            if not WORKER:
+                WORKER.append(threading.Thread(target=work, daemon=True))
+                WORKER[0].start()
+            WAKE.notify()
+    if full:
+        CALLS.pop(message["id"], None)
+        reply(error_result(message["id"], f"{MAX_QUEUE} calls are already waiting; try again when one finishes"))
+
+
+def work():
+    """Runs the queued tool calls in order until it takes the None that stop_worker queues."""
+    while True:
+        with WAKE:
+            while not QUEUE:
+                WAKE.wait()
+            item = QUEUE.popleft()
+        if item is None:
+            return
+        reply = item[1]
+        reply(answer(item[0]))
+
+
+def stop_worker():
+    """Lets the queued tool calls finish, then ends the worker thread."""
+    with WAKE:
+        if not WORKER:
+            return
+        QUEUE.append(None)
+        WAKE.notify()
+    WORKER[0].join()
+
+
+def cancel_call(request_id):
+    """Cancels the tool call `request_id`: one still queued is answered at once, a running one is told to stop."""
+    try:
+        hash(request_id)
+    except TypeError:
+        return
+    with WAKE:
+        queued = next((item for item in QUEUE if item and item[0].get("id") == request_id), None)
+        if queued:
+            QUEUE.remove(queued)
+    if queued:
+        CALLS.pop(request_id, None)
+        queued[1](error_result(request_id, "the call was cancelled before it started"))
+    elif request_id in CALLS:
+        CALLS[request_id].set()
 
 
 def send(message):
@@ -1174,24 +1249,20 @@ def main():
     for stream in (sys.stdin, sys.stdout):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
-    workers = []
     for line in sys.stdin:
         if not line.strip():
             continue
         try:
             message = json.loads(line)
             if isinstance(message, dict) and message.get("method") == "notifications/cancelled":
-                event = CALLS.get((message.get("params") or {}).get("requestId"))
-                if event:
-                    event.set()
+                cancel_call(request_id_of(message))
                 continue
             if isinstance(message, dict) and message.get("method") == "tools/call" and \
                     isinstance(message.get("id"), (str, int)):
-                # a tool call runs on its own thread so ping and notifications/cancelled are read meanwhile; calls
+                # a tool call runs on the worker thread so ping and notifications/cancelled are read meanwhile; calls
                 # still run one at a time, as only one recording may run at once
                 CALLS[message["id"]] = threading.Event()
-                workers.append(threading.Thread(target=serve, args=(message,)))
-                workers[-1].start()
+                submit(message, send)
                 continue
             reply = handle(message)
         except json.JSONDecodeError:
@@ -1201,28 +1272,28 @@ def main():
             reply = {"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": "internal error"}}
         if reply is not None:
             send(reply)
-    for worker in workers:
-        worker.join()
+    stop_worker()
+
+
+def request_id_of(message):
+    """Returns the requestId of a notifications/cancelled message, or None when its params are not an object."""
+    params = message.get("params")
+    return params.get("requestId") if isinstance(params, dict) else None
 
 
 def answer(message):
-    """Returns the reply to one tools/call, after the call before it."""
-    with TOOL_LOCK:
-        try:
-            return handle(message)
-        except Exception as error:  # a malformed request must not stop the server
-            log(f"internal error {type(error).__name__}")
-            CALLS.pop(message.get("id"), None)
-            return {"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32603, "message": "internal error"}}
-
-
-def serve(message):
-    """Answers one tools/call on a worker thread and writes the reply to stdout."""
-    send(answer(message))
+    """Returns the reply to one tools/call."""
+    try:
+        return handle(message)
+    except Exception as error:  # a malformed request must not stop the server
+        log(f"internal error {type(error).__name__}")
+        CALLS.pop(message.get("id"), None)
+        return {"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32603, "message": "internal error"}}
 
 
 MIN_TOKEN = 16
 MAX_BODY = 1_000_000
+HTTP_TIMEOUT = 15  # seconds a client may take to send its request
 
 
 def local_host(value):
@@ -1239,6 +1310,8 @@ def http_handler(token):
     from http.server import BaseHTTPRequestHandler
 
     class Handler(BaseHTTPRequestHandler):
+        timeout = HTTP_TIMEOUT  # a client that stalls mid-request is dropped, not kept as a thread forever
+
         def reply(self, code, body=None):
             data = b"" if body is None else json.dumps(body).encode()
             self.send_response(code)
@@ -1264,9 +1337,7 @@ def http_handler(token):
             except json.JSONDecodeError:
                 return self.reply(400, {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}})
             if isinstance(message, dict) and message.get("method") == "notifications/cancelled":
-                event = CALLS.get((message.get("params") or {}).get("requestId"))
-                if event:
-                    event.set()
+                cancel_call(request_id_of(message))
                 return self.reply(202)
             if isinstance(message, dict) and message.get("method") == "tools/call" and \
                     isinstance(message.get("id"), (str, int)):
@@ -1274,7 +1345,10 @@ def http_handler(token):
                 if isinstance(message.get("params"), dict):
                     message["params"].pop("_meta", None)
                 CALLS[message["id"]] = threading.Event()
-                return self.reply(200, answer(message))
+                done, box = threading.Event(), []
+                submit(message, lambda reply: (box.append(reply), done.set()))
+                done.wait()
+                return self.reply(200, box[0])
             try:
                 reply = handle(message)
             except Exception as error:  # a malformed request must not stop the server
