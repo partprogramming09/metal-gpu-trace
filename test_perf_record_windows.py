@@ -520,6 +520,51 @@ def test_dwm_timing_structures_and_query(tmp_path):
         assert hr in (0, -2003304304)
 
 
+def test_split_args_keeps_backslashes_and_drops_quotes():
+    """Windows argument strings keep paths intact and lose the quotes around a token."""
+    assert mcp.split_args('--name "a b" C:\\Games\\x --k=1') == ["--name", "a b", "C:\\Games\\x", "--k=1"]
+
+
+def test_overrun_leaves_attached_process_running(tmp_path, monkeypatch):
+    """A recording that overruns its deadline stops only what it launched; an attached program keeps running."""
+    monkeypatch.setenv("PRESENTMON_EXE", str(tmp_path / "absent.exe"))
+    monkeypatch.setattr(prw, "sample_dwm_frame_times", lambda pid, stop, samples: None)
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        with pytest.raises(RuntimeError, match="took over"):
+            prw.record_windows("test_over", 3, "attach", "-", "-", [str(proc.pid)], out_dir=tmp_path, timeout=1)
+        assert proc.poll() is None
+        assert not list(tmp_path.iterdir()), list(tmp_path.iterdir())
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+def test_stale_lock_is_replaced(tmp_path):
+    """A .recording lock left by a dead process does not block the next recording."""
+    lock = tmp_path / ".recording"
+    lock.mkdir()
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    (lock / "pid").write_text(str(dead.pid), encoding="utf-8")
+    summary, _ = prw.record_windows("test_stale", 1, "native", "-", tmp_path, LOG_PROGRAM, out_dir=tmp_path)
+    assert summary["gpu"]["source"] == "drawstress-log"
+    assert not lock.exists()
+
+
+def test_failed_recording_stops_the_launched_program(tmp_path, monkeypatch):
+    """When a recording fails, the program it launched is stopped and its files are removed."""
+    monkeypatch.setenv("PRESENTMON_EXE", str(tmp_path / "absent.exe"))
+    monkeypatch.setattr(prw, "sample_dwm_frame_times", lambda pid, stop, samples: None)
+    pidfile = tmp_path / "child.pid"
+    code = f"import os, time; open(r'{pidfile}', 'w').write(str(os.getpid())); time.sleep(30)"
+    with pytest.raises(RuntimeError, match="no frame data"):
+        prw.record_windows("test_leak", 1, "native", "-", tmp_path, [sys.executable, "-c", code], out_dir=tmp_path)
+    child = int(pidfile.read_text())
+    time.sleep(0.5)
+    assert not prw.is_process_alive(child)
+
+
 def test_no_frame_data_is_an_error(tmp_path, monkeypatch):
     """Without a frame log and without DWM samples the recording fails and leaves no files; it never invents frames."""
     monkeypatch.setenv("PRESENTMON_EXE", str(tmp_path / "absent.exe"))

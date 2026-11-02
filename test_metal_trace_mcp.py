@@ -225,6 +225,16 @@ def test_diagnose(tmp_path):
         (tmp_path / "old.json").write_text(json.dumps({"gpu": {"frames": 1378}}))
         got = mcp.tool_perf_diagnose("new")
         assert got["too_many_short_encoders"] and not got["too_short"], got
+        assert got["bottleneck"] == "UNKNOWN" and got["stutter_analysis"]["verdict"] == "UNKNOWN", got
+        no_spans = {"gpu": {"frames": 500, "frame_gpu_ms": {"count": 500, "mean": 14.5},
+                            "frame_interval_ms": {"count": 499, "mean": 16.7, "p50": 16.6, "p95": 17.0},
+                            "stutter_rate_pct": 0.0, "frame_jitter_ms": 0.4},
+                    "encoders": {"per_frame": {"count": 0}, "command_buffers_per_frame": {"count": 0},
+                                 "short_share": {"25": 0.0}, "by_label": []},
+                    "gpu_idle": {"idle_ms_per_frame": {"count": 0}, "gaps_over_1ms": 0, "idle_share": None}}
+        (tmp_path / "pm.json").write_text(json.dumps(no_spans))
+        got = mcp.tool_perf_diagnose("pm")
+        assert got["bottleneck"] == "UNKNOWN" and got["stutter_analysis"]["verdict"] == "SMOOTH", got
         assert not mcp.tool_perf_diagnose("new", min_encoders=8)["too_many_short_encoders"]
         for run, kwargs, words in (("old", {}, "record it again"), ("new", {"short_us": 30}, "short_us is one of")):
             try:

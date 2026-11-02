@@ -614,7 +614,7 @@ def idle_gaps(spans):
     """Returns the time the GPU ran none of the process's work between its first and last interval."""
     ordered = sorted((start, start + duration, frame) for frame, start, duration, _, _ in spans)
     if not ordered:
-        return {"idle_ms_per_frame": {"count": 0}, "gaps_over_1ms": 0, "idle_share": 0.0}
+        return {"idle_ms_per_frame": {"count": 0}, "gaps_over_1ms": 0, "idle_share": None}
     idle = collections.Counter({frame: 0.0 for _, _, frame in ordered})
     gaps = []
     end = ordered[0][1]
@@ -704,11 +704,27 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
     # Concurrency lock
     lock_path = out_dir / ".recording"
     lock_acquired = False
-    try:
-        lock_path.mkdir(exist_ok=False)
-        lock_acquired = True
-    except FileExistsError:
-        raise RuntimeError(f"another recording is running ({lock_path}); remove it if none is")
+    for attempt in range(2):
+        try:
+            lock_path.mkdir(exist_ok=False)
+            (lock_path / "pid").write_text(str(os.getpid()), encoding="utf-8")
+            lock_acquired = True
+            break
+        except FileExistsError:
+            owner = lock_path / "pid"
+            stale = False
+            try:
+                stale = not is_process_alive(int(owner.read_text(encoding="utf-8").strip()))
+            except (OSError, ValueError):
+                pass
+            if attempt == 0 and stale:
+                owner.unlink(missing_ok=True)
+                try:
+                    lock_path.rmdir()
+                except OSError:
+                    pass
+                continue
+            raise RuntimeError(f"another recording is running ({lock_path}); remove it if none is")
 
     name = f"{label}_{time.strftime('%Y%m%d-%H%M%S')}"
     deadline_limit = timeout if timeout is not None else seconds * 10 + 120
@@ -718,6 +734,10 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
     proc_name = ""
     args_str = ""
     is_attach = (wine == "attach")
+    presentmon_proc = None
+    dwm_thread = None
+    dwm_stop_event = threading.Event()
+    succeeded = False
 
     try:
         if is_attach:
@@ -745,7 +765,8 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             if isinstance(command, (list, tuple)):
                 cmd_list = [str(c) for c in command]
             else:
-                cmd_list = shlex.split(str(command), posix=False)
+                cmd_list = [a[1:-1] if len(a) > 1 and a[0] == a[-1] == '"' else a
+                            for a in shlex.split(str(command), posix=False)]
 
             cwd = str(workdir) if workdir and str(workdir) != "-" else None
             proc = subprocess.Popen(cmd_list, cwd=cwd, env=env)
@@ -755,19 +776,17 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
 
         # High-frequency presentation & frame timing sampler for attached processes
         dwm_samples = []
-        dwm_stop_event = threading.Event()
-        dwm_thread = None
-
         presentmon_exe = find_presentmon()
         presentmon_csv = out_dir / f"{name}.presentmon.csv"
-        presentmon_proc = None
+        presentmon_err = out_dir / f"{name}.presentmon.err"
         if presentmon_exe:
-            presentmon_proc = subprocess.Popen(
-                [presentmon_exe, "--process_id", str(pid), "--output_file", str(presentmon_csv),
-                 "--timed", str(int(seconds)), "--terminate_after_timed", "--no_console_stats",
-                 "--stop_existing_session"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
-            )
+            with open(presentmon_err, "w", encoding="utf-8") as err_file:
+                presentmon_proc = subprocess.Popen(
+                    [presentmon_exe, "--process_id", str(pid), "--output_file", str(presentmon_csv),
+                     "--timed", str(int(seconds)), "--terminate_after_timed", "--no_console_stats",
+                     "--stop_existing_session"],
+                    stdout=subprocess.DEVNULL, stderr=err_file,
+                )
         else:
             dwm_thread = threading.Thread(
                 target=sample_dwm_frame_times,
@@ -817,18 +836,24 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
         presentmon_error = ""
         if presentmon_proc is not None:
             try:
-                _, presentmon_error = presentmon_proc.communicate(timeout=15)
+                presentmon_proc.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 presentmon_proc.kill()
-                _, presentmon_error = presentmon_proc.communicate()
-                presentmon_error = presentmon_error or "PresentMon did not stop"
+                presentmon_proc.wait()
+                presentmon_error = "PresentMon did not stop"
+            try:
+                presentmon_error = presentmon_error or presentmon_err.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                pass
+            presentmon_err.unlink(missing_ok=True)
 
         # Check deadline overrun
         if timed_out or (time.monotonic() - start_mono) > deadline_limit:
             # Terminate tree forcibly
             if presentmon_proc is not None and presentmon_proc.poll() is None:
                 presentmon_proc.kill()
-            kill_process_tree(pid)
+            if not is_attach:
+                kill_process_tree(pid)
             if proc:
                 try:
                     proc.kill()
@@ -1003,7 +1028,7 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             "layer": (
                 {"unknown": "an attached process's Wine and prefix are not known", "program_env": program_env}
                 if is_attach
-                else {"none": "native Metal, no translation layer", "program_env": program_env}
+                else {"none": "native Windows, no translation layer", "program_env": program_env}
             ),
         }
 
@@ -1015,11 +1040,25 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
         if keep_runs_env and keep_runs_env.isdigit():
             clean_runs(out_dir, int(keep_runs_env))
 
+        succeeded = True
         return summary, json_path
 
     finally:
+        if not succeeded:
+            dwm_stop_event.set()
+            if presentmon_proc is not None and presentmon_proc.poll() is None:
+                presentmon_proc.kill()
+            if proc is not None and proc.poll() is None:
+                kill_process_tree(pid)
+                proc.kill()
+            for leftover in out_dir.glob(f"{name}*"):
+                try:
+                    leftover.unlink()
+                except OSError:
+                    pass
         if lock_acquired and lock_path.exists():
             try:
+                (lock_path / "pid").unlink(missing_ok=True)
                 lock_path.rmdir()
             except OSError:
                 pass

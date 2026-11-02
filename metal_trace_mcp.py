@@ -121,7 +121,14 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
     workdir = pathlib.Path(workdir).expanduser() if workdir else program.parent
     prefix = pathlib.Path(prefix or os.environ.get("WINEPREFIX", "~/.wine")).expanduser()
     return record(label, seconds, wine, prefix, workdir,
-                  [str(program.resolve()), *shlex.split(args, posix=sys.platform != "win32")], program_env, memory)
+                  [str(program.resolve()), *split_args(args)], program_env, memory)
+
+
+def split_args(text):
+    """Splits a program's argument string; on Windows backslashes stay and the quotes around a token go."""
+    if sys.platform != "win32":
+        return shlex.split(text)
+    return [a[1:-1] if len(a) > 1 and a[0] == a[-1] == '"' else a for a in shlex.split(text, posix=False)]
 
 
 def workload_entry(name):
@@ -592,14 +599,16 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     jitter_ms = gpu.get("frame_jitter_ms") or 0.0
     worst_spike = frame_interval_ms.get("max") or frame_gpu_ms.get("max") or 0.0
 
-    if stutter_rate > 7.0:
+    if gpu.get("stutter_rate_pct") is None:
+        stutter_verdict = "UNKNOWN"
+    elif stutter_rate > 7.0:
         stutter_verdict = "SEVERE_STUTTER"
     elif stutter_rate >= 2.0:
         stutter_verdict = "MICRO_STUTTER"
     else:
         stutter_verdict = "SMOOTH"
 
-    idle_share = gpu_idle.get("idle_share") or 0.0
+    idle_share = gpu_idle.get("idle_share")
     gpu_ms_mean = frame_gpu_ms.get("mean") or 0.0
     interval_ms_mean = frame_interval_ms.get("mean") or 0.0
     interval_p50 = frame_interval_ms.get("p50") or 0.0
@@ -613,6 +622,8 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
 
     if has_frame_data and high_variance and high_memory:
         bottleneck = "MEMORY_BANDWIDTH_PRESSURE"
+    elif idle_share is None:
+        bottleneck = "UNKNOWN"
     elif has_frame_data and (idle_share >= 0.25 or (too_many_short and idle_share >= 0.20)):
         bottleneck = "CPU_SUBMISSION_BOUND"
     elif has_frame_data and idle_share <= 0.15 and gpu_ms_mean > 0 and (
@@ -633,13 +644,15 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
         recommendations.append("Limitar cascadas de sombras a 2 en exteriores para mitigar el consumo de ancho de banda en memoria unificada.")
     if too_many_short:
         recommendations.append("Consolidar render passes y reducir encoders breves para mitigar sobrecarga en la capa de traducción.")
-    if stutter_verdict != "SMOOTH":
+    if stutter_verdict in ("MICRO_STUTTER", "SEVERE_STUTTER"):
         recommendations.append("Activar un limitador de FPS (framerate cap) o sincronización vertical/VRR para estabilizar los intervalos de presentación.")
     throttling = gpu.get("throttling_analysis") or {}
     if throttling.get("thermal_throttling_detected"):
         drift_pct = throttling.get("fps_drift_pct", 0)
         recommendations.append(f"Estrangulamiento térmico detectado ({drift_pct}% caída de FPS): revisar curvas de ventilación y disipación térmica del APU/GPU.")
-    if not recommendations:
+    if bottleneck == "UNKNOWN":
+        recommendations.append("Sin datos de actividad de GPU en esta grabación: no hay veredicto de cuello de botella.")
+    elif not recommendations:
         recommendations.append("Rendimiento equilibrado; no se detectan cuellos de botella críticos.")
 
     return {"run": run, "too_many_short_encoders": too_many_short,
@@ -972,8 +985,9 @@ def main():
     if sys.argv[1:] == ["--version"]:
         print(f"metal-gpu-trace {__version__}")
         return
-    sys.stdin.reconfigure(encoding="utf-8")
-    sys.stdout.reconfigure(encoding="utf-8")
+    for stream in (sys.stdin, sys.stdout):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     for line in sys.stdin:
         if not line.strip():
             continue
