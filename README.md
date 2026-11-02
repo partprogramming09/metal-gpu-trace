@@ -176,6 +176,10 @@ compares two layers. In one measurement at `dim=20`, 10 s each: native Metal 2 e
 them short, and the GPU idle 89 % of the time (`perf_diagnose`: `too_many_short_encoders` true). One pair of runs, not a
 benchmark.
 
+`api=vk` is native only. `drawstress.exe --vk` under Wine needs a Wine built with Vulkan: the Wine of DXMT and Apple's
+Game Porting Toolkit were tried and both log `Wine was built without Vulkan support`, so the recording holds no GPU
+frames. CrossOver's Wine has Vulkan but runs only inside one of its bottles, which was not tried.
+
 The same facts are MCP resources: `metal-trace://gpu-families` (all) and `metal-trace://gpu-families/apple7` to Each saved run is a resource too: `metal-trace://runs/<run>` reads its summary.
 `apple10`. They restate Apple's [Metal Feature Set Tables](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
 of 21 May 2026, [`MTLGPUFamily`](https://developer.apple.com/documentation/metal/mtlgpufamily) and the
@@ -201,6 +205,15 @@ start a stdio server. Every request needs `Authorization: Bearer <token>`. It li
 request whose Host or Origin is not localhost or 127.0.0.1 (DNS rebinding), and does not start without the token. Cancel
 a running call with `notifications/cancelled` from another connection. There is no progress stream over HTTP, and no
 remote access: reach another Mac through an SSH tunnel (`ssh -L 8765:127.0.0.1:8765 mac`), not by opening the port.
+
+## Windows tests on a real machine
+
+GitHub's `windows-latest` has no GPU and no desktop session, so PresentMon and DWM recordings are only tested on a real
+Windows machine. `windows/winbridge-run-tests.ps1` updates a checkout there and runs `test_perf_record_windows.py`; it is
+written as a [WinBridge](https://github.com/partprogramming09/winbridge) task (fixed name, script pinned by SHA-256, no
+arguments). To register it, copy it to the laptop, set `$repo` to the checkout's path, take its hash there with
+`Get-FileHash <file> -Algorithm SHA256` (Git may have changed the line endings, so the hash of the copy in this repo is
+not the one to use), and add a `[tasks.<name>]` table with `script` and `sha256` to the agent's TOML.
 
 ## CI gate
 
