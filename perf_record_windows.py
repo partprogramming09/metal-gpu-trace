@@ -408,6 +408,43 @@ def sample_dwm_frame_times(pid, stop_event, frame_samples):
 
 
 
+def find_presentmon():
+    """Returns the path of Intel's PresentMon console application, or None: $PRESENTMON_EXE, then
+    %LOCALAPPDATA%\\metal-gpu-trace\\PresentMon*.exe, then PATH."""
+    import shutil
+    explicit = os.environ.get("PRESENTMON_EXE")
+    if explicit:
+        return explicit if pathlib.Path(explicit).is_file() else None
+    cache = pathlib.Path(os.environ.get("LOCALAPPDATA", "~")).expanduser() / "metal-gpu-trace"
+    for candidate in sorted(cache.glob("PresentMon*.exe"), reverse=True):
+        return str(candidate)
+    return shutil.which("PresentMon") or shutil.which("PresentMon-x64")
+
+
+def read_presentmon_csv(path):
+    """Returns (intervals_ms, gpu_ms) from a PresentMon CSV: MsBetweenPresents per frame, and MsGPUTime when the
+    column exists and is positive (None for a frame without it)."""
+    intervals, gpu = [], []
+    try:
+        with open(path, newline="", encoding="utf-8-sig") as f:
+            for row in csv.DictReader(f):
+                try:
+                    interval = float(row["MsBetweenPresents"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if interval <= 0:
+                    continue
+                intervals.append(interval)
+                try:
+                    value = float(row.get("MsGPUTime") or 0)
+                except ValueError:
+                    value = 0.0
+                gpu.append(value if value > 0 else None)
+    except OSError:
+        pass
+    return intervals, gpu
+
+
 def find_attached_process(target):
     """Finds a running process by numerical PID or executable name substring.
 
@@ -721,12 +758,23 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
         dwm_stop_event = threading.Event()
         dwm_thread = None
 
-        dwm_thread = threading.Thread(
-            target=sample_dwm_frame_times,
-            args=(pid, dwm_stop_event, dwm_samples),
-            daemon=True,
-        )
-        dwm_thread.start()
+        presentmon_exe = find_presentmon()
+        presentmon_csv = out_dir / f"{name}.presentmon.csv"
+        presentmon_proc = None
+        if presentmon_exe:
+            presentmon_proc = subprocess.Popen(
+                [presentmon_exe, "--process_id", str(pid), "--output_file", str(presentmon_csv),
+                 "--timed", str(int(seconds)), "--terminate_after_timed", "--no_console_stats",
+                 "--stop_existing_session"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+            )
+        else:
+            dwm_thread = threading.Thread(
+                target=sample_dwm_frame_times,
+                args=(pid, dwm_stop_event, dwm_samples),
+                daemon=True,
+            )
+            dwm_thread.start()
 
         # RSS Sampling
         rss_csv_path = out_dir / f"{name}.rss.csv"
@@ -766,10 +814,20 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             dwm_stop_event.set()
             dwm_thread.join(timeout=1.0)
 
+        presentmon_error = ""
+        if presentmon_proc is not None:
+            try:
+                _, presentmon_error = presentmon_proc.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                presentmon_proc.kill()
+                _, presentmon_error = presentmon_proc.communicate()
+                presentmon_error = presentmon_error or "PresentMon did not stop"
 
         # Check deadline overrun
         if timed_out or (time.monotonic() - start_mono) > deadline_limit:
             # Terminate tree forcibly
+            if presentmon_proc is not None and presentmon_proc.poll() is None:
+                presentmon_proc.kill()
             kill_process_tree(pid)
             if proc:
                 try:
@@ -817,6 +875,7 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             except OSError:
                 pass
 
+        pm_intervals, pm_gpu = read_presentmon_csv(presentmon_csv) if presentmon_proc is not None else ([], [])
         frames_data = []
         spans = []
         labels = {}
@@ -844,6 +903,17 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
                     cmd_id = f"cmd_{frame_idx}"
                     spans.append((frame_idx, int(start_ms * 1e6), int(gpu_ms * 1e6), enc_id, cmd_id))
                     labels[enc_id] = "draw"
+        elif pm_intervals:
+            # one row per Present() of the process, with the GPU time PresentMon measured for it
+            for interval, gpu_ms in zip(pm_intervals, pm_gpu):
+                frame_idx += 1
+                frames_data.append({
+                    "frame": frame_idx,
+                    "start_ms": current_time_ms,
+                    "gpu_ms_draw": None,
+                    "gpu_ms_total": gpu_ms,
+                })
+                current_time_ms += interval
         elif dwm_samples:
             # DWM composition intervals of the whole desktop; GPU time per frame is not measured
             for dt in dwm_samples:
@@ -857,8 +927,15 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
                 current_time_ms += dt
         else:
             rss_csv_path.unlink(missing_ok=True)
+            presentmon_csv.unlink(missing_ok=True)
+            if presentmon_proc is not None:
+                raise RuntimeError(
+                    "no frame data: PresentMon recorded no frames of this process"
+                    + (f" ({presentmon_error.strip().splitlines()[-1]})" if presentmon_error.strip() else "")
+                )
             raise RuntimeError(
-                "no frame data: the program wrote no DRAWSTRESS_LOG and DWM gave no samples "
+                "no frame data: the program wrote no DRAWSTRESS_LOG, PresentMon is not installed "
+                "(set PRESENTMON_EXE) and DWM gave no samples "
                 "(DwmGetCompositionTimingInfo needs the interactive desktop session, not SSH or a service)"
             )
 
@@ -892,7 +969,7 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             "stutter_rate_pct": pacing["stutter_rate_pct"],
             "frame_jitter_ms": pacing["frame_jitter_ms"],
             "throttling_analysis": pacing["throttling_analysis"],
-            "source": "drawstress-log" if entries else "dwm-composition",
+            "source": "drawstress-log" if entries else "presentmon" if pm_intervals else "dwm-composition",
         }
 
         enc_stats = encoder_stats(spans, labels)

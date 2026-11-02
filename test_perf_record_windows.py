@@ -522,6 +522,7 @@ def test_dwm_timing_structures_and_query(tmp_path):
 
 def test_no_frame_data_is_an_error(tmp_path, monkeypatch):
     """Without a frame log and without DWM samples the recording fails and leaves no files; it never invents frames."""
+    monkeypatch.setenv("PRESENTMON_EXE", str(tmp_path / "absent.exe"))
     monkeypatch.setattr(prw, "sample_dwm_frame_times", lambda pid, stop, samples: None)
     with pytest.raises(RuntimeError, match="no frame data"):
         prw.record_windows("test_none", 1, "native", "-", tmp_path, [sys.executable, "-c", "pass"], out_dir=tmp_path)
@@ -530,6 +531,7 @@ def test_no_frame_data_is_an_error(tmp_path, monkeypatch):
 
 def test_dwm_run_does_not_report_gpu_time(tmp_path, monkeypatch):
     """A DWM recording reports composition intervals and says the GPU time was not measured."""
+    monkeypatch.setenv("PRESENTMON_EXE", str(tmp_path / "absent.exe"))
     monkeypatch.setattr(prw, "sample_dwm_frame_times",
                         lambda pid, stop, samples: samples.extend([16.0, 17.5, 16.2] * 40))
     summary, _ = prw.record_windows("test_dwm", 1, "native", "-", tmp_path, LOG_PROGRAM[:2] + ["import time; time.sleep(1)"],
@@ -538,6 +540,21 @@ def test_dwm_run_does_not_report_gpu_time(tmp_path, monkeypatch):
     assert gpu["source"] == "dwm-composition"
     assert gpu["frame_gpu_ms"] == {"count": 0}
     assert gpu["frame_interval_ms"]["count"] > 0 and gpu["frame_jitter_ms"] > 0
+
+
+def test_presentmon_frames_and_gpu_time(tmp_path, monkeypatch):
+    """With PresentMon, intervals come from MsBetweenPresents and GPU time from MsGPUTime, per Present() call."""
+    fake = tmp_path / "pm.bat"
+    rows = "\r\n".join(f" echo game.exe,1,{i},{ms},{gpu}" for i, (ms, gpu) in
+                       enumerate([(16.0, 9.5), (17.5, 10.0), (33.0, 12.0)] * 20))
+    fake.write_text(f"@echo off\r\n(\r\n echo Application,ProcessID,MsBetweenPresents,MsGPUTime\r\n{rows}\r\n)>\"%~4\"\r\n")
+    monkeypatch.setenv("PRESENTMON_EXE", str(fake))
+    summary, _ = prw.record_windows("test_pm", 1, "native", "-", tmp_path,
+                                    LOG_PROGRAM[:2] + ["import time; time.sleep(1)"], out_dir=tmp_path)
+    gpu = summary["gpu"]
+    assert gpu["source"] == "presentmon"
+    assert gpu["frames"] == 60 and gpu["frame_gpu_ms"]["count"] == 60
+    assert gpu["frame_gpu_ms"]["max"] == 12.0 and gpu["frame_interval_ms"]["max"] == 33.0
 
 
 @needs_dwm
