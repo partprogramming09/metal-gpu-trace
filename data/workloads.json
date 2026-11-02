@@ -12,6 +12,7 @@
       "dim_variable": "DRAWSTRESS_DIM",
       "apis": {
         "mtl": {"program": "drawstress", "args": "--mtl", "wine": false},
+        "vk": {"program": "drawstress", "args": "--vk", "wine": false, "moltenvk": true},
         "d3d11": {"program": "drawstress.exe", "args": "--d3d11", "wine": true},
         "d3d12": {"program": "drawstress.exe", "args": "--d3d12", "wine": true}
       }

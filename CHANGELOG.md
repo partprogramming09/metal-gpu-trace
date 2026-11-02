@@ -5,6 +5,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## Unreleased
 
+- Workload `drawstress` takes `api=vk`: the same program through Vulkan on MoltenVK (bgfx's Vulkan backend, already in
+  the shipped binary). Set `METAL_TRACE_MOLTENVK` to a directory with an arm64 `libMoltenVK.dylib`; the run's `layer`
+  names MoltenVK and the library's SHA-256, so `perf_compare` flags a comparison with native Metal as two layers.
+
 - `perf_record.sh` also refuses a native program with the execute bit but no program inside (no Mach-O or `#!` header):
   `X is not a program the system can run`, exit 2, instead of an unclear `No such file ... .xml`.
 - The CI runs the self-check on macOS too, but only when `perf_record.sh`, `perf_report.py` or the server change.

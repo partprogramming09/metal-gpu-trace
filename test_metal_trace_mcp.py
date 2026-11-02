@@ -999,8 +999,63 @@ def test_script_failure_cleanup(tmp_path):
     assert not list(out.iterdir())
 
 
+def test_moltenvk(tmp_path):
+    """api vk needs METAL_TRACE_MOLTENVK (a directory with libMoltenVK.dylib and no spaces), runs the program with
+    DYLD_LIBRARY_PATH set to it, and names MoltenVK as the layer without a local path, so perf_compare tells a
+    MoltenVK run from a native Metal run."""
+    import metal_trace_mcp as mcp
+    entry = {"title": "t", "about": "a", "license": "l", "url": "https://example.invalid/x.tar.gz", "bytes": 1,
+             "sha256": "0" * 64, "dir": "demo", "dim_variable": "DIM",
+             "apis": {"mtl": {"program": "demo", "args": "--mtl", "wine": False},
+                      "vk": {"program": "demo", "args": "--vk", "wine": False, "moltenvk": True}}}
+    cache = tmp_path / "cache"
+    (cache / ("demo-" + "0" * 12) / "demo").mkdir(parents=True)
+    (cache / ("demo-" + "0" * 12) / "demo" / "demo").write_text("#!/bin/sh\n")
+    lib, spaced = tmp_path / "mvk", tmp_path / "with space"
+    lib.mkdir()
+    spaced.mkdir()
+    (lib / "libMoltenVK.dylib").write_bytes(b"fake")
+    (spaced / "libMoltenVK.dylib").write_bytes(b"fake")
+    saved = mcp.WORKLOADS, mcp.CACHE, mcp.record, os.environ.get("METAL_TRACE_MOLTENVK")
+    mcp.WORKLOADS, mcp.CACHE = {"demo": entry}, cache
+    seen = {}
+    mcp.record = lambda *args, **kw: seen.update(args=args, kw=kw) or {}
+
+    def refused(path, words):
+        os.environ.pop("METAL_TRACE_MOLTENVK", None) if path is None else os.environ.__setitem__("METAL_TRACE_MOLTENVK", str(path))
+        try:
+            mcp.workload_command("demo", "vk", None, None, "")
+            raise AssertionError(f"{path} must be refused")
+        except mcp.ToolError as error:
+            assert words in str(error) and str(tmp_path) not in str(error), error
+    try:
+        refused(None, "set METAL_TRACE_MOLTENVK")
+        refused(tmp_path, "holds no libMoltenVK.dylib")
+        refused(spaced, "spaces")
+        os.environ["METAL_TRACE_MOLTENVK"] = str(lib)
+        program, wine, args, env = mcp.workload_command("demo", "vk", 20, None, "-x")
+        assert wine == "native" and args == "--vk -x" and env == f"DIM=20 DYLD_LIBRARY_PATH={lib.resolve()}", (wine, args, env)
+        layer = mcp.workload_layer("demo", "vk", 20)
+        assert layer["moltenvk"] and len(layer["dylib"]["sha256"]) == 64 and layer["program_env"] == "DIM=20", layer
+        assert str(tmp_path) not in json.dumps(layer), "the layer must not carry a local path"
+        assert mcp.workload_layer("demo", "mtl", 20) is None
+        mcp.tool_perf_record("v", workload="demo", api="vk", seconds=5)
+        assert seen["kw"]["layer"]["moltenvk"] and "DYLD_LIBRARY_PATH=" in seen["args"][6], seen
+        mcp.tool_perf_record("m", workload="demo", api="mtl", seconds=5)
+        assert seen["kw"]["layer"] is None
+    finally:
+        mcp.WORKLOADS, mcp.CACHE, mcp.record = saved[:3]
+        os.environ.pop("METAL_TRACE_MOLTENVK", None) if saved[3] is None else os.environ.__setitem__("METAL_TRACE_MOLTENVK", saved[3])
+    vk, vk2 = {"layer": layer}, {"layer": {**layer}}
+    native = {"layer": {"none": "native Metal, no translation layer", "program_env": "DIM=20"}}
+    assert mcp.layer_label(layer).startswith("moltenvk ") and len(mcp.layer_label(layer)) == 21
+    assert mcp.layer_change(native, vk, "a", "b")["same"] is False
+    assert mcp.layer_change(vk, vk2, "a", "b")["same"] is True
+    assert "vk" in json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["drawstress"]["apis"]
+
+
 def main():
-    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup]
+    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
