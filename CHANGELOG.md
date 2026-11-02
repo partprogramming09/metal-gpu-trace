@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.10.2 — 2026-11-02
 
 - Workload `drawstress` takes `api=vk`: the same program through Vulkan on MoltenVK (bgfx's Vulkan backend, already in
   the shipped binary). Set `METAL_TRACE_MOLTENVK` to a directory with an arm64 `libMoltenVK.dylib`; the run's `layer`
