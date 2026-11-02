@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.9.1 — 2026-11-02
 
 - On Windows, `perf_record` and `perf_attach` report progress every 5 s and stop on `notifications/cancelled`, deleting
   the partial files and killing the launched program, as on macOS.
