@@ -3,6 +3,23 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## 0.9.0 — 2026-11-02
+
+- Progress and cancellation. A client that sends a `progressToken` with `tools/call` gets `notifications/progress`
+  every 5 s while `perf_record`, `perf_attach` or `perf_baseline_record` run (seconds elapsed of the deadline), instead
+  of silence for up to 630 s. `notifications/cancelled` stops the recording, deletes its partial `.trace` and
+  `instruments*.ktrace`, and answers the call with an error. Tool calls now run on a worker thread, one at a time, so
+  `ping` and cancellation are read while a recording runs. On Windows the recording is not cancellable or reported yet.
+- `tools/list` gives every tool an `outputSchema` (an object; `perf_runs`, `trace_query` and `capture_records` name
+  their page fields), so clients can validate `structuredContent`. A tool that returns anything but an object is an
+  error, not a malformed result.
+- `metal-gpu-trace check RUN BASELINE [--margin-pct N]`: `perf_check` for CI, one JSON line and an exit code (0 same or
+  improved, 1 regressed, 2 could not be judged). README shows a self-hosted macOS job.
+- `perf_compare` takes `markdown=true` and adds the headline, encoder and label numbers as Markdown tables for a PR.
+- `perf_export_trace` writes a run's GPU frames as `<run>.chrome-trace` (one slice per frame) for ui.perfetto.dev.
+  Per-encoder slices are not available: the summary keeps encoder totals per label, not each encoder.
+- Each saved run is an MCP resource: `metal-trace://runs/<run>` (listed as a resource template) reads its summary.
+
 ## 0.8.4 — 2026-11-01
 
 - Recording no longer fills the disk. `xctrace record` leaves a temporary `instruments*.ktrace` (5 to 16 GB for a

@@ -6,6 +6,7 @@ separated by ':', whose files the tools may read; METAL_TRACE_WINE is the defaul
 recordings kept; METAL_TRACE_LOG=off silences the one stderr line per call. Test programs that workload_fetch
 downloads go to ~/Library/Caches/metal-gpu-trace.
 """
+import csv
 import hashlib
 import json
 import os
@@ -17,9 +18,10 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 
-__version__ = "0.8.4"
+__version__ = "0.9.0"
 TOOLS_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 import gputrace_read  # noqa: E402
@@ -88,6 +90,13 @@ def trace_path(trace):
     if name_ok(trace):
         return OUT / f"{trace.removesuffix('.trace')}.trace"
     return allowed(trace)
+
+
+OBJECT = {"type": "object"}
+PAGED = {"type": "object", "required": ["total", "offset", "rows", "next_offset"],
+         "properties": {"total": {"type": "integer"}, "offset": {"type": "integer"}, "rows": {"type": "array"},
+                        "next_offset": {"type": ["integer", "null"]}}}
+PAGED_TOOLS = ("perf_runs", "trace_query", "capture_records")  # the tools that return page()
 
 
 def page(items, offset, limit):
@@ -334,6 +343,23 @@ def layer_change(sa, sb, a, b):
     return out
 
 
+PROGRESS_TICKS = 5  # seconds between progress notifications while a recording runs
+RUN = threading.local()  # the cancel event and progress sender of the tool call this thread is serving
+
+
+def cancelled():
+    """Returns whether the client cancelled the tool call this thread is serving."""
+    event = getattr(RUN, "cancel", None)
+    return bool(event and event.is_set())
+
+
+def progress(done, total, message):
+    """Tells the client how far the running tool call is, when it asked for progress; a no-op otherwise."""
+    send = getattr(RUN, "progress", None)
+    if send:
+        send(done, total, message)
+
+
 def deadline(seconds):
     """Returns the seconds a recording of `seconds` may take in all; closing and reading back a Wine D3D12 trace takes
     up to 14 s per recorded second on an M1 Pro."""
@@ -370,20 +396,33 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
                              str(prefix), str(workdir), *command],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
                             start_new_session=True)
-    try:
-        _, stderr = proc.communicate(timeout=deadline(seconds))
-    except subprocess.TimeoutExpired:
-        os.killpg(proc.pid, signal.SIGKILL)
-        proc.wait()
-        if wine not in ("native", "attach"):
-            subprocess.run([str(pathlib.Path(wine) / "bin" / "wineserver"), "-k"], env=dict(env, WINEPREFIX=str(prefix)),
-                           capture_output=True, timeout=30)
-        if (OUT / ".recording").is_dir():
-            (OUT / ".recording").rmdir()
-        # the partial .trace and CSVs of this run
-        for path in (set(OUT.glob(f"{label}_*")) - before) | (set(tmp.glob("instruments*.ktrace")) - ktraces):
-            shutil.rmtree(path) if path.is_dir() else path.unlink()
-        raise ToolError(f"the recording took over {deadline(seconds)} s and was stopped; nothing was saved")
+    limit, started, ticks = deadline(seconds), time.monotonic(), 0
+    while True:
+        left = limit - (time.monotonic() - started)
+        if left <= 0 or cancelled():
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+            if wine == "native":
+                subprocess.run(["pkill", "-x", pathlib.Path(command[0]).name], capture_output=True, timeout=30)
+            elif wine != "attach":
+                subprocess.run([str(pathlib.Path(wine) / "bin" / "wineserver"), "-k"],
+                               env=dict(env, WINEPREFIX=str(prefix)), capture_output=True, timeout=30)
+            if (OUT / ".recording").is_dir():
+                (OUT / ".recording").rmdir()
+            # the partial .trace and CSVs of this run
+            for path in (set(OUT.glob(f"{label}_*")) - before) | (set(tmp.glob("instruments*.ktrace")) - ktraces):
+                shutil.rmtree(path) if path.is_dir() else path.unlink()
+            if left > 0:
+                raise ToolError("the recording was cancelled; nothing was saved")
+            raise ToolError(f"the recording took over {limit} s and was stopped; nothing was saved")
+        try:
+            _, stderr = proc.communicate(timeout=min(1, left))
+            break
+        except subprocess.TimeoutExpired:
+            ticks += 1
+            if ticks % PROGRESS_TICKS == 0:
+                done = time.monotonic() - started
+                progress(done, limit, f"recording and reading back: {int(done)} s of up to {limit} s")
     new = sorted(set(OUT.glob(f"{label}_*.json")) - before)
     if proc.returncode or not new:
         reason = (stderr.strip().splitlines() or ["no summary was written"])[-1]
@@ -415,15 +454,34 @@ def tool_perf_runs(offset=0, limit=50):
     return page(runs, offset, limit)
 
 
-def tool_perf_compare(a, b, short_us=25):
+def markdown_report(result):
+    """Returns a perf_compare result as Markdown for a PR comment: one table of the headline and encoder numbers
+    (a, b, change, change in %), and the five labels whose GPU ms per frame changed most."""
+    rows = [(name, c) for group in (result["metrics"], {k: v for k, v in result.get("encoders", {}).items()
+                                                        if isinstance(v, dict) and "a" in v}) for name, c in group.items()]
+    cell = lambda v: "-" if v is None else str(v)
+    lines = [f"**{result['a']}** (a) vs **{result['b']}** (b)", "", "| metric | a | b | change | % |", "|---|---|---|---|---|"]
+    lines += [f"| {n} | {cell(c['a'])} | {cell(c['b'])} | {cell(c['change'])} | {cell(c['change_pct'])} |" for n, c in rows]
+    labels = [l for l in result.get("labels", []) if l["ms_per_frame_change"]][:5]
+    if labels:
+        lines += ["", "| label | ms/frame a | ms/frame b | change |", "|---|---|---|---|"]
+        lines += [f"| {l['label']} | {cell(l['ms_per_frame_a'])} | {cell(l['ms_per_frame_b'])} | "
+                  f"{l['ms_per_frame_change']} |" for l in labels]
+    if result["too_short"]:
+        lines += ["", f"Too short to compare (under 100 frames): {', '.join(result['too_short'])}."]
+    return "\n".join(lines)
+
+
+def tool_perf_compare(a, b, short_us=25, markdown=False):
     """Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the
     headline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and
     command buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's
     count and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:
     with different layers it compares layers, not one change. Recordings with under 100 frames are flagged: too
-    short to compare."""
+    short to compare. With markdown true the result also has `markdown`: the same numbers as tables for a PR comment."""
     sa, sb = (json.loads(run_path(r).read_text(encoding="utf-8")) for r in (a, b))
-    return compare_summaries(sa, sb, a, b, short_us)
+    result = compare_summaries(sa, sb, a, b, short_us)
+    return {**result, "markdown": markdown_report(result)} if markdown else result
 
 
 def compare_summaries(sa, sb, a, b, short_us=25):
@@ -600,6 +658,27 @@ def label_changes(sa, sb, top=20):
                      "ms_per_frame_a": ms_a, "ms_per_frame_b": ms_b, "ms_per_frame_change": delta})
     rows.sort(key=lambda r: -abs(r["ms_per_frame_change"] or 0))
     return rows[:top]
+
+
+def tool_perf_export_trace(run):
+    """Writes a recording's GPU frames as a Chrome trace file, `<run>.chrome-trace` in the runs directory, that
+    ui.perfetto.dev and chrome://tracing open: one slice per GPU frame, from its start for its GPU time (the sum of
+    its encoders' time, so a frame with parallel encoders can show shorter than it took), with the compute, fragment
+    and vertex split as arguments. Returns the file name and the number of frames."""
+    run_path(run)
+    source = OUT / f"{run}.frames.csv"
+    if not source.exists():
+        raise ToolError(f"{run} has no per-frame file; record it again")
+    events = []
+    with open(source, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            events.append({"name": "GPU frame", "ph": "X", "pid": 1, "tid": 1, "ts": float(row["start_ms"]) * 1000,
+                           "dur": float(row["gpu_ms_total"]) * 1000,
+                           "args": {"frame": int(row["frame"]), **{k[7:]: float(v) for k, v in row.items()
+                                                                  if k.startswith("gpu_ms_") and k != "gpu_ms_total"}}})
+    target = OUT / f"{run}.chrome-trace"
+    target.write_text(json.dumps({"traceEvents": events, "displayTimeUnit": "ms"}), encoding="utf-8")
+    return {"file": target.name, "frames": len(events)}
 
 
 def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
@@ -861,7 +940,9 @@ TOOLS = {
         {"a": {**S, "description": "run name from perf_runs: the reference, such as the run before a change"},
          "b": {**S, "description": "run name from perf_runs: the run to compare against a"},
          "short_us": {**I, "description": "an encoder under this GPU time counts as short: 10, 25 (default), 50, 100, "
-                                          "250, 500 or 1000"}}, ["a", "b"]),
+                                          "250, 500 or 1000"},
+         "markdown": {"type": "boolean", "description": "also return the numbers as Markdown tables, default false"}},
+        ["a", "b"]),
         hints("Compare two recordings")),
     "perf_baseline": (tool_perf_baseline, schema(
         {"name": {**S, "description": "reference name: letters, digits, '.', '_', '-'; alone, shows that reference"},
@@ -874,6 +955,9 @@ TOOLS = {
          "margin_pct": {"type": "number", "description": "how far outside the reference's range FPS or GPU ms per "
                                                          "frame may fall before counting, default 3"}},
         ["run", "baseline"]), hints("Check a run against a reference")),
+    "perf_export_trace": (tool_perf_export_trace, schema(
+        {"run": {**S, "description": "a run name from perf_runs"}}, ["run"]),
+        hints("Export frames to Perfetto", destructive=False, idempotent=True)),
     "perf_diagnose": (tool_perf_diagnose, schema(
         {"run": {**S, "description": "a run name from perf_runs"},
          "min_encoders": {**I, "description": "encoders per frame (median) from which the verdict can be yes, default 4"},
@@ -934,17 +1018,37 @@ def prompt_compare_layer(workload="drawstress", api="d3d12"):
     )
 
 
+CALLS = {}  # request id -> cancel event, for the tool calls in flight
+OUT_LOCK, TOOL_LOCK = threading.Lock(), threading.Lock()
+
+
+def send(message):
+    """Writes one JSON-RPC message to stdout; the lock keeps lines from different threads whole."""
+    with OUT_LOCK:
+        sys.stdout.write(json.dumps(message) + "\n")
+        sys.stdout.flush()
+
+
 def log(message):
     """Writes one line to stderr, the only log channel a stdio server may use."""
     if os.environ.get("METAL_TRACE_LOG") != "off":
         print(f"metal-trace: {message}", file=sys.stderr, flush=True)
 
 
-def call(name, arguments):
-    """Runs one tool and returns its MCP result, with failures as isError results that say what to do."""
+def call(name, arguments, request_id=None, token=None):
+    """Runs one tool and returns its MCP result, with failures as isError results that say what to do. A client's
+    notifications/cancelled for `request_id` stops it; `token` is the client's progressToken, if it sent one."""
     started = time.monotonic()
+    RUN.cancel = CALLS.setdefault(request_id, threading.Event()) if request_id is not None else None
+    RUN.progress = None if token is None else lambda done, total, message: send(
+        {"jsonrpc": "2.0", "method": "notifications/progress",
+         "params": {"progressToken": token, "progress": done, "total": total, "message": message}})
     try:
+        if cancelled():
+            raise ToolError("the call was cancelled before it started")
         value = TOOLS[name][0](**arguments)
+        if not isinstance(value, dict):
+            raise RuntimeError(f"{name} returned {type(value).__name__}, not an object")
         text = json.dumps(value, ensure_ascii=False)
         if len(text) > MAX_TEXT:
             raise ToolError(f"the result has {len(text)} characters; ask for a smaller page with limit")
@@ -955,6 +1059,7 @@ def call(name, arguments):
         result = {"content": [{"type": "text", "text": str(error)}], "isError": True}
     except Exception as error:  # an unexpected failure is reported to the client, not fatal to the server
         result = {"content": [{"type": "text", "text": f"internal error: {type(error).__name__}"}], "isError": True}
+    CALLS.pop(request_id, None)
     log(f"{name} {'error' if result.get('isError') else 'ok'} in {time.monotonic() - started:.1f} s")
     return result
 
@@ -976,19 +1081,32 @@ def handle(message):
     elif method == "ping":
         result = {}
     elif method == "resources/templates/list":
-        result = {"resourceTemplates": []}
+        result = {"resourceTemplates": [{"uriTemplate": "metal-trace://runs/{run}", "name": "Run summary",
+                                         "description": "The saved summary of a recording named as perf_runs lists it",
+                                         "mimeType": "application/json"}]}
     elif method == "resources/list":
         result = {"resources": [{"uri": uri, "name": name, "description": about, "mimeType": "application/json"}
                                 for uri, (name, about, _) in RESOURCES.items()]}
     elif method == "resources/read":
         uri = params.get("uri")
+        if isinstance(uri, str) and uri.startswith("metal-trace://runs/"):
+            try:
+                text = run_path(uri[len("metal-trace://runs/"):]).read_text(encoding="utf-8")
+            except ToolError:
+                text = None
+            if text is None:
+                return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32002, "message": "Resource not found",
+                                                               "data": {"uri": uri}}}
+            return {"jsonrpc": "2.0", "id": mid, "result": {"contents": [{"uri": uri, "mimeType": "application/json",
+                                                                         "text": text}]}}
         if uri not in RESOURCES:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32002, "message": "Resource not found",
                                                            "data": {"uri": uri}}}
         result = {"contents": [{"uri": uri, "mimeType": "application/json",
                                 "text": json.dumps(RESOURCES[uri][2](), ensure_ascii=False)}]}
     elif method == "tools/list":
-        result = {"tools": [{"name": n, "description": f.__doc__.strip(), "inputSchema": s, "annotations": hints}
+        result = {"tools": [{"name": n, "description": f.__doc__.strip(), "inputSchema": s,
+                             "outputSchema": PAGED if n in PAGED_TOOLS else OBJECT, "annotations": hints}
                             | ({"_meta": META[n]} if n in META else {}) for n, (f, s, hints) in TOOLS.items()]}
     elif method == "prompts/list":
         result = {"prompts": [{"name": name, **p} for name, p in PROMPTS.items()]}
@@ -1006,33 +1124,90 @@ def handle(message):
         name = params.get("name")
         if name not in TOOLS:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": f"unknown tool {name}"}}
-        result = call(name, params.get("arguments") or {})
+        result = call(name, params.get("arguments") or {}, mid if isinstance(mid, (str, int)) else None,
+                      (params.get("_meta") or {}).get("progressToken"))
     else:
         return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"unknown method {method}"}}
     return {"jsonrpc": "2.0", "id": mid, "result": result}
 
 
+def check_cli(args):
+    """Runs `check RUN BASELINE [--margin-pct N]` for CI: prints perf_check's verdict, reasons and hints as one JSON
+    line and returns 0 when the run is the same or improved, 1 when it regressed, 2 when it could not be judged
+    (no such run or reference), or too short to judge (under 100 frames)."""
+    run, baseline, margin = (args + [None, None])[:2] + [3.0]
+    if "--margin-pct" in args:
+        try:
+            margin = float(args[args.index("--margin-pct") + 1])
+        except (IndexError, ValueError):
+            print("usage: metal-gpu-trace check RUN BASELINE [--margin-pct N]", file=sys.stderr)
+            return 2
+    if not run or not baseline or run.startswith("--") or baseline.startswith("--"):
+        print("usage: metal-gpu-trace check RUN BASELINE [--margin-pct N]", file=sys.stderr)
+        return 2
+    try:
+        result = tool_perf_check(run, baseline, margin)
+    except (ToolError, FileNotFoundError, ValueError) as error:
+        print(f"metal-gpu-trace: {error}", file=sys.stderr)
+        return 2
+    print(json.dumps({k: v for k, v in result.items() if k not in ("comparison", "range")}))
+    if "hint" in result:
+        return 2
+    return 1 if result["verdict"] == "regressed" else 0
+
+
 def main():
-    """Serves newline-delimited JSON-RPC on stdin and stdout until stdin closes; --version prints the version."""
+    """Serves newline-delimited JSON-RPC on stdin and stdout until stdin closes; --version prints the version, and
+    `check` judges a run for CI (see check_cli)."""
     if sys.argv[1:] == ["--version"]:
         print(f"metal-gpu-trace {__version__}")
         return
+    if sys.argv[1:2] == ["check"]:
+        sys.exit(check_cli(sys.argv[2:]))
     for stream in (sys.stdin, sys.stdout):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
+    workers = []
     for line in sys.stdin:
         if not line.strip():
             continue
         try:
-            reply = handle(json.loads(line))
+            message = json.loads(line)
+            if isinstance(message, dict) and message.get("method") == "notifications/cancelled":
+                event = CALLS.get((message.get("params") or {}).get("requestId"))
+                if event:
+                    event.set()
+                continue
+            if isinstance(message, dict) and message.get("method") == "tools/call" and \
+                    isinstance(message.get("id"), (str, int)):
+                # a tool call runs on its own thread so ping and notifications/cancelled are read meanwhile; calls
+                # still run one at a time, as only one recording may run at once
+                CALLS[message["id"]] = threading.Event()
+                workers.append(threading.Thread(target=serve, args=(message,)))
+                workers[-1].start()
+                continue
+            reply = handle(message)
         except json.JSONDecodeError:
             reply = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}}
         except Exception as error:  # a malformed request must not stop the server
             log(f"internal error {type(error).__name__}")
             reply = {"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": "internal error"}}
         if reply is not None:
-            sys.stdout.write(json.dumps(reply) + "\n")
-            sys.stdout.flush()
+            send(reply)
+    for worker in workers:
+        worker.join()
+
+
+def serve(message):
+    """Answers one tools/call on a worker thread, after the call before it."""
+    with TOOL_LOCK:
+        try:
+            reply = handle(message)
+        except Exception as error:  # a malformed request must not stop the server
+            log(f"internal error {type(error).__name__}")
+            CALLS.pop(message.get("id"), None)
+            reply = {"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32603, "message": "internal error"}}
+    send(reply)
 
 
 if __name__ == "__main__":
