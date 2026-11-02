@@ -264,6 +264,22 @@ time.sleep(1)
         assert int(rows[-1][0]) == 120
 
 
+def test_cancel_and_progress(tmp_path):
+    """A cancelled recording stops, kills its program, leaves no files or lock, and reports progress every 5 s."""
+    import threading
+    script = tmp_path / "hang.py"
+    script.write_text("import time; time.sleep(30)\n", encoding="utf-8")
+    cancel, seen = threading.Event(), []
+    threading.Timer(7, cancel.set).start()
+    with pytest.raises(RuntimeError, match="cancelled"):
+        prw.record_windows("test_cancel", seconds=20, wine="native", prefix="-", workdir=tmp_path,
+                           command=[sys.executable, str(script)], out_dir=tmp_path, cancelled=cancel.is_set,
+                           progress=lambda *a: seen.append(a))
+    assert seen and seen[0][:2] == (5, 20), seen
+    assert not (tmp_path / ".recording").exists()
+    assert not [p.name for p in tmp_path.glob("test_cancel*") if p.name != "hang.py"]
+
+
 def test_timeout_and_cleanup(tmp_path):
     """Overrunning deadline terminates process, cleans partial files and raises error."""
     script = tmp_path / "hang.py"

@@ -380,7 +380,7 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
         try:
             summary, json_path = perf_record_windows.record_windows(
                 label, int(seconds), wine, prefix, workdir, command, env["PERF_ENV"],
-                out_dir=OUT, timeout=deadline(seconds)
+                out_dir=OUT, timeout=deadline(seconds), cancelled=cancelled, progress=progress
             )
         except (RuntimeError, ValueError) as error:
             raise ToolError(str(error)) from error
