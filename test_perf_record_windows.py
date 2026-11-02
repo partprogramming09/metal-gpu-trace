@@ -431,10 +431,10 @@ def test_diagnose_bottlenecks_and_recommendations(tmp_path):
         assert diag_cpu["stutter_analysis"]["verdict"] == "MICRO_STUTTER"
         assert any("FlipQueueSize=3" in r for r in diag_cpu["recommendations"])
 
-        # 3. MEMORY_BANDWIDTH_PRESSURE
+        # 3. MEMORY_PRESSURE_SUSPECTED (a hypothesis: bandwidth is not measured)
         (tmp_path / "mem_bound.json").write_text(json.dumps(make_summary(12.0, 16.6, 0.18, 2500.0, 8.5, 5.5)))
         diag_mem = mcp.tool_perf_diagnose("mem_bound")
-        assert diag_mem["bottleneck"] == "MEMORY_BANDWIDTH_PRESSURE"
+        assert diag_mem["bottleneck"] == "MEMORY_PRESSURE_SUSPECTED"
         assert diag_mem["stutter_analysis"]["verdict"] == "SEVERE_STUTTER"
         assert any("sombras de 2048 a 1024" in r for r in diag_mem["recommendations"])
         assert any("cascadas de sombras a 2" in r for r in diag_mem["recommendations"])
