@@ -16,11 +16,12 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -I test_metal_trace_mcp.py
 
-  # the Windows job runs only when a file it covers changed: a docs-only change does not wait for it
+  # the Windows and macOS jobs run only when a file they cover changed: a docs-only change does not wait for them
   changes:
     runs-on: ubuntu-latest
     outputs:
       windows: ${{ steps.diff.outputs.windows }}
+      macos: ${{ steps.diff.outputs.macos }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,13 +30,29 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
+          windows=false macos=false
           if [ -z "$BASE" ] || ! git cat-file -e "$BASE" 2>/dev/null; then
-            echo "windows=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$BASE" HEAD | grep -qE '^(perf_record_windows\.py|test_perf_record_windows\.py|metal_trace_mcp\.py|\.github/workflows/test\.yml)$'; then
-            echo "windows=true" >> "$GITHUB_OUTPUT"
+            windows=true macos=true
           else
-            echo "windows=false" >> "$GITHUB_OUTPUT"
+            files=$(git diff --name-only "$BASE" HEAD)
+            grep -qE '^(perf_record_windows\.py|test_perf_record_windows\.py|metal_trace_mcp\.py|\.github/workflows/test\.yml)$' <<< "$files" && windows=true
+            grep -qE '^(perf_record\.sh|perf_report\.py|metal_trace_mcp\.py|test_metal_trace_mcp\.py|\.github/workflows/test\.yml)$' <<< "$files" && macos=true
           fi
+          echo "windows=$windows" >> "$GITHUB_OUTPUT"
+          echo "macos=$macos" >> "$GITHUB_OUTPUT"
+          exit 0
+
+  # the script and its tests use macOS's own ps, pkill and zsh: the Linux job cannot catch a bug that is macOS-only
+  macos:
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -I test_metal_trace_mcp.py
 
   windows:
     needs: changes

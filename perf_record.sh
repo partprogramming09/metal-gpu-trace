@@ -11,6 +11,12 @@ shift 5
 [[ $seconds == <1-3600> ]] || { echo "seconds must be 1 to 3600" >&2; exit 2; }
 [[ $wine == (native|attach) || -x $wine/bin/wine ]] || { echo "no Wine at $wine/bin/wine (or pass native or attach)" >&2; exit 2; }
 [[ $wine != native || ( -f $1 && -x $1 ) ]] || { echo "${1:t} is not an executable file" >&2; exit 2; }
+if [[ $wine == native ]]; then
+  # a program starts with a Mach-O magic number (also ELF, for the Linux CI) or a #! line
+  magic=$(head -c 4 $1 | od -An -tx1 | tr -d ' \n')
+  [[ $magic == (cffaedfe|cefaedfe|feedface|feedfacf|cafebabe|bebafeca|7f454c46|2321*) ]] ||
+    { echo "${1:t} is not a program the system can run (no Mach-O or #! header)" >&2; exit 2; }
+fi
 if [[ $wine == attach ]]; then
   pid=$1
   # a name matches the newest process whose command line holds it, such as Game.exe under Wine
