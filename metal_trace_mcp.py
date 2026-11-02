@@ -6,6 +6,7 @@ separated by ':', whose files the tools may read; METAL_TRACE_WINE is the defaul
 recordings kept; METAL_TRACE_LOG=off silences the one stderr line per call. Test programs that workload_fetch
 downloads go to ~/Library/Caches/metal-gpu-trace.
 """
+import csv
 import hashlib
 import json
 import os
@@ -453,15 +454,34 @@ def tool_perf_runs(offset=0, limit=50):
     return page(runs, offset, limit)
 
 
-def tool_perf_compare(a, b, short_us=25):
+def markdown_report(result):
+    """Returns a perf_compare result as Markdown for a PR comment: one table of the headline and encoder numbers
+    (a, b, change, change in %), and the five labels whose GPU ms per frame changed most."""
+    rows = [(name, c) for group in (result["metrics"], {k: v for k, v in result.get("encoders", {}).items()
+                                                        if isinstance(v, dict) and "a" in v}) for name, c in group.items()]
+    cell = lambda v: "-" if v is None else str(v)
+    lines = [f"**{result['a']}** (a) vs **{result['b']}** (b)", "", "| metric | a | b | change | % |", "|---|---|---|---|---|"]
+    lines += [f"| {n} | {cell(c['a'])} | {cell(c['b'])} | {cell(c['change'])} | {cell(c['change_pct'])} |" for n, c in rows]
+    labels = [l for l in result.get("labels", []) if l["ms_per_frame_change"]][:5]
+    if labels:
+        lines += ["", "| label | ms/frame a | ms/frame b | change |", "|---|---|---|---|"]
+        lines += [f"| {l['label']} | {cell(l['ms_per_frame_a'])} | {cell(l['ms_per_frame_b'])} | "
+                  f"{l['ms_per_frame_change']} |" for l in labels]
+    if result["too_short"]:
+        lines += ["", f"Too short to compare (under 100 frames): {', '.join(result['too_short'])}."]
+    return "\n".join(lines)
+
+
+def tool_perf_compare(a, b, short_us=25, markdown=False):
     """Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the
     headline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and
     command buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's
     count and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:
     with different layers it compares layers, not one change. Recordings with under 100 frames are flagged: too
-    short to compare."""
+    short to compare. With markdown true the result also has `markdown`: the same numbers as tables for a PR comment."""
     sa, sb = (json.loads(run_path(r).read_text(encoding="utf-8")) for r in (a, b))
-    return compare_summaries(sa, sb, a, b, short_us)
+    result = compare_summaries(sa, sb, a, b, short_us)
+    return {**result, "markdown": markdown_report(result)} if markdown else result
 
 
 def compare_summaries(sa, sb, a, b, short_us=25):
@@ -638,6 +658,27 @@ def label_changes(sa, sb, top=20):
                      "ms_per_frame_a": ms_a, "ms_per_frame_b": ms_b, "ms_per_frame_change": delta})
     rows.sort(key=lambda r: -abs(r["ms_per_frame_change"] or 0))
     return rows[:top]
+
+
+def tool_perf_export_trace(run):
+    """Writes a recording's GPU frames as a Chrome trace file, `<run>.chrome-trace` in the runs directory, that
+    ui.perfetto.dev and chrome://tracing open: one slice per GPU frame, from its start for its GPU time (the sum of
+    its encoders' time, so a frame with parallel encoders can show shorter than it took), with the compute, fragment
+    and vertex split as arguments. Returns the file name and the number of frames."""
+    run_path(run)
+    source = OUT / f"{run}.frames.csv"
+    if not source.exists():
+        raise ToolError(f"{run} has no per-frame file; record it again")
+    events = []
+    with open(source, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            events.append({"name": "GPU frame", "ph": "X", "pid": 1, "tid": 1, "ts": float(row["start_ms"]) * 1000,
+                           "dur": float(row["gpu_ms_total"]) * 1000,
+                           "args": {"frame": int(row["frame"]), **{k[7:]: float(v) for k, v in row.items()
+                                                                  if k.startswith("gpu_ms_") and k != "gpu_ms_total"}}})
+    target = OUT / f"{run}.chrome-trace"
+    target.write_text(json.dumps({"traceEvents": events, "displayTimeUnit": "ms"}), encoding="utf-8")
+    return {"file": target.name, "frames": len(events)}
 
 
 def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
@@ -899,7 +940,9 @@ TOOLS = {
         {"a": {**S, "description": "run name from perf_runs: the reference, such as the run before a change"},
          "b": {**S, "description": "run name from perf_runs: the run to compare against a"},
          "short_us": {**I, "description": "an encoder under this GPU time counts as short: 10, 25 (default), 50, 100, "
-                                          "250, 500 or 1000"}}, ["a", "b"]),
+                                          "250, 500 or 1000"},
+         "markdown": {"type": "boolean", "description": "also return the numbers as Markdown tables, default false"}},
+        ["a", "b"]),
         hints("Compare two recordings")),
     "perf_baseline": (tool_perf_baseline, schema(
         {"name": {**S, "description": "reference name: letters, digits, '.', '_', '-'; alone, shows that reference"},
@@ -912,6 +955,9 @@ TOOLS = {
          "margin_pct": {"type": "number", "description": "how far outside the reference's range FPS or GPU ms per "
                                                          "frame may fall before counting, default 3"}},
         ["run", "baseline"]), hints("Check a run against a reference")),
+    "perf_export_trace": (tool_perf_export_trace, schema(
+        {"run": {**S, "description": "a run name from perf_runs"}}, ["run"]),
+        hints("Export frames to Perfetto", destructive=False, idempotent=True)),
     "perf_diagnose": (tool_perf_diagnose, schema(
         {"run": {**S, "description": "a run name from perf_runs"},
          "min_encoders": {**I, "description": "encoders per frame (median) from which the verdict can be yes, default 4"},
@@ -1035,12 +1081,24 @@ def handle(message):
     elif method == "ping":
         result = {}
     elif method == "resources/templates/list":
-        result = {"resourceTemplates": []}
+        result = {"resourceTemplates": [{"uriTemplate": "metal-trace://runs/{run}", "name": "Run summary",
+                                         "description": "The saved summary of a recording named as perf_runs lists it",
+                                         "mimeType": "application/json"}]}
     elif method == "resources/list":
         result = {"resources": [{"uri": uri, "name": name, "description": about, "mimeType": "application/json"}
                                 for uri, (name, about, _) in RESOURCES.items()]}
     elif method == "resources/read":
         uri = params.get("uri")
+        if isinstance(uri, str) and uri.startswith("metal-trace://runs/"):
+            try:
+                text = run_path(uri[len("metal-trace://runs/"):]).read_text(encoding="utf-8")
+            except ToolError:
+                text = None
+            if text is None:
+                return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32002, "message": "Resource not found",
+                                                               "data": {"uri": uri}}}
+            return {"jsonrpc": "2.0", "id": mid, "result": {"contents": [{"uri": uri, "mimeType": "application/json",
+                                                                         "text": text}]}}
         if uri not in RESOURCES:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32002, "message": "Resource not found",
                                                            "data": {"uri": uri}}}

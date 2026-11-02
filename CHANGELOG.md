@@ -15,6 +15,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   error, not a malformed result.
 - `metal-gpu-trace check RUN BASELINE [--margin-pct N]`: `perf_check` for CI, one JSON line and an exit code (0 same or
   improved, 1 regressed, 2 could not be judged). README shows a self-hosted macOS job.
+- `perf_compare` takes `markdown=true` and adds the headline, encoder and label numbers as Markdown tables for a PR.
+- `perf_export_trace` writes a run's GPU frames as `<run>.chrome-trace` (one slice per frame) for ui.perfetto.dev.
+  Per-encoder slices are not available: the summary keeps encoder totals per label, not each encoder.
+- Each saved run is an MCP resource: `metal-trace://runs/<run>` (listed as a resource template) reads its summary.
 
 ## 0.8.4 — 2026-11-01
 

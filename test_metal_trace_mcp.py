@@ -562,13 +562,16 @@ def test_server(tmp_path):
         {"jsonrpc": "2.0", "id": 24, "method": "prompts/get",
          "params": {"name": "compare-layer", "arguments": {"api": "d3d12; rm -rf /"}}},
         {"jsonrpc": "2.0", "id": 25, "method": "prompts/get", "params": {"name": "nope"}},
+        {"jsonrpc": "2.0", "id": 26, "method": "resources/read", "params": {"uri": "metal-trace://runs/run1_x"}},
+        {"jsonrpc": "2.0", "id": 27, "method": "resources/read", "params": {"uri": "metal-trace://runs/../x"}},
+        {"jsonrpc": "2.0", "id": 28, "method": "resources/read", "params": {"uri": "metal-trace://runs/gone"}},
     ]
     proc = subprocess.run([sys.executable, "-I", str(TOOLS / "metal_trace_mcp.py")], text=True, capture_output=True,
                           input="\n".join(json.dumps(r) for r in requests) + "\n", timeout=60,
                           env=dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="info"))
     lines = [json.loads(line) for line in proc.stdout.splitlines()]
     replies = {r["id"]: r for r in lines if r["id"] is not None}
-    assert sorted(replies) == list(range(1, 26)), (replies, proc.stderr)
+    assert sorted(replies) == list(range(1, 29)), (replies, proc.stderr)
     tools = {t["name"]: t for t in replies[2]["result"]["tools"]}
     assert all("outputSchema" in t for t in tools.values()), "every tool declares its output"
     paged = replies[3]["result"]["structuredContent"]
@@ -583,8 +586,10 @@ def test_server(tmp_path):
     assert [r["error"]["code"] for r in lines if r["id"] is None] == [-32600], lines
     assert replies[14]["result"]["protocolVersion"] == "2025-06-18"
     assert replies[15]["result"] == {} and replies[16]["error"]["code"] == -32600
-    assert replies[17]["result"] == {"resourceTemplates": []}
-    assert len(replies[2]["result"]["tools"]) == 17
+    assert [x["uriTemplate"] for x in replies[17]["result"]["resourceTemplates"]] == ["metal-trace://runs/{run}"]
+    assert json.loads(replies[26]["result"]["contents"][0]["text"]) == {"gpu": {"frames": 100}}
+    assert replies[27]["error"]["code"] == replies[28]["error"]["code"] == -32002, "a bad run name is not found"
+    assert len(replies[2]["result"]["tools"]) == 18
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -726,6 +731,40 @@ def test_progress_and_cancel(tmp_path):
     assert not list(out.iterdir()), list(out.iterdir())
 
 
+def test_markdown_and_export(tmp_path):
+    """perf_compare markdown=true adds tables with the headline numbers and the labels that changed most, and
+    perf_export_trace writes one Chrome trace slice per GPU frame without making a new run."""
+    import metal_trace_mcp as mcp
+
+    def summary(fps, ms):
+        return {"gpu": {"frames": 300, "fps_estimate": fps, "frame_gpu_ms": {"mean": ms, "p95": ms * 2},
+                        "frame_interval_ms": {"p95": 20.0}},
+                "encoders": {"per_frame": {"p50": 7}, "command_buffers_per_frame": {"p50": 5},
+                             "short_share": {"25": 0.5}, "by_label": [{"label": "Render", "per_frame": 1.0, "total_ms": ms * 300}]},
+                "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 4}}}
+    (tmp_path / "a.json").write_text(json.dumps(summary(60.0, 4.0)))
+    (tmp_path / "b.json").write_text(json.dumps(summary(50.0, 5.0)))
+    (tmp_path / "a.frames.csv").write_text("frame,start_ms,gpu_ms_compute,gpu_ms_fragment,gpu_ms_vertex,gpu_ms_total\n"
+                                           "1,10.5,0.1,0.2,0.3,0.6\n2,27.0,0.1,0.2,0.3,0.6\n")
+    saved, mcp.OUT = mcp.OUT, tmp_path
+    try:
+        assert "markdown" not in mcp.tool_perf_compare("a", "b")
+        md = mcp.tool_perf_compare("a", "b", markdown=True)["markdown"]
+        assert "| fps | 60.0 | 50.0 | -10.0 | -16.7 |" in md and "| Render |" in md, md
+        got = mcp.tool_perf_export_trace("a")
+        assert got == {"file": "a.chrome-trace", "frames": 2}, got
+        events = json.loads((tmp_path / got["file"]).read_text())["traceEvents"]
+        assert events[0]["ts"] == 10500.0 and events[0]["dur"] == 600.0 and events[0]["args"]["fragment"] == 0.2, events
+        assert sorted(r["run"] for r in mcp.tool_perf_runs()["rows"]) == ["a", "b"], "the export is not a run"
+        try:
+            mcp.tool_perf_export_trace("b")
+            raise AssertionError("a run without frames.csv must fail")
+        except mcp.ToolError as error:
+            assert "per-frame" in str(error)
+    finally:
+        mcp.OUT = saved
+
+
 def test_check_cli(tmp_path):
     """`metal-gpu-trace check` exits 0 for same or improved, 1 for regressed, 2 for a run that cannot be judged, and
     prints one JSON line without the full comparison."""
@@ -761,7 +800,7 @@ def test_check_cli(tmp_path):
 
 
 def main():
-    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli]
+    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
