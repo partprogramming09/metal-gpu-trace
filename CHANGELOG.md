@@ -5,6 +5,16 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## Unreleased
 
+- `perf_ab`: records a program with two environments (`env_a`, `env_b`) in the order A B B A and says per metric whether
+  B is better, worse or the same, only when every B value is outside A's range. `perf_record` and the tools built on it
+  take `env` (`NAME=VALUE` pairs). It works on Windows too, where the pairs reach the program through `PERF_ENV`.
+
+- A Metal summary now carries `fps_1pct_low`, `fps_01pct_low`, `stutter_rate_pct`, `frame_jitter_ms` and
+  `throttling_analysis` in `gpu` (the fields `perf_diagnose` reads, which only Windows summaries filled, so its stutter
+  verdict was always UNKNOWN), plus `graphics_compiler`, `thermal_state_share` and `hitches`: each frame over 1.5 median
+  intervals and over 8 ms (so a 500 FPS program's 3 ms frames are not stutter) named `shader_compile`, `thermal`, `memory_growth`, `gpu_heavy` or `cpu_or_wait` from the trace. `perf_diagnose`
+  returns `hitches`, adds a recommendation for the top cause and no longer suggests `FlipQueueSize` for a Metal run.
+
 - `windows/winbridge-run-tests.ps1`: a script that updates a checkout on a real Windows machine and runs
   `test_perf_record_windows.py`, written as a WinBridge `RunTask` task. The README says how to register it.
 

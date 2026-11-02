@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shlex
 import shutil
 import signal
@@ -109,15 +110,16 @@ def page(items, offset, limit):
 
 
 def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, workdir=None, args="", workload=None,
-                     api=None, dim=None, memory=True):
+                     api=None, dim=None, memory=True, env=""):
     """Records `program` (an .exe under Wine, or a macOS binary with wine="native"), or a test program fetched with
     workload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per
     frame, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest
     to read). When it ends it stops every program of that Wine prefix (wineserver -k), or every process named like
     the program with native."""
-    program_env, layer = "", None
+    program_env, layer = check_env(env), None
     if workload:
-        program, wine, args, program_env = workload_command(workload, api, dim, wine, args)
+        program, wine, args, workload_env = workload_command(workload, api, dim, wine, args)
+        program_env = " ".join(filter(None, [workload_env, program_env]))
         layer = workload_layer(workload, api, dim)
     if not program:
         raise ToolError("pass program, or workload and api (workload_list lists them)")
@@ -133,6 +135,14 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
     prefix = pathlib.Path(prefix or os.environ.get("WINEPREFIX", "~/.wine")).expanduser()
     return record(label, seconds, wine, prefix, workdir,
                   [str(program.resolve()), *split_args(args)], program_env, memory, layer=layer)
+
+
+def check_env(env):
+    """Returns `env` (NAME=VALUE pairs separated by spaces) after checking each pair, or raises ToolError."""
+    for pair in env.split():
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=\S*", pair):
+            raise ToolError(f"env holds NAME=VALUE pairs separated by spaces; {pair!r} is not one")
+    return env
 
 
 def split_args(text):
@@ -787,7 +797,8 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
         recommendations.append("Activar FSR si la GPU está saturada al 100% o usar escalado dinámico de resolución.")
         recommendations.append("Reducir resolución interna de renderizado, calidad de postprocesado o sombreadores pesados.")
     elif bottleneck == "CPU_SUBMISSION_BOUND":
-        recommendations.append("Fijar FlipQueueSize=3 en el controlador AMD o DirectX para amortiguar el despacho de la CPU.")
+        if s.get("template") == "Windows Native Trace":
+            recommendations.append("Fijar FlipQueueSize=3 en el controlador AMD o DirectX para amortiguar el despacho de la CPU.")
         recommendations.append("Consolidar draw calls mediante instancing o reducir complejidad de geometría y objetos dinámicos.")
     elif bottleneck == "MEMORY_PRESSURE_SUSPECTED":
         recommendations.append("Hipótesis (el ancho de banda no se mide): reducir resolución de sombras de 2048 a 1024 para aliviar el bus UMA.")
@@ -800,6 +811,14 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     if throttling.get("thermal_throttling_detected"):
         drift_pct = throttling.get("fps_drift_pct", 0)
         recommendations.append(f"Estrangulamiento térmico detectado ({drift_pct}% caída de FPS): revisar curvas de ventilación y disipación térmica del APU/GPU.")
+    hitches = s.get("hitches") or {}
+    top_cause = next(iter(hitches.get("causes") or {}), None)
+    if top_cause == "shader_compile":
+        recommendations.append("Los tirones coinciden con el compilador gráfico: precompilar o calentar la caché de shaders.")
+    elif top_cause == "memory_growth":
+        recommendations.append("Los tirones coinciden con crecimiento de memoria Metal: revisar cargas de recursos en medio de la partida.")
+    elif top_cause == "thermal":
+        recommendations.append("Los tirones coinciden con un estado térmico distinto de Nominal.")
     if bottleneck == "UNKNOWN":
         recommendations.append("Sin datos de actividad de GPU en esta grabación: no hay veredicto de cuello de botella.")
     elif not recommendations:
@@ -813,7 +832,7 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
             "bottleneck": bottleneck,
             "stutter_analysis": {"stutter_rate_pct": stutter_rate, "worst_spike_ms": worst_spike,
                                  "verdict": stutter_verdict},
-            "recommendations": recommendations,
+            "recommendations": recommendations, "hitches": hitches or None,
             "gpu_idle": s.get("gpu_idle"), "by_label": encoders["by_label"], "too_short": frames < 100}
 
 
@@ -885,6 +904,65 @@ def tool_perf_baseline_record(name, count=3, **record):
         tool_perf_record(f"{name}-{i}", **record)
         runs.append(next(iter(set(OUT.glob(f"{name}-{i}_*.json")) - before)).stem)
     return tool_perf_baseline(name, runs)
+
+
+# what perf_ab compares: where in a summary, and whether a higher number is better
+AB_METRICS = {"fps_estimate": (("gpu", "fps_estimate"), True), "fps_1pct_low": (("gpu", "fps_1pct_low"), True),
+              "frame_gpu_ms_mean": (("gpu", "frame_gpu_ms", "mean"), False),
+              "stutter_rate_pct": (("gpu", "stutter_rate_pct"), False)}
+
+
+def ab_verdict(a, b, higher_better):
+    """Returns "better", "worse" or "same" for the values `b` against `a`: a change counts only when every b value lies
+    outside the range the a values span, on one side, so a run's own spread never passes for an effect."""
+    if not a or not b:
+        return "unknown"
+    if min(b) > max(a):
+        return "better" if higher_better else "worse"
+    if max(b) < min(a):
+        return "worse" if higher_better else "better"
+    return "same"
+
+
+def tool_perf_ab(name, env_a, env_b, rounds=1, **record):
+    """Records the same program with two environments in the order A B B A (repeated `rounds` times, so drift hits both
+    sides equally) and says per metric whether B is better, worse or the same as A, with every value behind it.
+    env_a and env_b are NAME=VALUE pairs separated by spaces; empty means none. Runs are named `name`-a1, `name`-b1, ...
+    Each recording takes its seconds plus about a minute to read back."""
+    if not name_ok(name):
+        raise ToolError("a name holds only letters, digits, '.', '_' and '-'")
+    rounds = int(rounds)
+    if not 1 <= rounds <= 5:
+        raise ToolError("rounds is 1 to 5")
+    record.pop("env", None)
+    record.pop("label", None)
+    check_env(env_a), check_env(env_b)
+    runs = {"a": [], "b": []}
+    for side in "abba" * rounds:
+        label = f"{name}-{side}{len(runs[side]) + 1}"
+        before = set(OUT.glob(f"{label}_*.json"))
+        tool_perf_record(label, env=env_a if side == "a" else env_b, **record)
+        runs[side].append(next(iter(set(OUT.glob(f"{label}_*.json")) - before)).stem)
+    return ab_report(name, env_a, env_b, runs)
+
+
+def ab_report(name, env_a, env_b, runs):
+    """Builds perf_ab's answer from the summaries of its runs, named in `runs` as {"a": [...], "b": [...]}."""
+    summaries = {side: [json.loads(run_path(r).read_text(encoding="utf-8")) for r in names] for side, names in runs.items()}
+    metrics = {}
+    for key, (path, higher) in AB_METRICS.items():
+        values = {}
+        for side, items in summaries.items():
+            values[side] = []
+            for item in items:
+                for step in path:
+                    item = item.get(step) if isinstance(item, dict) else None
+                if isinstance(item, (int, float)):
+                    values[side].append(item)
+        metrics[key] = {"a": values["a"], "b": values["b"], "verdict": ab_verdict(values["a"], values["b"], higher)}
+    frames = [(s.get("gpu") or {}).get("frames", 0) for items in summaries.values() for s in items]
+    return {"name": name, "env_a": env_a, "env_b": env_b, "runs": runs, "metrics": metrics,
+            "too_short": min(frames, default=0) < 100}
 
 
 def tool_capture_summary(capture):
@@ -964,7 +1042,8 @@ RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits
                                                         "METAL_TRACE_MOLTENVK), d3d11 or d3d12 (under wine)"},
          "dim": {**I, "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame"},
          "memory": {"type": "boolean", "description": "default true; false skips the Metal memory table, the slowest "
-                                                      "to read (about 40 % faster summary): no metal_mib_peak"}}
+                                                      "to read (about 40 % faster summary): no metal_mib_peak"},
+         "env": {**S, "description": "NAME=VALUE pairs separated by spaces, set in the program's environment"}}
 
 TOOLS = {
     "perf_record": (tool_perf_record, schema(RECORD_PROPS, ["label"]), hints("Record a program", destructive=True)),
@@ -973,6 +1052,13 @@ TOOLS = {
          "count": {**I, "description": "equal recordings to make, default 3"},
          **{k: v for k, v in RECORD_PROPS.items() if k != "label"}}, ["name"]),
         hints("Record a reference", destructive=True)),
+    "perf_ab": (tool_perf_ab, schema(
+        {"name": {**S, "description": "name for the runs: letters, digits, '.', '_', '-'"},
+         "env_a": {**S, "description": "NAME=VALUE pairs for side A, the reference (empty: none)"},
+         "env_b": {**S, "description": "NAME=VALUE pairs for side B, the change under test (empty: none)"},
+         "rounds": {**I, "description": "A B B A rounds, default 1 (4 recordings), at most 5"},
+         **{k: v for k, v in RECORD_PROPS.items() if k not in ("label", "env")}}, ["name", "env_a", "env_b"]),
+        hints("Record two settings in A B B A order", destructive=True)),
     "perf_attach": (tool_perf_attach, schema(
         {"label": {**S, "description": "name for the run: letters, digits, '.', '_', '-'"},
          "process": {**S, "description": "pid, or a name in the program's command line such as Game.exe"},

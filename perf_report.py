@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 MEMORY = "metal-current-allocated-size"
 TABLES = ("metal-gpu-intervals", MEMORY, "gpu-performance-state-intervals")
 # read only when the trace has it: without it encoders go without labels
-OPTIONAL = ("metal-application-encoders-list",)
+OPTIONAL = ("metal-application-encoders-list", "graphics-compiler-activity-intervals", "device-thermal-state-intervals")
 # each xctrace export keeps a temporary store of gigabytes on a big trace: two at a time bound the disk it needs
 EXPORT_WORKERS = 2
 
@@ -166,9 +166,12 @@ def missing_tables(toc):
     if "metal-gpu-intervals" not in schemas:
         raise ValueError("the trace has no metal-gpu-intervals table; this Xcode may name it differently: "
                          "trace_tables lists the tables it has")
-    return sorted({"metal-current-allocated-size", "gpu-performance-state-intervals",
-                   "metal-application-encoders-list"} - schemas)
+    return sorted(({"metal-current-allocated-size", "gpu-performance-state-intervals"} | set(OPTIONAL)) - schemas)
 
+
+# a frame is a stutter or hitch only when it is also this much longer than the median interval: at 500 FPS a 3 ms frame
+# is scheduler noise, not a stutter
+STUTTER_FLOOR_MS = 8.0
 
 # encoder GPU times, in µs, whose share of all encoders each summary keeps
 SHORT_US = (10, 25, 50, 100, 250, 500, 1000)
@@ -223,6 +226,68 @@ def idle_gaps(spans):
     whole = (end - ordered[0][0]) / 1e6
     return {"idle_ms_per_frame": stats(list(idle.values())), "gaps_over_1ms": sum(g > 1 for g in gaps),
             "idle_share": round(sum(gaps) / whole, 3) if whole else None}
+
+
+def frame_pacing(gaps, totals):
+    """Returns the 1% and 0.1% low FPS, the share of frames longer than 1.5 median intervals and than STUTTER_FLOOR_MS
+    (stutter), the interval
+    jitter and whether FPS fell over the recording while GPU time rose. `gaps` are frame intervals and `totals` GPU
+    times per frame, both in ms; a low needs 100 (1%) or 1000 (0.1%) frames behind it."""
+    if not gaps:
+        return {}
+    med, ordered = statistics.median(gaps), sorted(gaps)
+
+    def low(share, frames):
+        worst = ordered[min(len(ordered) - 1, int(len(ordered) * share))]
+        return round(1000 / worst, 1) if worst > 0 and len(gaps) >= frames else None
+
+    out = {"fps_1pct_low": low(0.99, 100), "fps_01pct_low": low(0.999, 1000)}
+    if len(gaps) > 1:
+        out["stutter_rate_pct"] = round(sum(g > max(1.5 * med, STUTTER_FLOOR_MS) for g in gaps) / len(gaps) * 100, 2) if med > 0 else 0.0
+        out["frame_jitter_ms"] = round(statistics.pstdev(gaps), 3)
+    if len(gaps) >= 5:
+        k = max(1, int(len(gaps) * 0.2))
+        first, last = statistics.median(gaps[:k]), statistics.median(gaps[-k:])
+        fps_first = round(1000 / first, 1) if first > 0 else None
+        fps_last = round(1000 / last, 1) if last > 0 else None
+        out["throttling_analysis"] = {
+            "thermal_throttling_detected": bool(fps_first and fps_last and (fps_first - fps_last) / fps_first * 100 > 10
+                                                and statistics.mean(totals[-k:]) > statistics.mean(totals[:k])) if totals else None,
+            "fps_initial": fps_first, "fps_final": fps_last,
+            "fps_drift_pct": round((fps_first - fps_last) / fps_first * 100, 1) if fps_first and fps_last else 0.0}
+    return out
+
+
+def attribute_hitches(frames, starts, totals, compiler, thermal, memory, growth_mib=8):
+    """Names a cause for each frame whose interval exceeds 1.5 median intervals and STUTTER_FLOOR_MS, by what the trace shows in the
+    interval before it: the graphics compiler running (shader_compile), a thermal state other than Nominal (thermal),
+    Metal memory growing by `growth_mib` or more (memory_growth), the GPU busy for 80% of it (gpu_heavy) or none of
+    these (cpu_or_wait). `frames`, `starts` (ms) and `totals` (GPU ms) go in frame order; `compiler` and `thermal`
+    hold (start ms, end ms) spans and `memory` (ms, bytes) samples, sorted."""
+    gaps = [b - a for a, b in zip(starts, starts[1:])]
+    if not gaps:
+        return {"count": 0, "causes": {}, "worst": []}
+    limit, causes, found = max(1.5 * statistics.median(gaps), STUTTER_FLOOR_MS), collections.Counter(), []
+    for i, gap in enumerate(gaps, 1):
+        if gap <= limit:
+            continue
+        lo, hi = starts[i - 1], starts[i]
+        before = [size for t, size in memory if t <= lo][-1:] or [None]
+        after = [size for t, size in memory if t <= hi][-1:] or [None]
+        if any(a < hi and b > lo for a, b in compiler):
+            cause = "shader_compile"
+        elif any(a < hi and b > lo for a, b in thermal):
+            cause = "thermal"
+        elif None not in (before[0], after[0]) and after[0] - before[0] >= growth_mib * 2**20:
+            cause = "memory_growth"
+        elif totals[i - 1] >= 0.8 * gap:
+            cause = "gpu_heavy"
+        else:
+            cause = "cpu_or_wait"
+        causes[cause] += 1
+        found.append({"frame": frames[i], "interval_ms": round(gap, 3), "cause": cause})
+    return {"count": len(found), "threshold_ms": round(limit, 3), "causes": dict(causes.most_common()),
+            "worst": sorted(found, key=lambda h: -h["interval_ms"])[:5]}
 
 
 def summarize(trace, label=None, out=None, memory=True):
@@ -298,8 +363,8 @@ def summarize(trace, label=None, out=None, memory=True):
         summary["gpu_idle"] = idle_gaps(spans)
 
         # Metal memory the launched process holds over time
+        allocated = []
         if memory:
-            allocated = []
             for row in rows(tables[MEMORY]):
                 size, start = number(row.get("current-allocated-size")), number(row.get("start"))
                 if pid_of(row.get("process")) == pid and size is not None and start is not None:
@@ -330,6 +395,30 @@ def summarize(trace, label=None, out=None, memory=True):
                 states[(state.attrib.get("fmt") or state.text or "?").strip()] += duration
         total_state = sum(states.values())
         summary["gpu_performance_state_share"] = {k: round(v / total_state, 3) for k, v in states.most_common()} if total_state else {}
+
+        # the graphics compiler's activity for the process and the device's thermal state, in ms
+        compiler, thermal, thermal_time = [], [], collections.Counter()
+        if "graphics-compiler-activity-intervals" in tables:
+            for row in rows(tables["graphics-compiler-activity-intervals"]):
+                start, duration = number(row.get("start")), number(row.get("duration"))
+                if pid_of(row.get("process")) == pid and start is not None and duration is not None:
+                    compiler.append((start / 1e6, (start + duration) / 1e6))
+            summary["graphics_compiler"] = {"intervals": len(compiler),
+                                            "busy_ms": round(sum(b - a for a, b in compiler), 3)}
+        if "device-thermal-state-intervals" in tables:
+            for row in rows(tables["device-thermal-state-intervals"]):
+                start, duration, state = number(row.get("start")), number(row.get("duration")), text(row.get("thermal-state"))
+                if start is not None and duration:
+                    thermal_time[state] += duration
+                    if state != "Nominal":
+                        thermal.append((start / 1e6, (start + duration) / 1e6))
+            total_thermal = sum(thermal_time.values())
+            summary["thermal_state_share"] = {k: round(v / total_thermal, 3) for k, v in thermal_time.most_common()}
+        pacing = frame_pacing(gaps, totals)
+        if "thermal_state_share" in summary and "throttling_analysis" in pacing:
+            pacing["throttling_analysis"]["thermal_throttling_detected"] = bool(thermal)
+        summary["gpu"].update(pacing)
+        summary["hitches"] = attribute_hitches(ordered, starts, totals, sorted(compiler), sorted(thermal), allocated)
     finally:
         # rows() deletes each table's file once read; one left unread by a failure is removed here
         for path in tables.values():
