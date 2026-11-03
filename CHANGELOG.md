@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.13.0 — 2026-11-02
 
 - `perf_history`: lists the runs whose name starts with a prefix, oldest first, with FPS, 1% low, GPU ms, stutter,
   hitches and peak Metal MiB, and the change from the first to the last. It flags a series that mixes Windows and
