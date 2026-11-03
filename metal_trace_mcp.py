@@ -52,7 +52,7 @@ INSTRUCTIONS = (
     "per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a "
     "recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat "
     "a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short "
-    "encoders, as translation layers do; perf_compare says how much two runs differ; perf_panel writes an HTML page to look at one or two runs in a browser.trace_tables and trace_query "
+    "encoders, as translation layers do; perf_compare says how much two runs differ; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling); perf_panel writes an HTML page to look at one or two runs in a browser.trace_tables and trace_query "
     "need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, "
     "or every process named like a native program. To compare native Metal with a translation layer without a game "
     "of one's own: workload_list, workload_fetch, then perf_record with workload and api, or the compare-layer prompt."
@@ -618,7 +618,8 @@ def tool_perf_baseline(name=None, runs=None):
     """Names a reference for perf_check, or lists them. With name and runs (names from perf_runs, several runs of the
     same program recorded with no change between them), it saves copies of their summaries as the reference `name`,
     replacing a previous one, and returns the range each number spans across them: that range, not one run, is what
-    perf_check judges against, since repeated runs differ by a few percent. With name alone it shows that reference;
+    perf_check judges against, since repeated runs differ by a few percent, and `spread_pct`, each range's width in %
+    of its midpoint: the noise of this program on this machine, which a change must exceed. With name alone it shows that reference;
     with nothing it lists them."""
     baselines = load_baselines()
     if name is not None and not name_ok(name):
@@ -636,7 +637,8 @@ def tool_perf_baseline(name=None, runs=None):
         if name not in baselines:
             raise ToolError(f"no reference {name}; perf_baseline with no arguments lists them")
         b = baselines[name]
-        return {"name": name, "runs": b["runs"], "set": b["set"], "range": ranges(b["summaries"])}
+        span = ranges(b["summaries"])
+        return {"name": name, "runs": b["runs"], "set": b["set"], "range": span, "spread_pct": spreads(span)}
     return {"baselines": [{"name": n, "runs": b["runs"], "set": b["set"]} for n, b in baselines.items()]}
 
 
@@ -652,6 +654,13 @@ def ranges(summaries):
                 values.append(None)
         out[metric] = None if None in values else {"min": min(values), "max": max(values)}
     return out
+
+
+def spreads(span):
+    """Returns each range's width as a % of its midpoint: how far equal runs of the reference differ, the noise a
+    change must beat. None where the range is None."""
+    return {m: None if r is None else round(200 * (r["max"] - r["min"]) / (r["max"] + r["min"]), 1) if r["max"] + r["min"] else 0.0
+            for m, r in span.items()}
 
 
 def tool_perf_check(run, baseline, margin_pct=3):
@@ -765,6 +774,38 @@ PANEL_PRESETS = ("fps", "compare")
 PANEL_POINTS = 5000
 
 
+# what perf_gate can require: the argument, where the number lives in a summary and whether it is a floor or a ceiling
+GATES = {"fps_min": (("gpu", "fps_estimate"), "min"), "fps_1pct_low_min": (("gpu", "fps_1pct_low"), "min"),
+         "stutter_rate_pct_max": (("gpu", "stutter_rate_pct"), "max"), "gpu_ms_p95_max": (("gpu", "frame_gpu_ms", "p95"), "max"),
+         "hitches_max": (("hitches", "count"), "max"), "metal_mib_max": (("metal_memory_mib", "peak"), "max")}
+
+
+def tool_perf_gate(run, fps_min=None, fps_1pct_low_min=None, stutter_rate_pct_max=None, gpu_ms_p95_max=None,
+                   hitches_max=None, metal_mib_max=None):
+    """Checks a recording against budgets and says pass or fail: a floor for FPS and the 1% low, a ceiling for the
+    stutter rate, the p95 GPU ms per frame, the hitch count and the peak Metal MiB. Give at least one. A number the
+    recording lacks fails its budget (value null): a gate must not pass on missing data. Returns each budget with its
+    limit, the value and whether it held. Use it as a bar a change must clear, where perf_check judges against equal runs."""
+    given = {k: v for k, v in (("fps_min", fps_min), ("fps_1pct_low_min", fps_1pct_low_min),
+                               ("stutter_rate_pct_max", stutter_rate_pct_max), ("gpu_ms_p95_max", gpu_ms_p95_max),
+                               ("hitches_max", hitches_max), ("metal_mib_max", metal_mib_max)) if v is not None}
+    if not given:
+        raise ToolError(f"give at least one budget: {', '.join(GATES)}")
+    s = json.loads(run_path(run).read_text(encoding="utf-8"))
+    checks = []
+    for budget, limit in given.items():
+        path, kind = GATES[budget]
+        value = s
+        for key in path:
+            value = value.get(key) if isinstance(value, dict) else None
+        ok = value is not None and (value >= limit if kind == "min" else value <= limit)
+        checks.append({"budget": budget, "limit": limit, "value": value, "ok": ok})
+    result = {"run": run, "pass": all(c["ok"] for c in checks), "checks": checks}
+    if (s.get("gpu") or {}).get("frames", 0) < 100:
+        result["hint"] = "under 100 frames: too short to trust; record 30 s or more"
+    return result
+
+
 def panel_run(run):
     """Returns what the panel shows for one recording: numbers and labels from its summary, its GPU frames and Metal
     memory cut to PANEL_POINTS points that keep every hitch, and no path."""
@@ -789,7 +830,8 @@ def panel_run(run):
         memory = [[t, round(mib, 2)] for t, mib in samples[::max(1, len(samples) // PANEL_POINTS)]]
     return {"name": run, "layer": layer_label(s.get("layer")), "source": measurement(s), "gpu": s.get("gpu"), "hitches": hitches,
             "thermal_state_share": s.get("thermal_state_share"), "metal_memory_mib": s.get("metal_memory_mib"),
-            "process_rss_mib": s.get("process_rss_mib"), "frames": frames, "marks": marks, "memory": memory}
+            "process_rss_mib": s.get("process_rss_mib"), "frames": frames, "marks": marks, "memory": memory,
+            "encoders": [] if measurement(s) == "windows" else (s.get("encoders") or {}).get("by_label", [])[:20]}
 
 
 def panel_data(runs, preset=None):
@@ -801,14 +843,16 @@ def panel_data(runs, preset=None):
     if not 1 <= len(runs) <= 2 or (preset == "compare" and len(runs) != 2):
         raise ToolError("runs holds one or two run names from perf_runs; the compare preset needs two")
     data = [panel_run(r) for r in runs]
-    compare, not_comparable = None, []
+    compare, not_comparable, labels = None, [], []
     if len(runs) == 2:
         try:
-            result = compare_summaries(*(json.loads(run_path(r).read_text(encoding="utf-8")) for r in runs), *runs)
+            sa, sb = (json.loads(run_path(r).read_text(encoding="utf-8")) for r in runs)
+            result = compare_summaries(sa, sb, *runs)
             compare, not_comparable = result["metrics"], (result.get("measure") or {}).get("not_comparable", [])
+            labels = result.get("labels") or []
         except (KeyError, TypeError):  # a summary from before the numbers the comparison reads
             pass
-    return {"preset": preset, "runs": data, "compare": compare, "not_comparable": not_comparable}
+    return {"preset": preset, "runs": data, "compare": compare, "not_comparable": not_comparable, "labels": labels[:10]}
 
 
 def tool_perf_panel(name, runs, preset="fps"):
@@ -1184,6 +1228,15 @@ TOOLS = {
     "perf_export_trace": (tool_perf_export_trace, schema(
         {"run": {**S, "description": "a run name from perf_runs"}}, ["run"]),
         hints("Export frames to Perfetto", destructive=False, idempotent=True)),
+    "perf_gate": (tool_perf_gate, schema(
+        {"run": {**S, "description": "a run name from perf_runs"},
+         "fps_min": {"type": "number", "description": "the FPS must be at least this"},
+         "fps_1pct_low_min": {"type": "number", "description": "the 1% low FPS must be at least this"},
+         "stutter_rate_pct_max": {"type": "number", "description": "the share of stutter frames, in %, at most this"},
+         "gpu_ms_p95_max": {"type": "number", "description": "the p95 GPU ms per frame at most this"},
+         "hitches_max": {"type": "number", "description": "the number of hitches at most this"},
+         "metal_mib_max": {"type": "number", "description": "the peak Metal memory in MiB at most this"}}, ["run"]),
+        hints("Check a run against budgets")),
     "perf_panel": (tool_perf_panel, schema(
         {"name": {**S, "description": "name for the panel file: letters, digits, '.', '_', '-'"},
          "runs": {"type": "array", "items": S, "description": "one or two run names from perf_runs; with two, the first "

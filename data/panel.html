@@ -83,8 +83,8 @@ textarea { width: 100%; height: 90px; font: 12px ui-monospace, monospace; backgr
 let DATA = /*PAYLOAD*/null;
 const COLORS = ["var(--s1)", "var(--s2)"];
 const PRESETS = {
-  fps: ["summary", "frames", "memory", "data"],
-  compare: ["summary", "ab", "frames", "memory", "data"],
+  fps: ["summary", "frames", "encoders", "memory", "data"],
+  compare: ["summary", "ab", "frames", "encoders", "memory", "data"],
 };
 const NS = "http://www.w3.org/2000/svg";
 const NOISE_PCT = 3;
@@ -95,7 +95,7 @@ const CARD_KEYS = ["fps", "fps_1pct_low", "hitches", "metal_mib_peak"];
 
 const T = {
   es: {
-    ui: {title: "Panel de traza Metal", vs: " contra ", summary: "Resumen", frames: "Frames", memory: "Memoria y térmico", ab: "A y B",
+    ui: {title: "Panel de traza Metal", vs: " contra ", summary: "Resumen", frames: "Frames", memory: "Memoria y térmico", ab: "A y B", encoders: "Encoders",
       data: "Datos", edit: "Personalizar", apply: "Aplicar", reset: "Restablecer", gpuFrame: "Tiempo de GPU por frame",
       noFrames: "No hay datos por frame.", noMem: "No hay datos de memoria Metal: la grabación la omitió o la traza no tiene la tabla.",
       needTwo: "Comparar necesita dos grabaciones.", to: "a", at: "en", hitch: "hitch", change: "cambio", changePct: "cambio %",
@@ -112,6 +112,11 @@ const T = {
       wRepeat: "Cada lado es una sola grabación. Repite la corrida antes de dar el cambio por real.",
       wLayer: (a, b) => `Las grabaciones usaron capas distintas (${a} y ${b}): se compara una capa con otra, no un solo cambio.`,
       layerNone: "sin capa", scope: "Cómo leer esto", notComparable: "no comparable",
+      encTop: "Encoders con más GPU", encChanged: "Qué cambió entre A y B", label: "Etiqueta", perFrame: "Por frame", totalMs: "GPU ms total",
+      msFrameA: "ms/frame A", msFrameB: "ms/frame B", state: "Estado", noEnc: "Sin encoders: las grabaciones de Windows no los traen.",
+      encHelp: "Un encoder es un bloque de trabajo que el programa envía a la GPU (un pase de render, de cómputo o de copia). Muchos encoders muy cortos por frame es típico de capas de traducción como DXMT o MoltenVK.",
+      encNote: "Solo se guardan los 20 con más GPU; \"fuera del top 20\" significa que el encoder pudo salir de la lista, no que haya desaparecido.",
+      states: {same: "igual", changed: "cambió", new: "nuevo", gone: "ya no está", outside_top_20: "fuera del top 20"},
       wMeasure: "Una grabación es de Windows y otra de Metal: los ms de GPU y la memoria Metal no miden lo mismo y quedan sin comparar. Usa FPS, 1% low, stutter y jitter."},
     m: {
       fps: ["FPS", "Frames por segundo según la mediana del intervalo entre frames. Con vsync a 60 Hz el máximo es cerca de 60."],
@@ -142,7 +147,7 @@ const T = {
     ],
   },
   en: {
-    ui: {title: "Metal trace panel", vs: " vs ", summary: "Summary", frames: "Frames", memory: "Memory and thermal", ab: "A and B",
+    ui: {title: "Metal trace panel", vs: " vs ", summary: "Summary", frames: "Frames", memory: "Memory and thermal", ab: "A and B", encoders: "Encoders",
       data: "Data", edit: "Customize", apply: "Apply", reset: "Reset", gpuFrame: "GPU time per frame",
       noFrames: "No per-frame data.", noMem: "No Metal memory data: the run skipped it or the trace lacks the table.",
       needTwo: "Compare needs two recordings.", to: "to", at: "at", hitch: "hitch", change: "change", changePct: "change %",
@@ -159,6 +164,11 @@ const T = {
       wRepeat: "Each side is one recording. Repeat the run before calling a change real.",
       wLayer: (a, b) => `The recordings ran on different layers (${a} and ${b}): it compares layers, not one change.`,
       layerNone: "no layer", scope: "How to read this", notComparable: "not comparable",
+      encTop: "Encoders with the most GPU", encChanged: "What changed between A and B", label: "Label", perFrame: "Per frame", totalMs: "Total GPU ms",
+      msFrameA: "ms/frame A", msFrameB: "ms/frame B", state: "State", noEnc: "No encoders: Windows recordings do not carry them.",
+      encHelp: "An encoder is a block of work the program sends to the GPU (a render, compute or copy pass). Many very short encoders per frame is typical of translation layers such as DXMT or MoltenVK.",
+      encNote: "Only the 20 with the most GPU are kept; \"outside the top 20\" means the encoder may have left the list, not that it disappeared.",
+      states: {same: "same", changed: "changed", new: "new", gone: "gone", outside_top_20: "outside the top 20"},
       wMeasure: "One recording is from Windows and the other from Metal: GPU ms and Metal memory do not measure the same thing and are left uncompared. Use FPS, 1% low, stutter and jitter."},
     m: {
       fps: ["FPS", "Frames per second from the median interval between frames. With vsync at 60 Hz the maximum is near 60."],
@@ -387,6 +397,21 @@ const TABS = {
       m[3] ? h("span", {}, m[3], help(L().c[m[3]] || "")) : "—"])));
     card.append(h("p", {class: "note"}, u.hitchNote(shown.length)));
   },
+  encoders(card) {
+    const u = L().ui;
+    card.append(h("h2", {}, h("span", {}, u.encTop, help(u.encHelp))));
+    DATA.runs.forEach((r, i) => {
+      card.append(h("p", {class: "note"}, runName(i)));
+      if (!r.encoders.length) return card.append(h("p", {class: "note"}, u.noEnc));
+      card.append(table([u.label, u.perFrame, u.totalMs], r.encoders.slice(0, 10).map(e => [e.label, fmt(e.per_frame), fmt(e.total_ms, 1)])));
+    });
+    if (DATA.labels.length) {
+      card.append(h("h2", {style: "margin-top:12px"}, u.encChanged));
+      card.append(table([u.label, u.msFrameA, u.msFrameB, u.change, u.state], DATA.labels.map(l =>
+        [l.label, fmt(l.ms_per_frame_a, 3), fmt(l.ms_per_frame_b, 3), fmt(l.ms_per_frame_change, 3), u.states[l.state] || l.state])));
+    }
+    card.append(h("p", {class: "note"}, u.encNote));
+  },
   memory(card) {
     const u = L().ui;
     card.append(h("h2", {}, L().m.metal_mib_peak[0]));
@@ -459,13 +484,13 @@ function draw() {
   document.getElementById("layout-apply").textContent = u.apply;
   document.getElementById("layout-reset").textContent = u.reset;
   document.getElementById("runs").textContent = DATA.runs.map(r => r.name + (r.layer ? " (" + r.layer + ")" : "")).join(u.vs);
-  const visible = layout.filter(w => w.on && (w.id !== "ab" || DATA.runs.length === 2));
+  const shows = w => !(w.id === "ab" && DATA.runs.length < 2) && !(w.id === "encoders" && !DATA.runs.some(r => r.encoders.length));
+  const visible = layout.filter(w => w.on && shows(w));
   if (!visible.some(w => w.id === active)) active = visible.length ? visible[0].id : "";
   const tabs = document.getElementById("tabs");
   tabs.replaceChildren();
   layout.forEach((w, i) => {
-    if (w.id === "ab" && DATA.runs.length < 2) return;
-    if (!w.on && !editing) return;
+    if (!shows(w) || (!w.on && !editing)) return;
     const tab = h("button", {role: "tab", "aria-selected": String(w.id === active), "aria-pressed": String(w.on)}, u[w.id]);
     if (editing) tab.removeAttribute("role");
     tab.addEventListener("click", () => {
@@ -507,7 +532,7 @@ document.getElementById("layout-reset").addEventListener("click", () => setLayou
 
 /** Draws the panel for the data in DATA the first time. */
 function start() {
-  KEY = "metal-panel-layout:v2:" + DATA.preset;
+  KEY = "metal-panel-layout:v3:" + DATA.preset;
   layout = loadLayout();
   draw();
 }
