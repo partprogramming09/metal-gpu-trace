@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.14.0 — 2026-11-02
 
 - `skip_s` on `perf_compare`, `perf_gate` and `perf_panel` (and `skip_s` in the live panel's URL fragment) leaves out the
   first seconds of each recording, where shaders compile and resources load. FPS and its lows, GPU and interval ms,
