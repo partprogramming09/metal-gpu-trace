@@ -1182,9 +1182,9 @@ def test_panel(tmp_path):
         assert got["file"] == "p.panel.html" and got["runs"] == ["a", "b"] and got["bytes"] == len(html.encode()), got
         assert str(tmp_path) not in html and evil not in html, "no path and no raw </script> in the page"
         assert html.count("<script") == 1 and "default-src 'none'" in html
-        assert html.count("runName(i, true)") == 3 and "working set" in html, "short run names in cards and tables; the RSS note"
+        assert html.count("runName(i, true)") >= 3 and html.count("cTitle:") == 2 and "working set" in html, "short run names in cards and tables; the RSS note"
         assert html.count("wBottleneck:") == 2 and "direction(\"fps\", DATA.compare.fps)" in html, "the FPS-worse-GPU-better warning"
-        assert html.count("shader_compile:") == 2 and all(f'{tab}(card)' in html for tab in ("summary", "frames", "memory", "ab", "data")), \
+        assert html.count("shader_compile:") == 2 and all(f'{tab}(card)' in html for tab in ("summary", "frames", "memory", "ab", "data", "encoders", "counters")), \
             "both languages explain the causes and every tab exists"
         payload = json.loads(html.split("let DATA = ", 1)[1].split(";\nconst COLORS", 1)[0].replace("\\u003c", "<"))
         run = payload["runs"][0]
@@ -1354,6 +1354,21 @@ def test_skip_start_up(tmp_path):
         run = data["runs"][0]
         assert data["skip_s"] == 1.5 and len(run["marks"]) == 1 and run["frames"][0][0] >= 1510 and run["memory"][0][0] >= 1510, run["marks"]
         assert mcp.panel_data(["s1", "s2"])["skip_s"] == 0
+        ref = mcp.tool_perf_baseline("bs", ["s1", "s2"], skip_s=1.5)
+        assert ref["skip_s"] == 1.5 and ref["range"]["fps"] == {"min": 100.0, "max": 100.0}, ref
+        check = mcp.tool_perf_check("s1", "bs")  # the whole run reads 90 FPS: judged without its start-up it is 100, the reference
+        assert check["verdict"] == "same" and check["skipped_s"] == 1.5, check
+        whole = mcp.tool_perf_baseline("bw", ["s1", "s2"])
+        assert "skip_s" not in whole and whole["range"]["fps"]["min"] == 90.0 and "skipped_s" not in mcp.tool_perf_check("s1", "bw")
+        seen = []
+        saved_baseline, saved_record = mcp.tool_perf_baseline, mcp.tool_perf_record
+        mcp.tool_perf_baseline = lambda name, runs, skip_s=0: seen.append((name, skip_s)) or {}
+        mcp.tool_perf_record = lambda label, **kw: (tmp_path / f"{label}_x.json").write_text("{}")
+        try:
+            mcp.tool_perf_baseline_record("rec", count=1, skip_s=2)
+        finally:
+            mcp.tool_perf_baseline, mcp.tool_perf_record = saved_baseline, saved_record
+        assert seen == [("rec", 2)], seen
         hist = mcp.tool_perf_history("s", skip_s=1.5)
         assert [r["hitches"] for r in hist["runs"]] == [1, 1] and mcp.tool_perf_history("s")["runs"][0]["hitches"] == 4, hist
         ab = mcp.ab_report("x", "", "A=1", {"a": ["s1"], "b": ["s2"]}, skip_s=1.5)
@@ -1379,8 +1394,113 @@ def test_skip_start_up(tmp_path):
         mcp.OUT, mcp.BASELINES = saved
 
 
+def test_gpu_counters(tmp_path):
+    """counter_stats reads the line-per-row GPU counter table whose cells are refs to earlier ids (the first row shares a
+    line with the schema, and a counter id may be a ref to an id first written as a sample index), summarizes each counter
+    and names the top limiter; summarize asks for the counter tables only when told; perf_record passes counters on."""
+    import metal_trace_mcp as mcp
+
+    info = tmp_path / "info.xml"
+    info.write_text("<trace-query-result><node xpath='x'><schema name=\"gpu-counter-info\"><col><mnemonic>counter-id</mnemonic></col>"
+                    "<col><mnemonic>name</mnemonic></col><col><mnemonic>type</mnemonic></col></schema>"
+                    "<row><uint32 id=\"1\" fmt=\"0\">0</uint32><string id=\"2\" fmt=\"ALU Limiter\">ALU Limiter</string><string id=\"3\" fmt=\"Percentage\">Percentage</string></row>\n"
+                    "<row><uint32 id=\"4\" fmt=\"1\">1</uint32><string id=\"5\" fmt=\"Cache Limiter\">Cache Limiter</string><string ref=\"3\"/></row>\n"
+                    "<row><uint32 id=\"6\" fmt=\"2\">2</uint32><string id=\"7\" fmt=\"GPU Read Bandwidth\">GPU Read Bandwidth</string><string id=\"8\" fmt=\"Value\">Value</string></row>\n"
+                    "</node></trace-query-result>\n")
+    values = tmp_path / "values.xml"
+    # sample 0 of ring buffer 1: counters 0 (10.0), 1 (30.0) and 2 (2.5); counter 1 is a ref to id 5, first written as the ring buffer index
+    values.write_text("<?xml version=\"1.0\"?>\n<trace-query-result>\n<node xpath='x'><schema name=\"gpu-counter-value\"></schema>"
+                      "<row><event-time id=\"1\" fmt=\"00:00.910.037\">910037000</event-time><uint32 id=\"2\" fmt=\"0\">0</uint32>"
+                      "<fixed-decimal id=\"3\" fmt=\"10,0\">10.0</fixed-decimal><uint64 id=\"4\" fmt=\"7\">7</uint64><uint32 ref=\"2\"/>"
+                      "<uint32 id=\"5\" fmt=\"1\">1</uint32></row>\n"
+                      "<row><event-time ref=\"1\"/><uint32 ref=\"5\"/><fixed-decimal id=\"6\" fmt=\"30,0\">30.0</fixed-decimal><uint64 ref=\"4\"/>"
+                      "<uint32 ref=\"2\"/><uint32 ref=\"5\"/></row>\n"
+                      "<row><event-time ref=\"1\"/><uint32 id=\"7\" fmt=\"2\">2</uint32><fixed-decimal id=\"8\" fmt=\"2,5\">2.5</fixed-decimal>"
+                      "<uint64 ref=\"4\"/><uint32 ref=\"2\"/><uint32 ref=\"5\"/></row>\n"
+                      "<row><event-time id=\"9\" fmt=\"x\">910038000</event-time><uint32 ref=\"2\"/><fixed-decimal ref=\"6\"/><uint64 ref=\"4\"/>"
+                      "<uint32 id=\"10\" fmt=\"1\">1</uint32><uint32 ref=\"5\"/></row>\n"
+                      "</node></trace-query-result>\n")
+    got = perf_report.counter_stats(info, values)
+    by = {c["name"]: c for c in got["counters"]}
+    assert got["samples"] == 4 and not info.exists() and not values.exists(), "both files are read and deleted"
+    assert by["ALU Limiter"]["mean"] == 20.0 and by["ALU Limiter"]["max"] == 30.0, by  # 10.0 and a ref to 30.0
+    assert by["Cache Limiter"]["mean"] == 30.0 and by["GPU Read Bandwidth"]["unit"] == "GB/s" and by["ALU Limiter"]["unit"] == "%", by
+    assert got["top_limiter"] == {"name": "Cache Limiter", "mean": 30.0}, got["top_limiter"]
+
+    asked = []
+
+    def fake(trace, schemas, optional=()):
+        asked.append(schemas)
+        raise RuntimeError("stop")
+    saved, env = perf_report.toc_and_tables, os.environ.get("PERF_INSTRUMENTS")
+    perf_report.toc_and_tables = fake
+    try:
+        for counters, instruments in ((None, ""), (True, ""), (None, "Time Profiler;Metal GPU Counters")):
+            os.environ["PERF_INSTRUMENTS"] = instruments
+            try:
+                perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, counters=counters)
+            except RuntimeError:
+                pass
+    finally:
+        perf_report.toc_and_tables = saved
+        os.environ.pop("PERF_INSTRUMENTS", None) if env is None else os.environ.__setitem__("PERF_INSTRUMENTS", env)
+    wants = ["gpu-counter-value" in s for s in asked]
+    assert wants == [False, True, True], wants
+
+    seen = []
+    saved_record = mcp.record
+    mcp.record = lambda *args, **kw: seen.append(kw.get("counters")) or {}
+    program = tmp_path / "prog"
+    program.write_text("")
+    try:
+        mcp.tool_perf_record("m", str(program), wine="native")
+        mcp.tool_perf_record("m", str(program), wine="native", counters=True)
+    finally:
+        mcp.record = saved_record
+    assert seen == [False, True] and mcp.RECORD_PROPS["counters"]["type"] == "boolean", seen
+    assert mcp.deadline(10, True) > mcp.deadline(10) and mcp.deadline(10) == 330
+
+
+def test_layout(tmp_path):
+    """perf_panel(layout=...) saves panel.json (the listed tabs on, in order, the rest off), every panel carries it, and a
+    panel.json that is not a list of tabs, or a layout with an unknown tab, is refused."""
+    import metal_trace_mcp as mcp
+
+    (tmp_path / "a.json").write_text(json.dumps({"gpu": {"frames": 2, "fps_estimate": 60.0}, "hitches": {}}))
+    (tmp_path / "a.frames.csv").write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n2,16.0,4.0\n")
+    saved = mcp.OUT
+    mcp.OUT = tmp_path
+    try:
+        assert mcp.panel_data(["a"])["layout"] is None, "no panel.json, the preset's tabs"
+        mcp.tool_perf_panel("p", ["a"], layout=["frames", "summary"])
+        saved_layout = json.loads((tmp_path / "panel.json").read_text())
+        assert [w["id"] for w in saved_layout[:2]] == ["frames", "summary"] and all(w["on"] for w in saved_layout[:2]), saved_layout
+        assert {w["id"] for w in saved_layout} == set(mcp.TAB_IDS) and not any(w["on"] for w in saved_layout[2:]), saved_layout
+        html = (tmp_path / "p.panel.html").read_text()
+        payload = json.loads(html.split("let DATA = ", 1)[1].split(";\nconst COLORS", 1)[0])
+        assert payload["layout"] == saved_layout and mcp.panel_data(["a"])["layout"] == saved_layout
+        assert "defaultLayout()" in html
+        mcp.tool_perf_panel("q", ["a"])  # a panel without layout keeps the saved one
+        assert json.loads((tmp_path / "panel.json").read_text()) == saved_layout
+        for bad in ("summary", ["nope"]):
+            try:
+                mcp.tool_perf_panel("r", ["a"], layout=bad)
+                raise AssertionError(f"{bad!r} must fail")
+            except mcp.ToolError:
+                pass
+        for text in ("not json", '{"id": "frames"}', '[{"id": "x", "on": true}]', '[{"id": "frames", "on": 1}]'):
+            (tmp_path / "panel.json").write_text(text)
+            try:
+                mcp.panel_data(["a"])
+                raise AssertionError(f"{text} must fail")
+            except mcp.ToolError as error:
+                assert "panel.json" in str(error)
+    finally:
+        mcp.OUT = saved
+
+
 def main():
-    tests = [test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
