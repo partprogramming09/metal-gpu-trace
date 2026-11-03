@@ -923,7 +923,11 @@ def steady_summary(run, skip_s=0):
     if count > len(worst):
         hitches["causes_partial"] = True
     memory = [mib for t, mib in read_memory(run) if t >= cut]
-    s.update(gpu=gpu, hitches=hitches, cpu=None, metal_memory_mib={"peak": round(max(memory), 2), "samples": len(memory)} if memory else None)
+    s.update(gpu=gpu, hitches=hitches)
+    s.pop("cpu", None)
+    s.pop("metal_memory_mib", None)
+    if memory:
+        s["metal_memory_mib"] = {"peak": round(max(memory), 2), "samples": len(memory)}
     s["steady"] = {"skip_s": skip, "whole_run": ["thermal_state_share", "process_rss_mib", "encoders", "gpu_idle"]}
     return s
 
