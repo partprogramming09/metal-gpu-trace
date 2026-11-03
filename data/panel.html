@@ -103,7 +103,7 @@ const T = {
       single: (r, fps, low, n, top) => `${r}: ${fps} FPS, 1% low ${low}, ${n} hitches${top ? "; causa más común: " + top : ""}.`,
       pair: (a, b) => `B (${b}) frente a A (${a}); la diferencia cuenta si supera ${NOISE_PCT}%.`,
       hitches: "Hitches", time: "Tiempo (s)", interval: "Intervalo (ms)", cause: "Causa", run: "Grabación",
-      hitchNote: n => `Se muestran los ${n} más largos. Solo los cinco más largos de cada grabación traen causa; el resto aparece con "—", que no significa desconocida.`,
+      hitchNote: n => `Se muestran los ${n} más largos. Solo los 20 más largos de cada grabación traen causa y CPU; el resto aparece con "—", que no significa desconocida.`,
       noHitches: "Sin hitches: ningún frame superó el umbral.",
       marks: u => `Los triángulos marcan hitches: frames con un intervalo mayor de ${u} ms. Pasa el ratón para ver la causa.`,
       thermal: "Estado térmico", drift: "FPS al inicio y al final", throttle: "Posible throttling térmico",
@@ -113,7 +113,7 @@ const T = {
       wLayer: (a, b) => `Las grabaciones usaron capas distintas (${a} y ${b}): se compara una capa con otra, no un solo cambio.`,
       layerNone: "sin capa", scope: "Cómo leer esto", notComparable: "no comparable",
       encTop: "Encoders con más GPU", encChanged: "Qué cambió entre A y B", label: "Etiqueta", perFrame: "Por frame", totalMs: "GPU ms total",
-      msFrameA: "ms/frame A", msFrameB: "ms/frame B", state: "Estado", noEnc: "Sin encoders: las grabaciones de Windows no los traen.",
+      msFrameA: "ms/frame A", msFrameB: "ms/frame B", state: "Estado", cpu: "CPU %", cpuHelp: "Uso de CPU del programa en el intervalo antes del frame (muestras de 10 ms de xctrace). 100% es un núcleo, así que varios hilos suman más. Compáralo con la media de la corrida: por debajo, el programa esperaba (vsync, GPU, disco); por encima, estaba ocupado.", noEnc: "Sin encoders: las grabaciones de Windows no los traen.",
       encHelp: "Un encoder es un bloque de trabajo que el programa envía a la GPU (un pase de render, de cómputo o de copia). Muchos encoders muy cortos por frame es típico de capas de traducción como DXMT o MoltenVK.",
       encNote: "Solo se guardan los 20 con más GPU; \"fuera del top 20\" significa que el encoder pudo salir de la lista, no que haya desaparecido.",
       states: {same: "igual", changed: "cambió", new: "nuevo", gone: "ya no está", outside_top_20: "fuera del top 20"},
@@ -129,6 +129,7 @@ const T = {
       frame_interval_ms_p95: ["Intervalo ms p95", "Tiempo entre inicios de frames consecutivos; el 95% está por debajo. Es lo que ve el jugador, no solo la GPU."],
       frame_jitter_ms: ["Jitter ms", "Desviación estándar de los intervalos entre frames. Bajo significa ritmo parejo; alto, tirones aunque el promedio sea bueno."],
       stutter_rate_pct: ["Stutter %", "Porcentaje de frames cuyo intervalo supera 1,5 veces la mediana y también 8 ms. Los frames de un programa a 500 FPS no cuentan."],
+      cpu_pct_mean: ["CPU % medio", "Uso medio de CPU del programa durante la grabación. 100% es un núcleo; varios hilos suman más."],
       hitches: ["Hitches", "Cantidad de frames que superan ese umbral, cada uno con su causa probable. Ver pestaña Frames."],
       metal_mib_peak: ["Memoria Metal pico (MiB)", "Máximo de memoria asignada por Metal durante la grabación. Una subida constante sugiere una fuga o carga de recursos."],
       rss_mib_max: ["Memoria del proceso máx (MiB)", "Máximo de memoria residente del proceso, incluida la de Wine si corre bajo Wine."],
@@ -155,7 +156,7 @@ const T = {
       single: (r, fps, low, n, top) => `${r}: ${fps} FPS, 1% low ${low}, ${n} hitches${top ? "; most common cause: " + top : ""}.`,
       pair: (a, b) => `B (${b}) against A (${a}); a difference counts when it exceeds ${NOISE_PCT}%.`,
       hitches: "Hitches", time: "Time (s)", interval: "Interval (ms)", cause: "Cause", run: "Recording",
-      hitchNote: n => `The ${n} longest are shown. Only each recording's five longest carry a cause; the rest show "—", which does not mean unknown.`,
+      hitchNote: n => `The ${n} longest are shown. Only each recording's 20 longest carry a cause and CPU; the rest show "—", which does not mean unknown.`,
       noHitches: "No hitches: no frame went over the threshold.",
       marks: u => `Triangles mark hitches: frames with an interval over ${u} ms. Hover for the cause.`,
       thermal: "Thermal state", drift: "FPS at the start and the end", throttle: "Possible thermal throttling",
@@ -165,7 +166,7 @@ const T = {
       wLayer: (a, b) => `The recordings ran on different layers (${a} and ${b}): it compares layers, not one change.`,
       layerNone: "no layer", scope: "How to read this", notComparable: "not comparable",
       encTop: "Encoders with the most GPU", encChanged: "What changed between A and B", label: "Label", perFrame: "Per frame", totalMs: "Total GPU ms",
-      msFrameA: "ms/frame A", msFrameB: "ms/frame B", state: "State", noEnc: "No encoders: Windows recordings do not carry them.",
+      msFrameA: "ms/frame A", msFrameB: "ms/frame B", state: "State", cpu: "CPU %", cpuHelp: "The program's CPU use in the interval before the frame (xctrace samples of 10 ms). 100% is one core, so several threads add up. Compare it with the run's mean: below it, the program was waiting (vsync, GPU, disk); above it, it was busy.", noEnc: "No encoders: Windows recordings do not carry them.",
       encHelp: "An encoder is a block of work the program sends to the GPU (a render, compute or copy pass). Many very short encoders per frame is typical of translation layers such as DXMT or MoltenVK.",
       encNote: "Only the 20 with the most GPU are kept; \"outside the top 20\" means the encoder may have left the list, not that it disappeared.",
       states: {same: "same", changed: "changed", new: "new", gone: "gone", outside_top_20: "outside the top 20"},
@@ -181,6 +182,7 @@ const T = {
       frame_interval_ms_p95: ["Interval ms p95", "Time between starts of consecutive frames; 95% are below it. It is what the player sees, not only the GPU."],
       frame_jitter_ms: ["Jitter ms", "Standard deviation of the frame intervals. Low means an even pace; high means hitches even with a good average."],
       stutter_rate_pct: ["Stutter %", "Share of frames whose interval exceeds 1.5 times the median and also 8 ms. A 500 FPS program's short frames do not count."],
+      cpu_pct_mean: ["CPU % mean", "The program's mean CPU use during the recording. 100% is one core; several threads add up."],
       hitches: ["Hitches", "Number of frames over that threshold, each with its likely cause. See the Frames tab."],
       metal_mib_peak: ["Metal memory peak (MiB)", "Peak memory Metal had allocated during the recording. A steady rise suggests a leak or resource loading."],
       rss_mib_max: ["Process memory max (MiB)", "Peak resident memory of the process, Wine's included when running under Wine."],
@@ -301,7 +303,7 @@ function lineChart(series, unit) {
       for (const q of p.points) if (Math.abs(q[0] - x) < Math.abs(best[0] - x)) best = q;
       const mark = (p.marks || []).find(m => Math.abs(m[0] - best[0]) < 1e-6);
       return p.name + ": " + fmt(best[1], 2) + " " + unit + " " + L().ui.at + " " + fmt(best[0] / 1000, 2) + " s" +
-        (mark ? " · " + L().ui.hitch + " " + fmt(mark[2], 1) + " ms" + (mark[3] ? " (" + mark[3] + ")" : "") : "");
+        (mark ? " · " + L().ui.hitch + " " + fmt(mark[2], 1) + " ms" + (mark[3] ? " (" + mark[3] + ")" : "") + (mark[4] != null ? " · CPU " + fmt(mark[4], 0) + " %" : "") : "");
     }).join("\n");
     tip.style.display = "block";
     tip.style.left = Math.min(ev.clientX - box.left + 12, box.width - 200) + "px";
@@ -320,7 +322,7 @@ function metric(r, id) {
     return {fps: () => g.fps_estimate, fps_1pct_low: () => g.fps_1pct_low, fps_01pct_low: () => g.fps_01pct_low,
       gpu_ms_p50: () => g.frame_gpu_ms.p50, gpu_ms_mean: () => g.frame_gpu_ms.mean, gpu_ms_p95: () => g.frame_gpu_ms.p95,
       gpu_ms_max: () => g.frame_gpu_ms.max, frame_interval_ms_p95: () => g.frame_interval_ms.p95, frame_jitter_ms: () => g.frame_jitter_ms,
-      stutter_rate_pct: () => g.stutter_rate_pct, hitches: () => r.hitches && r.hitches.count,
+      stutter_rate_pct: () => g.stutter_rate_pct, cpu_pct_mean: () => r.cpu && r.cpu.mean, hitches: () => r.hitches && r.hitches.count,
       metal_mib_peak: () => r.metal_memory_mib && r.metal_memory_mib.peak, rss_mib_max: () => r.process_rss_mib && r.process_rss_mib.max}[id]() ?? null;
   } catch (e) { return null; }
 }
@@ -393,7 +395,8 @@ const TABS = {
     const rows = DATA.runs.flatMap((r, i) => r.marks.map(m => ({i, m}))).sort((x, y) => y.m[2] - x.m[2]);
     if (!rows.length) return card.append(h("p", {class: "note"}, u.noHitches));
     const shown = rows.slice(0, 30);
-    card.append(table([u.run, u.time, u.interval, u.cause], shown.map(({i, m}) => [runName(i), fmt(m[0] / 1000, 2), fmt(m[2], 1),
+    card.append(table([u.run, u.time, u.interval, h("span", {}, u.cpu, help(u.cpuHelp)), u.cause], shown.map(({i, m}) => [runName(i), fmt(m[0] / 1000, 2), fmt(m[2], 1),
+      m[4] === null || m[4] === undefined ? "—" : fmt(m[4], 0) + " % (" + fmt(metric(DATA.runs[i], "cpu_pct_mean"), 0) + ")",
       m[3] ? h("span", {}, m[3], help(L().c[m[3]] || "")) : "—"])));
     card.append(h("p", {class: "note"}, u.hitchNote(shown.length)));
   },
@@ -442,7 +445,7 @@ const TABS = {
   },
   data(card) {
     const ids = ["fps", "fps_1pct_low", "fps_01pct_low", "gpu_ms_p50", "gpu_ms_p95", "gpu_ms_max", "frame_interval_ms_p95", "frame_jitter_ms",
-      "stutter_rate_pct", "hitches", "metal_mib_peak", "rss_mib_max"];
+      "stutter_rate_pct", "hitches", "cpu_pct_mean", "metal_mib_peak", "rss_mib_max"];
     card.append(table(["", ...DATA.runs.map((r, i) => runName(i))], ids.map(id => [metricName(id), ...DATA.runs.map(r => fmt(metric(r, id), id === "hitches" ? 0 : 2))])));
     const max = Math.max(...DATA.runs.map(r => metric(r, "gpu_ms_max") || 0)) || 1;
     card.append(h("h2", {style: "margin-top:12px"}, L().ui.gpuFrame));

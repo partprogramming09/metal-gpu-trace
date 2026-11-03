@@ -22,7 +22,8 @@ import xml.etree.ElementTree as ET
 MEMORY = "metal-current-allocated-size"
 TABLES = ("metal-gpu-intervals", MEMORY, "gpu-performance-state-intervals")
 # read only when the trace has it: without it encoders go without labels
-OPTIONAL = ("metal-application-encoders-list", "graphics-compiler-activity-intervals", "device-thermal-state-intervals")
+OPTIONAL = ("metal-application-encoders-list", "graphics-compiler-activity-intervals", "device-thermal-state-intervals",
+            "ProcessCPUUsage")
 # each xctrace export keeps a temporary store of gigabytes on a big trace: two at a time bound the disk it needs
 EXPORT_WORKERS = 2
 
@@ -258,12 +259,14 @@ def frame_pacing(gaps, totals):
     return out
 
 
-def attribute_hitches(frames, starts, totals, compiler, thermal, memory, growth_mib=8):
+def attribute_hitches(frames, starts, totals, compiler, thermal, memory, growth_mib=8, cpu=()):
     """Names a cause for each frame whose interval exceeds 1.5 median intervals and STUTTER_FLOOR_MS, by what the trace shows in the
     interval before it: the graphics compiler running (shader_compile), a thermal state other than Nominal (thermal),
     Metal memory growing by `growth_mib` or more (memory_growth), the GPU busy for 80% of it (gpu_heavy) or none of
     these (cpu_or_wait). `frames`, `starts` (ms) and `totals` (GPU ms) go in frame order; `compiler` and `thermal`
-    hold (start ms, end ms) spans and `memory` (ms, bytes) samples, sorted."""
+    hold (start ms, end ms) spans and `memory` (ms, bytes) samples, sorted. `cpu` holds (ms, percent) samples of the
+    process's CPU use; each hitch then carries `cpu_pct`, their mean over the interval before it (None with no sample):
+    high means the program was busy, low that it waited. The 20 longest hitches are listed."""
     gaps = [b - a for a, b in zip(starts, starts[1:])]
     if not gaps:
         return {"count": 0, "causes": {}, "worst": []}
@@ -285,9 +288,13 @@ def attribute_hitches(frames, starts, totals, compiler, thermal, memory, growth_
         else:
             cause = "cpu_or_wait"
         causes[cause] += 1
-        found.append({"frame": frames[i], "interval_ms": round(gap, 3), "cause": cause})
+        entry = {"frame": frames[i], "interval_ms": round(gap, 3), "cause": cause}
+        if cpu:
+            inside = [pct for t, pct in cpu if lo < t <= hi]
+            entry["cpu_pct"] = round(statistics.fmean(inside), 1) if inside else None
+        found.append(entry)
     return {"count": len(found), "threshold_ms": round(limit, 3), "causes": dict(causes.most_common()),
-            "worst": sorted(found, key=lambda h: -h["interval_ms"])[:5]}
+            "worst": sorted(found, key=lambda h: -h["interval_ms"])[:20]}
 
 
 def summarize(trace, label=None, out=None, memory=True):
@@ -414,11 +421,19 @@ def summarize(trace, label=None, out=None, memory=True):
                         thermal.append((start / 1e6, (start + duration) / 1e6))
             total_thermal = sum(thermal_time.values())
             summary["thermal_state_share"] = {k: round(v / total_thermal, 3) for k, v in thermal_time.most_common()}
+        cpu = []
+        if "ProcessCPUUsage" in tables:
+            for row in rows(tables["ProcessCPUUsage"]):
+                start, pct = number(row.get("start")), text(row.get("cpu-usage")).rstrip("%")
+                if pid_of(row.get("process")) == pid and start is not None and pct.replace(".", "", 1).isdigit():
+                    cpu.append((start / 1e6, float(pct)))
+            if cpu:
+                summary["cpu"] = stats([pct for _, pct in cpu])
         pacing = frame_pacing(gaps, totals)
         if "thermal_state_share" in summary and "throttling_analysis" in pacing:
             pacing["throttling_analysis"]["thermal_throttling_detected"] = bool(thermal)
         summary["gpu"].update(pacing)
-        summary["hitches"] = attribute_hitches(ordered, starts, totals, sorted(compiler), sorted(thermal), allocated)
+        summary["hitches"] = attribute_hitches(ordered, starts, totals, sorted(compiler), sorted(thermal), allocated, cpu=sorted(cpu))
     finally:
         # rows() deletes each table's file once read; one left unread by a failure is removed here
         for path in tables.values():

@@ -3,6 +3,16 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `perf_history`: lists the runs whose name starts with a prefix, oldest first, with FPS, 1% low, GPU ms, stutter,
+  hitches and peak Metal MiB, and the change from the first to the last. It flags a series that mixes Windows and
+  Metal runs, or has under 3 runs.
+- A summary now has `cpu` (count, mean, p50, p95 and max of the program's CPU use, from the trace's `ProcessCPUUsage`
+  table; 100% is one core, so several threads add up) and each hitch has `cpu_pct`, the mean CPU over the interval before
+  it: below the run's mean the program was waiting, above it was busy. `hitches.worst` lists the 20 longest hitches, not
+  5. The panel shows the CPU beside each hitch's cause, the mean CPU in its data tab and the hover.
+
 ## 0.12.0 — 2026-11-02
 
 - `perf_compare` and the panel say when a Windows run is compared with a Metal run: the result has `measure` (which side

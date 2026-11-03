@@ -189,7 +189,7 @@ def test_report(tmp_path):
     finally:
         perf_report.subprocess.run = saved_run
     toc = ET.fromstring('<trace-toc><run><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
-    assert perf_report.missing_tables(toc) == ["device-thermal-state-intervals", "gpu-performance-state-intervals",
+    assert perf_report.missing_tables(toc) == ["ProcessCPUUsage", "device-thermal-state-intervals", "gpu-performance-state-intervals",
                                                "graphics-compiler-activity-intervals",
                                                "metal-application-encoders-list", "metal-current-allocated-size"]
     try:
@@ -239,6 +239,12 @@ def test_pacing_and_hitches():
     assert [h["cause"] for h in sorted(got["worst"], key=lambda h: h["frame"])] == [
         "shader_compile", "thermal", "cpu_or_wait", "gpu_heavy", "memory_growth"], got
     assert perf_report.attribute_hitches([1], [0], [1], [], [], []) == {"count": 0, "causes": {}, "worst": []}
+    assert "cpu_pct" not in got["worst"][0], "no CPU samples, no cpu_pct"
+    cpu = [(t, 300.0) for t in range(0, 160, 10)] + [(t, 100.0) for t in range(160, 211, 10)]
+    busy = perf_report.attribute_hitches(frames, starts, totals, [(25, 30)], [(70, 80)], memory, cpu=cpu)
+    by_frame = {h["frame"]: h["cpu_pct"] for h in busy["worst"]}
+    assert by_frame[3] == 300.0 and by_frame[10] == 100.0, by_frame  # the interval before a hitch is where the mean is taken
+    assert perf_report.attribute_hitches(frames, starts, totals, [], [], [], cpu=[(500, 1.0)])["worst"][0]["cpu_pct"] is None
 
 
 def test_diagnose(tmp_path):
@@ -658,7 +664,7 @@ def test_server(tmp_path):
     assert [x["uriTemplate"] for x in replies[17]["result"]["resourceTemplates"]] == ["metal-trace://runs/{run}"]
     assert json.loads(replies[26]["result"]["contents"][0]["text"]) == {"gpu": {"frames": 100}}
     assert replies[27]["error"]["code"] == replies[28]["error"]["code"] == -32002, "a bad run name is not found"
-    assert len(replies[2]["result"]["tools"]) == 21
+    assert len(replies[2]["result"]["tools"]) == 22
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -919,7 +925,7 @@ def test_http(tmp_path):
         assert post(ping, path="/other")[0] == 404
         assert post({"jsonrpc": "2.0", "method": "notifications/initialized"}) == (202, None)
         code, tools = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        assert code == 200 and len(tools["result"]["tools"]) == 21
+        assert code == 200 and len(tools["result"]["tools"]) == 22
         code, runs = post({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                            "params": {"name": "perf_runs", "arguments": {}, "_meta": {"progressToken": "x"}}})
         assert code == 200 and runs["result"]["structuredContent"]["total"] == 0, runs
@@ -1156,7 +1162,7 @@ def test_panel(tmp_path):
         return {"gpu": {"frames": 400, "fps_estimate": fps, "frame_gpu_ms": {"mean": 4.0, "p50": 4.0, "p95": 6.0, "max": 9.0},
                         "frame_interval_ms": {"p95": 20.0}},
                 "hitches": {"count": 1, "threshold_ms": 30.0, "causes": {evil: 1},
-                            "worst": [{"frame": 202, "interval_ms": 60.0, "cause": evil}]},
+                            "worst": [{"frame": 202, "interval_ms": 60.0, "cause": evil, "cpu_pct": 120.0}]},
                 "process": {"arguments": f"{tmp_path}/game.exe"}, "layer": {"none": "native"},
                 "encoders": {"per_frame": {"p50": 7}, "command_buffers_per_frame": {"p50": 5}, "short_share": {"25": 0.5},
                              "by_label": [{"label": evil, "per_frame": 1.0, "total_ms": 5.0}]},
@@ -1180,7 +1186,7 @@ def test_panel(tmp_path):
             "both languages explain the causes and every tab exists"
         payload = json.loads(html.split("let DATA = ", 1)[1].split(";\nconst COLORS", 1)[0].replace("\\u003c", "<"))
         run = payload["runs"][0]
-        assert run["marks"] == [[3260.0, 4.0, 60.0, evil]] and [3260.0, 4.0] in run["frames"], run["marks"]
+        assert run["marks"] == [[3260.0, 4.0, 60.0, evil, 120.0]] and [3260.0, 4.0] in run["frames"], run["marks"]
         assert len(run["frames"]) < 60 and run["memory"] == [[0.0, 1.0], [100.0, 2.0]], len(run["frames"])
         assert payload["compare"]["fps"]["change"] == -10.0 and run["encoders"][0]["label"] == evil
         assert payload["labels"] and payload["labels"][0]["label"] == evil, "the changed labels travel with the panel"
@@ -1267,8 +1273,40 @@ def test_gate_and_spread(tmp_path):
         mcp.OUT, mcp.BASELINES = saved
 
 
+def test_history(tmp_path):
+    """perf_history lists the runs of a prefix oldest first with the change from first to last, flags a series that
+    mixes Windows and Metal or has under 3 runs, and refuses an unknown prefix."""
+    import metal_trace_mcp as mcp
+
+    def summary(platform, fps, hitches):
+        return {"device": {"platform": platform}, "gpu": {"frames": 300, "fps_estimate": fps, "frame_gpu_ms": {"mean": 4.0}},
+                "hitches": {"count": hitches}}
+    for i, (platform, fps, hitches) in enumerate((("macOS", 60.0, 1), ("macOS", 57.0, 3), ("macOS", 54.0, 4))):
+        path = tmp_path / f"v{i}.json"
+        path.write_text(json.dumps(summary(platform, fps, hitches)))
+        os.utime(path, (1000 + i, 1000 + i))
+    saved, (mcp.OUT, mcp.BASELINES) = (mcp.OUT, mcp.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        got = mcp.tool_perf_history("v")
+        assert [r["run"] for r in got["runs"]] == ["v0", "v1", "v2"] and got["change"]["fps"]["change"] == -6.0, got
+        assert got["change"]["hitches"]["change"] == 3 and "hint" not in got, got
+        assert mcp.tool_perf_history("v", limit=2)["runs"][0]["run"] == "v1"
+        assert "under 3 runs" in mcp.tool_perf_history("v0")["hint"]
+        (tmp_path / "w0.json").write_text(json.dumps(summary("Windows", 50.0, 0)))
+        (tmp_path / "v9.json").write_text(json.dumps(summary("Windows", 50.0, 0)))
+        assert "mixes Windows and Metal" in mcp.tool_perf_history("v")["hint"]
+        for prefix in ("zzz", "../v"):
+            try:
+                mcp.tool_perf_history(prefix)
+                raise AssertionError(f"{prefix} must fail")
+            except mcp.ToolError:
+                pass
+    finally:
+        mcp.OUT, mcp.BASELINES = saved
+
+
 def main():
-    tests = [test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
