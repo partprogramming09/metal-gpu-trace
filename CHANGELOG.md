@@ -3,6 +3,21 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- GPU counters: `perf_record` takes `counters=true` (or `PERF_INSTRUMENTS="Metal GPU Counters"`), and the summary gets
+  `gpu_counters`: mean, p95 and max of the 31 counters (ALU, texture, buffer, last level cache and MMU limiters and
+  utilization, occupancy, read and write bandwidth in GB/s) and the `top_limiter`. On a 12 s drawstress run it read
+  5 382 127 samples, exactly the table's rows, in 8 s and 87 MB, line by line without building the XML tree; what is slow
+  is `xctrace` exporting the table, about 10 s and 64 MB of XML per recorded second (the recording's time limit grows to
+  match). The panel has a GPU counters tab. They are whole-run, also with `skip_s`. `perf_report.py --counters` reads them
+  from an existing trace.
+- Power: the `Power Profiler` instrument is not supported on macOS (xctrace says so), so there is no power data to read.
+- `panel.json`: `perf_panel(layout=[...])` saves the tab order in the runs directory, and every panel, the live one too,
+  starts from it; the viewer's own changes in the browser still win. The browser's Layout JSON is the same format.
+- `perf_baseline` and `perf_baseline_record` take `skip_s`: the reference keeps each run without its start-up and
+  `perf_check` applies the same cut to the run it judges (`skipped_s` says so): a steady-state check.
+
 ## 0.15.0 — 2026-11-02
 
 - `skip_s` also on `perf_history` and `perf_ab` (which draws its verdicts without the start-up; the recordings stay

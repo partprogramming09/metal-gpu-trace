@@ -83,8 +83,8 @@ textarea { width: 100%; height: 90px; font: 12px ui-monospace, monospace; backgr
 let DATA = /*PAYLOAD*/null;
 const COLORS = ["var(--s1)", "var(--s2)"];
 const PRESETS = {
-  fps: ["summary", "frames", "encoders", "memory", "data"],
-  compare: ["summary", "ab", "frames", "encoders", "memory", "data"],
+  fps: ["summary", "frames", "encoders", "counters", "memory", "data"],
+  compare: ["summary", "ab", "frames", "encoders", "counters", "memory", "data"],
 };
 const NS = "http://www.w3.org/2000/svg";
 const NOISE_PCT = 3;
@@ -95,7 +95,7 @@ const CARD_KEYS = ["fps", "fps_1pct_low", "hitches", "metal_mib_peak"];
 
 const T = {
   es: {
-    ui: {title: "Panel de traza Metal", vs: " contra ", summary: "Resumen", frames: "Frames", memory: "Memoria y térmico", ab: "A y B", encoders: "Encoders",
+    ui: {title: "Panel de traza Metal", vs: " contra ", summary: "Resumen", frames: "Frames", memory: "Memoria y térmico", ab: "A y B", encoders: "Encoders", counters: "Contadores GPU",
       data: "Datos", edit: "Personalizar", apply: "Aplicar", reset: "Restablecer", gpuFrame: "Tiempo de GPU por frame",
       noFrames: "No hay datos por frame.", noMem: "No hay datos de memoria Metal: la grabación la omitió o la traza no tiene la tabla.",
       needTwo: "Comparar necesita dos grabaciones.", to: "a", at: "en", hitch: "hitch", change: "cambio", changePct: "cambio %",
@@ -112,6 +112,9 @@ const T = {
       wRepeat: "Cada lado es una sola grabación. Repite la corrida antes de dar el cambio por real.",
       wLayer: (a, b) => `Las grabaciones usaron capas distintas (${a} y ${b}): se compara una capa con otra, no un solo cambio.`,
       layerNone: "sin capa", scope: "Cómo leer esto", notComparable: "no comparable",
+      cTitle: "Contadores de la GPU", cTop: "Limitador principal", cMean: "media", cP95: "p95", cMax: "máx", cName: "Contador", cNone: "Sin contadores: graba con counters=true.",
+      cHelp: "Los contadores salen del instrumento Metal GPU Counters y se muestrean durante toda la grabación. Un Limiter es el porcentaje del tiempo en que esa unidad tenía trabajo pendiente y no podía avanzar: el mayor es el cuello de botella de la GPU. Utilization es cuánto se usó la unidad. Occupancy es cuántos hilos de sombreado corrían a la vez. Bandwidth está en GB/s. Una media baja con un máximo alto indica picos aislados.",
+      cNote: n => `Se muestran los ${n} contadores con mayor media. Los contadores son de toda la grabación, también con skip_s.`,
       encTop: "Encoders con más GPU", encChanged: "Qué cambió entre A y B", label: "Etiqueta", perFrame: "Por frame", totalMs: "GPU ms total",
       msFrameA: "ms/frame A", msFrameB: "ms/frame B", state: "Estado", cpu: "CPU %", cpuHelp: "Uso de CPU del programa en el intervalo antes del frame (muestras de 10 ms de xctrace). 100% es un núcleo, así que varios hilos suman más. Compáralo con la media de la corrida: por debajo, el programa esperaba (vsync, GPU, disco); por encima, estaba ocupado.", noEnc: "Sin encoders: las grabaciones de Windows no los traen.",
       encHelp: "Un encoder es un bloque de trabajo que el programa envía a la GPU (un pase de render, de cómputo o de copia). Muchos encoders muy cortos por frame es típico de capas de traducción como DXMT o MoltenVK.",
@@ -150,7 +153,7 @@ const T = {
     ],
   },
   en: {
-    ui: {title: "Metal trace panel", vs: " vs ", summary: "Summary", frames: "Frames", memory: "Memory and thermal", ab: "A and B", encoders: "Encoders",
+    ui: {title: "Metal trace panel", vs: " vs ", summary: "Summary", frames: "Frames", memory: "Memory and thermal", ab: "A and B", encoders: "Encoders", counters: "GPU counters",
       data: "Data", edit: "Customize", apply: "Apply", reset: "Reset", gpuFrame: "GPU time per frame",
       noFrames: "No per-frame data.", noMem: "No Metal memory data: the run skipped it or the trace lacks the table.",
       needTwo: "Compare needs two recordings.", to: "to", at: "at", hitch: "hitch", change: "change", changePct: "change %",
@@ -167,6 +170,9 @@ const T = {
       wRepeat: "Each side is one recording. Repeat the run before calling a change real.",
       wLayer: (a, b) => `The recordings ran on different layers (${a} and ${b}): it compares layers, not one change.`,
       layerNone: "no layer", scope: "How to read this", notComparable: "not comparable",
+      cTitle: "GPU counters", cTop: "Main limiter", cMean: "mean", cP95: "p95", cMax: "max", cName: "Counter", cNone: "No counters: record with counters=true.",
+      cHelp: "The counters come from the Metal GPU Counters instrument and are sampled over the whole recording. A Limiter is the share of time that unit had work waiting and could not advance: the highest is the GPU's bottleneck. Utilization is how much the unit was used. Occupancy is how many shader threads ran at once. Bandwidth is in GB/s. A low mean with a high max means isolated spikes.",
+      cNote: n => `The ${n} counters with the highest mean are shown. The counters cover the whole recording, also with skip_s.`,
       encTop: "Encoders with the most GPU", encChanged: "What changed between A and B", label: "Label", perFrame: "Per frame", totalMs: "Total GPU ms",
       msFrameA: "ms/frame A", msFrameB: "ms/frame B", state: "State", cpu: "CPU %", cpuHelp: "The program's CPU use in the interval before the frame (xctrace samples of 10 ms). 100% is one core, so several threads add up. Compare it with the run's mean: below it, the program was waiting (vsync, GPU, disk); above it, it was busy.", noEnc: "No encoders: Windows recordings do not carry them.",
       encHelp: "An encoder is a block of work the program sends to the GPU (a render, compute or copy pass). Many very short encoders per frame is typical of translation layers such as DXMT or MoltenVK.",
@@ -421,6 +427,26 @@ const TABS = {
     }
     card.append(h("p", {class: "note"}, u.encNote));
   },
+  counters(card) {
+    const u = L().ui;
+    card.append(h("h2", {}, h("span", {}, u.cTitle, help(u.cHelp))));
+    DATA.runs.forEach((r, i) => {
+      const top = r.counters && r.counters.top_limiter;
+      card.append(h("p", {}, runName(i, true), ": " + (top ? u.cTop + ": " + top.name + " (" + fmt(top.mean, 1) + " %)" : u.cNone)));
+    });
+    const names = [...new Set(DATA.runs.flatMap(r => (r.counters ? r.counters.counters : []).map(c => c.name)))];
+    const of = (r, name) => (r.counters ? r.counters.counters : []).find(c => c.name === name);
+    const sort = n => Math.max(...DATA.runs.map(r => (of(r, n) || {mean: 0}).mean));
+    const shown = names.sort((a, b) => sort(b) - sort(a)).slice(0, 12);
+    const head = [u.cName];
+    DATA.runs.forEach((r, i) => head.push(h("span", {}, runName(i, true), " " + u.cMean), u.cP95 + (DATA.runs.length > 1 ? " " + "AB"[i] : ""), u.cMax + (DATA.runs.length > 1 ? " " + "AB"[i] : "")));
+    card.append(table(head, shown.map(n => {
+      const row = [n + ((of(DATA.runs.find(r => of(r, n)), n) || {}).unit ? " (" + of(DATA.runs.find(r => of(r, n)), n).unit + ")" : "")];
+      DATA.runs.forEach(r => { const c = of(r, n); row.push(c ? fmt(c.mean) : "–", c ? fmt(c.p95) : "–", c ? fmt(c.max) : "–"); });
+      return row;
+    })));
+    card.append(h("p", {class: "note"}, u.cNote(shown.length)));
+  },
   memory(card) {
     const u = L().ui;
     card.append(h("h2", {}, L().m.metal_mib_peak[0]));
@@ -471,7 +497,12 @@ function loadLayout() {
     const saved = JSON.parse(localStorage.getItem(KEY));
     if (Array.isArray(saved) && saved.every(w => TABS[w.id] && typeof w.on === "boolean")) return saved;
   } catch (e) { /* storage blocked or empty */ }
-  return PRESETS[DATA.preset].map(id => ({id, on: true}));
+  return defaultLayout();
+}
+
+/** Returns the layout the file panel.json gave, or the preset's tabs all on. */
+function defaultLayout() {
+  return DATA.layout || PRESETS[DATA.preset].map(id => ({id, on: true}));
 }
 
 /** Saves the layout where the browser allows it and draws the panel again. */
@@ -493,7 +524,7 @@ function draw() {
   document.getElementById("layout-apply").textContent = u.apply;
   document.getElementById("layout-reset").textContent = u.reset;
   document.getElementById("runs").textContent = DATA.runs.map(r => r.name + (r.layer ? " (" + r.layer + ")" : "")).join(u.vs);
-  const shows = w => !(w.id === "ab" && DATA.runs.length < 2) && !(w.id === "encoders" && !DATA.runs.some(r => r.encoders.length));
+  const shows = w => !(w.id === "ab" && DATA.runs.length < 2) && !(w.id === "encoders" && !DATA.runs.some(r => r.encoders.length)) && !(w.id === "counters" && !DATA.runs.some(r => r.counters));
   const visible = layout.filter(w => w.on && shows(w));
   if (!visible.some(w => w.id === active)) active = visible.length ? visible[0].id : "";
   const tabs = document.getElementById("tabs");
@@ -537,11 +568,11 @@ document.getElementById("layout-apply").addEventListener("click", () => {
     if (Array.isArray(next) && next.every(w => TABS[w.id] && typeof w.on === "boolean")) setLayout(next);
   } catch (e) { /* invalid JSON is ignored */ }
 });
-document.getElementById("layout-reset").addEventListener("click", () => setLayout(PRESETS[DATA.preset].map(id => ({id, on: true}))));
+document.getElementById("layout-reset").addEventListener("click", () => setLayout(defaultLayout()));
 
 /** Draws the panel for the data in DATA the first time. */
 function start() {
-  KEY = "metal-panel-layout:v3:" + DATA.preset;
+  KEY = "metal-panel-layout:v4:" + DATA.preset;
   layout = loadLayout();
   draw();
 }

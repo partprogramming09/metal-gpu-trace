@@ -111,12 +111,13 @@ def page(items, offset, limit):
 
 
 def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, workdir=None, args="", workload=None,
-                     api=None, dim=None, memory=True, env=""):
+                     api=None, dim=None, memory=True, env="", counters=False):
     """Records `program` (an .exe under Wine, or a macOS binary with wine="native"), or a test program fetched with
     workload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per
     frame, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest
     to read). When it ends it stops every program of that Wine prefix (wineserver -k), or every process named like
-    the program with native."""
+    the program with native. counters=true also records Metal GPU Counters (`gpu_counters` in the summary: the units the
+    GPU waited on, its utilization, occupancy and memory bandwidth); it adds about 40 s of read-back per recorded second."""
     program_env, layer = check_env(env), None
     if workload:
         program, wine, args, workload_env = workload_command(workload, api, dim, wine, args)
@@ -135,7 +136,7 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
     workdir = pathlib.Path(workdir).expanduser() if workdir else program.parent
     prefix = pathlib.Path(prefix or os.environ.get("WINEPREFIX", "~/.wine")).expanduser()
     return record(label, seconds, wine, prefix, workdir,
-                  [str(program.resolve()), *split_args(args)], program_env, memory, layer=layer)
+                  [str(program.resolve()), *split_args(args)], program_env, memory, layer=layer, counters=counters)
 
 
 def check_env(env):
@@ -412,13 +413,13 @@ def kill_program(name):
     subprocess.run(["pkill", "-KILL", "-x", name], capture_output=True, timeout=30)
 
 
-def deadline(seconds):
+def deadline(seconds, counters=False):
     """Returns the seconds a recording of `seconds` may take in all; closing and reading back a Wine D3D12 trace takes
-    up to 14 s per recorded second on an M1 Pro."""
-    return int(seconds) * 15 + 180
+    up to 14 s per recorded second on an M1 Pro, and the GPU counters table about 40 more (an M-series Mac, native)."""
+    return int(seconds) * (55 if counters else 15) + 180
 
 
-def record(label, seconds, wine, prefix, workdir, command, program_env="", memory=True, layer=None):
+def record(label, seconds, wine, prefix, workdir, command, program_env="", memory=True, layer=None, counters=False):
     """Runs perf_record.sh and returns the summary it wrote, stopping the whole recording and deleting its files if
     it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV, `memory` false sets PERF_MEMORY=0, and `layer`
     names the translation layer a native run goes through (MoltenVK) instead of "native Metal"."""
@@ -428,6 +429,8 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
                PERF_ENV=" ".join(filter(None, [os.environ.get("PERF_ENV", ""), program_env])))
     if not memory:
         env["PERF_MEMORY"] = "0"
+    if counters:
+        env["PERF_INSTRUMENTS"] = ";".join(filter(None, [os.environ.get("PERF_INSTRUMENTS", ""), "Metal GPU Counters"]))
     layer = layer or layer_of(wine, prefix, env["PERF_ENV"])
     if sys.platform == "win32":
         try:
@@ -449,7 +452,7 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
                              str(prefix), str(workdir), *command],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
                             start_new_session=True)
-    limit, started, ticks = deadline(seconds), time.monotonic(), 0
+    limit, started, ticks = (deadline(seconds, True) if counters else deadline(seconds)), time.monotonic(), 0
     while True:
         left = limit - (time.monotonic() - started)
         if left <= 0 or cancelled():
@@ -620,13 +623,15 @@ def load_baselines():
     return json.loads(BASELINES.read_text(encoding="utf-8")) if BASELINES.exists() else {}
 
 
-def tool_perf_baseline(name=None, runs=None):
+def tool_perf_baseline(name=None, runs=None, skip_s=0):
     """Names a reference for perf_check, or lists them. With name and runs (names from perf_runs, several runs of the
     same program recorded with no change between them), it saves copies of their summaries as the reference `name`,
     replacing a previous one, and returns the range each number spans across them: that range, not one run, is what
     perf_check judges against, since repeated runs differ by a few percent, and `spread_pct`, each range's width in %
     of its midpoint: the noise of this program on this machine, which a change must exceed. With name alone it shows that reference;
-    with nothing it lists them."""
+    with nothing it lists them. With skip_s the reference keeps each run without its first skip_s seconds (the
+    start-up, as perf_compare's skip_s) and perf_check applies the same cut to the run it judges, so both are
+    steady-state; the runs need their per-frame files for that."""
     baselines = load_baselines()
     if name is not None and not name_ok(name):
         raise ToolError("a reference name holds only letters, digits, '.', '_' and '-'")
@@ -635,8 +640,10 @@ def tool_perf_baseline(name=None, runs=None):
             raise ToolError("runs need a name for the reference")
         if isinstance(runs, str):
             runs = [runs]
-        summaries = [json.loads(run_path(r).read_text(encoding="utf-8")) for r in runs]
-        baselines[name] = {"runs": list(runs), "set": time.strftime("%Y-%m-%d"), "summaries": summaries}
+        skip = check_skip(skip_s)
+        summaries = [steady_summary(r, skip) for r in runs]
+        baselines[name] = {"runs": list(runs), "set": time.strftime("%Y-%m-%d"), "summaries": summaries,
+                           **({"skip_s": skip} if skip else {})}
         OUT.mkdir(parents=True, exist_ok=True)
         BASELINES.write_text(json.dumps(baselines), encoding="utf-8")
     if name is not None:
@@ -644,7 +651,8 @@ def tool_perf_baseline(name=None, runs=None):
             raise ToolError(f"no reference {name}; perf_baseline with no arguments lists them")
         b = baselines[name]
         span = ranges(b["summaries"])
-        return {"name": name, "runs": b["runs"], "set": b["set"], "range": span, "spread_pct": spreads(span)}
+        return {"name": name, "runs": b["runs"], "set": b["set"], "range": span, "spread_pct": spreads(span),
+                **({"skip_s": b["skip_s"]} if b.get("skip_s") else {})}
     return {"baselines": [{"name": n, "runs": b["runs"], "set": b["set"]} for n, b in baselines.items()]}
 
 
@@ -675,13 +683,14 @@ def tool_perf_check(run, baseline, margin_pct=3):
     or encoders or command buffers per frame exceed its highest; improved when a number leaves the range the other
     way and none regressed; same otherwise. Frame pacing, short encoders and GPU idle time are reported by the
     comparison but do not decide: they vary too much between equal runs. A run from Windows against a Metal
-    reference (or the reverse) is judged on FPS alone. There is no skip_s: a reference keeps whole-run summaries. Returns the reasons and perf_compare's
+    reference (or the reverse) is judged on FPS alone. A reference saved with skip_s judges the run without its first
+    skip_s seconds too (`skipped_s` says so). Returns the reasons and perf_compare's
     full comparison against the reference's first run."""
     baselines = load_baselines()
     if baseline not in baselines:
         raise ToolError(f"no reference {baseline}; perf_baseline with no arguments lists them")
     ref = baselines[baseline]
-    s = json.loads(run_path(run).read_text(encoding="utf-8"))
+    s = steady_summary(run, ref.get("skip_s", 0))
     span = ranges(ref["summaries"])
     worse, better, unchecked = [], [], []
     cross = measurement(ref["summaries"][0]) != measurement(s)
@@ -708,6 +717,8 @@ def tool_perf_check(run, baseline, margin_pct=3):
     result = {"run": run, "baseline": baseline, "verdict": verdict, "margin_pct": margin_pct, "regressed": worse,
               "improved": better, "unchecked": unchecked, "range": span,
               "comparison": compare_summaries(ref["summaries"][0], s, ref["runs"][0], run)}
+    if ref.get("skip_s"):
+        result["skipped_s"] = ref["skip_s"]
     if (s.get("gpu") or {}).get("frames", 0) < 100:
         result["hint"] = "under 100 frames: too short to judge; record 30 s or more"
     if cross:
@@ -928,7 +939,7 @@ def steady_summary(run, skip_s=0):
     s.pop("metal_memory_mib", None)
     if memory:
         s["metal_memory_mib"] = {"peak": round(max(memory), 2), "samples": len(memory)}
-    s["steady"] = {"skip_s": skip, "whole_run": ["thermal_state_share", "process_rss_mib", "encoders", "gpu_idle"]}
+    s["steady"] = {"skip_s": skip, "whole_run": ["thermal_state_share", "process_rss_mib", "encoders", "gpu_idle", "gpu_counters"]}
     return s
 
 
@@ -953,8 +964,26 @@ def panel_run(run, skip_s=0):
     memory = [[t, round(mib, 2)] for t, mib in samples[::max(1, len(samples) // PANEL_POINTS)]]
     return {"name": run, "layer": layer_label(s.get("layer")), "source": measurement(s), "gpu": s.get("gpu"), "hitches": hitches,
             "thermal_state_share": s.get("thermal_state_share"), "metal_memory_mib": s.get("metal_memory_mib"),
-            "process_rss_mib": s.get("process_rss_mib"), "cpu": s.get("cpu"), "frames": frames, "marks": marks, "memory": memory,
+            "process_rss_mib": s.get("process_rss_mib"), "cpu": s.get("cpu"), "counters": s.get("gpu_counters"), "frames": frames, "marks": marks, "memory": memory,
             "encoders": [] if measurement(s) == "windows" else (s.get("encoders") or {}).get("by_label", [])[:20]}
+
+
+TAB_IDS = ("summary", "ab", "frames", "encoders", "counters", "memory", "data")
+
+
+def read_layout():
+    """Returns the panel layout saved as panel.json in the runs directory, a list of {id, on} tabs, or None when there is
+    none; a file that is not that list raises ToolError."""
+    path = OUT / "panel.json"
+    if not path.exists():
+        return None
+    try:
+        layout = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        raise ToolError("panel.json is not valid JSON") from None
+    if not isinstance(layout, list) or not all(isinstance(w, dict) and w.get("id") in TAB_IDS and isinstance(w.get("on"), bool) for w in layout):
+        raise ToolError(f"panel.json is a list of {{\"id\": tab, \"on\": true or false}} with tab one of {', '.join(TAB_IDS)}")
+    return [{"id": w["id"], "on": w["on"]} for w in layout]
 
 
 def panel_data(runs, preset=None, skip_s=0):
@@ -977,19 +1006,29 @@ def panel_data(runs, preset=None, skip_s=0):
         except (KeyError, TypeError):  # a summary from before the numbers the comparison reads
             pass
     return {"preset": preset, "runs": data, "compare": compare, "not_comparable": not_comparable, "labels": labels[:10],
-            "skip_s": skip}
+            "skip_s": skip, "layout": read_layout()}
 
 
-def tool_perf_panel(name, runs, preset="fps", skip_s=0):
+def tool_perf_panel(name, runs, preset="fps", skip_s=0, layout=None):
     """Writes one HTML file, `<name>.panel.html` in the runs directory, that shows one or two recordings in a
     browser without a server: GPU time per frame with the hitches marked, the numbers (FPS and its lows, frame
     time, jitter, stutter, memory, thermal state), Metal memory over time and, for two runs, A against B. The file
     holds the data itself, no path, and loads nothing from the network; the viewer can hide and reorder the
     widgets and export the layout as JSON. preset `fps` is the timeline, numbers and memory; `compare` (two runs)
     puts A against B first. skip_s leaves out the first seconds of each recording (the start-up), as perf_compare does.
+    layout (tab ids in the order to show) is saved as panel.json in the runs directory and becomes the default tab
+    order of every panel, the live one too, until the viewer changes it in the browser; ids left out are hidden but
+    can be switched back on; tabs are summary, ab, frames, encoders, counters, memory and data, and a panel.json
+    you wrote yourself, or copied from the panel's Layout JSON, works the same.
     Returns the file name, the runs, the frames shown and the file's bytes."""
     if not name_ok(name):
         raise ToolError("a panel name holds only letters, digits, '.', '_' and '-'")
+    if layout is not None:
+        if isinstance(layout, str) or not all(i in TAB_IDS for i in layout):
+            raise ToolError(f"layout is a list of tabs, each one of {', '.join(TAB_IDS)}")
+        OUT.mkdir(parents=True, exist_ok=True)
+        (OUT / "panel.json").write_text(json.dumps([{"id": i, "on": True} for i in dict.fromkeys(layout)] +
+                                                   [{"id": i, "on": False} for i in TAB_IDS if i not in layout]) + "\n", encoding="utf-8")
     payload = panel_data(runs, preset, skip_s)
     data = payload["runs"]
     text = json.dumps(payload, separators=(",", ":")).replace("<", "\\u003c")
@@ -1156,12 +1195,14 @@ def tool_trace_count(trace, tables=None):
     return {"trace": trace, "tables": out}
 
 
-def tool_perf_baseline_record(name, count=3, **record):
+def tool_perf_baseline_record(name, count=3, skip_s=0, **record):
     """Records the same program `count` times in a row with perf_record's arguments and saves the runs as the
     reference `name` for perf_check, returning the range each number spans across them. Runs are named
-    `name`-1, `name`-2, ... Each recording takes its seconds plus about a minute to read back."""
+    `name`-1, `name`-2, ... Each recording takes its seconds plus about a minute to read back. skip_s as in
+    perf_baseline: the reference leaves out each run's start-up."""
     if not name_ok(name):
         raise ToolError("a reference name holds only letters, digits, '.', '_' and '-'")
+    check_skip(skip_s)
     count = int(count)
     if not 1 <= count <= 10:
         raise ToolError("count is 1 to 10")
@@ -1170,7 +1211,7 @@ def tool_perf_baseline_record(name, count=3, **record):
         before = set(OUT.glob(f"{name}-{i}_*.json"))
         tool_perf_record(f"{name}-{i}", **record)
         runs.append(next(iter(set(OUT.glob(f"{name}-{i}_*.json")) - before)).stem)
-    return tool_perf_baseline(name, runs)
+    return tool_perf_baseline(name, runs, skip_s)
 
 
 # what perf_ab compares: where in a summary, and whether a higher number is better
@@ -1316,7 +1357,9 @@ RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits
          "dim": {**I, "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame"},
          "memory": {"type": "boolean", "description": "default true; false skips the Metal memory table, the slowest "
                                                       "to read (about 40 % faster summary): no metal_mib_peak"},
-         "env": {**S, "description": "NAME=VALUE pairs separated by spaces, set in the program's environment"}}
+         "env": {**S, "description": "NAME=VALUE pairs separated by spaces, set in the program's environment"},
+         "counters": {"type": "boolean", "description": "default false; true also records Metal GPU Counters (gpu_counters in "
+                                                        "the summary); not under Windows; adds about 40 s of read-back per recorded second"}}
 
 SKIP = ("seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) "
         "keeps all. The GPU numbers, hitches and Metal memory are recomputed without them")
@@ -1326,6 +1369,7 @@ TOOLS = {
     "perf_baseline_record": (tool_perf_baseline_record, schema(
         {"name": {**S, "description": "reference name: letters, digits, '.', '_', '-'"},
          "count": {**I, "description": "equal recordings to make, default 3"},
+         "skip_s": {"type": "number", "description": SKIP + "; perf_check applies the same cut to the run it judges"},
          **{k: v for k, v in RECORD_PROPS.items() if k != "label"}}, ["name"]),
         hints("Record a reference", destructive=True)),
     "perf_ab": (tool_perf_ab, schema(
@@ -1354,7 +1398,8 @@ TOOLS = {
     "perf_baseline": (tool_perf_baseline, schema(
         {"name": {**S, "description": "reference name: letters, digits, '.', '_', '-'; alone, shows that reference"},
          "runs": {"type": "array", "items": S, "description": "run names from perf_runs to save as this reference, "
-                                                             "ideally 3 or more equal runs; replaces a previous one"}}),
+                                                             "ideally 3 or more equal runs; replaces a previous one"},
+         "skip_s": {"type": "number", "description": SKIP + "; perf_check applies the same cut to the run it judges"}}),
         hints("Name a reference", destructive=False, idempotent=True)),
     "perf_check": (tool_perf_check, schema(
         {"run": {**S, "description": "a run name from perf_runs"},
@@ -1385,7 +1430,10 @@ TOOLS = {
          "runs": {"type": "array", "items": S, "description": "one or two run names from perf_runs; with two, the first "
                                                              "is A, the reference"},
          "preset": {**S, "description": "fps (default) or compare (needs two runs)"},
-         "skip_s": {"type": "number", "description": SKIP}}, ["name", "runs"]),
+         "skip_s": {"type": "number", "description": SKIP},
+         "layout": {"type": "array", "items": S, "description": "tabs to show, in order: summary, ab, frames, encoders, counters, memory, data; "
+                                                                "saved as panel.json in the runs directory as the default for every panel"}},
+        ["name", "runs"]),
         hints("Write an HTML panel", destructive=False, idempotent=True)),
     "perf_diagnose": (tool_perf_diagnose, schema(
         {"run": {**S, "description": "a run name from perf_runs"},

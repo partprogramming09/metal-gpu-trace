@@ -5,6 +5,7 @@ Writes <out>/<label>.json (summary), <label>.frames.csv (one row per GPU frame) 
 memory over time). A <recording>.rss.csv beside the trace adds the process's resident memory.
 """
 import argparse
+import array
 import collections
 import concurrent.futures
 import csv
@@ -26,6 +27,10 @@ OPTIONAL = ("metal-application-encoders-list", "graphics-compiler-activity-inter
             "ProcessCPUUsage")
 # each xctrace export keeps a temporary store of gigabytes on a big trace: two at a time bound the disk it needs
 EXPORT_WORKERS = 2
+# Metal GPU Counters (PERF_INSTRUMENTS): about 450 000 samples and 64 MB of XML per recorded second, so its export may take minutes
+COUNTER_TABLES = ("gpu-counter-info", "gpu-counter-value")
+EXPORT_TIMEOUTS = {"gpu-counter-value": 3600}
+COUNTER_CELL = re.compile(r'<(uint32|fixed-decimal) (id|ref)="(\d+)"[^>]*?(?:/>|>([^<]*)</)')
 
 
 def export(trace, xpath=None, toc=False, timeout=600):
@@ -81,7 +86,8 @@ def toc_and_tables(trace, schemas, optional=()):
     not there). The caller owns the table files; nothing is left behind if a call fails."""
     with concurrent.futures.ThreadPoolExecutor(max_workers=EXPORT_WORKERS) as pool:
         toc_future = pool.submit(toc_of, trace)
-        futures = {schema: pool.submit(export, trace, table_xpath(schema)) for schema in schemas}
+        futures = {schema: pool.submit(export, trace, table_xpath(schema), False, EXPORT_TIMEOUTS.get(schema, 600))
+                   for schema in schemas}
         concurrent.futures.wait([*futures.values(), toc_future])
 
     def discard():
@@ -297,16 +303,70 @@ def attribute_hitches(frames, starts, totals, compiler, thermal, memory, growth_
             "worst": sorted(found, key=lambda h: -h["interval_ms"])[:20]}
 
 
-def summarize(trace, label=None, out=None, memory=True):
+def counter_stats(info_path, value_path):
+    """Returns the GPU counters of a recording as {"samples", "counters": [{name, type, unit, mean, p95, max}], "top_limiter"},
+    read from the exported gpu-counter-info and gpu-counter-value files, which it deletes. The value table is read line
+    by line: it holds millions of rows whose repeated cells are `ref`s to an earlier `id`, so the tree is never built.
+    `top_limiter` is the counter named ... Limiter with the highest mean: the unit the GPU waited on most."""
+    info = {}
+    for row in rows(info_path):
+        cid = number(row.get("counter-id"))
+        if cid is not None:
+            info[cid] = (text(row.get("name")), text(row.get("type")))
+    ints, decimals, per, total = {}, array.array("f"), collections.defaultdict(lambda: array.array("f")), 0
+    try:
+        with open(value_path, encoding="utf-8") as f:
+            for line in f:
+                start = line.find("<row>")  # the first row shares a line with the schema
+                if start < 0:
+                    continue
+                cells = COUNTER_CELL.findall(line, start)
+                if len(cells) < 2:
+                    continue
+                for tag, kind, number_, raw in cells:
+                    if kind == "id":
+                        if tag == "uint32":
+                            if len(raw) < 4:  # a counter id is small; the sample and ring buffer indexes are distinct per row
+                                ints[number_] = int(raw)
+                        else:
+                            index = int(number_)
+                            if index >= len(decimals):
+                                decimals.extend(array.array("f", [0.0]) * (index + 1 - len(decimals)))
+                            decimals[index] = float(raw)
+                counter, value = cells[0], cells[1]
+                cid = ints.get(counter[2]) if counter[1] == "ref" else int(counter[3])
+                number_ = int(value[2])
+                per[cid].append(float(value[3]) if value[1] == "id" else decimals[number_])
+                total += 1
+    finally:
+        os.unlink(value_path)
+    counters = []
+    for cid, values in sorted(per.items()):
+        name, kind = info.get(cid, (f"counter {cid}", ""))
+        ordered = sorted(values)
+        unit = "%" if kind == "Percentage" else "GB/s" if "Bandwidth" in name else ""
+        counters.append({"name": name, "type": kind, "unit": unit, "mean": round(sum(ordered) / len(ordered), 3),
+                         "p95": round(ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))], 3), "max": round(ordered[-1], 3)})
+    limiters = [c for c in counters if c["name"].endswith("Limiter")]
+    top = max(limiters, key=lambda c: c["mean"]) if limiters else None
+    return {"samples": total, "counters": counters, "top_limiter": {"name": top["name"], "mean": top["mean"]} if top else None}
+
+
+def summarize(trace, label=None, out=None, memory=True, counters=None):
     """Summarizes `trace`, writes the JSON and CSV files into `out` (default: beside it) and returns the summary.
-    With `memory` false the Metal memory table, the slowest to read, is skipped: no metal_memory_mib and no CSV."""
+    With `memory` false the Metal memory table, the slowest to read, is skipped: no metal_memory_mib and no CSV.
+    With `counters` true, or None when PERF_INSTRUMENTS names Metal GPU Counters, the counter tables are read too
+    (`gpu_counters`): minutes more on a long recording."""
+    if counters is None:
+        counters = "Metal GPU Counters" in os.environ.get("PERF_INSTRUMENTS", "").split(";")
     trace = pathlib.Path(trace)
     label = label or trace.stem
     out = pathlib.Path(out) if out else trace.parent
     out.mkdir(parents=True, exist_ok=True)
 
     schemas = [t for t in TABLES if memory or t != MEMORY]
-    toc, tables = toc_and_tables(trace, tuple(schemas) + OPTIONAL, optional=OPTIONAL)
+    extra = COUNTER_TABLES if counters else ()
+    toc, tables = toc_and_tables(trace, tuple(schemas) + OPTIONAL + extra, optional=OPTIONAL + extra)
     try:
         launched = next((p for p in toc.iter("process") if p.attrib.get("type") in ("launched", "attached")), None)
         if launched is None:
@@ -429,6 +489,10 @@ def summarize(trace, label=None, out=None, memory=True):
                     cpu.append((start / 1e6, float(pct)))
             if cpu:
                 summary["cpu"] = stats([pct for _, pct in cpu])
+        if all(schema in tables for schema in COUNTER_TABLES):
+            found = counter_stats(tables[COUNTER_TABLES[0]], tables[COUNTER_TABLES[1]])
+            if found["samples"]:
+                summary["gpu_counters"] = found
         pacing = frame_pacing(gaps, totals)
         if "thermal_state_share" in summary and "throttling_analysis" in pacing:
             pacing["throttling_analysis"]["thermal_throttling_detected"] = bool(thermal)
@@ -455,9 +519,10 @@ def main():
     parser.add_argument("--label", help="name of the output files; defaults to the trace's name")
     parser.add_argument("--out", type=pathlib.Path, help="output directory; defaults to the trace's directory")
     parser.add_argument("--no-memory", action="store_true", help="skip the Metal memory table, the slowest to read")
+    parser.add_argument("--counters", action="store_true", help="read the GPU counter tables of a trace recorded with PERF_INSTRUMENTS='Metal GPU Counters'")
     args = parser.parse_args()
     try:
-        summary = summarize(args.trace, args.label, args.out, memory=not args.no_memory)
+        summary = summarize(args.trace, args.label, args.out, memory=not args.no_memory, counters=True if args.counters else None)
     except (ValueError, FileNotFoundError, RuntimeError) as error:
         sys.exit(str(error))
     print(json.dumps({k: summary.get(k) for k in ("gpu", "metal_memory_mib", "process_rss_mib")}, indent=2))
