@@ -658,7 +658,7 @@ def test_server(tmp_path):
     assert [x["uriTemplate"] for x in replies[17]["result"]["resourceTemplates"]] == ["metal-trace://runs/{run}"]
     assert json.loads(replies[26]["result"]["contents"][0]["text"]) == {"gpu": {"frames": 100}}
     assert replies[27]["error"]["code"] == replies[28]["error"]["code"] == -32002, "a bad run name is not found"
-    assert len(replies[2]["result"]["tools"]) == 19
+    assert len(replies[2]["result"]["tools"]) == 20
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -919,7 +919,7 @@ def test_http(tmp_path):
         assert post(ping, path="/other")[0] == 404
         assert post({"jsonrpc": "2.0", "method": "notifications/initialized"}) == (202, None)
         code, tools = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        assert code == 200 and len(tools["result"]["tools"]) == 19
+        assert code == 200 and len(tools["result"]["tools"]) == 20
         code, runs = post({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                            "params": {"name": "perf_runs", "arguments": {}, "_meta": {"progressToken": "x"}}})
         assert code == 200 and runs["result"]["structuredContent"]["total"] == 0, runs
@@ -1123,8 +1123,56 @@ def test_moltenvk(tmp_path):
     assert "vk" in json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["drawstress"]["apis"]
 
 
+def test_panel(tmp_path):
+    """perf_panel writes one self-contained page: no path, no raw </script> from a label, every hitch kept when the
+    frames are cut, and an error for a run without frames, a bad preset or the wrong number of runs."""
+    import metal_trace_mcp as mcp
+
+    evil = "</script><script>x</script>"
+    def summary(fps):
+        return {"gpu": {"frames": 400, "fps_estimate": fps, "frame_gpu_ms": {"mean": 4.0, "p50": 4.0, "p95": 6.0, "max": 9.0},
+                        "frame_interval_ms": {"p95": 20.0}},
+                "hitches": {"count": 1, "threshold_ms": 30.0, "causes": {evil: 1},
+                            "worst": [{"frame": 202, "interval_ms": 60.0, "cause": evil}]},
+                "process": {"arguments": f"{tmp_path}/game.exe"}, "layer": {"none": "native"},
+                "encoders": {"per_frame": {"p50": 7}, "command_buffers_per_frame": {"p50": 5}, "short_share": {"25": 0.5},
+                             "by_label": [{"label": evil, "per_frame": 1.0, "total_ms": 5.0}]},
+                "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 4}}, "metal_memory_mib": {"peak": 90.0}}
+    for run, fps in (("a", 60.0), ("b", 50.0)):
+        (tmp_path / f"{run}.json").write_text(json.dumps(summary(fps)))
+    starts = [i * 16.0 + (44.0 if i >= 201 else 0.0) for i in range(400)]
+    frames = "frame,start_ms,gpu_ms_total\n" + "".join(f"{i + 1},{t},4.0\n" for i, t in enumerate(starts))
+    (tmp_path / "a.frames.csv").write_text(frames)
+    (tmp_path / "b.frames.csv").write_text(frames)
+    (tmp_path / "a.metal_memory.csv").write_text("time_ms,metal_allocated_bytes\n0,1048576\n100,2097152\n")
+    saved, saved_points = mcp.OUT, mcp.PANEL_POINTS
+    mcp.OUT, mcp.PANEL_POINTS = tmp_path, 50
+    try:
+        got = mcp.tool_perf_panel("p", ["a", "b"], "compare")
+        html = (tmp_path / got["file"]).read_text()
+        assert got["file"] == "p.panel.html" and got["runs"] == ["a", "b"] and got["bytes"] == len(html.encode()), got
+        assert str(tmp_path) not in html and evil not in html, "no path and no raw </script> in the page"
+        assert html.count("<script") == 1 and "default-src 'none'" in html
+        payload = json.loads(html.split("const DATA = ", 1)[1].split(";\nconst COLORS", 1)[0].replace("\\u003c", "<"))
+        run = payload["runs"][0]
+        assert run["marks"] == [[3260.0, 4.0, 60.0, evil]] and [3260.0, 4.0] in run["frames"], run["marks"]
+        assert len(run["frames"]) < 60 and run["memory"] == [[0.0, 1.0], [100.0, 2.0]], len(run["frames"])
+        assert payload["compare"]["fps"]["change"] == -10.0 and "encoders" not in run
+        assert sorted(r["run"] for r in mcp.tool_perf_runs()["rows"]) == ["a", "b"], "the panel is not a run"
+        assert mcp.tool_perf_panel("one", ["a"])["runs"] == ["a"]
+        (tmp_path / "c.json").write_text(json.dumps(summary(40.0)))
+        for args in (("p", ["c"]), ("p", ["a"], "nope"), ("p", ["a"], "compare"), ("p", []), ("../p", ["a"])):
+            try:
+                mcp.tool_perf_panel(*args)
+                raise AssertionError(f"{args} must fail")
+            except mcp.ToolError:
+                pass
+    finally:
+        mcp.OUT, mcp.PANEL_POINTS = saved, saved_points
+
+
 def main():
-    tests = [test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

@@ -52,7 +52,7 @@ INSTRUCTIONS = (
     "per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a "
     "recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat "
     "a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short "
-    "encoders, as translation layers do; perf_compare says how much two runs differ. trace_tables and trace_query "
+    "encoders, as translation layers do; perf_compare says how much two runs differ; perf_panel writes an HTML page to look at one or two runs in a browser.trace_tables and trace_query "
     "need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, "
     "or every process named like a native program. To compare native Metal with a translation layer without a game "
     "of one's own: workload_list, workload_fetch, then perf_record with workload and api, or the compare-layer prompt."
@@ -733,6 +733,65 @@ def tool_perf_export_trace(run):
     return {"file": target.name, "frames": len(events)}
 
 
+PANEL_PRESETS = ("fps", "compare")
+PANEL_POINTS = 5000
+
+
+def panel_run(run):
+    """Returns what the panel shows for one recording: numbers and labels from its summary, its GPU frames and Metal
+    memory cut to PANEL_POINTS points that keep every hitch, and no path."""
+    s = json.loads(run_path(run).read_text(encoding="utf-8"))
+    source = OUT / f"{run}.frames.csv"
+    if not source.exists():
+        raise ToolError(f"{run} has no per-frame file; record it again")
+    with open(source, newline="", encoding="utf-8") as f:
+        rows = [(int(r["frame"]), float(r["start_ms"]), float(r["gpu_ms_total"])) for r in csv.DictReader(f)]
+    hitches = s.get("hitches") or {}
+    limit, causes = hitches.get("threshold_ms"), {h["frame"]: h["cause"] for h in hitches.get("worst", [])}
+    marks = [[b[1], b[2], round(b[1] - a[1], 3), causes.get(b[0], "")]
+             for a, b in zip(rows, rows[1:]) if limit and b[1] - a[1] > limit]
+    marked = {m[0] for m in marks}
+    stride = max(1, len(rows) // PANEL_POINTS)
+    frames = [[t, ms] for i, (_, t, ms) in enumerate(rows) if i % stride == 0 or t in marked]
+    memory = []
+    source = OUT / f"{run}.metal_memory.csv"
+    if source.exists():
+        with open(source, newline="", encoding="utf-8") as f:
+            samples = [(float(r["time_ms"]), int(r["metal_allocated_bytes"]) / 2**20) for r in csv.DictReader(f)]
+        memory = [[t, round(mib, 2)] for t, mib in samples[::max(1, len(samples) // PANEL_POINTS)]]
+    return {"name": run, "layer": layer_label(s.get("layer")), "gpu": s.get("gpu"), "hitches": hitches,
+            "thermal_state_share": s.get("thermal_state_share"), "metal_memory_mib": s.get("metal_memory_mib"),
+            "process_rss_mib": s.get("process_rss_mib"), "frames": frames, "marks": marks, "memory": memory}
+
+
+def tool_perf_panel(name, runs, preset="fps"):
+    """Writes one HTML file, `<name>.panel.html` in the runs directory, that shows one or two recordings in a
+    browser without a server: GPU time per frame with the hitches marked, the numbers (FPS and its lows, frame
+    time, jitter, stutter, memory, thermal state), Metal memory over time and, for two runs, A against B. The file
+    holds the data itself, no path, and loads nothing from the network; the viewer can hide and reorder the
+    widgets and export the layout as JSON. preset `fps` is the timeline, numbers and memory; `compare` (two runs)
+    puts A against B first. Returns the file name, the runs, the frames shown and the file's bytes."""
+    if not name_ok(name):
+        raise ToolError("a panel name holds only letters, digits, '.', '_' and '-'")
+    if preset not in PANEL_PRESETS:
+        raise ToolError(f"preset is one of {', '.join(PANEL_PRESETS)}")
+    if not 1 <= len(runs) <= 2 or (preset == "compare" and len(runs) != 2):
+        raise ToolError("runs holds one or two run names from perf_runs; the compare preset needs two")
+    data = [panel_run(r) for r in runs]
+    compare = None
+    if len(runs) == 2:
+        try:
+            compare = compare_summaries(*(json.loads(run_path(r).read_text(encoding="utf-8")) for r in runs), *runs)["metrics"]
+        except (KeyError, TypeError):  # a summary from before the numbers the comparison reads
+            pass
+    payload = json.dumps({"preset": preset, "runs": data, "compare": compare}, separators=(",", ":")).replace("<", "\\u003c")
+    page_html = (TOOLS_DIR / "data" / "panel.html").read_text(encoding="utf-8").replace("/*PAYLOAD*/null", payload)
+    target = OUT / f"{name}.panel.html"
+    target.write_text(page_html, encoding="utf-8")
+    return {"file": target.name, "runs": list(runs), "frames": sum(len(r["frames"]) for r in data),
+            "bytes": target.stat().st_size}
+
+
 def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     """Says whether a saved recording splits its GPU work into too many short encoders, the pattern of translation
     layers such as DXMT, Mullion or MoltenVK, with the numbers behind it: encoders and command buffers per frame, the
@@ -1087,6 +1146,12 @@ TOOLS = {
     "perf_export_trace": (tool_perf_export_trace, schema(
         {"run": {**S, "description": "a run name from perf_runs"}}, ["run"]),
         hints("Export frames to Perfetto", destructive=False, idempotent=True)),
+    "perf_panel": (tool_perf_panel, schema(
+        {"name": {**S, "description": "name for the panel file: letters, digits, '.', '_', '-'"},
+         "runs": {"type": "array", "items": S, "description": "one or two run names from perf_runs; with two, the first "
+                                                             "is A, the reference"},
+         "preset": {**S, "description": "fps (default) or compare (needs two runs)"}}, ["name", "runs"]),
+        hints("Write an HTML panel", destructive=False, idempotent=True)),
     "perf_diagnose": (tool_perf_diagnose, schema(
         {"run": {**S, "description": "a run name from perf_runs"},
          "min_encoders": {**I, "description": "encoders per frame (median) from which the verdict can be yes, default 4"},
