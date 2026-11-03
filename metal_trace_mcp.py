@@ -519,6 +519,8 @@ def markdown_report(result):
         lines += ["", "| label | ms/frame a | ms/frame b | change |", "|---|---|---|---|"]
         lines += [f"| {l['label']} | {cell(l['ms_per_frame_a'])} | {cell(l['ms_per_frame_b'])} | "
                   f"{l['ms_per_frame_change']} |" for l in labels]
+    if result.get("measure"):
+        lines += ["", f"Not comparable between a Windows and a Metal run: {', '.join(result['measure']['not_comparable'])}."]
     if result["too_short"]:
         lines += ["", f"Too short to compare (under 100 frames): {', '.join(result['too_short'])}."]
     return "\n".join(lines)
@@ -529,11 +531,21 @@ def tool_perf_compare(a, b, short_us=25, markdown=False):
     headline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and
     command buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's
     count and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:
-    with different layers it compares layers, not one change. Recordings with under 100 frames are flagged: too
-    short to compare. With markdown true the result also has `markdown`: the same numbers as tables for a PR comment."""
+    with different layers it compares layers, not one change. A Windows run against a Metal run has `measure`: the
+    GPU ms and Metal memory differ in kind and the encoders exist only in Metal, so use FPS, its lows, stutter and
+    jitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has `markdown`: the same numbers as tables for a PR comment."""
     sa, sb = (json.loads(run_path(r).read_text(encoding="utf-8")) for r in (a, b))
     result = compare_summaries(sa, sb, a, b, short_us)
     return {**result, "markdown": markdown_report(result)} if markdown else result
+
+
+NOT_COMPARABLE = ("gpu_ms_mean", "gpu_ms_p95", "metal_mib_peak")  # numbers a Windows run and a Metal run measure differently
+
+
+def measurement(s):
+    """Returns "windows" for a summary recorded on Windows (GPU time from PresentMon) and "metal" for one read from an
+    Instruments trace (GPU time summed over the encoders)."""
+    return "windows" if (s.get("device") or {}).get("platform") == "Windows" else "metal"
 
 
 def compare_summaries(sa, sb, a, b, short_us=25):
@@ -558,6 +570,14 @@ def compare_summaries(sa, sb, a, b, short_us=25):
             out[name] = change(None, None)
     short = [r for r, s in ((a, sa), (b, sb)) if (s.get("gpu") or {}).get("frames", 0) < 100]
     result = {"a": a, "b": b, "layer": layer_change(sa, sb, a, b), "metrics": out, "too_short": short}
+    ma, mb = measurement(sa), measurement(sb)
+    if ma != mb:
+        result["measure"] = {"a": ma, "b": mb, "not_comparable": list(NOT_COMPARABLE),
+                             "note": "a Windows run's GPU ms come from PresentMon and a Metal run's from Instruments, and only "
+                                     "Metal records memory and encoders: compare fps, fps_1pct_low, fps_01pct_low, "
+                                     "stutter_rate_pct and frame_jitter_ms"}
+        result["encoders"] = {"not_comparable": "encoder numbers exist only in Metal recordings"}
+        return result
     missing = [r for r, s in ((a, sa), (b, sb)) if not s.get("encoders")]
     if missing:
         result["encoders"] = {"missing_in": missing, "hint": "summaries written before version 0.4.0 have no encoder "
@@ -759,7 +779,7 @@ def panel_run(run):
         with open(source, newline="", encoding="utf-8") as f:
             samples = [(float(r["time_ms"]), int(r["metal_allocated_bytes"]) / 2**20) for r in csv.DictReader(f)]
         memory = [[t, round(mib, 2)] for t, mib in samples[::max(1, len(samples) // PANEL_POINTS)]]
-    return {"name": run, "layer": layer_label(s.get("layer")), "gpu": s.get("gpu"), "hitches": hitches,
+    return {"name": run, "layer": layer_label(s.get("layer")), "source": measurement(s), "gpu": s.get("gpu"), "hitches": hitches,
             "thermal_state_share": s.get("thermal_state_share"), "metal_memory_mib": s.get("metal_memory_mib"),
             "process_rss_mib": s.get("process_rss_mib"), "frames": frames, "marks": marks, "memory": memory}
 
@@ -773,13 +793,14 @@ def panel_data(runs, preset=None):
     if not 1 <= len(runs) <= 2 or (preset == "compare" and len(runs) != 2):
         raise ToolError("runs holds one or two run names from perf_runs; the compare preset needs two")
     data = [panel_run(r) for r in runs]
-    compare = None
+    compare, not_comparable = None, []
     if len(runs) == 2:
         try:
-            compare = compare_summaries(*(json.loads(run_path(r).read_text(encoding="utf-8")) for r in runs), *runs)["metrics"]
+            result = compare_summaries(*(json.loads(run_path(r).read_text(encoding="utf-8")) for r in runs), *runs)
+            compare, not_comparable = result["metrics"], (result.get("measure") or {}).get("not_comparable", [])
         except (KeyError, TypeError):  # a summary from before the numbers the comparison reads
             pass
-    return {"preset": preset, "runs": data, "compare": compare}
+    return {"preset": preset, "runs": data, "compare": compare, "not_comparable": not_comparable}
 
 
 def tool_perf_panel(name, runs, preset="fps"):
