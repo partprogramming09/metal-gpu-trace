@@ -923,6 +923,29 @@ def test_http(tmp_path):
         code, runs = post({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                            "params": {"name": "perf_runs", "arguments": {}, "_meta": {"progressToken": "x"}}})
         assert code == 200 and runs["result"]["structuredContent"]["total"] == 0, runs
+
+        def get(path, headers=None):
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+            conn.request("GET", path, headers=headers or {})
+            r = conn.getresponse()
+            body = r.read().decode()
+            conn.close()
+            return r.status, r.getheader("Content-Type"), body
+        auth = {"Authorization": f"Bearer {token}"}
+        status, kind, page_html = get("/panel")
+        assert status == 200 and kind.startswith("text/html") and "connect-src 'self'" in page_html, (status, kind)
+        assert token not in page_html and get("/panel", {"Host": "evil.example"})[0] == 403
+        assert get("/panel/data")[0] == 401 and get("/panel/data", {**auth, "Origin": "http://evil.example"})[0] == 403
+        status, _, body = get("/panel/data", auth)
+        assert status == 400 and "no recordings" in body, (status, body)
+        (out / "a.json").write_text(json.dumps({"gpu": {"frames": 2, "fps_estimate": 60.0}, "hitches": {}}))
+        (out / "a.frames.csv").write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n2,16.0,4.0\n")
+        status, kind, body = get("/panel/data", auth)
+        assert status == 200 and json.loads(body)["runs"][0]["name"] == "a" and json.loads(body)["preset"] == "fps", body
+        assert get("/panel/data?runs=a,a&preset=compare", auth)[0] == 200
+        assert get("/panel/data?runs=../x", auth)[0] == 400 and get("/panel/data?preset=nope", auth)[0] == 400
+        (out / "a.json").unlink()
+        (out / "a.frames.csv").unlink()
         result = []
         call = {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {
             "name": "perf_record", "arguments": {"label": "hang", "program": str(program), "seconds": 1, "wine": "native"}}}
@@ -1153,7 +1176,7 @@ def test_panel(tmp_path):
         assert got["file"] == "p.panel.html" and got["runs"] == ["a", "b"] and got["bytes"] == len(html.encode()), got
         assert str(tmp_path) not in html and evil not in html, "no path and no raw </script> in the page"
         assert html.count("<script") == 1 and "default-src 'none'" in html
-        payload = json.loads(html.split("const DATA = ", 1)[1].split(";\nconst COLORS", 1)[0].replace("\\u003c", "<"))
+        payload = json.loads(html.split("let DATA = ", 1)[1].split(";\nconst COLORS", 1)[0].replace("\\u003c", "<"))
         run = payload["runs"][0]
         assert run["marks"] == [[3260.0, 4.0, 60.0, evil]] and [3260.0, 4.0] in run["frames"], run["marks"]
         assert len(run["frames"]) < 60 and run["memory"] == [[0.0, 1.0], [100.0, 2.0]], len(run["frames"])

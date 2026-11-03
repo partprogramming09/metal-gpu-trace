@@ -764,15 +764,10 @@ def panel_run(run):
             "process_rss_mib": s.get("process_rss_mib"), "frames": frames, "marks": marks, "memory": memory}
 
 
-def tool_perf_panel(name, runs, preset="fps"):
-    """Writes one HTML file, `<name>.panel.html` in the runs directory, that shows one or two recordings in a
-    browser without a server: GPU time per frame with the hitches marked, the numbers (FPS and its lows, frame
-    time, jitter, stutter, memory, thermal state), Metal memory over time and, for two runs, A against B. The file
-    holds the data itself, no path, and loads nothing from the network; the viewer can hide and reorder the
-    widgets and export the layout as JSON. preset `fps` is the timeline, numbers and memory; `compare` (two runs)
-    puts A against B first. Returns the file name, the runs, the frames shown and the file's bytes."""
-    if not name_ok(name):
-        raise ToolError("a panel name holds only letters, digits, '.', '_' and '-'")
+def panel_data(runs, preset=None):
+    """Returns the payload a panel shows for one or two runs: the preset, each run's panel_run and, for two runs, the
+    headline comparison. `preset` defaults to compare for two runs and fps for one."""
+    preset = preset or ("compare" if len(runs) == 2 else "fps")
     if preset not in PANEL_PRESETS:
         raise ToolError(f"preset is one of {', '.join(PANEL_PRESETS)}")
     if not 1 <= len(runs) <= 2 or (preset == "compare" and len(runs) != 2):
@@ -784,8 +779,22 @@ def tool_perf_panel(name, runs, preset="fps"):
             compare = compare_summaries(*(json.loads(run_path(r).read_text(encoding="utf-8")) for r in runs), *runs)["metrics"]
         except (KeyError, TypeError):  # a summary from before the numbers the comparison reads
             pass
-    payload = json.dumps({"preset": preset, "runs": data, "compare": compare}, separators=(",", ":")).replace("<", "\\u003c")
-    page_html = (TOOLS_DIR / "data" / "panel.html").read_text(encoding="utf-8").replace("/*PAYLOAD*/null", payload)
+    return {"preset": preset, "runs": data, "compare": compare}
+
+
+def tool_perf_panel(name, runs, preset="fps"):
+    """Writes one HTML file, `<name>.panel.html` in the runs directory, that shows one or two recordings in a
+    browser without a server: GPU time per frame with the hitches marked, the numbers (FPS and its lows, frame
+    time, jitter, stutter, memory, thermal state), Metal memory over time and, for two runs, A against B. The file
+    holds the data itself, no path, and loads nothing from the network; the viewer can hide and reorder the
+    widgets and export the layout as JSON. preset `fps` is the timeline, numbers and memory; `compare` (two runs)
+    puts A against B first. Returns the file name, the runs, the frames shown and the file's bytes."""
+    if not name_ok(name):
+        raise ToolError("a panel name holds only letters, digits, '.', '_' and '-'")
+    payload = panel_data(runs, preset)
+    data = payload["runs"]
+    text = json.dumps(payload, separators=(",", ":")).replace("<", "\\u003c")
+    page_html = (TOOLS_DIR / "data" / "panel.html").read_text(encoding="utf-8").replace("/*PAYLOAD*/null", text)
     target = OUT / f"{name}.panel.html"
     target.write_text(page_html, encoding="utf-8")
     return {"file": target.name, "runs": list(runs), "frames": sum(len(r["frames"]) for r in data),
@@ -1487,29 +1496,38 @@ def local_host(value):
 def http_handler(token):
     """Returns the request handler class of the Streamable HTTP endpoint POST /mcp: one JSON-RPC message in, one JSON
     reply out (202 for a notification). A request needs the bearer `token`, a loopback Host and no foreign Origin,
-    which also stops a web page from reaching the server through DNS rebinding."""
+    which also stops a web page from reaching the server through DNS rebinding. GET /panel serves the panel page
+    (no data) and GET /panel/data?runs=a,b&preset=fps its data, with the same checks; without runs it is the newest."""
     import hmac
     from http.server import BaseHTTPRequestHandler
 
     class Handler(BaseHTTPRequestHandler):
         timeout = HTTP_TIMEOUT  # a client that stalls mid-request is dropped, not kept as a thread forever
 
-        def reply(self, code, body=None):
-            data = b"" if body is None else json.dumps(body).encode()
+        def reply(self, code, body=None, kind="application/json"):
+            data = b"" if body is None else body.encode() if isinstance(body, str) else json.dumps(body).encode()
             self.send_response(code)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", kind)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
 
+        def foreign(self):
+            """Returns whether the request names a Host or an Origin that is not this machine."""
+            return not local_host(self.headers.get("Host")) or bool(self.headers.get("Origin") and
+                                                                   not local_host(self.headers.get("Origin")))
+
+        def unauthorized(self):
+            """Returns whether the request lacks the bearer token."""
+            given = (self.headers.get("Authorization") or "").removeprefix("Bearer ")
+            return not hmac.compare_digest(given.encode(), token.encode())
+
         def do_POST(self):
             if self.path != "/mcp":
                 return self.reply(404)
-            if not local_host(self.headers.get("Host")) or (self.headers.get("Origin") and
-                                                           not local_host(self.headers.get("Origin"))):
+            if self.foreign():
                 return self.reply(403)
-            given = (self.headers.get("Authorization") or "").removeprefix("Bearer ")
-            if not hmac.compare_digest(given.encode(), token.encode()):
+            if self.unauthorized():
                 return self.reply(401)
             length = int(self.headers.get("Content-Length") or 0) if (self.headers.get("Content-Length") or "0").isdigit() else -1
             if not 0 <= length <= MAX_BODY:
@@ -1539,7 +1557,30 @@ def http_handler(token):
             self.reply(202 if reply is None else 200, reply)
 
         def do_GET(self):
-            self.reply(405)
+            from urllib.parse import parse_qs, urlsplit
+            url = urlsplit(self.path)
+            if url.path not in ("/panel", "/panel/data"):
+                return self.reply(405)
+            if self.foreign():
+                return self.reply(403)
+            if url.path == "/panel":
+                # the page holds no data and reads the token from the URL fragment, which never reaches the server
+                page_html = (TOOLS_DIR / "data" / "panel.html").read_text(encoding="utf-8")
+                return self.reply(200, page_html.replace("default-src 'none'", "default-src 'none'; connect-src 'self'"),
+                                  "text/html; charset=utf-8")
+            if self.unauthorized():
+                return self.reply(401)
+            query = parse_qs(url.query)
+            runs = [r for r in (query.get("runs") or [""])[0].split(",") if r]
+            try:
+                if not runs:
+                    runs = [tool_perf_runs(0, 1)["rows"][0]["run"]]
+                self.reply(200, panel_data(runs, (query.get("preset") or [None])[0]))
+            except (ToolError, IndexError) as error:
+                self.reply(400, {"error": str(error) if isinstance(error, ToolError) else "no recordings yet"})
+            except Exception as error:  # a damaged summary must not stop the server
+                log(f"internal error {type(error).__name__}")
+                self.reply(500, {"error": "internal error"})
 
         def log_message(self, *args):
             pass
