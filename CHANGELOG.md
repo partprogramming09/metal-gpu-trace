@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.12.0 — 2026-11-02
 
 - `perf_compare` and the panel say when a Windows run is compared with a Metal run: the result has `measure` (which side
   is which and `not_comparable`: `gpu_ms_mean`, `gpu_ms_p95` and `metal_mib_peak`, since PresentMon and Instruments
