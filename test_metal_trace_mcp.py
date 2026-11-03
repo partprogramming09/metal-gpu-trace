@@ -1182,6 +1182,7 @@ def test_panel(tmp_path):
         assert got["file"] == "p.panel.html" and got["runs"] == ["a", "b"] and got["bytes"] == len(html.encode()), got
         assert str(tmp_path) not in html and evil not in html, "no path and no raw </script> in the page"
         assert html.count("<script") == 1 and "default-src 'none'" in html
+        assert html.count("wBottleneck:") == 2 and "direction(\"fps\", DATA.compare.fps)" in html, "the FPS-worse-GPU-better warning"
         assert html.count("shader_compile:") == 2 and all(f'{tab}(card)' in html for tab in ("summary", "frames", "memory", "ab", "data")), \
             "both languages explain the causes and every tab exists"
         payload = json.loads(html.split("let DATA = ", 1)[1].split(";\nconst COLORS", 1)[0].replace("\\u003c", "<"))
