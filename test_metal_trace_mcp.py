@@ -1334,8 +1334,15 @@ def test_skip_start_up(tmp_path):
         s = mcp.steady_summary("s1", 1.5)  # the first frame is at 10 ms: frames from 1510 ms on
         assert s["gpu"]["frames"] < 400 and s["hitches"]["count"] == 1, s["hitches"]
         assert [h["frame"] for h in s["hitches"]["worst"]] == [301] and s["hitches"]["causes"] == {"shader_compile": 1}
-        assert s["cpu"] is None and s["metal_memory_mib"]["peak"] == 60.0 and "per_channel_ms" not in s["gpu"]
+        assert "cpu" not in s and s["metal_memory_mib"]["peak"] == 60.0 and "per_channel_ms" not in s["gpu"]
         assert s["gpu"]["fps_estimate"] == 100.0 and s["steady"]["skip_s"] == 1.5 and "thermal_state_share" in s["steady"]["whole_run"]
+        win = dict(summary, device={"platform": "Windows"})
+        win.pop("metal_memory_mib"), win.pop("cpu")
+        (tmp_path / "w1.json").write_text(json.dumps(win))
+        (tmp_path / "w1.frames.csv").write_text(frames)  # a Windows run has no Metal memory: skip_s must still compare
+        mixed = mcp.tool_perf_compare("s1", "w1", skip_s=1.5)
+        assert mixed["measure"]["b"] == "windows" and mixed["metrics"]["metal_mib_peak"]["b"] is None, mixed["metrics"]["metal_mib_peak"]
+        assert mcp.panel_data(["s1", "w1"], skip_s=1.5)["not_comparable"], "the panel too"
         both = mcp.tool_perf_compare("s1", "s2", skip_s=1.5)
         assert both["skipped_s"] == 1.5 and both["metrics"]["fps"]["a"] == 100.0, both["metrics"]["fps"]
         assert "skipped_s" not in mcp.tool_perf_compare("s1", "s2")
