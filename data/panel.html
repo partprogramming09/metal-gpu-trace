@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<title>Metal trace panel</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface: #fcfcfb; --card: #ffffff; --line: #e3e2dd; --grid: #ecebe6;
+  --ink: #0b0b0b; --ink2: #52514e; --ink3: #7a7975;
+  --s1: #2a78d6; --s2: #eb6834;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface: #1a1a19; --card: #222221; --line: #383835; --grid: #2d2d2b;
+    --ink: #f0efec; --ink2: #c3c2b7; --ink3: #94938b;
+    --s1: #3987e5; --s2: #d95926;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19; --card: #222221; --line: #383835; --grid: #2d2d2b;
+  --ink: #f0efec; --ink2: #c3c2b7; --ink3: #94938b;
+  --s1: #3987e5; --s2: #d95926;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+main { max-width: 960px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 18px; margin: 0 0 4px; }
+h2 { font-size: 15px; margin: 0 0 8px; }
+.sub { color: var(--ink2); margin: 0 0 12px; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+button { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button[aria-pressed="false"] { color: var(--ink3); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; position: relative; }
+.head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--ink2); margin-bottom: 4px; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--grid); }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--ink2); font-weight: 600; }
+svg { width: 100%; height: auto; display: block; }
+svg text { fill: var(--ink3); font-size: 11px; }
+.axis { stroke: var(--grid); }
+.tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 12px; white-space: nowrap; display: none; }
+.hb { display: grid; grid-template-columns: 90px 1fr 70px; gap: 8px; align-items: center; margin: 2px 0; }
+.hb i { display: block; height: 8px; border-radius: 0 4px 4px 0; }
+.note { color: var(--ink2); margin: 4px 0 0; }
+textarea { width: 100%; height: 90px; font: 12px ui-monospace, monospace; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; }
+@media (max-width: 600px) { .hb { grid-template-columns: 70px 1fr 56px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Metal trace panel</h1>
+  <p class="sub" id="runs"></p>
+  <div class="bar" id="controls"></div>
+  <div id="layout" class="card" hidden>
+    <h2>Layout</h2>
+    <textarea id="layout-json" aria-label="Layout JSON"></textarea>
+    <div class="bar"><button id="layout-apply">Apply</button><button id="layout-reset">Reset to preset</button></div>
+  </div>
+  <div id="widgets"></div>
+</main>
+<script>
+"use strict";
+const DATA = /*PAYLOAD*/null;
+const COLORS = ["var(--s1)", "var(--s2)"];
+const PRESETS = {
+  fps: ["timeline", "stats", "memory"],
+  compare: ["compare", "timeline", "stats", "memory"],
+};
+const TITLES = {timeline: "GPU time per frame", stats: "Numbers", memory: "Metal memory", compare: "A and B"};
+const NS = "http://www.w3.org/2000/svg";
+
+/** Builds an element with attributes and children; every string goes in as text. */
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v);
+  for (const kid of kids) el.append(kid);
+  return el;
+}
+
+/** Builds an SVG element with attributes. */
+function s(tag, attrs, text) {
+  const el = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) el.setAttribute(k, v);
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+
+/** Formats a number for a table cell; a missing value shows as a dash. */
+function fmt(v, digits) {
+  return v === null || v === undefined ? "–" : (typeof v === "number" ? +v.toFixed(digits === undefined ? 2 : digits) : String(v));
+}
+
+/** Returns the legend row for the runs, always present with two or more runs. */
+function legend() {
+  const box = h("div", {class: "legend"});
+  DATA.runs.forEach((r, i) => {
+    const sw = h("span", {class: "sw"});
+    sw.style.background = COLORS[i];
+    box.append(h("span", {}, sw, r.name + (r.layer ? " (" + r.layer + ")" : "")));
+  });
+  return box;
+}
+
+/** Returns a line chart card body for series of [x, y] points, with optional marks and a hover readout. */
+function lineChart(series, unit, yMax) {
+  const W = 800, H = 220, L = 44, R = 10, T = 10, B = 24;
+  const xs = series.flatMap(p => p.points.map(q => q[0]));
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const ys = series.flatMap(p => p.points.map(q => q[1]));
+  const top = yMax || Math.max(...ys) || 1;
+  const X = x => L + (xMax === xMin ? 0 : (x - xMin) / (xMax - xMin)) * (W - L - R);
+  const Y = y => H - B - (Math.min(y, top) / top) * (H - T - B);
+  const svg = s("svg", {viewBox: `0 0 ${W} ${H}`, role: "img"});
+  for (let i = 0; i <= 4; i++) {
+    const y = T + i * (H - T - B) / 4;
+    svg.append(s("line", {x1: L, x2: W - R, y1: y, y2: y, class: "axis"}));
+    svg.append(s("text", {x: L - 6, y: y + 4, "text-anchor": "end"}, fmt(top * (1 - i / 4), 1) + (i === 0 ? " " + unit : "")));
+  }
+  svg.append(s("text", {x: L, y: H - 6}, fmt(xMin / 1000, 1) + " s"));
+  svg.append(s("text", {x: W - R, y: H - 6, "text-anchor": "end"}, fmt(xMax / 1000, 1) + " s"));
+  series.forEach((p, i) => {
+    svg.append(s("polyline", {points: p.points.map(q => X(q[0]).toFixed(1) + "," + Y(q[1]).toFixed(1)).join(" "),
+      fill: "none", stroke: COLORS[i], "stroke-width": 2, "stroke-linejoin": "round"}));
+    (p.marks || []).forEach(m => {
+      const x = X(m[0]), y = Y(m[1]);
+      svg.append(s("path", {d: `M${x - 4},${y - 8} L${x + 4},${y - 8} L${x},${y - 1} Z`, fill: "var(--ink)", stroke: "var(--card)", "stroke-width": 1.5}));
+    });
+  });
+  const cross = s("line", {y1: T, y2: H - B, stroke: "var(--ink3)", visibility: "hidden"});
+  svg.append(cross);
+  const tip = h("div", {class: "tip"});
+  const wrap = h("div", {style: "position:relative"}, svg, tip);
+  svg.addEventListener("mousemove", ev => {
+    const box = svg.getBoundingClientRect();
+    const x = xMin + ((ev.clientX - box.left) / box.width * W - L) / (W - L - R) * (xMax - xMin);
+    const lines = [];
+    series.forEach(p => {
+      let best = p.points[0];
+      for (const q of p.points) if (Math.abs(q[0] - x) < Math.abs(best[0] - x)) best = q;
+      const mark = (p.marks || []).find(m => Math.abs(m[0] - best[0]) < 1e-6);
+      lines.push(p.name + ": " + fmt(best[1], 2) + " " + unit + " at " + fmt(best[0] / 1000, 2) + " s" +
+        (mark ? " · hitch " + fmt(mark[2], 1) + " ms" + (mark[3] ? " (" + mark[3] + ")" : "") : ""));
+    });
+    tip.textContent = lines.join("\n");
+    tip.style.whiteSpace = "pre";
+    tip.style.display = "block";
+    tip.style.left = Math.min(ev.clientX - box.left + 12, box.width - 200) + "px";
+    tip.style.top = (ev.clientY - box.top + 12) + "px";
+    const cx = X(x);
+    cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
+  });
+  svg.addEventListener("mouseleave", () => { tip.style.display = "none"; cross.setAttribute("visibility", "hidden"); });
+  return wrap;
+}
+
+/** Returns a table from a header row and body rows. */
+function table(head, rows) {
+  const t = h("table");
+  const tr = h("tr");
+  head.forEach(c => tr.append(h("th", {}, String(c))));
+  t.append(h("thead", {}, tr));
+  const body = h("tbody");
+  rows.forEach(r => { const row = h("tr"); r.forEach(c => row.append(h("td", {}, String(c)))); body.append(row); });
+  t.append(body);
+  return t;
+}
+
+const WIDGETS = {
+  timeline(card) {
+    const series = DATA.runs.filter(r => r.frames.length).map(r => ({name: r.name, points: r.frames, marks: r.marks}));
+    if (!series.length) return card.append(h("p", {class: "note"}, "No per-frame data."));
+    card.append(lineChart(series, "ms", null));
+    card.append(h("p", {class: "note"}, "Triangles mark hitches: frames over " +
+      DATA.runs.map(r => fmt(r.hitches && r.hitches.threshold_ms, 1)).join(" / ") + " ms apart. Hover for the cause."));
+  },
+  stats(card) {
+    const g = r => r.gpu || {};
+    const get = (r, f) => { try { return f(r); } catch (e) { return null; } };
+    const rows = [
+      ["FPS", r => g(r).fps_estimate, 1], ["FPS 1% low", r => g(r).fps_1pct_low, 1], ["FPS 0.1% low", r => g(r).fps_01pct_low, 1],
+      ["GPU ms p50", r => g(r).frame_gpu_ms.p50], ["GPU ms p95", r => g(r).frame_gpu_ms.p95], ["GPU ms max", r => g(r).frame_gpu_ms.max],
+      ["Interval ms p95", r => g(r).frame_interval_ms.p95], ["Jitter ms", r => g(r).frame_jitter_ms], ["Stutter %", r => g(r).stutter_rate_pct],
+      ["Hitches", r => r.hitches && r.hitches.count, 0], ["Metal MiB peak", r => r.metal_memory_mib && r.metal_memory_mib.peak, 1],
+      ["Process MiB max", r => r.process_rss_mib && r.process_rss_mib.max, 1],
+    ];
+    card.append(table(["", ...DATA.runs.map(r => r.name)], rows.map(([name, f, d]) => [name, ...DATA.runs.map(r => fmt(get(r, f), d))])));
+    DATA.runs.forEach(r => {
+      const causes = r.hitches && r.hitches.causes ? Object.entries(r.hitches.causes).map(([k, v]) => k + " " + v).join(", ") : "";
+      const thermal = r.thermal_state_share ? Object.entries(r.thermal_state_share).map(([k, v]) => k + " " + fmt(v * 100, 0) + "%").join(", ") : "";
+      if (causes || thermal) card.append(h("p", {class: "note"}, r.name + ": " + [causes && "hitch causes: " + causes, thermal && "thermal: " + thermal].filter(Boolean).join(" · ")));
+    });
+    const max = Math.max(...DATA.runs.map(r => get(r, x => g(x).frame_gpu_ms.max) || 0)) || 1;
+    ["p50", "p95", "max"].forEach(k => DATA.runs.forEach((r, i) => {
+      const v = get(r, x => g(x).frame_gpu_ms[k]);
+      if (v === null) return;
+      const bar = h("i");
+      bar.style.width = (100 * v / max) + "%"; bar.style.background = COLORS[i];
+      card.append(h("div", {class: "hb"}, h("span", {}, k + " " + r.name), h("div", {}, bar), h("span", {}, fmt(v) + " ms")));
+    }));
+  },
+  memory(card) {
+    const series = DATA.runs.filter(r => r.memory.length).map(r => ({name: r.name, points: r.memory}));
+    if (!series.length) return card.append(h("p", {class: "note"}, "No Metal memory data: the run skipped it or the trace lacks the table."));
+    card.append(lineChart(series, "MiB", null));
+  },
+  compare(card) {
+    if (!DATA.compare) return card.append(h("p", {class: "note"}, "Compare needs two runs."));
+    const rows = Object.entries(DATA.compare).map(([k, c]) => [k, fmt(c.a), fmt(c.b), fmt(c.change), c.change_pct === null ? "–" : fmt(c.change_pct, 1) + " %"]);
+    card.append(table(["", "A: " + DATA.runs[0].name, "B: " + DATA.runs[1].name, "change", "change %"], rows));
+  },
+};
+
+const KEY = "metal-panel-layout:" + DATA.preset;
+let layout;
+
+/** Returns the saved layout, or the preset's when nothing valid is saved. */
+function loadLayout() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY));
+    if (Array.isArray(saved) && saved.every(w => WIDGETS[w.id] && typeof w.on === "boolean")) return saved;
+  } catch (e) { /* storage blocked or empty */ }
+  return PRESETS[DATA.preset].map(id => ({id, on: true}));
+}
+
+/** Saves the layout where the browser allows it and draws the panel again. */
+function setLayout(next) {
+  layout = next;
+  try { localStorage.setItem(KEY, JSON.stringify(layout)); } catch (e) { /* storage blocked */ }
+  draw();
+}
+
+/** Draws the controls and every enabled widget in layout order. */
+function draw() {
+  const controls = document.getElementById("controls");
+  controls.replaceChildren();
+  layout.forEach((w, i) => {
+    const toggle = h("button", {"aria-pressed": String(w.on)}, TITLES[w.id]);
+    toggle.addEventListener("click", () => setLayout(layout.map((x, j) => j === i ? {...x, on: !x.on} : x)));
+    const move = (d, label) => {
+      const b = h("button", {"aria-label": label + " " + TITLES[w.id]}, d < 0 ? "↑" : "↓");
+      b.addEventListener("click", () => {
+        const j = i + d;
+        if (j < 0 || j >= layout.length) return;
+        const next = layout.slice(); [next[i], next[j]] = [next[j], next[i]]; setLayout(next);
+      });
+      return b;
+    };
+    controls.append(toggle, move(-1, "Move up"), move(1, "Move down"));
+  });
+  const more = h("button", {}, "Layout JSON");
+  more.addEventListener("click", () => {
+    const box = document.getElementById("layout");
+    box.hidden = !box.hidden;
+    document.getElementById("layout-json").value = JSON.stringify(layout);
+  });
+  controls.append(more);
+  const out = document.getElementById("widgets");
+  out.replaceChildren();
+  layout.filter(w => w.on).forEach(w => {
+    const card = h("section", {class: "card"});
+    card.append(h("div", {class: "head"}, h("h2", {}, TITLES[w.id])));
+    if (DATA.runs.length > 1 && (w.id === "timeline" || w.id === "memory")) card.append(legend());
+    WIDGETS[w.id](card);
+    out.append(card);
+  });
+}
+
+document.getElementById("runs").textContent = DATA.runs.map(r => r.name + (r.layer ? " (" + r.layer + ")" : "")).join(" vs ");
+document.getElementById("layout-apply").addEventListener("click", () => {
+  try {
+    const next = JSON.parse(document.getElementById("layout-json").value);
+    if (Array.isArray(next) && next.every(w => WIDGETS[w.id] && typeof w.on === "boolean")) setLayout(next);
+  } catch (e) { /* invalid JSON is ignored */ }
+});
+document.getElementById("layout-reset").addEventListener("click", () => setLayout(PRESETS[DATA.preset].map(id => ({id, on: true}))));
+layout = loadLayout();
+draw();
+</script>
+</body>
+</html>

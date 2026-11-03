@@ -3,6 +3,13 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `perf_panel`: writes `<name>.panel.html`, one file with the data inside, for one or two runs: GPU time per frame with
+  the hitches marked, the numbers, Metal memory over time and A against B (`preset` `fps` or `compare`). It has no
+  server and no network use, carries no path, shows at most 5000 points per series (every hitch kept), and lets the
+  viewer hide and reorder widgets and export the layout as JSON.
+
 ## 0.11.0 — 2026-11-02
 
 - `perf_ab`: records a program with two environments (`env_a`, `env_b`) in the order A B B A and says per metric whether

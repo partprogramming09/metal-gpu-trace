@@ -151,6 +151,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `perf_baseline_record` | Records the same program `count` times (default 3) with `perf_record`'s arguments and saves the runs as a reference in one call |
 | `perf_ab` | Records the same program with two environments (`env_a`, `env_b`: `NAME=VALUE` pairs) in the order A B B A and says per metric (FPS, 1 % low, GPU ms, stutter) whether B is better, worse or the same: better or worse only when every B value is outside A's range |
 | `perf_check` | Judges a recording against a reference: `regressed` when FPS falls under the range by more than `margin_pct` (default 3), GPU ms per frame rises over it, or encoders or command buffers per frame exceed it; `improved` or `same` otherwise, with the reasons and the full comparison |
+| `perf_panel` | Writes `<name>.panel.html`: a page with GPU time per frame and its hitches, the numbers, Metal memory and, for two runs, A against B. It has no server and loads nothing from the network; the viewer hides or reorders widgets and exports the layout as JSON |
 | `perf_export_trace` | Writes a recording's GPU frames as `<run>.chrome-trace`, one slice per frame, for ui.perfetto.dev or chrome://tracing |
 | `perf_diagnose` | Says whether a recording splits its GPU work into too many short encoders, as translation layers do, with encoders and command buffers per frame, the labels with the most GPU time and the GPU's idle time |
 | `trace_tables` | Lists the tables of a kept `.trace`, named by its run or its path |
