@@ -1210,7 +1210,7 @@ def test_windows_against_metal(tmp_path):
     for run, platform in (("mac", "macOS"), ("mac2", "macOS"), ("win", "Windows")):
         (tmp_path / f"{run}.json").write_text(json.dumps(summary(platform, 60.0)))
         (tmp_path / f"{run}.frames.csv").write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n2,16.0,4.0\n")
-    saved, mcp.OUT = mcp.OUT, tmp_path
+    saved, (mcp.OUT, mcp.BASELINES) = (mcp.OUT, mcp.BASELINES), (tmp_path, tmp_path / "baselines.json")
     try:
         cross = mcp.tool_perf_compare("mac", "win", markdown=True)
         assert cross["measure"]["a"] == "metal" and cross["measure"]["b"] == "windows", cross.get("measure")
@@ -1222,8 +1222,15 @@ def test_windows_against_metal(tmp_path):
         assert data["not_comparable"] == ["gpu_ms_mean", "gpu_ms_p95", "metal_mib_peak"]
         assert [r["source"] for r in data["runs"]] == ["metal", "windows"]
         assert mcp.panel_data(["mac", "mac2"])["not_comparable"] == []
+        slow = summary("Windows", 60.0)
+        slow["gpu"]["frame_gpu_ms"]["mean"] = 9.0
+        (tmp_path / "win-slow.json").write_text(json.dumps(slow))
+        mcp.tool_perf_baseline("ref", ["mac", "mac2"])
+        check = mcp.tool_perf_check("win-slow", "ref")
+        assert check["verdict"] == "same" and "gpu_ms_mean" in check["unchecked"] and "hint_measure" in check, check
+        assert mcp.tool_perf_check("mac2", "ref")["verdict"] == "same" and "hint_measure" not in mcp.tool_perf_check("mac2", "ref")
     finally:
-        mcp.OUT = saved
+        mcp.OUT, mcp.BASELINES = saved
 
 
 def main():
