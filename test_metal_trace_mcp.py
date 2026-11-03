@@ -1196,8 +1196,38 @@ def test_panel(tmp_path):
         mcp.OUT, mcp.PANEL_POINTS = saved, saved_points
 
 
+def test_windows_against_metal(tmp_path):
+    """A Windows run against a Metal run says which numbers do not compare and skips the encoders, in perf_compare, its
+    Markdown and the panel; two runs from one side compare as before."""
+    import metal_trace_mcp as mcp
+
+    def summary(platform, fps):
+        return {"device": {"platform": platform},
+                "gpu": {"frames": 300, "fps_estimate": fps, "frame_gpu_ms": {"mean": 4.0, "p95": 6.0}, "frame_interval_ms": {"p95": 20.0}},
+                "encoders": {"per_frame": {"p50": 7}, "command_buffers_per_frame": {"p50": 5}, "short_share": {"25": 0.5},
+                             "by_label": []},
+                "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 4}}}
+    for run, platform in (("mac", "macOS"), ("mac2", "macOS"), ("win", "Windows")):
+        (tmp_path / f"{run}.json").write_text(json.dumps(summary(platform, 60.0)))
+        (tmp_path / f"{run}.frames.csv").write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n2,16.0,4.0\n")
+    saved, mcp.OUT = mcp.OUT, tmp_path
+    try:
+        cross = mcp.tool_perf_compare("mac", "win", markdown=True)
+        assert cross["measure"]["a"] == "metal" and cross["measure"]["b"] == "windows", cross.get("measure")
+        assert cross["measure"]["not_comparable"] == ["gpu_ms_mean", "gpu_ms_p95", "metal_mib_peak"]
+        assert "not_comparable" in cross["encoders"] and "labels" not in cross
+        assert "Not comparable between a Windows and a Metal run" in cross["markdown"]
+        assert "measure" not in mcp.tool_perf_compare("mac", "mac2")
+        data = mcp.panel_data(["mac", "win"])
+        assert data["not_comparable"] == ["gpu_ms_mean", "gpu_ms_p95", "metal_mib_peak"]
+        assert [r["source"] for r in data["runs"]] == ["metal", "windows"]
+        assert mcp.panel_data(["mac", "mac2"])["not_comparable"] == []
+    finally:
+        mcp.OUT = saved
+
+
 def main():
-    tests = [test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
