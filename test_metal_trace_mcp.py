@@ -1345,6 +1345,16 @@ def test_skip_start_up(tmp_path):
         run = data["runs"][0]
         assert data["skip_s"] == 1.5 and len(run["marks"]) == 1 and run["frames"][0][0] >= 1510 and run["memory"][0][0] >= 1510, run["marks"]
         assert mcp.panel_data(["s1", "s2"])["skip_s"] == 0
+        hist = mcp.tool_perf_history("s", skip_s=1.5)
+        assert [r["hitches"] for r in hist["runs"]] == [1, 1] and mcp.tool_perf_history("s")["runs"][0]["hitches"] == 4, hist
+        ab = mcp.ab_report("x", "", "A=1", {"a": ["s1"], "b": ["s2"]}, skip_s=1.5)
+        assert ab["skipped_s"] == 1.5 and ab["metrics"]["fps_estimate"]["a"] == [100.0], ab
+        assert "skipped_s" not in mcp.ab_report("x", "", "A=1", {"a": ["s1"], "b": ["s2"]})
+        try:
+            mcp.tool_perf_ab("x", "", "A=1", skip_s=-1)
+            raise AssertionError("a bad skip_s must fail before recording")
+        except mcp.ToolError:
+            pass
         for bad in (-1, 601, "x"):
             try:
                 mcp.steady_summary("s1", bad)

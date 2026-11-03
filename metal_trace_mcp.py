@@ -675,7 +675,7 @@ def tool_perf_check(run, baseline, margin_pct=3):
     or encoders or command buffers per frame exceed its highest; improved when a number leaves the range the other
     way and none regressed; same otherwise. Frame pacing, short encoders and GPU idle time are reported by the
     comparison but do not decide: they vary too much between equal runs. A run from Windows against a Metal
-    reference (or the reverse) is judged on FPS alone. Returns the reasons and perf_compare's
+    reference (or the reverse) is judged on FPS alone. There is no skip_s: a reference keeps whole-run summaries. Returns the reasons and perf_compare's
     full comparison against the reference's first run."""
     baselines = load_baselines()
     if baseline not in baselines:
@@ -793,12 +793,12 @@ HISTORY = {"fps": ("gpu", "fps_estimate"), "fps_1pct_low": ("gpu", "fps_1pct_low
            "hitches": ("hitches", "count"), "metal_mib_peak": ("metal_memory_mib", "peak")}
 
 
-def tool_perf_history(prefix, limit=50):
+def tool_perf_history(prefix, limit=50, skip_s=0):
     """Lists the recordings whose name starts with `prefix`, oldest first, with their FPS, 1% low, GPU ms, stutter,
     hitches and peak Metal MiB, and the change from the first to the last: how a number moved over a series of runs, such as
     one recording per version of a translation layer. Read a trend as real only when it exceeds the spread_pct that
     perf_baseline reports for equal runs. Runs from Windows and Metal in one series are flagged: their GPU ms and
-    memory do not compare."""
+    memory do not compare. skip_s leaves out the first seconds of each recording (the start-up), as perf_compare does."""
     if not name_ok(prefix):
         raise ToolError("a prefix holds only letters, digits, '.', '_' and '-'")
     found = []
@@ -806,7 +806,7 @@ def tool_perf_history(prefix, limit=50):
         if path == BASELINES:
             continue
         try:
-            s = json.loads(path.read_text(encoding="utf-8"))
+            s = steady_summary(path.stem, skip_s)
         except ValueError:  # a summary still being written
             continue
         found.append((path.stem, s))
@@ -1187,13 +1187,15 @@ def ab_verdict(a, b, higher_better):
     return "same"
 
 
-def tool_perf_ab(name, env_a, env_b, rounds=1, **record):
+def tool_perf_ab(name, env_a, env_b, rounds=1, skip_s=0, **record):
     """Records the same program with two environments in the order A B B A (repeated `rounds` times, so drift hits both
     sides equally) and says per metric whether B is better, worse or the same as A, with every value behind it.
     env_a and env_b are NAME=VALUE pairs separated by spaces; empty means none. Runs are named `name`-a1, `name`-b1, ...
-    Each recording takes its seconds plus about a minute to read back."""
+    Each recording takes its seconds plus about a minute to read back. skip_s leaves out the first seconds of every
+    recording (the start-up) when the verdicts are drawn, as perf_compare does; the recordings are whole."""
     if not name_ok(name):
         raise ToolError("a name holds only letters, digits, '.', '_' and '-'")
+    check_skip(skip_s)
     rounds = int(rounds)
     if not 1 <= rounds <= 5:
         raise ToolError("rounds is 1 to 5")
@@ -1206,12 +1208,13 @@ def tool_perf_ab(name, env_a, env_b, rounds=1, **record):
         before = set(OUT.glob(f"{label}_*.json"))
         tool_perf_record(label, env=env_a if side == "a" else env_b, **record)
         runs[side].append(next(iter(set(OUT.glob(f"{label}_*.json")) - before)).stem)
-    return ab_report(name, env_a, env_b, runs)
+    return ab_report(name, env_a, env_b, runs, skip_s)
 
 
-def ab_report(name, env_a, env_b, runs):
-    """Builds perf_ab's answer from the summaries of its runs, named in `runs` as {"a": [...], "b": [...]}."""
-    summaries = {side: [json.loads(run_path(r).read_text(encoding="utf-8")) for r in names] for side, names in runs.items()}
+def ab_report(name, env_a, env_b, runs, skip_s=0):
+    """Builds perf_ab's answer from the summaries of its runs, named in `runs` as {"a": [...], "b": [...]}, each
+    without its first `skip_s` seconds."""
+    summaries = {side: [steady_summary(r, skip_s) for r in names] for side, names in runs.items()}
     metrics = {}
     for key, (path, higher) in AB_METRICS.items():
         values = {}
@@ -1224,8 +1227,11 @@ def ab_report(name, env_a, env_b, runs):
                     values[side].append(item)
         metrics[key] = {"a": values["a"], "b": values["b"], "verdict": ab_verdict(values["a"], values["b"], higher)}
     frames = [(s.get("gpu") or {}).get("frames", 0) for items in summaries.values() for s in items]
-    return {"name": name, "env_a": env_a, "env_b": env_b, "runs": runs, "metrics": metrics,
-            "too_short": min(frames, default=0) < 100}
+    result = {"name": name, "env_a": env_a, "env_b": env_b, "runs": runs, "metrics": metrics,
+              "too_short": min(frames, default=0) < 100}
+    if check_skip(skip_s):
+        result["skipped_s"] = check_skip(skip_s)
+    return result
 
 
 def tool_capture_summary(capture):
@@ -1323,6 +1329,7 @@ TOOLS = {
          "env_a": {**S, "description": "NAME=VALUE pairs for side A, the reference (empty: none)"},
          "env_b": {**S, "description": "NAME=VALUE pairs for side B, the change under test (empty: none)"},
          "rounds": {**I, "description": "A B B A rounds, default 1 (4 recordings), at most 5"},
+         "skip_s": {"type": "number", "description": SKIP},
          **{k: v for k, v in RECORD_PROPS.items() if k not in ("label", "env")}}, ["name", "env_a", "env_b"]),
         hints("Record two settings in A B B A order", destructive=True)),
     "perf_attach": (tool_perf_attach, schema(
@@ -1366,7 +1373,8 @@ TOOLS = {
         hints("Check a run against budgets")),
     "perf_history": (tool_perf_history, schema(
         {"prefix": {**S, "description": "the start of the run names to follow: letters, digits, '.', '_', '-'"},
-         "limit": {**I, "description": "newest runs to keep, default 50"}}, ["prefix"]),
+         "limit": {**I, "description": "newest runs to keep, default 50"},
+         "skip_s": {"type": "number", "description": SKIP}}, ["prefix"]),
         hints("Follow a number across runs")),
     "perf_panel": (tool_perf_panel, schema(
         {"name": {**S, "description": "name for the panel file: letters, digits, '.', '_', '-'"},
