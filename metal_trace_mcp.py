@@ -52,7 +52,7 @@ INSTRUCTIONS = (
     "per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a "
     "recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat "
     "a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short "
-    "encoders, as translation layers do; perf_compare says how much two runs differ; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling); perf_panel writes an HTML page to look at one or two runs in a browser.trace_tables and trace_query "
+    "encoders, as translation layers do; perf_compare says how much two runs differ; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling); perf_panel writes an HTML page to look at one or two runs in a browser.trace_tables and trace_query "
     "need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, "
     "or every process named like a native program. To compare native Metal with a translation layer without a game "
     "of one's own: workload_list, workload_fetch, then perf_record with workload and api, or the compare-layer prompt."
@@ -774,6 +774,50 @@ PANEL_PRESETS = ("fps", "compare")
 PANEL_POINTS = 5000
 
 
+def dig(s, path):
+    """Returns the value at `path` (a tuple of keys) in a summary, or None where a key is missing."""
+    for key in path:
+        s = s.get(key) if isinstance(s, dict) else None
+    return s
+
+
+# what perf_history follows across recordings: where each number lives in a summary
+HISTORY = {"fps": ("gpu", "fps_estimate"), "fps_1pct_low": ("gpu", "fps_1pct_low"),
+           "gpu_ms_mean": ("gpu", "frame_gpu_ms", "mean"), "stutter_rate_pct": ("gpu", "stutter_rate_pct"),
+           "hitches": ("hitches", "count"), "metal_mib_peak": ("metal_memory_mib", "peak")}
+
+
+def tool_perf_history(prefix, limit=50):
+    """Lists the recordings whose name starts with `prefix`, oldest first, with their FPS, 1% low, GPU ms, stutter,
+    hitches and peak Metal MiB, and the change from the first to the last: how a number moved over a series of runs, such as
+    one recording per version of a translation layer. Read a trend as real only when it exceeds the spread_pct that
+    perf_baseline reports for equal runs. Runs from Windows and Metal in one series are flagged: their GPU ms and
+    memory do not compare."""
+    if not name_ok(prefix):
+        raise ToolError("a prefix holds only letters, digits, '.', '_' and '-'")
+    found = []
+    for path in sorted(OUT.glob(f"{prefix}*.json"), key=lambda p: p.stat().st_mtime):
+        if path == BASELINES:
+            continue
+        try:
+            s = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:  # a summary still being written
+            continue
+        found.append((path.stem, s))
+    if not found:
+        raise ToolError(f"no run starts with {prefix}; perf_runs lists them")
+    found = found[-max(1, min(int(limit), MAX_LIMIT)):]
+    rows = [{"run": run, "layer": layer_label(s.get("layer")), "source": measurement(s),
+             **{k: dig(s, path) for k, path in HISTORY.items()}} for run, s in found]
+    result = {"prefix": prefix, "runs": rows,
+              "change": {k: change(rows[0][k], rows[-1][k]) for k in HISTORY}}
+    if len({r["source"] for r in rows}) > 1:
+        result["hint"] = "the series mixes Windows and Metal runs: read only fps, fps_1pct_low and stutter_rate_pct"
+    elif len(rows) < 3:
+        result["hint"] = "under 3 runs: not a trend yet"
+    return result
+
+
 # what perf_gate can require: the argument, where the number lives in a summary and whether it is a floor or a ceiling
 GATES = {"fps_min": (("gpu", "fps_estimate"), "min"), "fps_1pct_low_min": (("gpu", "fps_1pct_low"), "min"),
          "stutter_rate_pct_max": (("gpu", "stutter_rate_pct"), "max"), "gpu_ms_p95_max": (("gpu", "frame_gpu_ms", "p95"), "max"),
@@ -795,9 +839,7 @@ def tool_perf_gate(run, fps_min=None, fps_1pct_low_min=None, stutter_rate_pct_ma
     checks = []
     for budget, limit in given.items():
         path, kind = GATES[budget]
-        value = s
-        for key in path:
-            value = value.get(key) if isinstance(value, dict) else None
+        value = dig(s, path)
         ok = value is not None and (value >= limit if kind == "min" else value <= limit)
         checks.append({"budget": budget, "limit": limit, "value": value, "ok": ok})
     result = {"run": run, "pass": all(c["ok"] for c in checks), "checks": checks}
@@ -816,8 +858,8 @@ def panel_run(run):
     with open(source, newline="", encoding="utf-8") as f:
         rows = [(int(r["frame"]), float(r["start_ms"]), float(r["gpu_ms_total"])) for r in csv.DictReader(f)]
     hitches = s.get("hitches") or {}
-    limit, causes = hitches.get("threshold_ms"), {h["frame"]: h["cause"] for h in hitches.get("worst", [])}
-    marks = [[b[1], b[2], round(b[1] - a[1], 3), causes.get(b[0], "")]
+    limit, causes = hitches.get("threshold_ms"), {h["frame"]: h for h in hitches.get("worst", [])}
+    marks = [[b[1], b[2], round(b[1] - a[1], 3), causes.get(b[0], {}).get("cause", ""), causes.get(b[0], {}).get("cpu_pct")]
              for a, b in zip(rows, rows[1:]) if limit and b[1] - a[1] > limit]
     marked = {m[0] for m in marks}
     stride = max(1, len(rows) // PANEL_POINTS)
@@ -830,7 +872,7 @@ def panel_run(run):
         memory = [[t, round(mib, 2)] for t, mib in samples[::max(1, len(samples) // PANEL_POINTS)]]
     return {"name": run, "layer": layer_label(s.get("layer")), "source": measurement(s), "gpu": s.get("gpu"), "hitches": hitches,
             "thermal_state_share": s.get("thermal_state_share"), "metal_memory_mib": s.get("metal_memory_mib"),
-            "process_rss_mib": s.get("process_rss_mib"), "frames": frames, "marks": marks, "memory": memory,
+            "process_rss_mib": s.get("process_rss_mib"), "cpu": s.get("cpu"), "frames": frames, "marks": marks, "memory": memory,
             "encoders": [] if measurement(s) == "windows" else (s.get("encoders") or {}).get("by_label", [])[:20]}
 
 
@@ -1237,6 +1279,10 @@ TOOLS = {
          "hitches_max": {"type": "number", "description": "the number of hitches at most this"},
          "metal_mib_max": {"type": "number", "description": "the peak Metal memory in MiB at most this"}}, ["run"]),
         hints("Check a run against budgets")),
+    "perf_history": (tool_perf_history, schema(
+        {"prefix": {**S, "description": "the start of the run names to follow: letters, digits, '.', '_', '-'"},
+         "limit": {**I, "description": "newest runs to keep, default 50"}}, ["prefix"]),
+        hints("Follow a number across runs")),
     "perf_panel": (tool_perf_panel, schema(
         {"name": {**S, "description": "name for the panel file: letters, digits, '.', '_', '-'"},
          "runs": {"type": "array", "items": S, "description": "one or two run names from perf_runs; with two, the first "
