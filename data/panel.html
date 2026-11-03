@@ -134,7 +134,7 @@ const T = {
       cpu_pct_mean: ["CPU % medio", "Uso medio de CPU del programa durante la grabación. 100% es un núcleo; varios hilos suman más."],
       hitches: ["Hitches", "Cantidad de frames que superan ese umbral, cada uno con su causa probable. Ver pestaña Frames."],
       metal_mib_peak: ["Memoria Metal pico (MiB)", "Máximo de memoria asignada por Metal durante la grabación. Una subida constante sugiere una fuga o carga de recursos."],
-      rss_mib_max: ["Memoria del proceso máx (MiB)", "Máximo de memoria residente del proceso, incluida la de Wine si corre bajo Wine."],
+      rss_mib_max: ["Memoria del proceso máx (MiB)", "Máximo de memoria residente del proceso, incluida la de Wine si corre bajo Wine. En macOS es el RSS de ps y en Windows el working set: de la misma clase, pero cada sistema los cuenta a su manera, así que entre Windows y Mac es una guía y no una igualdad."],
     },
     c: {
       shader_compile: "El compilador gráfico trabajaba justo antes del frame. Suele ser la primera vez que se usa un shader: calienta la caché o precompila.",
@@ -189,7 +189,7 @@ const T = {
       cpu_pct_mean: ["CPU % mean", "The program's mean CPU use during the recording. 100% is one core; several threads add up."],
       hitches: ["Hitches", "Number of frames over that threshold, each with its likely cause. See the Frames tab."],
       metal_mib_peak: ["Metal memory peak (MiB)", "Peak memory Metal had allocated during the recording. A steady rise suggests a leak or resource loading."],
-      rss_mib_max: ["Process memory max (MiB)", "Peak resident memory of the process, Wine's included when running under Wine."],
+      rss_mib_max: ["Process memory max (MiB)", "Peak resident memory of the process, Wine's included when running under Wine. On macOS it is ps's RSS and on Windows the working set: the same kind of number, but each system counts it its own way, so between Windows and Mac it is a guide, not an equality."],
     },
     c: {
       shader_compile: "The graphics compiler was working just before the frame. Usually a shader's first use: warm the cache or precompile.",
@@ -247,11 +247,11 @@ function metricName(id) {
   return h("span", {}, label, help(text));
 }
 
-/** Returns a swatch followed by a run's name, with its layer. */
-function runName(i) {
+/** Returns a swatch followed by a run's name, with its layer unless `short` (the header and legend already show it). */
+function runName(i, short) {
   const r = DATA.runs[i], sw = h("span", {class: "sw"});
   sw.style.background = COLORS[i];
-  return h("span", {}, sw, r.name + (r.layer ? " (" + r.layer + ")" : "") + (r.source === "windows" ? " · Windows" : ""));
+  return h("span", {}, sw, r.name + (r.layer && !short ? " (" + r.layer + ")" : "") + (r.source === "windows" ? " · Windows" : ""));
 }
 
 /** Returns the legend row for the runs. */
@@ -381,7 +381,7 @@ const TABS = {
     const grid = h("div", {class: "cards"});
     CARD_KEYS.forEach(k => {
       const box = h("div", {class: "card"}, h("div", {class: "label"}, metricName(k)));
-      DATA.runs.forEach((r, i) => box.append(h("div", {}, runName(i), h("div", {class: "big"}, fmt(metric(r, k), k === "hitches" ? 0 : 1)))));
+      DATA.runs.forEach((r, i) => box.append(h("div", {}, runName(i, true), h("div", {class: "big"}, fmt(metric(r, k), k === "hitches" ? 0 : 1)))));
       grid.append(box);
     });
     card.append(grid);
@@ -401,7 +401,7 @@ const TABS = {
     const rows = DATA.runs.flatMap((r, i) => r.marks.map(m => ({i, m}))).sort((x, y) => y.m[2] - x.m[2]);
     if (!rows.length) return card.append(h("p", {class: "note"}, u.noHitches));
     const shown = rows.slice(0, 30);
-    card.append(table([u.run, u.time, u.interval, h("span", {}, u.cpu, help(u.cpuHelp)), u.cause], shown.map(({i, m}) => [runName(i), fmt(m[0] / 1000, 2), fmt(m[2], 1),
+    card.append(table([u.run, u.time, u.interval, h("span", {}, u.cpu, help(u.cpuHelp)), u.cause], shown.map(({i, m}) => [runName(i, true), fmt(m[0] / 1000, 2), fmt(m[2], 1),
       m[4] === null || m[4] === undefined ? "—" : fmt(m[4], 0) + " % (" + fmt(metric(DATA.runs[i], "cpu_pct_mean"), 0) + ")",
       m[3] ? h("span", {}, m[3], help(L().c[m[3]] || "")) : "—"])));
     card.append(h("p", {class: "note"}, u.hitchNote(shown.length)));
@@ -452,7 +452,7 @@ const TABS = {
   data(card) {
     const ids = ["fps", "fps_1pct_low", "fps_01pct_low", "gpu_ms_p50", "gpu_ms_p95", "gpu_ms_max", "frame_interval_ms_p95", "frame_jitter_ms",
       "stutter_rate_pct", "hitches", "cpu_pct_mean", "metal_mib_peak", "rss_mib_max"];
-    card.append(table(["", ...DATA.runs.map((r, i) => runName(i))], ids.map(id => [metricName(id), ...DATA.runs.map(r => fmt(metric(r, id), id === "hitches" ? 0 : 2))])));
+    card.append(table(["", ...DATA.runs.map((r, i) => runName(i, true))], ids.map(id => [metricName(id), ...DATA.runs.map(r => fmt(metric(r, id), id === "hitches" ? 0 : 2))])));
     const max = Math.max(...DATA.runs.map(r => metric(r, "gpu_ms_max") || 0)) || 1;
     card.append(h("h2", {style: "margin-top:12px"}, L().ui.gpuFrame));
     ["gpu_ms_p50", "gpu_ms_p95", "gpu_ms_max"].forEach(k => DATA.runs.forEach((r, i) => {

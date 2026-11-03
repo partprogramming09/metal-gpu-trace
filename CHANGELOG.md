@@ -10,6 +10,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   judged against like with like.
 - Fix: `skip_s` with a recording that has no Metal memory (a Windows run, or `memory=false`) made `perf_compare` fail with
   `AttributeError`; found comparing a real Windows recording with a Metal one.
+- The panel's help for the process memory says it is `ps`'s RSS on macOS and the working set on Windows (the same kind of
+  number, counted differently), and the cards and tables show the run name without its long layer label (the header and
+  the legends keep it).
 - The panel warns when B has worse FPS but better GPU ms per frame than A: the limit is not the GPU. Seen on a real
   drawstress run, native Metal against Wine with Mullion (DXMT) in D3D11: 104 against 50.8 FPS, 5.9 against 4.05 GPU ms,
   and the GPU idle 80% of the time against 39%.
