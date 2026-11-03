@@ -659,7 +659,8 @@ def tool_perf_check(run, baseline, margin_pct=3):
     reference's lowest FPS by more than margin_pct, GPU ms per frame rises over its highest by more than margin_pct,
     or encoders or command buffers per frame exceed its highest; improved when a number leaves the range the other
     way and none regressed; same otherwise. Frame pacing, short encoders and GPU idle time are reported by the
-    comparison but do not decide: they vary too much between equal runs. Returns the reasons and perf_compare's
+    comparison but do not decide: they vary too much between equal runs. A run from Windows against a Metal
+    reference (or the reverse) is judged on FPS alone. Returns the reasons and perf_compare's
     full comparison against the reference's first run."""
     baselines = load_baselines()
     if baseline not in baselines:
@@ -668,7 +669,11 @@ def tool_perf_check(run, baseline, margin_pct=3):
     s = json.loads(run_path(run).read_text(encoding="utf-8"))
     span = ranges(ref["summaries"])
     worse, better, unchecked = [], [], []
+    cross = measurement(ref["summaries"][0]) != measurement(s)
     for metric, (get, higher_is_worse) in CHECKED.items():
+        if cross and metric != "fps":
+            unchecked.append(metric)
+            continue
         try:
             value = get(s)
         except (KeyError, TypeError):
@@ -690,7 +695,10 @@ def tool_perf_check(run, baseline, margin_pct=3):
               "comparison": compare_summaries(ref["summaries"][0], s, ref["runs"][0], run)}
     if (s.get("gpu") or {}).get("frames", 0) < 100:
         result["hint"] = "under 100 frames: too short to judge; record 30 s or more"
-    if unchecked:
+    if cross:
+        result["hint_measure"] = "the reference and the run come from Windows and Metal: GPU ms and encoder numbers do not " \
+                                 "measure the same thing, so only FPS decides"
+    elif unchecked:
         result["hint_unchecked"] = "a summary written before version 0.4.0 has no encoder numbers; record it again"
     return result
 
