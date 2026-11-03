@@ -9,6 +9,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   the hitches marked, the numbers, Metal memory over time and A against B (`preset` `fps` or `compare`). It has no
   server and no network use, carries no path, shows at most 5000 points per series (every hitch kept), and lets the
   viewer hide and reorder widgets and export the layout as JSON.
+- `--http` also serves the panel live: `GET /panel` is the page (no data) and `GET /panel/data?runs=a,b&preset=fps` its
+  data, with the same token, Host and Origin checks as `/mcp`. Open `/panel#token=...&runs=a,b`; the token stays in the
+  URL fragment, which the browser never sends and the page removes. Without `runs` it shows the newest run, and the
+  page asks again every 10 s, so a finished recording appears by itself.
 
 ## 0.11.0 — 2026-11-02
 
