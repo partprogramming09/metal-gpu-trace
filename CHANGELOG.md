@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.11.0 — 2026-11-02
 
 - `perf_ab`: records a program with two environments (`env_a`, `env_b`) in the order A B B A and says per metric whether
   B is better, worse or the same, only when every B value is outside A's range. `perf_record` and the tools built on it
