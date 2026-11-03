@@ -9,6 +9,13 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   is which and `not_comparable`: `gpu_ms_mean`, `gpu_ms_p95` and `metal_mib_peak`, since PresentMon and Instruments
   measure GPU time differently and only Metal records memory) and no encoder numbers. The Markdown names the same
   metrics; the panel warns, shows those rows as not comparable and marks a Windows run.
+- `perf_gate`: checks a run against budgets you give (`fps_min`, `fps_1pct_low_min`, `stutter_rate_pct_max`,
+  `gpu_ms_p95_max`, `hitches_max`, `metal_mib_max`) and returns pass or fail with each limit and value; a number the run
+  lacks fails its budget.
+- `perf_baseline` also returns `spread_pct`, each range's width as a % of its midpoint: the noise equal runs show, which
+  a change has to exceed.
+- The panel has an Encoders tab: the encoders with the most GPU time per run and, for two runs, what changed between
+  them (not for Windows runs, which have none). Its layout key is now `v3`.
 - `perf_check` judges a Windows run against a Metal reference (or the reverse) on FPS alone: GPU ms and the encoder
   numbers go to `unchecked` and `hint_measure` says why. `perf_ab` records both sides on one machine, so it needs no change.
 - `perf_panel`: writes `<name>.panel.html`, one file with the data inside, for one or two runs (`preset` `fps` or
