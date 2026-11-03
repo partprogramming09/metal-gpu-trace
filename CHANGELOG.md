@@ -5,10 +5,12 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## Unreleased
 
-- `perf_panel`: writes `<name>.panel.html`, one file with the data inside, for one or two runs: GPU time per frame with
-  the hitches marked, the numbers, Metal memory over time and A against B (`preset` `fps` or `compare`). It has no
-  server and no network use, carries no path, shows at most 5000 points per series (every hitch kept), and lets the
-  viewer hide and reorder widgets and export the layout as JSON.
+- `perf_panel`: writes `<name>.panel.html`, one file with the data inside, for one or two runs (`preset` `fps` or
+  `compare`). It has no server and no network use, carries no path and shows at most 5000 points per series (every
+  hitch kept). It has five tabs: a summary with a verdict and the key numbers, the frames with a table of hitches and
+  their causes, memory and thermal state, A against B, and the full data. A `?` beside each metric says what it
+  measures and a warning says when a comparison is not reliable (under 100 frames, one recording per side, different
+  layers). Spanish and English; the viewer hides and reorders tabs and exports the layout as JSON.
 - `--http` also serves the panel live: `GET /panel` is the page (no data) and `GET /panel/data?runs=a,b&preset=fps` its
   data, with the same token, Host and Origin checks as `/mcp`. Open `/panel#token=...&runs=a,b`; the token stays in the
   URL fragment, which the browser never sends and the page removes. Without `runs` it shows the newest run, and the
