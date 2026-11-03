@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.16.0 — 2026-11-02
 
 - GPU counters: `perf_record` takes `counters=true` (or `PERF_INSTRUMENTS="Metal GPU Counters"`), and the summary gets
   `gpu_counters`: mean, p95 and max of the 31 counters (ALU, texture, buffer, last level cache and MMU limiters and
