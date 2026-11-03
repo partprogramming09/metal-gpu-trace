@@ -3,6 +3,12 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `skip_s` also on `perf_history` and `perf_ab` (which draws its verdicts without the start-up; the recordings stay
+  whole). `perf_check` has none: a reference keeps whole-run summaries, so a run without its start-up would not be
+  judged against like with like.
+
 ## 0.14.0 — 2026-11-02
 
 - `skip_s` on `perf_compare`, `perf_gate` and `perf_panel` (and `skip_s` in the live panel's URL fragment) leaves out the
