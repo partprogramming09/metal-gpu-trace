@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -33,10 +33,12 @@ h1 { font-size: 18px; margin: 0 0 4px; }
 h2 { font-size: 15px; margin: 0 0 8px; }
 .sub { color: var(--ink2); margin: 0 0 12px; }
 .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.bar .grow { flex: 1; }
 button { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button[aria-selected="true"] { border-color: var(--ink); font-weight: 600; }
 button[aria-pressed="false"] { color: var(--ink3); }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; position: relative; }
-.head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--ink2); margin-bottom: 4px; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
@@ -46,36 +48,154 @@ th { color: var(--ink2); font-weight: 600; }
 svg { width: 100%; height: auto; display: block; }
 svg text { fill: var(--ink3); font-size: 11px; }
 .axis { stroke: var(--grid); }
-.tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 12px; white-space: nowrap; display: none; }
-.hb { display: grid; grid-template-columns: 90px 1fr 70px; gap: 8px; align-items: center; margin: 2px 0; }
+.tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 12px; display: none; white-space: pre; }
+.hb { display: grid; grid-template-columns: 110px 1fr 70px; gap: 8px; align-items: center; margin: 2px 0; }
 .hb i { display: block; height: 8px; border-radius: 0 4px 4px 0; }
-.note { color: var(--ink2); margin: 4px 0 0; }
+.note { color: var(--ink2); margin: 6px 0 0; }
+.warn { border-left: 3px solid var(--ink); padding: 4px 10px; margin: 0 0 8px; background: var(--grid); }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.cards .card { margin: 0; }
+.big { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.label { color: var(--ink2); }
+ul { margin: 4px 0; padding-left: 20px; }
+details.help { display: inline-block; position: relative; margin-left: 6px; vertical-align: baseline; }
+details.help > summary { list-style: none; cursor: pointer; width: 16px; height: 16px; border: 1px solid var(--ink3); border-radius: 50%; color: var(--ink2); font-size: 11px; line-height: 14px; text-align: center; }
+details.help > summary::-webkit-details-marker { display: none; }
+details.help > div { position: absolute; z-index: 5; left: 0; top: 22px; width: 280px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; color: var(--ink); font-size: 12px; font-weight: 400; text-align: left; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+th details.help > div, td:last-child details.help > div { left: auto; right: 0; }
 textarea { width: 100%; height: 90px; font: 12px ui-monospace, monospace; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; }
-@media (max-width: 600px) { .hb { grid-template-columns: 70px 1fr 56px; } }
+@media (max-width: 600px) { .hb { grid-template-columns: 80px 1fr 56px; } }
 </style>
 </head>
 <body>
 <main>
-  <h1>Metal trace panel</h1>
+  <div class="bar"><h1 class="grow" id="title"></h1><button id="lang" aria-label="Language"></button><button id="edit" aria-pressed="false"></button></div>
   <p class="sub" id="runs"></p>
-  <div class="bar" id="controls"></div>
   <div id="layout" class="card" hidden>
-    <h2>Layout</h2>
     <textarea id="layout-json" aria-label="Layout JSON"></textarea>
-    <div class="bar"><button id="layout-apply">Apply</button><button id="layout-reset">Reset to preset</button></div>
+    <div class="bar"><button id="layout-apply"></button><button id="layout-reset"></button></div>
   </div>
-  <div id="widgets"></div>
+  <div class="tabs" id="tabs" role="tablist"></div>
+  <div id="panel" role="tabpanel"></div>
 </main>
 <script>
 "use strict";
 let DATA = /*PAYLOAD*/null;
 const COLORS = ["var(--s1)", "var(--s2)"];
 const PRESETS = {
-  fps: ["timeline", "stats", "memory"],
-  compare: ["compare", "timeline", "stats", "memory"],
+  fps: ["summary", "frames", "memory", "data"],
+  compare: ["summary", "ab", "frames", "memory", "data"],
 };
-const TITLES = {timeline: "GPU time per frame", stats: "Numbers", memory: "Metal memory", compare: "A and B"};
 const NS = "http://www.w3.org/2000/svg";
+const NOISE_PCT = 3;
+const LOWER = {fps: false, fps_1pct_low: false, fps_01pct_low: false, stutter_rate_pct: true, frame_jitter_ms: true, gpu_ms_mean: true,
+  gpu_ms_p95: true, frame_interval_ms_p95: true, metal_mib_peak: true, rss_mib_max: true};
+const VERDICT_KEYS = ["gpu_ms_mean", "fps", "fps_1pct_low", "stutter_rate_pct", "metal_mib_peak"];
+const CARD_KEYS = ["fps", "fps_1pct_low", "hitches", "metal_mib_peak"];
+
+const T = {
+  es: {
+    ui: {title: "Panel de traza Metal", vs: " contra ", summary: "Resumen", frames: "Frames", memory: "Memoria y térmico", ab: "A y B",
+      data: "Datos", edit: "Personalizar", apply: "Aplicar", reset: "Restablecer", gpuFrame: "Tiempo de GPU por frame",
+      noFrames: "No hay datos por frame.", noMem: "No hay datos de memoria Metal: la grabación la omitió o la traza no tiene la tabla.",
+      needTwo: "Comparar necesita dos grabaciones.", to: "a", at: "en", hitch: "hitch", change: "cambio", changePct: "cambio %",
+      better: "mejor", worse: "peor", same: "igual", unknown: "sin dato", verdict: "Veredicto", cards: "Lo principal",
+      single: (r, fps, low, n, top) => `${r}: ${fps} FPS, 1% low ${low}, ${n} hitches${top ? "; causa más común: " + top : ""}.`,
+      pair: (a, b) => `B (${b}) frente a A (${a}); la diferencia cuenta si supera ${NOISE_PCT}%.`,
+      hitches: "Hitches", time: "Tiempo (s)", interval: "Intervalo (ms)", cause: "Causa", run: "Grabación",
+      hitchNote: n => `Se muestran los ${n} más largos. Solo los cinco más largos de cada grabación traen causa; el resto aparece con "—", que no significa desconocida.`,
+      noHitches: "Sin hitches: ningún frame superó el umbral.",
+      marks: u => `Los triángulos marcan hitches: frames con un intervalo mayor de ${u} ms. Pasa el ratón para ver la causa.`,
+      thermal: "Estado térmico", drift: "FPS al inicio y al final", throttle: "Posible throttling térmico",
+      yes: "sí", no: "no",
+      wShort: r => `${r} tiene menos de 100 frames: es demasiado corta para comparar.`,
+      wRepeat: "Cada lado es una sola grabación. Repite la corrida antes de dar el cambio por real.",
+      wLayer: (a, b) => `Las grabaciones usaron capas distintas (${a} y ${b}): se compara una capa con otra, no un solo cambio.`,
+      layerNone: "sin capa", scope: "Cómo leer esto"},
+    m: {
+      fps: ["FPS", "Frames por segundo según la mediana del intervalo entre frames. Con vsync a 60 Hz el máximo es cerca de 60."],
+      fps_1pct_low: ["FPS 1% low", "FPS del 1% de frames más lentos (percentil 99 del intervalo). Mide los tirones, no el promedio. Necesita 100 frames o más; antes aparece \"–\"."],
+      fps_01pct_low: ["FPS 0,1% low", "Igual que el 1% low pero con el 0,1% más lento. Necesita 1000 frames o más; antes aparece \"–\"."],
+      gpu_ms_p50: ["GPU ms p50", "Mediana del tiempo de GPU por frame: la suma del tiempo de sus encoders. A 60 Hz el presupuesto es 16,7 ms por frame."],
+      gpu_ms_mean: ["GPU ms medio", "Promedio del tiempo de GPU por frame. Si baja con los mismos FPS, la GPU trabaja menos por frame."],
+      gpu_ms_p95: ["GPU ms p95", "El 95% de los frames cuesta esto o menos. Si se acerca al presupuesto del frame (16,7 ms a 60 Hz), el programa está limitado por la GPU."],
+      gpu_ms_max: ["GPU ms máx", "El frame más caro de la grabación. Un valor mucho mayor que el p95 apunta a un pico aislado, como una compilación de shader."],
+      frame_interval_ms_p95: ["Intervalo ms p95", "Tiempo entre inicios de frames consecutivos; el 95% está por debajo. Es lo que ve el jugador, no solo la GPU."],
+      frame_jitter_ms: ["Jitter ms", "Desviación estándar de los intervalos entre frames. Bajo significa ritmo parejo; alto, tirones aunque el promedio sea bueno."],
+      stutter_rate_pct: ["Stutter %", "Porcentaje de frames cuyo intervalo supera 1,5 veces la mediana y también 8 ms. Los frames de un programa a 500 FPS no cuentan."],
+      hitches: ["Hitches", "Cantidad de frames que superan ese umbral, cada uno con su causa probable. Ver pestaña Frames."],
+      metal_mib_peak: ["Memoria Metal pico (MiB)", "Máximo de memoria asignada por Metal durante la grabación. Una subida constante sugiere una fuga o carga de recursos."],
+      rss_mib_max: ["Memoria del proceso máx (MiB)", "Máximo de memoria residente del proceso, incluida la de Wine si corre bajo Wine."],
+    },
+    c: {
+      shader_compile: "El compilador gráfico trabajaba justo antes del frame. Suele ser la primera vez que se usa un shader: calienta la caché o precompila.",
+      thermal: "El estado térmico no era Nominal. El equipo pudo bajar el reloj por calor.",
+      memory_growth: "La memoria Metal creció 8 MiB o más antes del frame: carga de texturas o buffers en pleno juego.",
+      gpu_heavy: "La GPU estuvo ocupada el 80% o más del intervalo: el frame era caro de dibujar.",
+      cpu_or_wait: "Ninguna de las anteriores: el programa esperó (CPU, vsync, disco o red).",
+    },
+    scope: [
+      "Hitch: un frame cuyo intervalo supera 1,5 veces la mediana y 8 ms.",
+      "Una sola grabación no demuestra un cambio: compara 100 frames o más y repite la corrida.",
+      "Los rangos de referencia dependen de la pantalla: 16,7 ms por frame a 60 Hz, 8,3 ms a 120 Hz.",
+    ],
+  },
+  en: {
+    ui: {title: "Metal trace panel", vs: " vs ", summary: "Summary", frames: "Frames", memory: "Memory and thermal", ab: "A and B",
+      data: "Data", edit: "Customize", apply: "Apply", reset: "Reset", gpuFrame: "GPU time per frame",
+      noFrames: "No per-frame data.", noMem: "No Metal memory data: the run skipped it or the trace lacks the table.",
+      needTwo: "Compare needs two recordings.", to: "to", at: "at", hitch: "hitch", change: "change", changePct: "change %",
+      better: "better", worse: "worse", same: "same", unknown: "no data", verdict: "Verdict", cards: "Key numbers",
+      single: (r, fps, low, n, top) => `${r}: ${fps} FPS, 1% low ${low}, ${n} hitches${top ? "; most common cause: " + top : ""}.`,
+      pair: (a, b) => `B (${b}) against A (${a}); a difference counts when it exceeds ${NOISE_PCT}%.`,
+      hitches: "Hitches", time: "Time (s)", interval: "Interval (ms)", cause: "Cause", run: "Recording",
+      hitchNote: n => `The ${n} longest are shown. Only each recording's five longest carry a cause; the rest show "—", which does not mean unknown.`,
+      noHitches: "No hitches: no frame went over the threshold.",
+      marks: u => `Triangles mark hitches: frames with an interval over ${u} ms. Hover for the cause.`,
+      thermal: "Thermal state", drift: "FPS at the start and the end", throttle: "Possible thermal throttling",
+      yes: "yes", no: "no",
+      wShort: r => `${r} has fewer than 100 frames: too short to compare.`,
+      wRepeat: "Each side is one recording. Repeat the run before calling a change real.",
+      wLayer: (a, b) => `The recordings ran on different layers (${a} and ${b}): it compares layers, not one change.`,
+      layerNone: "no layer", scope: "How to read this"},
+    m: {
+      fps: ["FPS", "Frames per second from the median interval between frames. With vsync at 60 Hz the maximum is near 60."],
+      fps_1pct_low: ["FPS 1% low", "FPS of the slowest 1% of frames (99th percentile interval). It measures hitches, not the average. Needs 100 frames or more; below that it shows \"–\"."],
+      fps_01pct_low: ["FPS 0.1% low", "Like the 1% low for the slowest 0.1%. Needs 1000 frames or more; below that it shows \"–\"."],
+      gpu_ms_p50: ["GPU ms p50", "Median GPU time per frame: the sum of its encoders' time. At 60 Hz the budget is 16.7 ms per frame."],
+      gpu_ms_mean: ["GPU ms mean", "Average GPU time per frame. If it falls at the same FPS, the GPU does less work per frame."],
+      gpu_ms_p95: ["GPU ms p95", "95% of frames cost this or less. Near the frame budget (16.7 ms at 60 Hz) the program is GPU-bound."],
+      gpu_ms_max: ["GPU ms max", "The most expensive frame of the recording. A value far above p95 points to an isolated spike, such as a shader compile."],
+      frame_interval_ms_p95: ["Interval ms p95", "Time between starts of consecutive frames; 95% are below it. It is what the player sees, not only the GPU."],
+      frame_jitter_ms: ["Jitter ms", "Standard deviation of the frame intervals. Low means an even pace; high means hitches even with a good average."],
+      stutter_rate_pct: ["Stutter %", "Share of frames whose interval exceeds 1.5 times the median and also 8 ms. A 500 FPS program's short frames do not count."],
+      hitches: ["Hitches", "Number of frames over that threshold, each with its likely cause. See the Frames tab."],
+      metal_mib_peak: ["Metal memory peak (MiB)", "Peak memory Metal had allocated during the recording. A steady rise suggests a leak or resource loading."],
+      rss_mib_max: ["Process memory max (MiB)", "Peak resident memory of the process, Wine's included when running under Wine."],
+    },
+    c: {
+      shader_compile: "The graphics compiler was working just before the frame. Usually a shader's first use: warm the cache or precompile.",
+      thermal: "The thermal state was not Nominal. The machine may have lowered its clock because of heat.",
+      memory_growth: "Metal memory grew 8 MiB or more before the frame: textures or buffers loaded mid-game.",
+      gpu_heavy: "The GPU was busy 80% or more of the interval: the frame was expensive to draw.",
+      cpu_or_wait: "None of the above: the program waited (CPU, vsync, disk or network).",
+    },
+    scope: [
+      "Hitch: a frame whose interval exceeds 1.5 times the median and 8 ms.",
+      "One recording does not prove a change: compare 100 frames or more and repeat the run.",
+      "Reference ranges depend on the display: 16.7 ms per frame at 60 Hz, 8.3 ms at 120 Hz.",
+    ],
+  },
+};
+
+let lang = "es", active = "summary", editing = false, KEY, layout, last = "";
+try {
+  const saved = localStorage.getItem("metal-panel-lang");
+  lang = saved === "en" || saved === "es" ? saved : (navigator.language || "").startsWith("es") ? "es" : "en";
+} catch (e) { /* storage blocked */ }
+
+/** Returns the strings of the current language. */
+function L() { return T[lang]; }
 
 /** Builds an element with attributes and children; every string goes in as text. */
 function h(tag, attrs, ...kids) {
@@ -98,33 +218,57 @@ function fmt(v, digits) {
   return v === null || v === undefined ? "–" : (typeof v === "number" ? +v.toFixed(digits === undefined ? 2 : digits) : String(v));
 }
 
-/** Returns the legend row for the runs, always present with two or more runs. */
+/** Returns a "?" button that opens a short explanation. */
+function help(text) {
+  return h("details", {class: "help"}, h("summary", {"aria-label": "?"}, "?"), h("div", {}, text));
+}
+
+/** Returns a metric's label followed by its help. */
+function metricName(id) {
+  const [label, text] = L().m[id];
+  return h("span", {}, label, help(text));
+}
+
+/** Returns a swatch followed by a run's name, with its layer. */
+function runName(i) {
+  const r = DATA.runs[i], sw = h("span", {class: "sw"});
+  sw.style.background = COLORS[i];
+  return h("span", {}, sw, r.name + (r.layer ? " (" + r.layer + ")" : ""));
+}
+
+/** Returns the legend row for the runs. */
 function legend() {
   const box = h("div", {class: "legend"});
-  DATA.runs.forEach((r, i) => {
-    const sw = h("span", {class: "sw"});
-    sw.style.background = COLORS[i];
-    box.append(h("span", {}, sw, r.name + (r.layer ? " (" + r.layer + ")" : "")));
-  });
+  DATA.runs.forEach((r, i) => box.append(runName(i)));
   return box;
 }
 
-/** Returns a line chart card body for series of [x, y] points, with optional marks and a hover readout. */
-function lineChart(series, unit, yMax) {
-  const W = 800, H = 220, L = 44, R = 10, T = 10, B = 24;
+/** Returns a table from a header row and body rows; a cell is text or a node. */
+function table(head, rows) {
+  const t = h("table"), tr = h("tr");
+  head.forEach(c => { const th = h("th"); th.append(c); tr.append(th); });
+  t.append(h("thead", {}, tr));
+  const body = h("tbody");
+  rows.forEach(r => { const row = h("tr"); r.forEach(c => { const td = h("td"); td.append(c instanceof Node ? c : String(c)); row.append(td); }); body.append(row); });
+  t.append(body);
+  return t;
+}
+
+/** Returns a line chart for series of {name, points: [[x, y]], marks}, with a hover readout. */
+function lineChart(series, unit) {
+  const W = 800, H = 220, Lm = 44, R = 10, T0 = 10, B = 24;
   const xs = series.flatMap(p => p.points.map(q => q[0]));
   const xMin = Math.min(...xs), xMax = Math.max(...xs);
-  const ys = series.flatMap(p => p.points.map(q => q[1]));
-  const top = yMax || Math.max(...ys) || 1;
-  const X = x => L + (xMax === xMin ? 0 : (x - xMin) / (xMax - xMin)) * (W - L - R);
-  const Y = y => H - B - (Math.min(y, top) / top) * (H - T - B);
+  const top = Math.max(...series.flatMap(p => p.points.map(q => q[1]))) || 1;
+  const X = x => Lm + (xMax === xMin ? 0 : (x - xMin) / (xMax - xMin)) * (W - Lm - R);
+  const Y = y => H - B - (Math.min(y, top) / top) * (H - T0 - B);
   const svg = s("svg", {viewBox: `0 0 ${W} ${H}`, role: "img"});
   for (let i = 0; i <= 4; i++) {
-    const y = T + i * (H - T - B) / 4;
-    svg.append(s("line", {x1: L, x2: W - R, y1: y, y2: y, class: "axis"}));
-    svg.append(s("text", {x: L - 6, y: y + 4, "text-anchor": "end"}, fmt(top * (1 - i / 4), 1) + (i === 0 ? " " + unit : "")));
+    const y = T0 + i * (H - T0 - B) / 4;
+    svg.append(s("line", {x1: Lm, x2: W - R, y1: y, y2: y, class: "axis"}));
+    svg.append(s("text", {x: Lm - 6, y: y + 4, "text-anchor": "end"}, fmt(top * (1 - i / 4), 1) + (i === 0 ? " " + unit : "")));
   }
-  svg.append(s("text", {x: L, y: H - 6}, fmt(xMin / 1000, 1) + " s"));
+  svg.append(s("text", {x: Lm, y: H - 6}, fmt(xMin / 1000, 1) + " s"));
   svg.append(s("text", {x: W - R, y: H - 6, "text-anchor": "end"}, fmt(xMax / 1000, 1) + " s"));
   series.forEach((p, i) => {
     svg.append(s("polyline", {points: p.points.map(q => X(q[0]).toFixed(1) + "," + Y(q[1]).toFixed(1)).join(" "),
@@ -134,23 +278,19 @@ function lineChart(series, unit, yMax) {
       svg.append(s("path", {d: `M${x - 4},${y - 8} L${x + 4},${y - 8} L${x},${y - 1} Z`, fill: "var(--ink)", stroke: "var(--card)", "stroke-width": 1.5}));
     });
   });
-  const cross = s("line", {y1: T, y2: H - B, stroke: "var(--ink3)", visibility: "hidden"});
+  const cross = s("line", {y1: T0, y2: H - B, stroke: "var(--ink3)", visibility: "hidden"});
   svg.append(cross);
   const tip = h("div", {class: "tip"});
-  const wrap = h("div", {style: "position:relative"}, svg, tip);
   svg.addEventListener("mousemove", ev => {
     const box = svg.getBoundingClientRect();
-    const x = xMin + ((ev.clientX - box.left) / box.width * W - L) / (W - L - R) * (xMax - xMin);
-    const lines = [];
-    series.forEach(p => {
+    const x = xMin + ((ev.clientX - box.left) / box.width * W - Lm) / (W - Lm - R) * (xMax - xMin);
+    tip.textContent = series.map(p => {
       let best = p.points[0];
       for (const q of p.points) if (Math.abs(q[0] - x) < Math.abs(best[0] - x)) best = q;
       const mark = (p.marks || []).find(m => Math.abs(m[0] - best[0]) < 1e-6);
-      lines.push(p.name + ": " + fmt(best[1], 2) + " " + unit + " at " + fmt(best[0] / 1000, 2) + " s" +
-        (mark ? " · hitch " + fmt(mark[2], 1) + " ms" + (mark[3] ? " (" + mark[3] + ")" : "") : ""));
-    });
-    tip.textContent = lines.join("\n");
-    tip.style.whiteSpace = "pre";
+      return p.name + ": " + fmt(best[1], 2) + " " + unit + " " + L().ui.at + " " + fmt(best[0] / 1000, 2) + " s" +
+        (mark ? " · " + L().ui.hitch + " " + fmt(mark[2], 1) + " ms" + (mark[3] ? " (" + mark[3] + ")" : "") : "");
+    }).join("\n");
     tip.style.display = "block";
     tip.style.left = Math.min(ev.clientX - box.left + 12, box.width - 200) + "px";
     tip.style.top = (ev.clientY - box.top + 12) + "px";
@@ -158,73 +298,141 @@ function lineChart(series, unit, yMax) {
     cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
   });
   svg.addEventListener("mouseleave", () => { tip.style.display = "none"; cross.setAttribute("visibility", "hidden"); });
-  return wrap;
+  return h("div", {style: "position:relative"}, svg, tip);
 }
 
-/** Returns a table from a header row and body rows. */
-function table(head, rows) {
-  const t = h("table");
-  const tr = h("tr");
-  head.forEach(c => tr.append(h("th", {}, String(c))));
-  t.append(h("thead", {}, tr));
-  const body = h("tbody");
-  rows.forEach(r => { const row = h("tr"); r.forEach(c => row.append(h("td", {}, String(c)))); body.append(row); });
-  t.append(body);
-  return t;
+/** Returns a run's value for a metric id, or null when the summary lacks it. */
+function metric(r, id) {
+  const g = r.gpu || {};
+  try {
+    return {fps: () => g.fps_estimate, fps_1pct_low: () => g.fps_1pct_low, fps_01pct_low: () => g.fps_01pct_low,
+      gpu_ms_p50: () => g.frame_gpu_ms.p50, gpu_ms_mean: () => g.frame_gpu_ms.mean, gpu_ms_p95: () => g.frame_gpu_ms.p95,
+      gpu_ms_max: () => g.frame_gpu_ms.max, frame_interval_ms_p95: () => g.frame_interval_ms.p95, frame_jitter_ms: () => g.frame_jitter_ms,
+      stutter_rate_pct: () => g.stutter_rate_pct, hitches: () => r.hitches && r.hitches.count,
+      metal_mib_peak: () => r.metal_memory_mib && r.metal_memory_mib.peak, rss_mib_max: () => r.process_rss_mib && r.process_rss_mib.max}[id]() ?? null;
+  } catch (e) { return null; }
 }
 
-const WIDGETS = {
-  timeline(card) {
-    const series = DATA.runs.filter(r => r.frames.length).map(r => ({name: r.name, points: r.frames, marks: r.marks}));
-    if (!series.length) return card.append(h("p", {class: "note"}, "No per-frame data."));
-    card.append(lineChart(series, "ms", null));
-    card.append(h("p", {class: "note"}, "Triangles mark hitches: frames over " +
-      DATA.runs.map(r => fmt(r.hitches && r.hitches.threshold_ms, 1)).join(" / ") + " ms apart. Hover for the cause."));
-  },
-  stats(card) {
-    const g = r => r.gpu || {};
-    const get = (r, f) => { try { return f(r); } catch (e) { return null; } };
-    const rows = [
-      ["FPS", r => g(r).fps_estimate, 1], ["FPS 1% low", r => g(r).fps_1pct_low, 1], ["FPS 0.1% low", r => g(r).fps_01pct_low, 1],
-      ["GPU ms p50", r => g(r).frame_gpu_ms.p50], ["GPU ms p95", r => g(r).frame_gpu_ms.p95], ["GPU ms max", r => g(r).frame_gpu_ms.max],
-      ["Interval ms p95", r => g(r).frame_interval_ms.p95], ["Jitter ms", r => g(r).frame_jitter_ms], ["Stutter %", r => g(r).stutter_rate_pct],
-      ["Hitches", r => r.hitches && r.hitches.count, 0], ["Metal MiB peak", r => r.metal_memory_mib && r.metal_memory_mib.peak, 1],
-      ["Process MiB max", r => r.process_rss_mib && r.process_rss_mib.max, 1],
-    ];
-    card.append(table(["", ...DATA.runs.map(r => r.name)], rows.map(([name, f, d]) => [name, ...DATA.runs.map(r => fmt(get(r, f), d))])));
-    DATA.runs.forEach(r => {
-      const causes = r.hitches && r.hitches.causes ? Object.entries(r.hitches.causes).map(([k, v]) => k + " " + v).join(", ") : "";
-      const thermal = r.thermal_state_share ? Object.entries(r.thermal_state_share).map(([k, v]) => k + " " + fmt(v * 100, 0) + "%").join(", ") : "";
-      if (causes || thermal) card.append(h("p", {class: "note"}, r.name + ": " + [causes && "hitch causes: " + causes, thermal && "thermal: " + thermal].filter(Boolean).join(" · ")));
+/** Returns "better", "worse", "same" or null for a comparison entry of a metric where lower or higher is better. */
+function direction(id, c) {
+  if (!c || c.change === null || c.change === undefined || !(id in LOWER)) return null;
+  if (c.change === 0 || (c.change_pct !== null && Math.abs(c.change_pct) < NOISE_PCT)) return "same";
+  return (c.change < 0) === LOWER[id] ? "better" : "worse";
+}
+
+/** Returns the confidence warnings for the runs in the current language. */
+function warnings() {
+  const u = L().ui, out = [];
+  DATA.runs.forEach(r => { if (((r.gpu || {}).frames || 0) < 100) out.push(u.wShort(r.name)); });
+  if (DATA.runs.length === 2) {
+    out.push(u.wRepeat);
+    const [a, b] = DATA.runs.map(r => r.layer || u.layerNone);
+    if (a !== b) out.push(u.wLayer(a, b));
+  }
+  return out;
+}
+
+const TABS = {
+  summary(card) {
+    const u = L().ui;
+    warnings().forEach(w => card.append(h("p", {class: "warn"}, w)));
+    card.append(h("h2", {}, u.verdict));
+    if (DATA.runs.length === 2 && DATA.compare) {
+      const [a, b] = DATA.runs;
+      card.append(h("p", {class: "note"}, u.pair(a.name, b.name)));
+      const list = h("ul");
+      VERDICT_KEYS.filter(k => DATA.compare[k]).forEach(k => {
+        const c = DATA.compare[k], d = direction(k, c);
+        list.append(h("li", {}, metricName(k), ": " + fmt(c.a) + " " + u.to + " " + fmt(c.b) +
+          (c.change_pct === null || c.change_pct === undefined ? "" : " (" + (c.change_pct > 0 ? "+" : "") + fmt(c.change_pct, 1) + " %)") +
+          " — " + (d ? u[d] : u.unknown)));
+      });
+      const na = a.hitches ? a.hitches.count : null, nb = b.hitches ? b.hitches.count : null;
+      if (na !== null && nb !== null) list.append(h("li", {}, metricName("hitches"), ": " + na + " " + u.to + " " + nb));
+      card.append(list);
+    } else {
+      DATA.runs.forEach(r => {
+        const causes = r.hitches && r.hitches.causes ? Object.keys(r.hitches.causes)[0] : "";
+        card.append(h("p", {}, u.single(r.name, fmt(metric(r, "fps"), 1), fmt(metric(r, "fps_1pct_low"), 1), fmt(metric(r, "hitches"), 0), causes)));
+      });
+    }
+    card.append(h("h2", {style: "margin-top:12px"}, u.cards));
+    const grid = h("div", {class: "cards"});
+    CARD_KEYS.forEach(k => {
+      const box = h("div", {class: "card"}, h("div", {class: "label"}, metricName(k)));
+      DATA.runs.forEach((r, i) => box.append(h("div", {}, runName(i), h("div", {class: "big"}, fmt(metric(r, k), k === "hitches" ? 0 : 1)))));
+      grid.append(box);
     });
-    const max = Math.max(...DATA.runs.map(r => get(r, x => g(x).frame_gpu_ms.max) || 0)) || 1;
-    ["p50", "p95", "max"].forEach(k => DATA.runs.forEach((r, i) => {
-      const v = get(r, x => g(x).frame_gpu_ms[k]);
+    card.append(grid);
+    const how = h("ul");
+    L().scope.forEach(x => how.append(h("li", {}, x)));
+    card.append(h("h2", {style: "margin-top:12px"}, u.scope), how);
+  },
+  frames(card) {
+    const u = L().ui;
+    const series = DATA.runs.filter(r => r.frames.length).map(r => ({name: r.name, points: r.frames, marks: r.marks}));
+    card.append(h("h2", {}, u.gpuFrame));
+    if (!series.length) return card.append(h("p", {class: "note"}, u.noFrames));
+    if (DATA.runs.length > 1) card.append(legend());
+    card.append(lineChart(series, "ms"));
+    card.append(h("p", {class: "note"}, u.marks(DATA.runs.map(r => fmt(r.hitches && r.hitches.threshold_ms, 1)).join(" / "))));
+    card.append(h("h2", {style: "margin-top:12px"}, u.hitches));
+    const rows = DATA.runs.flatMap((r, i) => r.marks.map(m => ({i, m}))).sort((x, y) => y.m[2] - x.m[2]);
+    if (!rows.length) return card.append(h("p", {class: "note"}, u.noHitches));
+    const shown = rows.slice(0, 30);
+    card.append(table([u.run, u.time, u.interval, u.cause], shown.map(({i, m}) => [runName(i), fmt(m[0] / 1000, 2), fmt(m[2], 1),
+      m[3] ? h("span", {}, m[3], help(L().c[m[3]] || "")) : "—"])));
+    card.append(h("p", {class: "note"}, u.hitchNote(shown.length)));
+  },
+  memory(card) {
+    const u = L().ui;
+    card.append(h("h2", {}, L().m.metal_mib_peak[0]));
+    const series = DATA.runs.filter(r => r.memory.length).map(r => ({name: r.name, points: r.memory}));
+    if (!series.length) card.append(h("p", {class: "note"}, u.noMem));
+    else {
+      if (DATA.runs.length > 1) card.append(legend());
+      card.append(lineChart(series, "MiB"));
+    }
+    card.append(h("h2", {style: "margin-top:12px"}, u.thermal));
+    DATA.runs.forEach((r, i) => {
+      const share = r.thermal_state_share ? Object.entries(r.thermal_state_share).map(([k, v]) => k + " " + fmt(v * 100, 0) + "%").join(", ") : "–";
+      const t = (r.gpu || {}).throttling_analysis;
+      const drift = t ? u.drift + ": " + fmt(t.fps_initial, 1) + " " + u.to + " " + fmt(t.fps_final, 1) + " · " + u.throttle + ": " +
+        (t.thermal_throttling_detected ? u.yes : u.no) : "";
+      card.append(h("p", {}, runName(i), ": " + share + (drift ? " · " + drift : "")));
+    });
+  },
+  ab(card) {
+    const u = L().ui;
+    if (!DATA.compare) return card.append(h("p", {class: "note"}, u.needTwo));
+    card.append(table(["", "A: " + DATA.runs[0].name, "B: " + DATA.runs[1].name, u.change, u.changePct, u.verdict],
+      Object.entries(DATA.compare).map(([k, c]) => {
+        const d = direction(k, c);
+        return [L().m[k] ? metricName(k) : k, fmt(c.a), fmt(c.b), fmt(c.change), c.change_pct === null ? "–" : fmt(c.change_pct, 1) + " %", d ? u[d] : u.unknown];
+      })));
+    card.append(h("p", {class: "note"}, u.pair(DATA.runs[0].name, DATA.runs[1].name)));
+  },
+  data(card) {
+    const ids = ["fps", "fps_1pct_low", "fps_01pct_low", "gpu_ms_p50", "gpu_ms_p95", "gpu_ms_max", "frame_interval_ms_p95", "frame_jitter_ms",
+      "stutter_rate_pct", "hitches", "metal_mib_peak", "rss_mib_max"];
+    card.append(table(["", ...DATA.runs.map((r, i) => runName(i))], ids.map(id => [metricName(id), ...DATA.runs.map(r => fmt(metric(r, id), id === "hitches" ? 0 : 2))])));
+    const max = Math.max(...DATA.runs.map(r => metric(r, "gpu_ms_max") || 0)) || 1;
+    card.append(h("h2", {style: "margin-top:12px"}, L().ui.gpuFrame));
+    ["gpu_ms_p50", "gpu_ms_p95", "gpu_ms_max"].forEach(k => DATA.runs.forEach((r, i) => {
+      const v = metric(r, k);
       if (v === null) return;
       const bar = h("i");
       bar.style.width = (100 * v / max) + "%"; bar.style.background = COLORS[i];
-      card.append(h("div", {class: "hb"}, h("span", {}, k + " " + r.name), h("div", {}, bar), h("span", {}, fmt(v) + " ms")));
+      card.append(h("div", {class: "hb"}, h("span", {}, L().m[k][0] + " " + r.name), h("div", {}, bar), h("span", {}, fmt(v) + " ms")));
     }));
-  },
-  memory(card) {
-    const series = DATA.runs.filter(r => r.memory.length).map(r => ({name: r.name, points: r.memory}));
-    if (!series.length) return card.append(h("p", {class: "note"}, "No Metal memory data: the run skipped it or the trace lacks the table."));
-    card.append(lineChart(series, "MiB", null));
-  },
-  compare(card) {
-    if (!DATA.compare) return card.append(h("p", {class: "note"}, "Compare needs two runs."));
-    const rows = Object.entries(DATA.compare).map(([k, c]) => [k, fmt(c.a), fmt(c.b), fmt(c.change), c.change_pct === null ? "–" : fmt(c.change_pct, 1) + " %"]);
-    card.append(table(["", "A: " + DATA.runs[0].name, "B: " + DATA.runs[1].name, "change", "change %"], rows));
   },
 };
 
-let KEY, layout;
-
-/** Returns the saved layout, or the preset's when nothing valid is saved. */
+/** Returns the saved layout (tab ids with on/off), or the preset's when nothing valid is saved. */
 function loadLayout() {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY));
-    if (Array.isArray(saved) && saved.every(w => WIDGETS[w.id] && typeof w.on === "boolean")) return saved;
+    if (Array.isArray(saved) && saved.every(w => TABS[w.id] && typeof w.on === "boolean")) return saved;
   } catch (e) { /* storage blocked or empty */ }
   return PRESETS[DATA.preset].map(id => ({id, on: true}));
 }
@@ -236,60 +444,68 @@ function setLayout(next) {
   draw();
 }
 
-/** Draws the controls and every enabled widget in layout order. */
+/** Draws the title, tabs and the active tab's content. */
 function draw() {
-  const controls = document.getElementById("controls");
-  controls.replaceChildren();
+  const u = L().ui;
+  document.documentElement.lang = lang;
+  document.getElementById("title").textContent = u.title;
+  document.getElementById("lang").textContent = lang === "es" ? "EN" : "ES";
+  const edit = document.getElementById("edit");
+  edit.textContent = u.edit; edit.setAttribute("aria-pressed", String(editing));
+  document.getElementById("layout").hidden = !editing;
+  document.getElementById("layout-apply").textContent = u.apply;
+  document.getElementById("layout-reset").textContent = u.reset;
+  document.getElementById("runs").textContent = DATA.runs.map(r => r.name + (r.layer ? " (" + r.layer + ")" : "")).join(u.vs);
+  const visible = layout.filter(w => w.on && (w.id !== "ab" || DATA.runs.length === 2));
+  if (!visible.some(w => w.id === active)) active = visible.length ? visible[0].id : "";
+  const tabs = document.getElementById("tabs");
+  tabs.replaceChildren();
   layout.forEach((w, i) => {
-    const toggle = h("button", {"aria-pressed": String(w.on)}, TITLES[w.id]);
-    toggle.addEventListener("click", () => setLayout(layout.map((x, j) => j === i ? {...x, on: !x.on} : x)));
-    const move = (d, label) => {
-      const b = h("button", {"aria-label": label + " " + TITLES[w.id]}, d < 0 ? "↑" : "↓");
-      b.addEventListener("click", () => {
-        const j = i + d;
-        if (j < 0 || j >= layout.length) return;
-        const next = layout.slice(); [next[i], next[j]] = [next[j], next[i]]; setLayout(next);
+    if (w.id === "ab" && DATA.runs.length < 2) return;
+    if (!w.on && !editing) return;
+    const tab = h("button", {role: "tab", "aria-selected": String(w.id === active), "aria-pressed": String(w.on)}, u[w.id]);
+    if (editing) tab.removeAttribute("role");
+    tab.addEventListener("click", () => {
+      if (editing) return setLayout(layout.map((x, j) => j === i ? {...x, on: !x.on} : x));
+      active = w.id; draw();
+    });
+    tabs.append(tab);
+    if (editing) {
+      [[-1, "↑"], [1, "↓"]].forEach(([d, glyph]) => {
+        const b = h("button", {"aria-label": glyph + " " + u[w.id]}, glyph);
+        b.addEventListener("click", () => {
+          const j = i + d;
+          if (j < 0 || j >= layout.length) return;
+          const next = layout.slice(); [next[i], next[j]] = [next[j], next[i]]; setLayout(next);
+        });
+        tabs.append(b);
       });
-      return b;
-    };
-    controls.append(toggle, move(-1, "Move up"), move(1, "Move down"));
+    }
   });
-  const more = h("button", {}, "Layout JSON");
-  more.addEventListener("click", () => {
-    const box = document.getElementById("layout");
-    box.hidden = !box.hidden;
-    document.getElementById("layout-json").value = JSON.stringify(layout);
-  });
-  controls.append(more);
-  const out = document.getElementById("widgets");
-  out.replaceChildren();
-  layout.filter(w => w.on).forEach(w => {
-    const card = h("section", {class: "card"});
-    card.append(h("div", {class: "head"}, h("h2", {}, TITLES[w.id])));
-    if (DATA.runs.length > 1 && (w.id === "timeline" || w.id === "memory")) card.append(legend());
-    WIDGETS[w.id](card);
-    out.append(card);
-  });
+  if (editing) document.getElementById("layout-json").value = JSON.stringify(layout);
+  const panel = document.getElementById("panel");
+  panel.replaceChildren();
+  if (active) { const card = h("section", {class: "card"}); TABS[active](card); panel.append(card); }
 }
 
-/** Shows the run names above the widgets. */
-function showRuns() {
-  document.getElementById("runs").textContent = DATA.runs.map(r => r.name + (r.layer ? " (" + r.layer + ")" : "")).join(" vs ");
-}
-
+document.getElementById("lang").addEventListener("click", () => {
+  lang = lang === "es" ? "en" : "es";
+  try { localStorage.setItem("metal-panel-lang", lang); } catch (e) { /* storage blocked */ }
+  draw();
+});
+document.getElementById("edit").addEventListener("click", () => { editing = !editing; draw(); });
 document.getElementById("layout-apply").addEventListener("click", () => {
   try {
     const next = JSON.parse(document.getElementById("layout-json").value);
-    if (Array.isArray(next) && next.every(w => WIDGETS[w.id] && typeof w.on === "boolean")) setLayout(next);
+    if (Array.isArray(next) && next.every(w => TABS[w.id] && typeof w.on === "boolean")) setLayout(next);
   } catch (e) { /* invalid JSON is ignored */ }
 });
 document.getElementById("layout-reset").addEventListener("click", () => setLayout(PRESETS[DATA.preset].map(id => ({id, on: true}))));
 
 /** Draws the panel for the data in DATA the first time. */
 function start() {
-  KEY = "metal-panel-layout:" + DATA.preset;
+  KEY = "metal-panel-layout:v2:" + DATA.preset;
   layout = loadLayout();
-  showRuns();
   draw();
 }
 
@@ -299,18 +515,19 @@ function live() {
   const params = new URLSearchParams(location.hash.slice(1));
   const token = params.get("token");
   history.replaceState(null, "", location.pathname);
-  if (!token) return void (document.getElementById("runs").textContent = "Open /panel#token=... with the server's token.");
+  const status = msg => { document.getElementById("runs").textContent = msg; };
+  if (!token) return status("Open /panel#token=... with the server's token.");
   const query = new URLSearchParams();
   for (const k of ["runs", "preset"]) if (params.get(k)) query.set(k, params.get(k));
-  let last = "";
-  const pull = () => fetch("/panel/data?" + query, {headers: {Authorization: "Bearer " + token}}).then(r => r.json().then(body => ({ok: r.ok, body}))).then(({ok, body}) => {
-    if (!ok) throw new Error(body.error || "request failed");
-    const text = JSON.stringify(body);
-    if (text === last) return;
-    const first = last === "";
-    last = text; DATA = body;
-    if (first) start(); else { showRuns(); draw(); }
-  }).catch(e => { document.getElementById("runs").textContent = "Could not load: " + e.message; });
+  const pull = () => fetch("/panel/data?" + query, {headers: {Authorization: "Bearer " + token}})
+    .then(r => r.json().then(body => ({ok: r.ok, body}))).then(({ok, body}) => {
+      if (!ok) throw new Error(body.error || "request failed");
+      const text = JSON.stringify(body);
+      if (text === last) return;
+      const first = last === "";
+      last = text; DATA = body;
+      if (first) start(); else draw();
+    }).catch(e => status("Could not load: " + e.message));
   pull();
   setInterval(pull, 10000);
 }
