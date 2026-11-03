@@ -16,6 +16,7 @@ import re
 import shlex
 import shutil
 import signal
+import statistics
 import subprocess
 import sys
 import tarfile
@@ -52,7 +53,7 @@ INSTRUCTIONS = (
     "per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a "
     "recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat "
     "a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short "
-    "encoders, as translation layers do; perf_compare says how much two runs differ; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling); perf_panel writes an HTML page to look at one or two runs in a browser.trace_tables and trace_query "
+    "encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare, perf_gate and perf_panel leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling); perf_panel writes an HTML page to look at one or two runs in a browser.trace_tables and trace_query "
     "need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, "
     "or every process named like a native program. To compare native Metal with a translation layer without a game "
     "of one's own: workload_list, workload_fetch, then perf_record with workload and api, or the compare-layer prompt."
@@ -526,16 +527,21 @@ def markdown_report(result):
     return "\n".join(lines)
 
 
-def tool_perf_compare(a, b, short_us=25, markdown=False):
+def tool_perf_compare(a, b, short_us=25, markdown=False, skip_s=0):
     """Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the
     headline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and
     command buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's
     count and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:
     with different layers it compares layers, not one change. A Windows run against a Metal run has `measure`: the
     GPU ms and Metal memory differ in kind and the encoders exist only in Metal, so use FPS, its lows, stutter and
-    jitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has `markdown`: the same numbers as tables for a PR comment."""
-    sa, sb = (json.loads(run_path(r).read_text(encoding="utf-8")) for r in (a, b))
+    jitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has
+    `markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,
+    where shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the
+    per-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run."""
+    sa, sb = (steady_summary(r, skip_s) for r in (a, b))
     result = compare_summaries(sa, sb, a, b, short_us)
+    if sa.get("steady"):
+        result["skipped_s"] = sa["steady"]["skip_s"]
     return {**result, "markdown": markdown_report(result)} if markdown else result
 
 
@@ -825,17 +831,18 @@ GATES = {"fps_min": (("gpu", "fps_estimate"), "min"), "fps_1pct_low_min": (("gpu
 
 
 def tool_perf_gate(run, fps_min=None, fps_1pct_low_min=None, stutter_rate_pct_max=None, gpu_ms_p95_max=None,
-                   hitches_max=None, metal_mib_max=None):
+                   hitches_max=None, metal_mib_max=None, skip_s=0):
     """Checks a recording against budgets and says pass or fail: a floor for FPS and the 1% low, a ceiling for the
     stutter rate, the p95 GPU ms per frame, the hitch count and the peak Metal MiB. Give at least one. A number the
     recording lacks fails its budget (value null): a gate must not pass on missing data. Returns each budget with its
-    limit, the value and whether it held. Use it as a bar a change must clear, where perf_check judges against equal runs."""
+    limit, the value and whether it held. Use it as a bar a change must clear, where perf_check judges against equal runs.
+    skip_s leaves out the first seconds of the recording (the start-up), as perf_compare does."""
     given = {k: v for k, v in (("fps_min", fps_min), ("fps_1pct_low_min", fps_1pct_low_min),
                                ("stutter_rate_pct_max", stutter_rate_pct_max), ("gpu_ms_p95_max", gpu_ms_p95_max),
                                ("hitches_max", hitches_max), ("metal_mib_max", metal_mib_max)) if v is not None}
     if not given:
         raise ToolError(f"give at least one budget: {', '.join(GATES)}")
-    s = json.loads(run_path(run).read_text(encoding="utf-8"))
+    s = steady_summary(run, skip_s)
     checks = []
     for budget, limit in given.items():
         path, kind = GATES[budget]
@@ -843,70 +850,143 @@ def tool_perf_gate(run, fps_min=None, fps_1pct_low_min=None, stutter_rate_pct_ma
         ok = value is not None and (value >= limit if kind == "min" else value <= limit)
         checks.append({"budget": budget, "limit": limit, "value": value, "ok": ok})
     result = {"run": run, "pass": all(c["ok"] for c in checks), "checks": checks}
+    if s.get("steady"):
+        result["skipped_s"] = s["steady"]["skip_s"]
     if (s.get("gpu") or {}).get("frames", 0) < 100:
         result["hint"] = "under 100 frames: too short to trust; record 30 s or more"
     return result
 
 
-def panel_run(run):
-    """Returns what the panel shows for one recording: numbers and labels from its summary, its GPU frames and Metal
-    memory cut to PANEL_POINTS points that keep every hitch, and no path."""
-    s = json.loads(run_path(run).read_text(encoding="utf-8"))
+CSV_TOL_MS = 0.002  # frames.csv rounds start times to 0.001 ms, so a gap at the hitch threshold may read 0.001 ms short
+
+
+def read_frames(run):
+    """Returns a run's GPU frames as (frame, start ms, GPU ms) from its frames.csv."""
     source = OUT / f"{run}.frames.csv"
     if not source.exists():
         raise ToolError(f"{run} has no per-frame file; record it again")
     with open(source, newline="", encoding="utf-8") as f:
-        rows = [(int(r["frame"]), float(r["start_ms"]), float(r["gpu_ms_total"])) for r in csv.DictReader(f)]
+        return [(int(r["frame"]), float(r["start_ms"]), float(r["gpu_ms_total"])) for r in csv.DictReader(f)]
+
+
+def read_memory(run):
+    """Returns a run's Metal memory as (ms, MiB) samples, or [] when it has none."""
+    source = OUT / f"{run}.metal_memory.csv"
+    if not source.exists():
+        return []
+    with open(source, newline="", encoding="utf-8") as f:
+        return [(float(r["time_ms"]), int(r["metal_allocated_bytes"]) / 2**20) for r in csv.DictReader(f)]
+
+
+def check_skip(skip_s):
+    """Returns `skip_s` as a number of seconds from 0 to 600, or raises ToolError."""
+    try:
+        skip = float(skip_s or 0)
+    except (TypeError, ValueError):
+        raise ToolError("skip_s is a number of seconds") from None
+    if not 0 <= skip <= 600:
+        raise ToolError("skip_s is 0 to 600 seconds")
+    return skip
+
+
+def steady_summary(run, skip_s=0):
+    """Returns a run's summary; with `skip_s` above 0, with the GPU numbers (FPS and its lows, GPU and interval ms,
+    stutter, jitter), the hitches and the Metal memory recomputed from frames.csv and metal_memory.csv without the
+    first `skip_s` seconds after its first frame: the start-up, where shaders compile and resources load. The CPU use
+    is dropped; the thermal state, the process memory, the encoders and the GPU idle time stay those of the whole run,
+    as `steady.whole_run` says. Causes are kept only for the hitches the summary lists (the 20 longest)."""
+    s = json.loads(run_path(run).read_text(encoding="utf-8"))
+    skip = check_skip(skip_s)
+    if not skip:
+        return s
+    rows = read_frames(run)
+    cut = rows[0][1] + skip * 1000 if rows else 0
+    kept = [r for r in rows if r[1] >= cut]
+    if len(kept) < 2:
+        raise ToolError(f"{run} has under 2 frames after the first {skip:g} s; use a smaller skip_s")
+    starts, totals = [r[1] for r in kept], [r[2] for r in kept]
+    gaps = [b - a for a, b in zip(starts, starts[1:]) if b > a]
+    gpu = {k: v for k, v in (s.get("gpu") or {}).items() if k not in ("per_channel_ms", "intervals", "throttling_analysis")}
+    gpu.update(frames=len(kept), frame_gpu_ms=perf_report.stats(totals), frame_interval_ms=perf_report.stats(gaps),
+               fps_estimate=round(1000 / statistics.median(gaps), 1) if gaps else None,
+               **{k: None for k in ("fps_1pct_low", "fps_01pct_low", "stutter_rate_pct", "frame_jitter_ms")})
+    gpu.update(perf_report.frame_pacing(gaps, totals))
+    old = s.get("hitches") or {}
+    limit = old.get("threshold_ms")
+    first = kept[0][0]
+    count = sum(1 for a, b in zip(starts, starts[1:]) if limit and b - a > limit - CSV_TOL_MS)
+    worst = [h for h in old.get("worst", []) if h["frame"] > first]
+    hitches = {"count": count, "causes": dict(collections.Counter(h["cause"] for h in worst).most_common()),
+               "worst": worst}
+    if limit:
+        hitches["threshold_ms"] = limit
+    if count > len(worst):
+        hitches["causes_partial"] = True
+    memory = [mib for t, mib in read_memory(run) if t >= cut]
+    s.update(gpu=gpu, hitches=hitches, cpu=None, metal_memory_mib={"peak": round(max(memory), 2), "samples": len(memory)} if memory else None)
+    s["steady"] = {"skip_s": skip, "whole_run": ["thermal_state_share", "process_rss_mib", "encoders", "gpu_idle"]}
+    return s
+
+
+def panel_run(run, skip_s=0):
+    """Returns what the panel shows for one recording: numbers and labels from its summary, its GPU frames and Metal
+    memory cut to PANEL_POINTS points that keep every hitch, and no path. With `skip_s`, as steady_summary."""
+    s = steady_summary(run, skip_s)
+    rows = read_frames(run)
+    if s.get("steady") and rows:
+        cut = rows[0][1] + s["steady"]["skip_s"] * 1000
+        rows = [r for r in rows if r[1] >= cut]
     hitches = s.get("hitches") or {}
     limit, causes = hitches.get("threshold_ms"), {h["frame"]: h for h in hitches.get("worst", [])}
     marks = [[b[1], b[2], round(b[1] - a[1], 3), causes.get(b[0], {}).get("cause", ""), causes.get(b[0], {}).get("cpu_pct")]
-             for a, b in zip(rows, rows[1:]) if limit and b[1] - a[1] > limit]
+             for a, b in zip(rows, rows[1:]) if limit and b[1] - a[1] > limit - CSV_TOL_MS]
     marked = {m[0] for m in marks}
     stride = max(1, len(rows) // PANEL_POINTS)
     frames = [[t, ms] for i, (_, t, ms) in enumerate(rows) if i % stride == 0 or t in marked]
-    memory = []
-    source = OUT / f"{run}.metal_memory.csv"
-    if source.exists():
-        with open(source, newline="", encoding="utf-8") as f:
-            samples = [(float(r["time_ms"]), int(r["metal_allocated_bytes"]) / 2**20) for r in csv.DictReader(f)]
-        memory = [[t, round(mib, 2)] for t, mib in samples[::max(1, len(samples) // PANEL_POINTS)]]
+    samples = read_memory(run)
+    if s.get("steady") and rows:
+        samples = [x for x in samples if x[0] >= rows[0][1]]
+    memory = [[t, round(mib, 2)] for t, mib in samples[::max(1, len(samples) // PANEL_POINTS)]]
     return {"name": run, "layer": layer_label(s.get("layer")), "source": measurement(s), "gpu": s.get("gpu"), "hitches": hitches,
             "thermal_state_share": s.get("thermal_state_share"), "metal_memory_mib": s.get("metal_memory_mib"),
             "process_rss_mib": s.get("process_rss_mib"), "cpu": s.get("cpu"), "frames": frames, "marks": marks, "memory": memory,
             "encoders": [] if measurement(s) == "windows" else (s.get("encoders") or {}).get("by_label", [])[:20]}
 
 
-def panel_data(runs, preset=None):
+def panel_data(runs, preset=None, skip_s=0):
     """Returns the payload a panel shows for one or two runs: the preset, each run's panel_run and, for two runs, the
-    headline comparison. `preset` defaults to compare for two runs and fps for one."""
+    headline comparison. `preset` defaults to compare for two runs and fps for one; `skip_s` leaves out the start-up."""
     preset = preset or ("compare" if len(runs) == 2 else "fps")
     if preset not in PANEL_PRESETS:
         raise ToolError(f"preset is one of {', '.join(PANEL_PRESETS)}")
     if not 1 <= len(runs) <= 2 or (preset == "compare" and len(runs) != 2):
         raise ToolError("runs holds one or two run names from perf_runs; the compare preset needs two")
-    data = [panel_run(r) for r in runs]
+    skip = check_skip(skip_s)
+    data = [panel_run(r, skip) for r in runs]
     compare, not_comparable, labels = None, [], []
     if len(runs) == 2:
         try:
-            sa, sb = (json.loads(run_path(r).read_text(encoding="utf-8")) for r in runs)
+            sa, sb = (steady_summary(r, skip) for r in runs)
             result = compare_summaries(sa, sb, *runs)
             compare, not_comparable = result["metrics"], (result.get("measure") or {}).get("not_comparable", [])
             labels = result.get("labels") or []
         except (KeyError, TypeError):  # a summary from before the numbers the comparison reads
             pass
-    return {"preset": preset, "runs": data, "compare": compare, "not_comparable": not_comparable, "labels": labels[:10]}
+    return {"preset": preset, "runs": data, "compare": compare, "not_comparable": not_comparable, "labels": labels[:10],
+            "skip_s": skip}
 
 
-def tool_perf_panel(name, runs, preset="fps"):
+def tool_perf_panel(name, runs, preset="fps", skip_s=0):
     """Writes one HTML file, `<name>.panel.html` in the runs directory, that shows one or two recordings in a
     browser without a server: GPU time per frame with the hitches marked, the numbers (FPS and its lows, frame
     time, jitter, stutter, memory, thermal state), Metal memory over time and, for two runs, A against B. The file
     holds the data itself, no path, and loads nothing from the network; the viewer can hide and reorder the
     widgets and export the layout as JSON. preset `fps` is the timeline, numbers and memory; `compare` (two runs)
-    puts A against B first. Returns the file name, the runs, the frames shown and the file's bytes."""
+    puts A against B first. skip_s leaves out the first seconds of each recording (the start-up), as perf_compare does.
+    Returns the file name, the runs, the frames shown and the file's bytes."""
     if not name_ok(name):
         raise ToolError("a panel name holds only letters, digits, '.', '_' and '-'")
-    payload = panel_data(runs, preset)
+    payload = panel_data(runs, preset, skip_s)
     data = payload["runs"]
     text = json.dumps(payload, separators=(",", ":")).replace("<", "\\u003c")
     page_html = (TOOLS_DIR / "data" / "panel.html").read_text(encoding="utf-8").replace("/*PAYLOAD*/null", text)
@@ -1228,6 +1308,9 @@ RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits
                                                       "to read (about 40 % faster summary): no metal_mib_peak"},
          "env": {**S, "description": "NAME=VALUE pairs separated by spaces, set in the program's environment"}}
 
+SKIP = ("seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) "
+        "keeps all. The GPU numbers, hitches and Metal memory are recomputed without them")
+
 TOOLS = {
     "perf_record": (tool_perf_record, schema(RECORD_PROPS, ["label"]), hints("Record a program", destructive=True)),
     "perf_baseline_record": (tool_perf_baseline_record, schema(
@@ -1253,7 +1336,8 @@ TOOLS = {
          "b": {**S, "description": "run name from perf_runs: the run to compare against a"},
          "short_us": {**I, "description": "an encoder under this GPU time counts as short: 10, 25 (default), 50, 100, "
                                           "250, 500 or 1000"},
-         "markdown": {"type": "boolean", "description": "also return the numbers as Markdown tables, default false"}},
+         "markdown": {"type": "boolean", "description": "also return the numbers as Markdown tables, default false"},
+         "skip_s": {"type": "number", "description": SKIP}},
         ["a", "b"]),
         hints("Compare two recordings")),
     "perf_baseline": (tool_perf_baseline, schema(
@@ -1277,7 +1361,8 @@ TOOLS = {
          "stutter_rate_pct_max": {"type": "number", "description": "the share of stutter frames, in %, at most this"},
          "gpu_ms_p95_max": {"type": "number", "description": "the p95 GPU ms per frame at most this"},
          "hitches_max": {"type": "number", "description": "the number of hitches at most this"},
-         "metal_mib_max": {"type": "number", "description": "the peak Metal memory in MiB at most this"}}, ["run"]),
+         "metal_mib_max": {"type": "number", "description": "the peak Metal memory in MiB at most this"},
+         "skip_s": {"type": "number", "description": SKIP}}, ["run"]),
         hints("Check a run against budgets")),
     "perf_history": (tool_perf_history, schema(
         {"prefix": {**S, "description": "the start of the run names to follow: letters, digits, '.', '_', '-'"},
@@ -1287,7 +1372,8 @@ TOOLS = {
         {"name": {**S, "description": "name for the panel file: letters, digits, '.', '_', '-'"},
          "runs": {"type": "array", "items": S, "description": "one or two run names from perf_runs; with two, the first "
                                                              "is A, the reference"},
-         "preset": {**S, "description": "fps (default) or compare (needs two runs)"}}, ["name", "runs"]),
+         "preset": {**S, "description": "fps (default) or compare (needs two runs)"},
+         "skip_s": {"type": "number", "description": SKIP}}, ["name", "runs"]),
         hints("Write an HTML panel", destructive=False, idempotent=True)),
     "perf_diagnose": (tool_perf_diagnose, schema(
         {"run": {**S, "description": "a run name from perf_runs"},
@@ -1700,10 +1786,11 @@ def http_handler(token):
                 return self.reply(401)
             query = parse_qs(url.query)
             runs = [r for r in (query.get("runs") or [""])[0].split(",") if r]
+            skip = (query.get("skip_s") or [0])[0]
             try:
                 if not runs:
                     runs = [tool_perf_runs(0, 1)["rows"][0]["run"]]
-                self.reply(200, panel_data(runs, (query.get("preset") or [None])[0]))
+                self.reply(200, panel_data(runs, (query.get("preset") or [None])[0], skip))
             except (ToolError, IndexError) as error:
                 self.reply(400, {"error": str(error) if isinstance(error, ToolError) else "no recordings yet"})
             except Exception as error:  # a damaged summary must not stop the server

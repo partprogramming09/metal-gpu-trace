@@ -1305,8 +1305,63 @@ def test_history(tmp_path):
         mcp.OUT, mcp.BASELINES = saved
 
 
+def test_skip_start_up(tmp_path):
+    """skip_s recomputes FPS, lows, hitches and Metal memory from the per-frame files without the first seconds, keeps
+    the whole-run numbers it cannot recompute, reaches perf_compare, perf_gate and the panel, and refuses a bad value."""
+    import metal_trace_mcp as mcp
+
+    starts, t = [], 0.0
+    for i in range(400):  # 10 ms frames; three 40 ms hitches in the first second and one at frame 300
+        t += 40.0 if i in (20, 50, 80, 300) else 10.0
+        starts.append(round(t, 3))
+    frames = "frame,start_ms,gpu_ms_total\n" + "".join(f"{i + 1},{s},4.0\n" for i, s in enumerate(starts))
+    worst = [{"frame": f, "interval_ms": 40.0, "cause": "shader_compile", "cpu_pct": 100.0} for f in (21, 51, 81, 301)]
+    summary = {"gpu": {"frames": 400, "fps_estimate": 90.0, "frame_gpu_ms": {"mean": 4.0, "p50": 4.0, "p95": 4.0, "max": 4.0},
+                       "frame_interval_ms": {"p95": 10.0}, "per_channel_ms": {"x": 1}},
+               "hitches": {"count": 4, "threshold_ms": 15.0, "causes": {"shader_compile": 4}, "worst": worst},
+               "cpu": {"mean": 300.0}, "metal_memory_mib": {"peak": 90.0}, "thermal_state_share": {"Nominal": 1.0},
+               "encoders": {"per_frame": {"p50": 2}, "command_buffers_per_frame": {"p50": 1}, "short_share": {"25": 0.1}, "by_label": []},
+               "gpu_idle": {"idle_share": 0.1, "idle_ms_per_frame": {"p50": 1}}}
+    memory = "time_ms,metal_allocated_bytes\n" + "".join(f"{s},{(90 if s < 1500 else 60) * 2**20}\n" for s in starts[::10])
+    for run in ("s1", "s2"):
+        (tmp_path / f"{run}.json").write_text(json.dumps(summary))
+        (tmp_path / f"{run}.frames.csv").write_text(frames)
+        (tmp_path / f"{run}.metal_memory.csv").write_text(memory)
+    saved, (mcp.OUT, mcp.BASELINES) = (mcp.OUT, mcp.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        assert mcp.steady_summary("s1") == summary, "no skip, the summary as saved"
+        s = mcp.steady_summary("s1", 1.5)  # the first frame is at 10 ms: frames from 1510 ms on
+        assert s["gpu"]["frames"] < 400 and s["hitches"]["count"] == 1, s["hitches"]
+        assert [h["frame"] for h in s["hitches"]["worst"]] == [301] and s["hitches"]["causes"] == {"shader_compile": 1}
+        assert s["cpu"] is None and s["metal_memory_mib"]["peak"] == 60.0 and "per_channel_ms" not in s["gpu"]
+        assert s["gpu"]["fps_estimate"] == 100.0 and s["steady"]["skip_s"] == 1.5 and "thermal_state_share" in s["steady"]["whole_run"]
+        both = mcp.tool_perf_compare("s1", "s2", skip_s=1.5)
+        assert both["skipped_s"] == 1.5 and both["metrics"]["fps"]["a"] == 100.0, both["metrics"]["fps"]
+        assert "skipped_s" not in mcp.tool_perf_compare("s1", "s2")
+        gate = mcp.tool_perf_gate("s1", hitches_max=1, metal_mib_max=70, skip_s=1.5)
+        assert gate["pass"] and gate["skipped_s"] == 1.5, gate
+        assert not mcp.tool_perf_gate("s1", hitches_max=1, metal_mib_max=70)["pass"], "the whole run has 4 hitches and 90 MiB"
+        data = mcp.panel_data(["s1", "s2"], skip_s=1.5)
+        run = data["runs"][0]
+        assert data["skip_s"] == 1.5 and len(run["marks"]) == 1 and run["frames"][0][0] >= 1510 and run["memory"][0][0] >= 1510, run["marks"]
+        assert mcp.panel_data(["s1", "s2"])["skip_s"] == 0
+        for bad in (-1, 601, "x"):
+            try:
+                mcp.steady_summary("s1", bad)
+                raise AssertionError(f"{bad} must fail")
+            except mcp.ToolError:
+                pass
+        try:
+            mcp.steady_summary("s1", 500)
+            raise AssertionError("a skip past the last frame must fail")
+        except mcp.ToolError as error:
+            assert "under 2 frames" in str(error)
+    finally:
+        mcp.OUT, mcp.BASELINES = saved
+
+
 def main():
-    tests = [test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

@@ -3,6 +3,15 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `skip_s` on `perf_compare`, `perf_gate` and `perf_panel` (and `skip_s` in the live panel's URL fragment) leaves out the
+  first seconds of each recording, where shaders compile and resources load. FPS and its lows, GPU and interval ms,
+  stutter, jitter, hitches and Metal memory are recomputed from the per-frame files; the CPU use is dropped; thermal
+  state, process memory, encoders and GPU idle stay whole-run (`steady.whole_run` and the panel say so). Causes are kept
+  for the 20 longest hitches the summary lists (`causes_partial` otherwise). On two real drawstress recordings, 2 s
+  moved the hitch counts from 9 and 2 to 2 and 0, and the 1% low from 92.5 and 96.7 to 96.3 and 97.6.
+
 ## 0.13.0 — 2026-11-02
 
 - `perf_history`: lists the runs whose name starts with a prefix, oldest first, with FPS, 1% low, GPU ms, stutter,
