@@ -118,6 +118,7 @@ const T = {
       encNote: "Solo se guardan los 20 con más GPU; \"fuera del top 20\" significa que el encoder pudo salir de la lista, no que haya desaparecido.",
       states: {same: "igual", changed: "cambió", new: "nuevo", gone: "ya no está", outside_top_20: "fuera del top 20"},
       skipped: s => `Se ignoraron los primeros ${s} s de cada grabación (arranque). Las cifras de GPU, los hitches y la memoria Metal se recalcularon sin ese tramo; el estado térmico y la memoria del proceso son de toda la grabación.`,
+      wBottleneck: "Los FPS empeoran aunque los ms de GPU por frame mejoran: el límite no es la GPU. La GPU espera al programa (mira el tiempo ocioso de la GPU en A y B y la CPU de los hitches).",
       wMeasure: "Una grabación es de Windows y otra de Metal: los ms de GPU y la memoria Metal no miden lo mismo y quedan sin comparar. Usa FPS, 1% low, stutter y jitter."},
     m: {
       fps: ["FPS", "Frames por segundo según la mediana del intervalo entre frames. Con vsync a 60 Hz el máximo es cerca de 60."],
@@ -172,6 +173,7 @@ const T = {
       encNote: "Only the 20 with the most GPU are kept; \"outside the top 20\" means the encoder may have left the list, not that it disappeared.",
       states: {same: "same", changed: "changed", new: "new", gone: "gone", outside_top_20: "outside the top 20"},
       skipped: s => `The first ${s} s of each recording (start-up) were left out. The GPU numbers, hitches and Metal memory were recomputed without them; the thermal state and the process memory are for the whole recording.`,
+      wBottleneck: "FPS got worse although GPU ms per frame got better: the limit is not the GPU. The GPU waits for the program (see the GPU idle time of A and B and the CPU of the hitches).",
       wMeasure: "One recording is from Windows and the other from Metal: GPU ms and Metal memory do not measure the same thing and are left uncompared. Use FPS, 1% low, stutter and jitter."},
     m: {
       fps: ["FPS", "Frames per second from the median interval between frames. With vsync at 60 Hz the maximum is near 60."],
@@ -346,6 +348,7 @@ function warnings() {
     const [a, b] = DATA.runs.map(r => r.layer || u.layerNone);
     if (a !== b) out.push(u.wLayer(a, b));
     if (DATA.not_comparable.length) out.push(u.wMeasure);
+    if (DATA.compare && direction("fps", DATA.compare.fps) === "worse" && direction("gpu_ms_mean", DATA.compare.gpu_ms_mean) === "better") out.push(u.wBottleneck);
   }
   return out;
 }
