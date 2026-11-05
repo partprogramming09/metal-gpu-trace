@@ -7,6 +7,14 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - `perf_record` takes `example` for a workload that lists `examples` in `data/workloads.json` (`workload_list` shows
   them): its argument goes after the api's. No workload ships examples yet; the first is the bgfx examples archive.
+- `perf_record` (and the tools that pass its arguments on) takes two macOS levers. `memory_free_pct` (20 to 60) holds
+  the whole Mac at that percentage of RAM free while recording, with `memory_pressure -p N -y S`, and stops it when the
+  recording ends or fails; plain `-p` reaches the target and exits at once, so it is not enough. `background` runs the
+  program under `taskpolicy -b` (`PERF_PREFIX` in `perf_record.sh`; the trace names the process `taskpolicy`): on
+  drawstress at dim 20 in native Metal, 8 s, FPS fell from 723 to 109 and 107 in two runs (GPU 0.87 to 1.24 ms per
+  frame), and a run without Instruments swung from 18 to 280 times slower, so it is a throttle, not a switch to the
+  efficiency cores. `memory_free_pct=30` left drawstress at 728 FPS but cut its resident memory (p95 165 to 118 MiB):
+  the pressure applies, a small GPU-bound program does not feel it. Lower power mode needs `sudo pmset` and is not offered.
 - `perf_sweep`: records one run per value of `dim`, `example`, `api` or an environment variable (`env:NAME`), 2 to 8
   values and up to 24 recordings, and returns the median FPS, 1 % low, GPU ms and stutter per value; with 3 or more
   numeric values, the line GPU ms per frame follows (fixed ms and ms per draw for `dim`) with its r2.

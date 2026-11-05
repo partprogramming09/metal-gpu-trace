@@ -58,7 +58,8 @@ INSTRUCTIONS = (
     "or every process named like a native program. To compare native Metal with a translation layer without a game "
     "of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload "
     "that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an "
-    "environment variable and fits GPU ms per frame on the value."
+    "environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory "
+    "while recording (keep other work off it) and background throttles the program: repeat a run that uses either."
 )
 
 
@@ -113,13 +114,15 @@ def page(items, offset, limit):
 
 
 def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, workdir=None, args="", workload=None,
-                     api=None, dim=None, memory=True, env="", counters=False, example=None):
+                     api=None, dim=None, memory=True, env="", counters=False, example=None, memory_free_pct=None,
+                     background=False):
     """Records `program` (an .exe under Wine, or a macOS binary with wine="native"), or a test program fetched with
     workload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per
     frame, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest
     to read). When it ends it stops every program of that Wine prefix (wineserver -k), or every process named like
     the program with native. counters=true also records Metal GPU Counters (`gpu_counters` in the summary: the units the
     GPU waited on, its utilization, occupancy and memory bandwidth); it adds about 40 s of read-back per recorded second."""
+    check_levers(memory_free_pct, background)
     program_env, layer = check_env(env), None
     if workload:
         program, wine, args, workload_env = workload_command(workload, api, dim, wine, args, example)
@@ -138,7 +141,8 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
     workdir = pathlib.Path(workdir).expanduser() if workdir else program.parent
     prefix = pathlib.Path(prefix or os.environ.get("WINEPREFIX", "~/.wine")).expanduser()
     return record(label, seconds, wine, prefix, workdir,
-                  [str(program.resolve()), *split_args(args)], program_env, memory, layer=layer, counters=counters)
+                  [str(program.resolve()), *split_args(args)], program_env, memory, layer=layer, counters=counters,
+                  background=background, memory_free_pct=memory_free_pct)
 
 
 def check_env(env):
@@ -430,7 +434,61 @@ def deadline(seconds, counters=False):
     return int(seconds) * (55 if counters else 15) + 180
 
 
-def record(label, seconds, wine, prefix, workdir, command, program_env="", memory=True, layer=None, counters=False):
+MEMORY_PRESSURE = ["memory_pressure"]
+# xctrace --launch takes an absolute path only
+BACKGROUND_PREFIX = "/usr/sbin/taskpolicy -b"
+
+
+def check_levers(memory_free_pct=None, background=False):
+    """Refuses a memory_free_pct outside 20 to 60, and either lever under Windows."""
+    if memory_free_pct is not None:
+        try:
+            ok = 20 <= int(memory_free_pct) <= 60
+        except (TypeError, ValueError):
+            ok = False
+        if not ok:
+            raise ToolError("memory_free_pct is 20 to 60, the percentage of RAM left free; lower values can freeze the Mac")
+    if (memory_free_pct or background) and sys.platform == "win32":
+        raise ToolError("memory_free_pct and background work on macOS only")
+
+
+def hold_memory_pressure(free_pct, hold_s, wait_s=90):
+    """Starts memory_pressure to hold the Mac at `free_pct` percent free for `hold_s` seconds and returns the process
+    once it reports stable; stops it and raises ToolError when it does not within `wait_s` seconds."""
+    log = tempfile.TemporaryFile("w+")
+    try:
+        proc = subprocess.Popen([*MEMORY_PRESSURE, "-p", str(int(free_pct)), "-y", str(int(hold_s)), "-Q"],
+                                stdout=log, stderr=subprocess.STDOUT)
+    except OSError as error:
+        log.close()
+        raise ToolError("memory_pressure is not available") from error
+    end = time.monotonic() + wait_s
+    while time.monotonic() < end and proc.poll() is None:
+        log.seek(0)
+        if "Stable at percent free" in log.read():
+            return proc
+        time.sleep(0.5)
+    proc.terminate()
+    proc.wait()
+    log.close()
+    raise ToolError("memory_pressure did not reach that free percentage; the Mac may already be below it")
+
+
+def record(label, seconds, wine, prefix, workdir, command, *args, memory_free_pct=None, **options):
+    """Runs record_run, holding the Mac at `memory_free_pct` percent free meanwhile when it is given, and stopping
+    that pressure whatever happens."""
+    check_levers(memory_free_pct, options.get("background", False))
+    hold = hold_memory_pressure(memory_free_pct, int(seconds) + 120) if memory_free_pct else None
+    try:
+        return record_run(label, seconds, wine, prefix, workdir, command, *args, **options)
+    finally:
+        if hold:
+            hold.terminate()
+            hold.wait()
+
+
+def record_run(label, seconds, wine, prefix, workdir, command, program_env="", memory=True, layer=None, counters=False,
+               background=False):
     """Runs perf_record.sh and returns the summary it wrote, stopping the whole recording and deleting its files if
     it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV, `memory` false sets PERF_MEMORY=0, and `layer`
     names the translation layer a native run goes through (MoltenVK) instead of "native Metal"."""
@@ -440,6 +498,8 @@ def record(label, seconds, wine, prefix, workdir, command, program_env="", memor
                PERF_ENV=" ".join(filter(None, [os.environ.get("PERF_ENV", ""), program_env])))
     if not memory:
         env["PERF_MEMORY"] = "0"
+    if background:
+        env["PERF_PREFIX"] = BACKGROUND_PREFIX
     if counters:
         env["PERF_INSTRUMENTS"] = ";".join(filter(None, [os.environ.get("PERF_INSTRUMENTS", ""), "Metal GPU Counters"]))
     layer = layer or layer_of(wine, prefix, env["PERF_ENV"])
@@ -1463,6 +1523,10 @@ RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits
          "memory": {"type": "boolean", "description": "default true; false skips the Metal memory table, the slowest "
                                                       "to read (about 40 % faster summary): no metal_mib_peak"},
          "env": {**S, "description": "NAME=VALUE pairs separated by spaces, set in the program's environment"},
+         "memory_free_pct": {**I, "description": "macOS only, 20 to 60: holds the whole Mac at this percentage of RAM free "
+                                                 "while recording (memory_pressure), to see how the program behaves short of memory; lower can freeze the Mac"},
+         "background": {"type": "boolean", "description": "macOS only, default false; true runs the program under taskpolicy -b, "
+                                                        "which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run"},
          "counters": {"type": "boolean", "description": "default false; true also records Metal GPU Counters (gpu_counters in "
                                                         "the summary); not under Windows; adds about 40 s of read-back per recorded second"}}
 

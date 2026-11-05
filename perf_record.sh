@@ -86,6 +86,8 @@ sampler=$!
 # PERF_ENV="NAME=VALUE ..." sets the program's variables (MULLION_DIAG=profile labels Mullion's encoders)
 extra=()
 for pair in ${=PERF_ENV:-}; do extra+=(--env $pair); done
+# PERF_PREFIX="/usr/sbin/taskpolicy -b" runs the program under that command (an absolute path: xctrace needs one)
+launcher=(${=PERF_PREFIX:-})
 # PERF_INSTRUMENTS="Time Profiler;Metal GPU Counters" adds Instruments to the Metal System Trace template
 for instrument in ${(s:;:)PERF_INSTRUMENTS:-}; do extra+=(--instrument $instrument); done
 if [[ $wine == attach ]]; then
@@ -93,14 +95,14 @@ if [[ $wine == attach ]]; then
     --attach $pid || true
 elif [[ $wine == native ]]; then
   xcrun xctrace record --template "Metal System Trace" --time-limit ${seconds}s --output $out/$name.trace \
-    $extra --launch -- "$@" || true
+    $extra --launch -- $launcher "$@" || true
   stop_program
 else
   # the caller's overrides (a Mullion built for system32 needs d3d12,...=n) come before Wine's own
   overrides="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}mscoree=;mshtml="
   xcrun xctrace record --template "Metal System Trace" --time-limit ${seconds}s --output $out/$name.trace \
     --env WINEPREFIX=$prefix --env WINEDEBUG=-all --env "WINEDLLOVERRIDES=$overrides" $extra \
-    --launch -- $wine/bin/wine "$@" || true
+    --launch -- $launcher $wine/bin/wine "$@" || true
   # the program outlives the recording; stop what is left of its Wine
   WINEPREFIX=$prefix $wine/bin/wineserver -k || true
 fi
