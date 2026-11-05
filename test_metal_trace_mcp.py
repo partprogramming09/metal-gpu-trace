@@ -1499,8 +1499,29 @@ def test_layout(tmp_path):
         mcp.OUT = saved
 
 
+def test_machine(tmp_path):
+    """machine_info() names the chip, cores, RAM and macOS without host name or UUID, and gives None when the machine
+    is not the one that recorded the trace or its facts cannot be read."""
+    facts = {
+        ("sysctl", "-n", "machdep.cpu.brand_string"): "Apple M1 Pro\n",
+        ("sysctl", "-n", "hw.perflevel0.logicalcpu"): "8\n",
+        ("sysctl", "-n", "hw.perflevel1.logicalcpu"): "2\n",
+        ("sysctl", "-n", "hw.memsize"): "17179869184\n",
+        ("sw_vers", "-productVersion"): "27.0.1\n",
+        ("ioreg", "-c", "AGXAccelerator", "-r", "-d", "1"): '"gpu-core-count" = 16\n"IOClass" = "AGXAcceleratorG13X"\n',
+    }
+    device = {"memory-size": "17179869184", "os-version": "27.0.1 (26A434)"}
+    got = perf_report.machine_info(device, facts.__getitem__)
+    assert got == {"chip": "Apple M1 Pro", "cpu_cores_p": 8, "cpu_cores_e": 2, "gpu_cores": 16,
+                   "gpu_class": "AGXAcceleratorG13X", "ram_gib": 16, "macos": "27.0.1"}, got
+    assert perf_report.machine_info(dict(device, **{"memory-size": "8589934592"}), facts.__getitem__) is None
+    assert perf_report.machine_info(dict(device, **{"os-version": "26.4 (25E1)"}), facts.__getitem__) is None
+    assert perf_report.machine_info({}, facts.__getitem__) is None
+    assert perf_report.machine_info(device, {}.__getitem__) is None
+
+
 def main():
-    tests = [test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

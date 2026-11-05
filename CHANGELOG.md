@@ -3,6 +3,12 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- A macOS summary has `machine`: chip, P and E CPU cores, GPU cores and class, RAM in GiB and macOS version, with no
+  host name or UUID, so numbers say where they were measured. It is `null` when the Mac that summarizes the trace has
+  other RAM or macOS than the trace's device (a trace recorded elsewhere), or a fact cannot be read.
+
 ## 0.16.0 — 2026-11-02
 
 - GPU counters: `perf_record` takes `counters=true` (or `PERF_INSTRUMENTS="Metal GPU Counters"`), and the summary gets
