@@ -903,6 +903,47 @@ def test_example_traits(tmp_path):
         assert traits["native_encoders_per_frame"] > 0, name
 
 
+def test_cold_warm(tmp_path):
+    """perf_report counts hitches per minute, and cold_warm_report counts the shader_compile hitches only the first run has."""
+    import metal_trace_mcp as mcp
+    import perf_report
+    starts = [i * 10.0 for i in range(100)]
+    starts[50:] = [t + 100 for t in starts[50:]]
+    found = perf_report.attribute_hitches(list(range(100)), starts, [1.0] * 100, [(500, 560)], [], [])
+    assert found["count"] == 1 and found["per_minute"] == round(1 / ((starts[-1] - starts[0]) / 60000), 2), found
+    assert perf_report.attribute_hitches([0], [0.0], [1.0], [], [], [])["count"] == 0
+
+    def summary(compiles, busy):
+        return {"gpu": {"frames": 900}, "hitches": {"count": compiles + 1, "per_minute": 3.0,
+                                                    "causes": {"shader_compile": compiles, "cpu_or_wait": 1}},
+                "graphics_compiler": {"busy_ms": busy}}
+    report = mcp.cold_warm_report("g", ("g-first_1", summary(5, 120.0)), ("g-second_1", summary(1, 8.0)))
+    assert report["first_seen_hitches"] == 4 and report["first"]["compiler_busy_ms"] == 120.0, report
+    assert report["extra_hitches_in_first"] == 4, report
+    assert mcp.cold_warm_report("g", ("a", summary(0, 0.0)), ("b", summary(2, 3.0)))["first_seen_hitches"] == 0
+    single = perf_report.attribute_hitches([0, 1], [0.0, 10.0], [1.0, 1.0], [], [], [])
+    assert single["per_minute"] == 0.0 and perf_report.attribute_hitches([0], [0.0], [1.0], [], [], [])["per_minute"] is None
+    original_out, original_record = mcp.OUT, mcp.tool_perf_record
+    mcp.OUT = tmp_path
+    made = []
+
+    def fake_record(label, **kwargs):  # writes the summary a real recording would
+        made.append((label, kwargs))
+        (tmp_path / f"{label}_20260101-000000.json").write_text(json.dumps(summary(5 if label.endswith("first") else 1, 9.0)))
+    mcp.tool_perf_record = fake_record
+    try:
+        real = mcp.tool_perf_cold_warm("w", program="x", seconds=5)
+    finally:
+        mcp.OUT, mcp.tool_perf_record = original_out, original_record
+    assert [m[0] for m in made] == ["w-first", "w-second"] and made[0][1] == {"program": "x", "seconds": 5}, made
+    assert real["first_seen_hitches"] == 4 and real["first"]["run"] == "w-first_20260101-000000", real
+    try:
+        mcp.tool_perf_cold_warm("bad name", program="x")
+        raise AssertionError("a name with a space must be refused")
+    except mcp.ToolError:
+        pass
+
+
 def test_validation(tmp_path):
     """validation_summary counts the shader and API validation messages of a program's output by kind, whatever the offset."""
     import perf_report
@@ -1027,7 +1068,7 @@ def test_server(tmp_path):
     assert [x["uriTemplate"] for x in replies[17]["result"]["resourceTemplates"]] == ["metal-trace://runs/{run}"]
     assert json.loads(replies[26]["result"]["contents"][0]["text"]) == {"gpu": {"frames": 100}}
     assert replies[27]["error"]["code"] == replies[28]["error"]["code"] == -32002, "a bad run name is not found"
-    assert len(replies[2]["result"]["tools"]) == 23
+    assert len(replies[2]["result"]["tools"]) == 24
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -1288,7 +1329,7 @@ def test_http(tmp_path):
         assert post(ping, path="/other")[0] == 404
         assert post({"jsonrpc": "2.0", "method": "notifications/initialized"}) == (202, None)
         code, tools = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        assert code == 200 and len(tools["result"]["tools"]) == 23
+        assert code == 200 and len(tools["result"]["tools"]) == 24
         code, runs = post({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                            "params": {"name": "perf_runs", "arguments": {}, "_meta": {"progressToken": "x"}}})
         assert code == 200 and runs["result"]["structuredContent"]["total"] == 0, runs
@@ -1992,7 +2033,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_example_traits, test_validation, test_counter_windows, test_readme_lists_every_tool, test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_example_traits, test_cold_warm, test_validation, test_counter_windows, test_readme_lists_every_tool, test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

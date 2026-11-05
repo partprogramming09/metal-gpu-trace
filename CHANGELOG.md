@@ -3,6 +3,17 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `perf_cold_warm` records a program twice in a row and returns each run's hitches, hitches per minute and graphics compiler
+  time, `first_seen_hitches` (shader_compile hitches only the first run has) and `extra_hitches_in_first` (any cause). It does
+  not clear Metal's shader cache, and runs on macOS only. `first_seen_hitches` is the first run's shader_compile hitch count
+  minus the second's, never below 0. On 21-deferred, native, 10 s each: the first run 16 hitches (100 a minute), the second 3,
+  and `first_seen_hitches` 0 because neither run had a shader_compile hitch (the graphics compiler was busy 0.3 ms in both), so
+  that run's first-run cost was not a shader compile. One pair of runs only.
+- `hitches.per_minute` in every summary of a recording and in the summaries `skip_s` recomputes: the hitch count over the
+  recorded minutes, `null` with under two frames.
+
 ## 0.20.0 — 2026-11-05
 
 - `bgfx-examples` (release `workloads-7`, 38 MB) holds ten more examples: 08-update, 10-font, 16-shadowmaps, 19-oit, 20-nanovg,
