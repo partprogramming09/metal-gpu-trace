@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.19.0 — 2026-11-05
 
 - With `counters=true`, each hitch in `hitches.worst` has `window_ms` (the interval before the late frame) and `top_limiter`:
   the Limiter counter with the highest mean in that window, from the GPU counters kept as means per 10 ms. On a 3 s drawstress
@@ -12,6 +12,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   counters.
   The window is read in whole 10 ms bins (the one that starts at its end left out), and `top_limiter` is `null` when no sample
   falls in it.
+  Cost, measured on a 20 s drawstress recording with counters (10.4 million samples): 259 s to summarize it, 3.7 GB peak resident
+  memory for the process tree (xctrace's export dominates); the extra reading adds about 20 % to the counter parsing itself.
 
 ## 0.18.0 — 2026-11-05
 
