@@ -1479,7 +1479,19 @@ def test_windows_against_metal(tmp_path):
             locked_summary["machine"] = {"screen_locked": locked}
             (tmp_path / f"{run}.json").write_text(json.dumps(locked_summary))
         screen = mcp.tool_perf_compare("mac", "mac2")["screen"]
-        assert screen["a"] is True and screen["b"] is False and "compare GPU ms" in screen["note"], screen
+        assert screen["a"] is True and screen["b"] is False and "GPU ms" in screen["note"] and "unlocked" in screen["note"], screen
+        for run, share in (("mac", {"Minimum": 0.65, "Medium": 0.35, "Maximum": 0.0}), ("mac2", {"Minimum": 1.0})):
+            state_summary = summary("macOS", 60.0)
+            state_summary["gpu_performance_state_share"] = share
+            (tmp_path / f"{run}.json").write_text(json.dumps(state_summary))
+        state = mcp.tool_perf_compare("mac", "mac2")["gpu_state"]
+        assert state["a"] == 0.35 and state["b"] == 0.0 and "GPU ms" in state["note"] and "performance state" in state["note"], state
+        for share_b in ({"Minimum": 0.8, "Medium": 0.2}, None):
+            near = summary("macOS", 60.0)
+            if share_b:
+                near["gpu_performance_state_share"] = share_b
+            (tmp_path / "mac2.json").write_text(json.dumps(near))
+            assert "gpu_state" not in mcp.tool_perf_compare("mac", "mac2"), share_b
         locked_summary["machine"] = {"screen_locked": True}
         (tmp_path / "mac2.json").write_text(json.dumps(locked_summary))
         assert "screen" not in mcp.tool_perf_compare("mac", "mac2")
