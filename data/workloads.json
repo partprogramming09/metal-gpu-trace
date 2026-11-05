@@ -21,15 +21,17 @@
     },
     "bgfx-examples": {
       "title": "bgfx examples",
-      "about": "Nine of bgfx's examples, each a different load: 01-cubes and 35-dynamic (many cubes, uploads), 06-bump (textured), 09-hdr (render-target chain), 21-deferred (G-buffer and lights), 24-nbody (compute), 31-rsm (reflective shadow maps), 38-bloom (post-processing), 48-drawindirect (draws the GPU decides). Pass example to perf_record.",
+      "about": "Nineteen of bgfx's examples, each a different load: 01-cubes and 35-dynamic (many cubes, uploads), 06-bump (textured), 09-hdr (render-target chain), 21-deferred (G-buffer and lights), 24-nbody (compute), 31-rsm (reflective shadow maps), 38-bloom (post-processing), 48-drawindirect (draws the GPU decides); and, run only in native Metal so far, 08-update (texture uploads in every compressed format), 10-font and 20-nanovg (text and interface), 16-shadowmaps, 19-oit and 32-particles (transparency and overdraw), 30-picking (GPU read-back), 40-svt (sparse virtual textures: its first run writes a 370 MB tile cache to temp/ in the workload's folder), 46-fsr (upscaling), 47-pixelformats (texture formats). Pass example to perf_record.",
       "license": "BSD-2-Clause (bgfx, Branimir Karadzic); LICENSE-bgfx in the archive",
-      "url": "https://github.com/partprogramming09/metal-gpu-trace/releases/download/workloads-4/bgfx-examples-workloads-4.tar.gz",
-      "sha256": "9c1bd6164b4ac646def87e25656967aa039d9c6966821e7fe9b8e3f573bfd290",
-      "bytes": 26399076,
+      "url": "https://github.com/partprogramming09/metal-gpu-trace/releases/download/workloads-7/bgfx-examples-workloads-7.tar.gz",
+      "sha256": "bd41458ee01e4fd93be2779eeabc0e20c314d1313bd365bcc86d71c8e4004187",
+      "bytes": 38168959,
       "dir": "bgfx-examples",
       "examples": {
         "01-cubes": "01-", "06-bump": "06-", "09-hdr": "09-", "21-deferred": "21-", "24-nbody": "24-",
-        "31-rsm": "31-", "35-dynamic": "35-", "38-bloom": "38-", "48-drawindirect": "48-"
+        "31-rsm": "31-", "35-dynamic": "35-", "38-bloom": "38-", "48-drawindirect": "48-",
+        "08-update": "08-", "10-font": "10-", "16-shadowmaps": "16-", "19-oit": "19-", "20-nanovg": "20-",
+        "30-picking": "30-", "32-particles": "32-", "40-svt": "40-", "46-fsr": "46-", "47-pixelformats": "47-"
       },
       "example_traits": {
         "01-cubes": {"class": "cpu_submit", "native_encoders_per_frame": 2},
@@ -40,7 +42,17 @@
         "31-rsm": {"class": "gpu_alu", "native_encoders_per_frame": 5},
         "35-dynamic": {"class": "streaming", "native_encoders_per_frame": 2},
         "38-bloom": {"class": "postprocess", "native_encoders_per_frame": 11},
-        "48-drawindirect": {"class": "indirect", "native_encoders_per_frame": 3}
+        "48-drawindirect": {"class": "indirect", "native_encoders_per_frame": 3},
+        "08-update": {"class": "streaming", "native_encoders_per_frame": 14},
+        "10-font": {"class": "ui_text", "native_encoders_per_frame": 2},
+        "16-shadowmaps": {"class": "shadows", "native_encoders_per_frame": 4},
+        "19-oit": {"class": "overdraw", "native_encoders_per_frame": 3},
+        "20-nanovg": {"class": "ui_text", "native_encoders_per_frame": 2},
+        "30-picking": {"class": "readback", "native_encoders_per_frame": 4},
+        "32-particles": {"class": "overdraw", "native_encoders_per_frame": 2},
+        "40-svt": {"class": "streaming", "native_encoders_per_frame": 5},
+        "46-fsr": {"class": "upscale", "native_encoders_per_frame": 5},
+        "47-pixelformats": {"class": "format_coverage", "native_encoders_per_frame": 2}
       },
       "apis": {
         "mtl": {"program": "examples", "args": "--mtl", "wine": false},
