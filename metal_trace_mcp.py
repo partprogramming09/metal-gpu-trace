@@ -115,7 +115,7 @@ def page(items, offset, limit):
 
 def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, workdir=None, args="", workload=None,
                      api=None, dim=None, memory=True, env="", counters=False, example=None, memory_free_pct=None,
-                     background=False):
+                     background=False, size=None):
     """Records `program` (an .exe under Wine, or a macOS binary with wine="native"), or a test program fetched with
     workload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per
     frame, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest
@@ -125,9 +125,11 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
     check_levers(memory_free_pct, background)
     program_env, layer = check_env(env), None
     if workload:
-        program, wine, args, workload_env = workload_command(workload, api, dim, wine, args, example)
+        program, wine, args, workload_env = workload_command(workload, api, dim, wine, args, example, size)
         program_env = " ".join(filter(None, [workload_env, program_env]))
         layer = workload_layer(workload, api, dim)
+    if size is not None and not workload:
+        raise ToolError("size applies to a workload that lists size_variables")
     if not program:
         raise ToolError("pass program, or workload and api (workload_list lists them)")
     wine = wine or os.environ.get("METAL_TRACE_WINE")
@@ -192,7 +194,15 @@ def workload_layer(name, api, dim):
             "program_env": f"{entry['dim_variable']}={int(dim)}" if dim else ""}
 
 
-def workload_command(name, api, dim, wine, args, example=None):
+def check_size(size):
+    """Returns (width, height) from a "WIDTHxHEIGHT" text between 320x240 and 7680x4320, or raises ToolError."""
+    match = re.fullmatch(r"(\d{3,4})x(\d{3,4})", str(size))
+    if not match or not (320 <= int(match[1]) <= 7680 and 240 <= int(match[2]) <= 4320):
+        raise ToolError("size is WIDTHxHEIGHT, from 320x240 to 7680x4320")
+    return int(match[1]), int(match[2])
+
+
+def workload_command(name, api, dim, wine, args, example=None, size=None):
     """Returns the program, Wine, arguments and program environment that run a fetched workload with `api`; a workload
     with `examples` runs the one named by `example`."""
     entry, target = workload_entry(name)
@@ -209,6 +219,10 @@ def workload_command(name, api, dim, wine, args, example=None):
         raise ToolError(f"{name} is not downloaded yet; call workload_fetch first")
     run = entry["apis"][api]
     program_env = f"{entry['dim_variable']}={int(dim)}" if dim else ""
+    if size is not None:
+        if not entry.get("size_variables"):
+            raise ToolError(f"size does not apply to {name}")
+        program_env = " ".join(filter(None, [program_env, *(f"{v}={n}" for v, n in zip(entry["size_variables"], check_size(size)))]))
     if run.get("moltenvk"):
         program_env = " ".join(filter(None, [program_env, f"DYLD_LIBRARY_PATH={moltenvk_dir()}"]))
     use_wine = run["wine"] and sys.platform != "win32"
@@ -1348,8 +1362,8 @@ def line_fit(points):
 def sweep_values(variable, values):
     """Returns the values of a sweep checked and typed (integers for dim), or raises ToolError."""
     env_name = variable[4:] if variable.startswith("env:") else None
-    if env_name is None and variable not in ("dim", "example", "api"):
-        raise ToolError("variable is dim, example, api or env:NAME")
+    if env_name is None and variable not in ("dim", "example", "api", "size"):
+        raise ToolError("variable is dim, example, api, size or env:NAME")
     if env_name is not None and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", env_name):
         raise ToolError("env:NAME takes a variable name of letters, digits and '_'")
     if not isinstance(values, list) or not 2 <= len(values) <= 8:
@@ -1361,13 +1375,16 @@ def sweep_values(variable, values):
             raise ToolError("dim values are whole numbers") from error
         if min(values) < 1:
             raise ToolError("dim values are 1 or more")
+    elif variable == "size":
+        for v in values:
+            check_size(v)
     elif any(not re.fullmatch(r"\S+", str(v)) for v in values):
         raise ToolError("a value holds no spaces")
     return values if variable == "dim" else [str(v) for v in values]
 
 
 def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, **record):
-    """Records the same program once per value of one variable (dim, example, api, or env:NAME for an environment
+    """Records the same program once per value of one variable (dim, example, api, size, or env:NAME for an environment
     variable) and returns, per value, the median of FPS, 1 % low, GPU ms per frame and stutter, and with 3 or more
     numeric values the straight line GPU ms per frame follows (fixed ms plus ms per draw for dim, per unit otherwise)
     with its r2. With rounds above 1 the values run in opposite order every other round, so drift hits all alike.
@@ -1526,6 +1543,7 @@ RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits
                                                         "METAL_TRACE_MOLTENVK), d3d11 or d3d12 (under wine)"},
          "dim": {**I, "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame"},
          "example": {**S, "description": "with a workload that lists examples in workload_list: the one to run"},
+         "size": {**S, "description": "with a workload that has size_variables (drawstress): the window size, WIDTHxHEIGHT such as 1920x1080"},
          "memory": {"type": "boolean", "description": "default true; false skips the Metal memory table, the slowest "
                                                       "to read (about 40 % faster summary): no metal_mib_peak"},
          "env": {**S, "description": "NAME=VALUE pairs separated by spaces, set in the program's environment"},
@@ -1549,7 +1567,7 @@ TOOLS = {
         hints("Record a reference", destructive=True)),
     "perf_sweep": (tool_perf_sweep, schema(
         {"name": {**S, "description": "name for the runs: letters, digits, '.', '_', '-'"},
-         "variable": {**S, "description": "what changes between runs: dim, example, api, or env:NAME for an environment variable"},
+         "variable": {**S, "description": "what changes between runs: dim, example, api, size, or env:NAME for an environment variable"},
          "values": {"type": "array", "items": {"type": ["string", "integer"]},
                     "description": "2 to 8 values of the variable, such as [10, 20, 30] for dim"},
          "rounds": {**I, "description": "rounds, default 1, at most 5 and at most 24 recordings in all; every other round runs the values in reverse"},

@@ -15,6 +15,11 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   frame), and a run without Instruments swung from 18 to 280 times slower, so it is a throttle, not a switch to the
   efficiency cores. `memory_free_pct=30` left drawstress at 728 FPS but cut its resident memory (p95 165 to 118 MiB):
   the pressure applies, a small GPU-bound program does not feel it. Lower power mode needs `sudo pmset` and is not offered.
+- `size` (`"1920x1080"`) on `perf_record` and as a `perf_sweep` variable sets the window size of a workload that lists
+  `size_variables` in `data/workloads.json`. The drawstress patch reads `DRAWSTRESS_WIDTH` and `DRAWSTRESS_HEIGHT`
+  (320x240 to 7680x4320) before the swap chain is created; the workflow builds it, and drawstress for x86_64
+  (`drawstress-x64`, run under Rosetta like Wine), into release `workloads-3`. Until `data/workloads.json` points at
+  that release, the shipped drawstress has no size knob.
 - `perf_sweep`: records one run per value of `dim`, `example`, `api` or an environment variable (`env:NAME`), 2 to 8
   values and up to 24 recordings, and returns the median FPS, 1 % low, GPU ms and stutter per value; with 3 or more
   numeric values, the line GPU ms per frame follows (fixed ms and ms per draw for `dim`) with its r2.
