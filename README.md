@@ -176,9 +176,10 @@ built from source by `.github/workflows/workloads.yml`: a grid of cubes, `dim`³
 inside the program. The `compare-layer` prompt (`/metal-trace:compare-layer drawstress d3d12` in Claude Code) records it
 in native Metal and under the Wine in `METAL_TRACE_WINE`, then runs `perf_diagnose` and `perf_compare`.
 
-The second workload, `bgfx-examples` (36 MiB), holds nineteen bgfx examples, each a different load (many cubes, textures,
+The second workload, `bgfx-examples` (55 MiB), holds thirty bgfx examples, each a different load (many cubes, textures,
 render-target chains, a G-buffer, compute, reflective shadow maps, post-processing, draws the GPU decides, text and
-interface, shadows, transparency, GPU read-back, virtual textures, upscaling, texture formats; the last ten only measured
+interface, shadows, transparency, GPU read-back, virtual textures, upscaling, texture formats, occlusion queries, tessellation,
+multiple windows, off-screen rendering; the last twenty-one only measured
 in native Metal, and 40-svt writes a 370 MB tile cache to `temp/` in the workload's folder on its first run):
 `perf_record(workload="bgfx-examples", api="d3d12", example="21-deferred")`. Two macOS levers change the Mac under a
 recording: `memory_free_pct` (20 to 60) holds the whole Mac at that percentage of RAM free (`memory_pressure`), and

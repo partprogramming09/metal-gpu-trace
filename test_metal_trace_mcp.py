@@ -888,7 +888,7 @@ def test_workloads(tmp_path):
     shipped = json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["drawstress"]
     assert len(shipped["sha256"]) == 64 and shipped["sha256"] != "0" * 64 and shipped["url"].startswith("https://")
     examples = json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["bgfx-examples"]
-    assert "workloads-7" in examples["url"] and len(examples["sha256"]) == 64, "workloads-2's archive has no dxil shaders"
+    assert "workloads-8" in examples["url"] and len(examples["sha256"]) == 64, "workloads-2's archive has no dxil shaders"
 
 
 def test_example_traits(tmp_path):
@@ -899,7 +899,7 @@ def test_example_traits(tmp_path):
     for name, traits in listed["example_traits"].items():
         assert traits["class"] in {"cpu_submit", "textured", "postprocess", "gpu_bandwidth", "compute", "gpu_alu",
                                    "streaming", "indirect", "ui_text", "shadows", "overdraw", "readback", "upscale",
-                                   "format_coverage"}, name
+                                   "format_coverage", "geometry", "multi_surface", "occlusion", "offscreen"}, name
         assert traits["native_encoders_per_frame"] > 0, name
 
 
@@ -1934,7 +1934,7 @@ def test_pack_examples(tmp_path):
     """pack-examples.sh puts both binaries and only the named assets in one flat folder, and fails when one is missing."""
     bgfx, out = tmp_path / "bgfx", tmp_path / "out"
     runtime = bgfx / "examples" / "runtime"
-    for folder in ("shaders/metal", "shaders/dxbc", "shaders/dxil", "shaders/glsl", "textures", "meshes", "font", "images"):
+    for folder in ("shaders/metal", "shaders/dxbc", "shaders/dxil", "shaders/glsl", "textures", "meshes", "font", "images", "text"):
         (runtime / folder).mkdir(parents=True)
     for asset in ("shaders/metal/vs.bin", "shaders/dxbc/vs.bin", "shaders/dxil/vs.bin", "shaders/glsl/vs.bin", "textures/uffizi.ktx",
                   "textures/other.dds", "meshes/bunny.bin", "meshes/other.bin"):
@@ -1951,7 +1951,9 @@ def test_pack_examples(tmp_path):
                   "textures/8k_mars.jpg", "textures/particle.ktx", "textures/figure-rgba.dds", "textures/flare.dds",
                   "textures/pf_alpha_test.dds", "textures/pf_uv_filtering_test.dds", "images/blender_icons16.png",
                   "textures/texture_compression_bc1.ktx", "textures/texture_compression_astc_4x4.dds", "font/droidsans.ttf",
-                  "font/five_minutes.otf", "images/image1.jpg", "images/image12.jpg"):
+                  "font/five_minutes.otf", "images/image1.jpg", "images/image12.jpg", "meshes/bunny_decimated.bin",
+                  "textures/parallax-d.ktx", "textures/parallax-h.ktx", "textures/parallax-n.ktx", "textures/dmap.png",
+                  "text/sherlock_holmes_a_scandal_in_bohemia_arthur_conan_doyle.txt"):
         (runtime / asset).write_text("x")
     shutil.rmtree(out)
     result = subprocess.run(["sh", script, str(bgfx), str(out)], capture_output=True, text=True)
@@ -1963,7 +1965,8 @@ def test_pack_examples(tmp_path):
     assert (out / "temp").is_dir(), "40-svt crashes without a temp folder"
     for kept in ("textures/8k_mars.jpg", "textures/texture_compression_bc1.ktx", "textures/texture_compression_astc_4x4.dds",
                  "font/droidsans.ttf", "font/five_minutes.otf", "images/blender_icons16.png", "images/image1.jpg",
-                 "images/image12.jpg"):
+                 "images/image12.jpg", "textures/dmap.png", "meshes/bunny_decimated.bin",
+                 "text/sherlock_holmes_a_scandal_in_bohemia_arthur_conan_doyle.txt"):
         assert kept in packed, kept
 
 
