@@ -611,7 +611,8 @@ def tool_perf_compare(a, b, short_us=25, markdown=False, skip_s=0):
     jitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has
     `markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,
     where shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the
-    per-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run."""
+    per-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.
+    `screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable."""
     sa, sb = (steady_summary(r, skip_s) for r in (a, b))
     result = compare_summaries(sa, sb, a, b, short_us)
     if sa.get("steady"):
@@ -650,6 +651,11 @@ def compare_summaries(sa, sb, a, b, short_us=25):
             out[name] = change(None, None)
     short = [r for r, s in ((a, sa), (b, sb)) if (s.get("gpu") or {}).get("frames", 0) < 100]
     result = {"a": a, "b": b, "layer": layer_change(sa, sb, a, b), "metrics": out, "too_short": short}
+    locked = [(s.get("machine") or {}).get("screen_locked") for s in (sa, sb)]
+    if None not in locked and locked[0] != locked[1]:
+        result["screen"] = {"a": locked[0], "b": locked[1],
+                            "note": "one run was recorded with the screen locked and the other not: a locked session may "
+                                    "leave frames unpaced by the display, so FPS is not comparable; compare GPU ms per frame"}
     ma, mb = measurement(sa), measurement(sb)
     if ma != mb:
         result["measure"] = {"a": ma, "b": mb, "not_comparable": list(NOT_COMPARABLE),

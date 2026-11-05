@@ -358,18 +358,24 @@ def read_command(argv):
 
 
 def machine_info(device, read=read_command):
-    """Returns the chip, CPU and GPU core counts, RAM and macOS of this Mac, with no name or UUID, or None when its RAM
+    """Returns the chip, CPU and GPU core counts, RAM, macOS and whether the screen is locked (a locked session may leave
+    windows unpaced by the display) of this Mac, with no name or UUID, or None when its RAM
     or macOS differ from the trace's `device` (it is not the machine that recorded it) or a fact cannot be read."""
     try:
         sysctl = lambda key: read(("sysctl", "-n", key)).strip()
         gpu = read(("ioreg", "-c", "AGXAccelerator", "-r", "-d", "1"))
         ram, macos = int(sysctl("hw.memsize")), read(("sw_vers", "-productVersion")).strip()
+        try:
+            locked = "CGSSessionScreenIsLocked" in read(("ioreg", "-n", "Root", "-d1", "-a"))
+        except (KeyError, OSError, subprocess.SubprocessError):
+            locked = None
         if str(ram) != device.get("memory-size") or macos != (device.get("os-version") or "").split(" ")[0]:
             return None
         return {"chip": sysctl("machdep.cpu.brand_string"), "cpu_cores_p": int(sysctl("hw.perflevel0.logicalcpu")),
                 "cpu_cores_e": int(sysctl("hw.perflevel1.logicalcpu")),
                 "gpu_cores": int(re.search(r'"gpu-core-count" = (\d+)', gpu).group(1)),
-                "gpu_class": re.search(r'"IOClass" = "(AGX\w+)"', gpu).group(1), "ram_gib": ram // 2 ** 30, "macos": macos}
+                "gpu_class": re.search(r'"IOClass" = "(AGX\w+)"', gpu).group(1), "ram_gib": ram // 2 ** 30, "macos": macos,
+                "screen_locked": locked}
     except (KeyError, ValueError, AttributeError, OSError, subprocess.SubprocessError):
         return None
 
