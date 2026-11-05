@@ -422,6 +422,18 @@ def validation_summary(lines):
     return {"messages": sum(kinds.values()), "by_kind": by_kind, "examples": list(examples.values())}
 
 
+def memory_trend(allocated):
+    """Returns the slope, in MiB per minute, of the least-squares line through the second half of the Metal memory samples
+    (`allocated` holds (ms, bytes) sorted by time): what the program keeps growing by once it has warmed up. None with under 5
+    samples in that half or under 5 s between them."""
+    half = allocated[len(allocated) // 2:]
+    if len(half) < 5 or half[-1][0] - half[0][0] < 5000:
+        return None
+    mx, my = statistics.fmean(t for t, _ in half), statistics.fmean(s for _, s in half)
+    sxx = sum((t - mx) ** 2 for t, _ in half)
+    return round(sum((t - mx) * (s - my) for t, s in half) / sxx * 60000 / 2**20, 2) if sxx else None
+
+
 def resource_summary(table_rows, pid, frames):
     """Summarizes the Metal resource allocation events of process `pid` from the rows of `metal-resource-allocations`:
     `events` and `mib` allocated (a running total, not memory in use: a drawable's texture each frame counts), `per_frame`, `by_type` (buffer, texture...), `after_3s` (events after the first 3 s of
@@ -602,7 +614,8 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             allocated.sort()
             mib = [size / 2**20 for _, size in allocated]
             summary["metal_memory_mib"] = (
-                {"samples": len(mib), "peak": round(max(mib), 2), "final": round(mib[-1], 2), "mean": round(statistics.fmean(mib), 2)}
+                {"samples": len(mib), "peak": round(max(mib), 2), "final": round(mib[-1], 2), "mean": round(statistics.fmean(mib), 2),
+                 "trend_mib_per_min": memory_trend(allocated)}
                 if mib else {"samples": 0}
             )
             with open(out / f"{label}.metal_memory.csv", "w", newline="") as f:

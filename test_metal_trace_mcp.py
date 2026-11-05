@@ -944,6 +944,18 @@ def test_cold_warm(tmp_path):
         pass
 
 
+def test_memory_trend(tmp_path):
+    """memory_trend is the MiB-per-minute slope of the second half of the samples, and None with too few or too close."""
+    import perf_report
+    mib = 2**20
+    flat_then_growing = [(t * 1000.0, (100 if t < 10 else 100 + (t - 10) * 2) * mib) for t in range(21)]
+    assert perf_report.memory_trend(flat_then_growing) == 120.0, perf_report.memory_trend(flat_then_growing)
+    assert perf_report.memory_trend([(t * 1000.0, 50 * mib) for t in range(21)]) == 0.0
+    assert perf_report.memory_trend([(t * 1000.0, 50 * mib) for t in range(6)]) is None
+    assert perf_report.memory_trend([(t * 100.0, 50 * mib) for t in range(40)]) is None
+    assert perf_report.memory_trend([]) is None
+
+
 def test_validation(tmp_path):
     """validation_summary counts the shader and API validation messages of a program's output by kind, whatever the offset."""
     import perf_report
@@ -2036,7 +2048,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_example_traits, test_cold_warm, test_validation, test_counter_windows, test_readme_lists_every_tool, test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_example_traits, test_memory_trend, test_cold_warm, test_validation, test_counter_windows, test_readme_lists_every_tool, test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
