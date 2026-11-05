@@ -275,6 +275,17 @@ def test_diagnose(tmp_path):
         assert got["bottleneck"] == "CPU_SUBMISSION_BOUND" and got["hitches"]["count"] == 3, got
         assert any("compilador gráfico" in r for r in got["recommendations"]), got
         assert not any("FlipQueueSize" in r for r in got["recommendations"]), got
+        hung = {**no_spans, "gpu_activity": {"samples": 9, "device_pct": {"mean": 50}, "split_scenes": 12, "recoveries": 1,
+                                             "gpu_recovered": True}}
+        (tmp_path / "hung.json").write_text(json.dumps(hung))
+        got = mcp.tool_perf_diagnose("hung")
+        assert got["gpu_activity"]["gpu_recovered"] is True, got
+        assert any("se recuperó 1 vez" in r for r in got["recommendations"]), got
+        assert any("dividió 12 escenas" in r for r in got["recommendations"]), got
+        calm = {**no_spans, "gpu_activity": {"samples": 9, "split_scenes": 0, "recoveries": 0, "gpu_recovered": False}}
+        (tmp_path / "calm.json").write_text(json.dumps(calm))
+        got = mcp.tool_perf_diagnose("calm")
+        assert not any("recuper" in r or "dividió" in r for r in got["recommendations"]), got
         (tmp_path / "winbusy.json").write_text(json.dumps({**busy, "template": "Windows Native Trace"}))
         assert any("FlipQueueSize" in r for r in mcp.tool_perf_diagnose("winbusy")["recommendations"])
         assert not mcp.tool_perf_diagnose("new", min_encoders=8)["too_many_short_encoders"]
@@ -502,6 +513,24 @@ def test_levers(tmp_path):
         mcp.MEMORY_PRESSURE, mcp.record_run = saved
         mcp.hold_memory_pressure = original
     assert mcp.RECORD_PROPS["memory_free_pct"]["type"] == "integer" and mcp.RECORD_PROPS["background"]["type"] == "boolean"
+
+
+def test_gpu_activity(tmp_path):
+    """agx_summary() reads the per-second AGX sample: utilization stats, the growth of split scenes and of the recovery
+    count, and it tolerates empty cells and a missing column."""
+    csv_path = tmp_path / "r.agx.csv"
+    csv_path.write_text("time_s,device_pct,renderer_pct,tiler_pct,split_scenes,recovery_count,in_use_mib\n"
+                        "0,10,8,6,0,1,700\n1,50,40,30,2,1,710\n2,,,,5,2,720\n3,90,80,70,9,2,730\n")
+    got = perf_report.agx_summary(csv_path)
+    assert got["samples"] == 4 and got["device_pct"]["max"] == 90 and got["device_pct"]["count"] == 3, got
+    assert got["split_scenes"] == 9 and got["recoveries"] == 1 and got["gpu_recovered"] is True, got
+    assert got["in_use_mib"]["max"] == 730, got
+    csv_path.write_text("time_s,device_pct\n0,10\n1,20\n")
+    got = perf_report.agx_summary(csv_path)
+    assert got["device_pct"]["mean"] == 15 and got["split_scenes"] is None and got["gpu_recovered"] is None, got
+    csv_path.write_text("time_s,device_pct,renderer_pct,tiler_pct,split_scenes,recovery_count,in_use_mib\n")
+    assert perf_report.agx_summary(csv_path) == {"samples": 0}
+    assert perf_report.agx_summary(tmp_path / "none.csv") is None
 
 
 def test_size(tmp_path):
@@ -1754,7 +1783,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

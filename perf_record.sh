@@ -70,8 +70,20 @@ if [[ -n ${PERF_PARENT_PID:-} ]]; then
   ) &
   watchdog=$!
 fi
+# one line of the AGX driver's counters (whole GPU): device, renderer and tiler utilization, split scenes, recoveries, MiB in use
+agx_sample() {
+  local raw line key values=()
+  raw=$(ioreg -c AGXAccelerator -r -d 1 2>/dev/null) || true
+  line=${${(f)raw}[(r)*PerformanceStatistics*]}
+  for key in 'Device Utilization %' 'Renderer Utilization %' 'Tiler Utilization %' SplitSceneCount recoveryCount 'In use system memory'; do
+    if [[ $line =~ "\"$key\"=([0-9]+)" ]]; then values+=($match[1]); else values+=(""); fi
+  done
+  [[ -n $values[6] ]] && values[6]=$((values[6] / 1048576))
+  print -r -- ${(j:,:)values}
+}
 (
   echo "time_s,rss_kib" > $out/$name.rss.csv
+  echo "time_s,device_pct,renderer_pct,tiler_pct,split_scenes,recovery_count,in_use_mib" > $out/$name.agx.csv
   for ((t = 0; t <= seconds + 5; t++)); do
     if [[ $wine == attach ]]; then
       rss=$(ps -o rss= -p $pid | awk '{print $1 + 0}')
@@ -79,6 +91,7 @@ fi
       rss=$(ps -axo rss=,command= | awk -v exe="$exe" 'index($0, exe) && !/xctrace|awk|zsh|perf_record|ps -axo/ {sum += $1} END {print sum + 0}')
     fi
     echo "$t,$rss" >> $out/$name.rss.csv
+    echo "$t,$(agx_sample)" >> $out/$name.agx.csv
     sleep 1
   done
 ) &

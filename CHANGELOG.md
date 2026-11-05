@@ -15,6 +15,11 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   frame), and a run without Instruments swung from 18 to 280 times slower, so it is a throttle, not a switch to the
   efficiency cores. `memory_free_pct=30` left drawstress at 728 FPS but cut its resident memory (p95 165 to 118 MiB):
   the pressure applies, a small GPU-bound program does not feel it. Lower power mode needs `sudo pmset` and is not offered.
+- A macOS summary has `gpu_activity`, from the GPU driver's counters (`ioreg`, no sudo) sampled once a second beside the
+  process memory (`<run>.agx.csv`): device, renderer and tiler utilization, the growth of `SplitSceneCount`
+  (`split_scenes`) and of `recoveryCount` (`recoveries`, `gpu_recovered`), and the driver's memory in use. The counters
+  cover the whole GPU, not only the recorded program. `perf_diagnose` says so when the GPU recovered during a run (a
+  hang or a command that timed out) or split scenes, and returns `gpu_activity`.
 - `size` (`"1920x1080"`) on `perf_record` and as a `perf_sweep` variable sets the window size of a workload that lists
   `size_variables` in `data/workloads.json`. The drawstress patch reads `DRAWSTRESS_WIDTH` and `DRAWSTRESS_HEIGHT`
   (320x240 to 7680x4320) before the swap chain is created; the workflow builds it, and drawstress for x86_64

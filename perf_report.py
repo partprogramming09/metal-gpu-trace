@@ -352,6 +352,41 @@ def counter_stats(info_path, value_path):
     return {"samples": total, "counters": counters, "top_limiter": {"name": top["name"], "mean": top["mean"]} if top else None}
 
 
+def agx_summary(path):
+    """Summarizes a recording's `.agx.csv`, one row per second of the GPU driver's counters, which cover the whole GPU
+    and not only the recorded program: utilization of the device, renderer and tiler as stats, `split_scenes` (growth of
+    SplitSceneCount), `recoveries` (growth of recoveryCount) with `gpu_recovered` true when the GPU recovered during the
+    run, and the driver's in-use memory in MiB. A column that is absent or empty gives None. Returns None when the file
+    cannot be read and {"samples": 0} when it has no rows."""
+    try:
+        with open(path, newline="") as f:
+            rows = list(csv.DictReader(f))
+    except OSError:
+        return None
+    if not rows:
+        return {"samples": 0}
+
+    def column(name):
+        values = []
+        for row in rows:
+            try:
+                values.append(float(row[name]))
+            except (KeyError, ValueError, TypeError):
+                pass
+        return values
+
+    def growth(name):
+        values = column(name)
+        return int(values[-1] - values[0]) if values else None
+    recoveries = growth("recovery_count")
+    return {"samples": len(rows),
+            **{key: (stats(column(name)) if column(name) else None)
+               for key, name in (("device_pct", "device_pct"), ("renderer_pct", "renderer_pct"),
+                                 ("tiler_pct", "tiler_pct"), ("in_use_mib", "in_use_mib"))},
+            "split_scenes": growth("split_scenes"), "recoveries": recoveries,
+            "gpu_recovered": None if recoveries is None else recoveries > 0}
+
+
 def read_command(argv):
     """Returns the standard output of one short system command."""
     return subprocess.run(argv, capture_output=True, text=True, check=True, timeout=10).stdout
@@ -483,6 +518,9 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             with open(rss_csv) as f:
                 rss = [int(r["rss_kib"]) / 1024 for r in csv.DictReader(f) if r["rss_kib"].isdigit()]
             summary["process_rss_mib"] = stats(rss) if rss else {"count": 0}
+        activity = agx_summary(trace.with_suffix(".agx.csv"))
+        if activity:
+            summary["gpu_activity"] = activity
 
         # the GPU's clock states over the recording, as a share of time
         states = collections.Counter()

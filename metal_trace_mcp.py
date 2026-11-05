@@ -1216,6 +1216,14 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
         recommendations.append("Los tirones coinciden con crecimiento de memoria Metal: revisar cargas de recursos en medio de la partida.")
     elif top_cause == "thermal":
         recommendations.append("Los tirones coinciden con un estado térmico distinto de Nominal.")
+    activity = s.get("gpu_activity") or {}
+    if activity.get("gpu_recovered"):
+        n = activity["recoveries"]
+        recommendations.append(f"La GPU se recuperó {n} {'vez' if n == 1 else 'veces'} durante la grabación (recoveryCount del "
+                               "controlador): un cuelgue o un comando que superó su tiempo; las cifras de esta grabación no son fiables.")
+    if (activity.get("split_scenes") or 0) > 0:
+        recommendations.append(f"El contador SplitSceneCount del controlador creció en {activity['split_scenes']}: la GPU dividió "
+                               f"{activity['split_scenes']} escenas; su causa no se mide aquí, compárelo entre grabaciones.")
     if bottleneck == "UNKNOWN":
         recommendations.append("Sin datos de actividad de GPU en esta grabación: no hay veredicto de cuello de botella.")
     elif not recommendations:
@@ -1230,7 +1238,8 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
             "stutter_analysis": {"stutter_rate_pct": stutter_rate, "worst_spike_ms": worst_spike,
                                  "verdict": stutter_verdict},
             "recommendations": recommendations, "hitches": hitches or None,
-            "gpu_idle": s.get("gpu_idle"), "by_label": encoders["by_label"], "too_short": frames < 100}
+            "gpu_idle": s.get("gpu_idle"), "gpu_activity": s.get("gpu_activity"), "by_label": encoders["by_label"],
+            "too_short": frames < 100}
 
 
 def tool_trace_tables(trace):
