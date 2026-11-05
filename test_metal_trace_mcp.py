@@ -1918,6 +1918,7 @@ def test_pack_examples(tmp_path):
     assert "examples" in packed and "examples.exe" in packed and "shaders/metal/vs.bin" in packed, packed
     assert "shaders/dxbc/vs.bin" in packed and "shaders/dxil/vs.bin" in packed, "Direct3D 11 reads dxbc and 12 reads dxil"
     assert "shaders/glsl/vs.bin" not in packed and "textures/other.dds" not in packed and "meshes/other.bin" not in packed, packed
+    assert (out / "temp").is_dir(), "40-svt crashes without a temp folder"
     for kept in ("textures/8k_mars.jpg", "textures/texture_compression_bc1.ktx", "textures/texture_compression_astc_4x4.dds",
                  "font/droidsans.ttf", "font/five_minutes.otf", "images/blender_icons16.png"):
         assert kept in packed, kept

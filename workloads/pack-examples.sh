@@ -4,7 +4,8 @@ set -eu
 bgfx=$1
 out=$2
 runtime=$bgfx/examples/runtime
-mkdir -p "$out/shaders" "$out/textures" "$out/meshes" "$out/font" "$out/images"
+# temp: 40-svt writes its 370 MB tile cache there on the first run and crashes without the folder
+mkdir -p "$out/shaders" "$out/textures" "$out/meshes" "$out/font" "$out/images" "$out/temp"
 cp "$(find "$bgfx/.build/osx-arm64/bin" -type f -name examplesRelease)" "$out/examples"
 cp "$(find "$bgfx/.build/win64_mingw-gcc/bin" -type f -name examplesRelease.exe)" "$out/examples.exe"
 cp -R "$runtime/shaders/metal" "$runtime/shaders/dxbc" "$runtime/shaders/dxil" "$out/shaders/"
