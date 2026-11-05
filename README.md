@@ -196,7 +196,8 @@ uses either.
   different states, and `perf_diagnose` returns `display_synced_hz` when the FPS sits on a display rate. Compare runs paced
   alike: native Metal and D3D12 under Wine with Mullion, both at 120 FPS, do compare.
 - With `counters=true`, each listed hitch also has `top_limiter`: the Limiter counter with the highest mean over the interval
-  before it (`window_ms`), which can differ from the whole run's main limiter.
+  before it (`window_ms`, read in whole 10 ms bins; `null` when no sample falls in it), which can differ from the whole run's
+  main limiter.
 
 `api=vk` runs the same program through Vulkan on MoltenVK. MoltenVK is not shipped: set `METAL_TRACE_MOLTENVK` to a
 directory (no spaces) holding an arm64 `libMoltenVK.dylib`, such as the one in a Vulkan SDK or `brew install molten-vk`.

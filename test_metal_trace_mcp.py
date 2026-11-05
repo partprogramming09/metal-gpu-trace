@@ -550,6 +550,14 @@ def test_counter_windows(tmp_path):
     assert perf_report.limiter_in(series, 190, 210) == {"name": "ALU Limiter", "mean": 80.0}
     assert perf_report.limiter_in(series, 90, 210) == {"name": "ALU Limiter", "mean": 45.0}, "mean of 10 and 80 against 35 of 50 and 20"
     assert perf_report.limiter_in(series, 500, 600) is None
+    edge = {"bin_ms": 10, "bins": {9: {"A": [100.0, 10]}, 10: {"B": [900.0, 10]}}}
+    assert perf_report.limiter_in(edge, 0, 100.0) == {"name": "A", "mean": 10.0}, "a window ending on a bin edge leaves that bin out"
+    assert perf_report.limiter_in(edge, 0, 99.999) == {"name": "A", "mean": 10.0}
+    assert perf_report.limiter_in(edge, 0, 100.001) == {"name": "B", "mean": 90.0}, "a hair past the edge reads the next bin"
+    assert perf_report.limiter_in(edge, 95, 95) == {"name": "A", "mean": 10.0}, "a window of zero width reads the bin that holds it"
+    worst = [{"window_ms": [90, 110]}, {"window_ms": [500, 600]}]
+    perf_report.attach_limiters(worst, series)
+    assert worst[0]["top_limiter"] == {"name": "Cache Limiter", "mean": 50.0} and worst[1]["top_limiter"] is None, worst
     odd = tmp_path / "odd.xml"
     info.write_text(info.read_text() if info.exists() else "")
     odd.write_text("<?xml version=\"1.0\"?>\n<trace-query-result>\n<node xpath='x'><schema name=\"gpu-counter-value\"></schema>"

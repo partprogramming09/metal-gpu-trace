@@ -175,7 +175,8 @@ frena varias veces. Repite una corrida que use cualquiera de las dos.
   una tasa de pantalla. Compara corridas con el mismo ritmo: Metal nativo y D3D12 bajo Wine con Mullion, ambos a
   120 FPS, sí se comparan.
 - Con `counters=true`, cada hitch listado trae además `top_limiter`: el contador Limiter con mayor media en el intervalo
-  anterior (`window_ms`), que puede diferir del limitador principal de toda la grabación.
+  anterior (`window_ms`, leído en bins enteros de 10 ms; `null` si ninguna muestra cae en él), que puede diferir del
+  limitador principal de toda la grabación.
 
 Los mismos datos están como resources de MCP: `metal-trace://gpu-families` (todos) y
 `metal-trace://gpu-families/apple7` a `apple10`. Repiten con otras palabras las

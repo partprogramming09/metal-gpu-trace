@@ -367,11 +367,20 @@ def counter_stats(info_path, value_path):
             "_series": series}
 
 
+def attach_limiters(hitches, series):
+    """Sets `top_limiter` on each hitch of a summary's `worst` list: the Limiter that led in its `window_ms`, or None
+    when no counter sample falls in it."""
+    for hitch in hitches:
+        hitch["top_limiter"] = limiter_in(series, *hitch["window_ms"])
+
+
 def limiter_in(series, lo_ms, hi_ms):
-    """Returns the Limiter counter with the highest mean over [lo_ms, hi_ms] in a counter_stats `_series`, as
-    {"name", "mean"}, or None when no sample falls in the window."""
-    totals = {}
-    for index in range(int(lo_ms // series["bin_ms"]), int(hi_ms // series["bin_ms"]) + 1):
+    """Returns the Limiter counter with the highest mean over [lo_ms, hi_ms) in a counter_stats `_series`, as
+    {"name", "mean"}, or None when no sample falls in the window. The series holds whole 10 ms bins, so a window is read
+    at that resolution: the bins it touches, the one that starts at hi_ms left out."""
+    totals, width = {}, series["bin_ms"]
+    first = int(lo_ms // width)
+    for index in range(first, max(first, int(-(-hi_ms // width)) - 1) + 1):  # the bin that starts at hi_ms is left out
         for name, (total, count) in series["bins"].get(index, {}).items():
             slot = totals.setdefault(name, [0.0, 0])
             slot[0] += total
@@ -633,10 +642,7 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
         summary["gpu"].update(pacing)
         summary["hitches"] = attribute_hitches(ordered, starts, totals, sorted(compiler), sorted(thermal), allocated, cpu=sorted(cpu))
         if counter_series and counter_series["bins"]:
-            for hitch in summary["hitches"]["worst"]:
-                limiter = limiter_in(counter_series, *hitch["window_ms"])
-                if limiter:
-                    hitch["top_limiter"] = limiter
+            attach_limiters(summary["hitches"]["worst"], counter_series)
     finally:
         # rows() deletes each table's file once read; one left unread by a failure is removed here
         for path in tables.values():

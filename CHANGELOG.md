@@ -10,6 +10,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   recording with 61 start-up hitches, the 20 listed ones named Texture Write, GPU Last Level Cache and ALU Limiter depending
   on the window, while the whole run's main limiter was the last level cache. Every hitch has `window_ms`, with or without
   counters.
+  The window is read in whole 10 ms bins (the one that starts at its end left out), and `top_limiter` is `null` when no sample
+  falls in it.
 
 ## 0.18.0 — 2026-11-05
 
