@@ -3,63 +3,47 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.17.0 — 2026-11-05
 
-- `perf_record` takes `example` for a workload that lists `examples` in `data/workloads.json` (`workload_list` shows
-  them): its argument goes after the api's. No workload ships examples yet; the first is the bgfx examples archive.
-- `perf_record` (and the tools that pass its arguments on) takes two macOS levers. `memory_free_pct` (20 to 60) holds
-  the whole Mac at that percentage of RAM free while recording, with `memory_pressure -p N -y S`, and stops it when the
-  recording ends or fails; plain `-p` reaches the target and exits at once, so it is not enough. `background` runs the
-  program under `taskpolicy -b` (`PERF_PREFIX` in `perf_record.sh`; the trace names the process `taskpolicy`): on
-  drawstress at dim 20 in native Metal, 8 s, FPS fell from 723 to 109 and 107 in two runs (GPU 0.87 to 1.24 ms per
-  frame), and a run without Instruments swung from 18 to 280 times slower, so it is a throttle, not a switch to the
-  efficiency cores. `memory_free_pct=30` left drawstress at 728 FPS but cut its resident memory (p95 165 to 118 MiB):
-  the pressure applies, a small GPU-bound program does not feel it. Lower power mode needs `sudo pmset` and is not offered.
-- The drawstress workload moves to release `workloads-3` (9.3 MB): it takes `size` (window `WIDTHxHEIGHT`) and has the api
-  `mtl-x64`, native Metal built for x86_64 and run under Rosetta like Wine's programs, whose layer is named `rosetta` so
-  `perf_compare` against `mtl` says it compares two layers. The `workloads-1` archive stays published; a cached
-  drawstress from it is not reused, the new one downloads once.
-- `perf_diagnose` returns `display_synced_hz` and says so when the FPS sits within 1 % of a common display rate (24 to 240
-  Hz) with a 95th percentile frame interval no more than 30 % above the median: probably vsync, so compare GPU ms per
-  frame, not FPS. On real runs: D3D11 under Wine at 118.9 FPS gives 120; native Metal at 735 and 3 058 FPS gives none.
-- A macOS summary has `resource_allocations`, from the `metal-resource-allocations` table every recording already holds (so
-  `Metal Resource Events` is not needed): the program's allocation `events`, `mib` allocated (a running total, not memory in
-  use), `per_frame`, `by_type` (buffer, texture), `after_3s` (past the start-up) and `per_second` counts; and
+- Workloads. `bgfx-examples` (release `workloads-4`, 25.2 MiB) holds nine bgfx examples (01-cubes, 06-bump, 09-hdr,
+  21-deferred, 24-nbody, 31-rsm, 35-dynamic, 38-bloom, 48-drawindirect) for native Metal, D3D11 and D3D12:
+  `perf_record(workload="bgfx-examples", api=..., example="21-deferred")`; `workload_list` shows the examples. All nine
+  ran under Wine with Mullion in D3D11 and D3D12 at about 120 FPS (vsync), for example in D3D12 01-cubes 0.58 GPU ms and
+  7 encoders per frame, 21-deferred 2.08 ms and 10, 31-rsm 6.36 ms and 10. drawstress moves to `workloads-3` (9.3 MB):
+  it takes `size` and has the api `mtl-x64`, native Metal built for x86_64 and run under Rosetta like Wine's programs
+  (its layer is named `rosetta`, so `perf_compare` against `mtl` says it compares two layers: 438 against 735 FPS at
+  dim 20). `workloads.yml` builds both archives into the release tag in its `default:` line; run it with a new tag each
+  time, because a rebuilt archive has another SHA-256 and would break the installs that pin the old one. `dim` on a
+  workload without `dim_variable` is refused instead of failing with `KeyError`.
+- `perf_record` and the tools that pass its arguments on take `size` (`"1920x1080"`, for a workload that lists
+  `size_variables`: drawstress reads `DRAWSTRESS_WIDTH` and `DRAWSTRESS_HEIGHT`), and two macOS levers.
+  `memory_free_pct` (20 to 60) holds the whole Mac at that percentage of RAM free while recording
+  (`memory_pressure -p N -y S`) and stops it when the recording ends or fails. `background` runs the program under
+  `taskpolicy -b`: at dim 20 FPS fell from 723 to about 108, so it is a throttle, not a switch to the efficiency cores.
+  `memory_free_pct=30` left drawstress at 728 FPS and cut its resident memory (p95 165 to 118 MiB). Lower power mode needs
+  `sudo pmset` and is not offered. At dim 10, GPU time went from 0.15 ms at 1280x720 to 0.34 ms at 2560x1440.
+- `perf_sweep` records one run per value of `dim`, `size`, `example`, `api` or an environment variable (`env:NAME`),
+  2 to 8 values and up to 24 recordings, and returns the median FPS, 1 % low, GPU ms and stutter per value; with 3 or
+  more numeric values it fits GPU ms per frame on the value (fixed ms and ms per draw for `dim`) with its r2.
+- A macOS summary has `machine`: chip, P and E CPU cores, GPU cores and class, RAM in GiB, macOS version and
+  `screen_locked`, with no host name or UUID. It is `null` when the Mac that summarizes the trace has other RAM or macOS
+  than the trace's device, or a fact cannot be read. `perf_compare` returns `screen` when one run was recorded with the
+  screen locked and the other not: a locked session may leave frames unpaced by the display (native Metal ran at 735 to
+  4 000 FPS on a locked session, against 120 in vsynced runs), so compare GPU ms per frame, not FPS.
+- A macOS summary has `gpu_activity`, from the GPU driver's counters (`ioreg`, no sudo) sampled once a second into
+  `<run>.agx.csv`: device, renderer and tiler utilization, the growth of `SplitSceneCount` (`split_scenes`) and of
+  `recoveryCount` (`recoveries`, `gpu_recovered`), and the driver's memory in use. The counters cover the whole GPU, not
+  only the recorded program.
+- A macOS summary has `resource_allocations`, from the `metal-resource-allocations` table every recording already holds
+  (the `Metal Resource Events` instrument is not needed): the program's allocation `events`, `mib` allocated (a running
+  total, not memory in use), `per_frame`, `by_type`, `after_3s` (past the start-up) and `per_second`; and
   `command_buffer_errors`, the rows of `metal-command-buffer-error`. Reading them adds about 5 s per 8 s of recording.
-  Real runs: drawstress native 3.0 allocations per frame (about one is a drawable's texture); 48-drawindirect in D3D12 under
-  Wine with Mullion 8.0, nearly all buffers (different programs: not a comparison of layers). Both had no command buffer errors.
-- A macOS summary has `gpu_activity`, from the GPU driver's counters (`ioreg`, no sudo) sampled once a second beside the
-  process memory (`<run>.agx.csv`): device, renderer and tiler utilization, the growth of `SplitSceneCount`
-  (`split_scenes`) and of `recoveryCount` (`recoveries`, `gpu_recovered`), and the driver's memory in use. The counters
-  cover the whole GPU, not only the recorded program. `perf_diagnose` says so when the GPU recovered during a run (a
-  hang or a command that timed out) or split scenes, and returns `gpu_activity`.
-- `size` (`"1920x1080"`) on `perf_record` and as a `perf_sweep` variable sets the window size of a workload that lists
-  `size_variables` in `data/workloads.json`. The drawstress patch reads `DRAWSTRESS_WIDTH` and `DRAWSTRESS_HEIGHT`
-  (320x240 to 7680x4320) before the swap chain is created; the workflow builds it, and drawstress for x86_64
-  (`drawstress-x64`, run under Rosetta like Wine), into release `workloads-3`. Until `data/workloads.json` points at
-  that release, the shipped drawstress has no size knob.
-- `perf_sweep`: records one run per value of `dim`, `example`, `api` or an environment variable (`env:NAME`), 2 to 8
-  values and up to 24 recordings, and returns the median FPS, 1 % low, GPU ms and stutter per value; with 3 or more
-  numeric values, the line GPU ms per frame follows (fixed ms and ms per draw for `dim`) with its r2.
-- Fix: the `bgfx-examples` archive of `workloads-2` held only the Metal and Direct3D 11 shaders (`metal`, `dxbc`), so its
-  Direct3D 12 runs (which read `dxil`) rendered 9 frames in 30 s; `pack-examples.sh` now adds `dxil` and the workflow's
-  default tag is `workloads-4`; the `bgfx-examples` entry in `data/workloads.json` now points at that release (25.2 MiB).
-  With the DXMT tree's own build the same example gave 3 337 frames at 120.5 FPS; from the new archive, D3D12 under
-  Wine with Mullion gives 01-cubes 3 286 frames, 21-deferred 3 067 and 31-rsm 3 341, all about 120 FPS.
-- New workload `bgfx-examples` (release `workloads-2`, 24.6 MiB): nine bgfx examples in native Metal, D3D11 and D3D12;
-  `perf_record(workload="bgfx-examples", api=..., example="21-deferred")`. `dim` on a workload without `dim_variable`
-  is refused instead of failing with `KeyError`.
-- `workloads.yml` also builds bgfx's combined `examples` binaries and packs them with `workloads/pack-examples.sh`
-  (one flat folder, only the assets nine examples load: 63 MB, 24 MB compressed) as `bgfx-examples-<release>.tar.gz`;
-  the default release tag is now `workloads-2`, so a run does not replace the pinned `workloads-1` archive. Each of the
-  nine started under native Metal from that folder (01, 06, 09, 21, 24, 31, 35, 38, 48).
-- `machine` also has `screen_locked`, from the session's lock flag (`null` when it cannot be read), and `perf_compare`
-  returns `screen` when one run was recorded locked and the other not: a locked session may leave frames unpaced by
-  the display (native Metal ran at 3 000 to 4 000 FPS on a locked session, against 120 in vsynced runs), so compare
-  GPU ms per frame, not FPS.
-- A macOS summary has `machine`: chip, P and E CPU cores, GPU cores and class, RAM in GiB and macOS version, with no
-  host name or UUID, so numbers say where they were measured. It is `null` when the Mac that summarizes the trace has
-  other RAM or macOS than the trace's device (a trace recorded elsewhere), or a fact cannot be read.
+  Real runs: drawstress native 3.0 allocations per frame (about one a drawable's texture), 48-drawindirect in D3D12 under
+  Wine with Mullion 8.0, nearly all buffers (different programs: not a comparison of layers); no command buffer errors.
+- `perf_diagnose` returns `display_synced_hz` and `gpu_activity`, and recommends: comparing GPU ms, not FPS, when the FPS
+  sits within 1 % of a common display rate (24 to 240 Hz) with a 95th percentile frame interval no more than 30 % above
+  the median (D3D11 under Wine at 118.9 FPS gives 120, native Metal at 735 gives none); and a look at the run when the
+  GPU recovered during it (a hang or a command that timed out) or split scenes.
 
 ## 0.16.0 — 2026-11-02
 
