@@ -111,7 +111,7 @@ def page(items, offset, limit):
 
 
 def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, workdir=None, args="", workload=None,
-                     api=None, dim=None, memory=True, env="", counters=False):
+                     api=None, dim=None, memory=True, env="", counters=False, example=None):
     """Records `program` (an .exe under Wine, or a macOS binary with wine="native"), or a test program fetched with
     workload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per
     frame, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest
@@ -120,7 +120,7 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
     GPU waited on, its utilization, occupancy and memory bandwidth); it adds about 40 s of read-back per recorded second."""
     program_env, layer = check_env(env), None
     if workload:
-        program, wine, args, workload_env = workload_command(workload, api, dim, wine, args)
+        program, wine, args, workload_env = workload_command(workload, api, dim, wine, args, example)
         program_env = " ".join(filter(None, [workload_env, program_env]))
         layer = workload_layer(workload, api, dim)
     if not program:
@@ -186,11 +186,17 @@ def workload_layer(name, api, dim):
             "program_env": f"{entry['dim_variable']}={int(dim)}" if dim else ""}
 
 
-def workload_command(name, api, dim, wine, args):
-    """Returns the program, Wine, arguments and program environment that run a fetched workload with `api`."""
+def workload_command(name, api, dim, wine, args, example=None):
+    """Returns the program, Wine, arguments and program environment that run a fetched workload with `api`; a workload
+    with `examples` runs the one named by `example`."""
     entry, target = workload_entry(name)
     if api not in entry["apis"]:
         raise ToolError(f"api is one of {', '.join(entry['apis'])} for {name}")
+    examples = entry.get("examples")
+    if examples and example not in examples:
+        raise ToolError(f"example is one of {', '.join(examples)} for {name}")
+    if example and not examples:
+        raise ToolError(f"{name} takes no example")
     if not target.is_dir():
         raise ToolError(f"{name} is not downloaded yet; call workload_fetch first")
     run = entry["apis"][api]
@@ -199,7 +205,7 @@ def workload_command(name, api, dim, wine, args):
         program_env = " ".join(filter(None, [program_env, f"DYLD_LIBRARY_PATH={moltenvk_dir()}"]))
     use_wine = run["wine"] and sys.platform != "win32"
     return (target / entry["dir"] / run["program"], wine if use_wine else "native",
-            " ".join(filter(None, [run["args"], args])), program_env)
+            " ".join(filter(None, [run["args"], examples[example] if example else "", args])), program_env)
 
 
 def tool_workload_list():
@@ -209,6 +215,7 @@ def tool_workload_list():
     for name, entry in WORKLOADS.items():
         rows.append({"name": name, "title": entry["title"], "about": entry["about"], "bytes": entry["bytes"],
                      "license": entry["license"], "apis": list(entry["apis"]),
+                     **({"examples": list(entry["examples"])} if entry.get("examples") else {}),
                      "fetched": workload_entry(name)[1].is_dir()})
     return {"workloads": rows}
 
@@ -1355,6 +1362,7 @@ RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits
          "api": {**S, "description": "with workload: mtl (native Metal), vk (Vulkan through MoltenVK: set "
                                                         "METAL_TRACE_MOLTENVK), d3d11 or d3d12 (under wine)"},
          "dim": {**I, "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame"},
+         "example": {**S, "description": "with a workload that lists examples in workload_list: the one to run"},
          "memory": {"type": "boolean", "description": "default true; false skips the Metal memory table, the slowest "
                                                       "to read (about 40 % faster summary): no metal_mib_peak"},
          "env": {**S, "description": "NAME=VALUE pairs separated by spaces, set in the program's environment"},

@@ -1499,6 +1499,36 @@ def test_layout(tmp_path):
         mcp.OUT = saved
 
 
+def test_workload_example(tmp_path):
+    """A workload with `examples` needs one named, and its argument follows the api's arguments."""
+    import metal_trace_mcp as mcp
+    entry = {"title": "t", "about": "a", "license": "l", "url": "https://example.invalid/x.tar.gz", "bytes": 1,
+             "sha256": "0" * 64, "dir": "demo", "dim_variable": "DIM",
+             "examples": {"21-deferred": "21-", "01-cubes": "01-"},
+             "apis": {"mtl": {"program": "demo", "args": "--mtl", "wine": False}}}
+    plain = {k: v for k, v in entry.items() if k != "examples"}
+    saved = mcp.WORKLOADS, mcp.CACHE
+    mcp.CACHE = tmp_path
+    try:
+        mcp.WORKLOADS = {"demo": entry, "plain": plain}
+        for name in ("demo", "plain"):
+            (tmp_path / f"{name}-{'0' * 12}").mkdir()
+        assert mcp.workload_command("demo", "mtl", None, None, "-x", example="21-deferred")[2] == "--mtl 21- -x"
+        for name, example, words in (("demo", None, "example is one of 21-deferred, 01-cubes"),
+                                     ("demo", "nope", "example is one of 21-deferred, 01-cubes"),
+                                     ("plain", "21-deferred", "takes no example")):
+            try:
+                mcp.workload_command(name, "mtl", None, None, "", example=example)
+                raise AssertionError(f"{name} with example {example} must fail")
+            except mcp.ToolError as error:
+                assert words in str(error), error
+        assert mcp.workload_command("plain", "mtl", None, None, "")[2] == "--mtl"
+        assert mcp.tool_workload_list()["workloads"][0]["examples"] == ["21-deferred", "01-cubes"]
+    finally:
+        mcp.WORKLOADS, mcp.CACHE = saved
+    assert mcp.RECORD_PROPS["example"]["type"] == "string"
+
+
 def test_machine(tmp_path):
     """machine_info() names the chip, cores, RAM and macOS without host name or UUID, and gives None when the machine
     is not the one that recorded the trace or its facts cannot be read."""
@@ -1521,7 +1551,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

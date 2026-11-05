@@ -5,6 +5,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## Unreleased
 
+- `perf_record` takes `example` for a workload that lists `examples` in `data/workloads.json` (`workload_list` shows
+  them): its argument goes after the api's. No workload ships examples yet; the first is the bgfx examples archive.
 - A macOS summary has `machine`: chip, P and E CPU cores, GPU cores and class, RAM in GiB and macOS version, with no
   host name or UUID, so numbers say where they were measured. It is `null` when the Mac that summarizes the trace has
   other RAM or macOS than the trace's device (a trace recorded elsewhere), or a fact cannot be read.
