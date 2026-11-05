@@ -21,17 +21,20 @@
     },
     "bgfx-examples": {
       "title": "bgfx examples",
-      "about": "Nineteen of bgfx's examples, each a different load: 01-cubes and 35-dynamic (many cubes, uploads), 06-bump (textured), 09-hdr (render-target chain), 21-deferred (G-buffer and lights), 24-nbody (compute), 31-rsm (reflective shadow maps), 38-bloom (post-processing), 48-drawindirect (draws the GPU decides); and, run only in native Metal so far, 08-update (texture uploads in every compressed format), 10-font and 20-nanovg (text and interface), 16-shadowmaps, 19-oit and 32-particles (transparency and overdraw), 30-picking (GPU read-back), 40-svt (sparse virtual textures: its first run writes a 370 MB tile cache to temp/ in the workload's folder), 46-fsr (upscaling), 47-pixelformats (texture formats). Pass example to perf_record.",
+      "about": "Thirty of bgfx's examples, each a different load (the last twenty-one only measured in native Metal; 26-occlusion, 37-gpudrivenrendering, 41-tess and 45-bokeh do not wait for the display, 700 to 3900 FPS, so compare their GPU ms with paced runs with care; 41-tess holds 3.2 GiB of Metal memory; 39-assao takes 31 ms of GPU per frame; also 05-instancing, 22-windows, 27-terrain, 33-pom, 50-headless and 51-gpufont): 01-cubes and 35-dynamic (many cubes, uploads), 06-bump (textured), 09-hdr (render-target chain), 21-deferred (G-buffer and lights), 24-nbody (compute), 31-rsm (reflective shadow maps), 38-bloom (post-processing), 48-drawindirect (draws the GPU decides); and, run only in native Metal so far, 08-update (texture uploads in every compressed format), 10-font and 20-nanovg (text and interface), 16-shadowmaps, 19-oit and 32-particles (transparency and overdraw), 30-picking (GPU read-back), 40-svt (sparse virtual textures: its first run writes a 370 MB tile cache to temp/ in the workload's folder), 46-fsr (upscaling), 47-pixelformats (texture formats). Pass example to perf_record.",
       "license": "BSD-2-Clause (bgfx, Branimir Karadzic); LICENSE-bgfx in the archive",
-      "url": "https://github.com/partprogramming09/metal-gpu-trace/releases/download/workloads-7/bgfx-examples-workloads-7.tar.gz",
-      "sha256": "bd41458ee01e4fd93be2779eeabc0e20c314d1313bd365bcc86d71c8e4004187",
-      "bytes": 38168959,
+      "url": "https://github.com/partprogramming09/metal-gpu-trace/releases/download/workloads-8/bgfx-examples-workloads-8.tar.gz",
+      "sha256": "1d120363981ced4ae01dad57085258206fbc84f35bd9bcdcfe656b1af355d091",
+      "bytes": 57350072,
       "dir": "bgfx-examples",
       "examples": {
         "01-cubes": "01-", "06-bump": "06-", "09-hdr": "09-", "21-deferred": "21-", "24-nbody": "24-",
         "31-rsm": "31-", "35-dynamic": "35-", "38-bloom": "38-", "48-drawindirect": "48-",
         "08-update": "08-", "10-font": "10-", "16-shadowmaps": "16-", "19-oit": "19-", "20-nanovg": "20-",
-        "30-picking": "30-", "32-particles": "32-", "40-svt": "40-", "46-fsr": "46-", "47-pixelformats": "47-"
+        "30-picking": "30-", "32-particles": "32-", "40-svt": "40-", "46-fsr": "46-", "47-pixelformats": "47-",
+        "05-instancing": "05-", "22-windows": "22-", "26-occlusion": "26-", "27-terrain": "27-", "33-pom": "33-",
+        "37-gpudrivenrendering": "37-", "39-assao": "39-", "41-tess": "41-", "45-bokeh": "45-", "50-headless": "50-",
+        "51-gpufont": "51-"
       },
       "example_traits": {
         "01-cubes": {"class": "cpu_submit", "native_encoders_per_frame": 2},
@@ -52,7 +55,18 @@
         "32-particles": {"class": "overdraw", "native_encoders_per_frame": 2},
         "40-svt": {"class": "streaming", "native_encoders_per_frame": 5},
         "46-fsr": {"class": "upscale", "native_encoders_per_frame": 5},
-        "47-pixelformats": {"class": "format_coverage", "native_encoders_per_frame": 2}
+        "47-pixelformats": {"class": "format_coverage", "native_encoders_per_frame": 2},
+        "05-instancing": {"class": "geometry", "native_encoders_per_frame": 2},
+        "22-windows": {"class": "multi_surface", "native_encoders_per_frame": 4},
+        "26-occlusion": {"class": "occlusion", "native_encoders_per_frame": 4},
+        "27-terrain": {"class": "geometry", "native_encoders_per_frame": 2},
+        "33-pom": {"class": "gpu_alu", "native_encoders_per_frame": 2},
+        "37-gpudrivenrendering": {"class": "indirect", "native_encoders_per_frame": 4},
+        "39-assao": {"class": "postprocess", "native_encoders_per_frame": 41},
+        "41-tess": {"class": "compute", "native_encoders_per_frame": 5},
+        "45-bokeh": {"class": "postprocess", "native_encoders_per_frame": 6},
+        "50-headless": {"class": "offscreen", "native_encoders_per_frame": 4},
+        "51-gpufont": {"class": "ui_text", "native_encoders_per_frame": 2}
       },
       "apis": {
         "mtl": {"program": "examples", "args": "--mtl", "wine": false},

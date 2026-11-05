@@ -5,6 +5,13 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## Unreleased
 
+- `bgfx-examples` (release `workloads-8`, 55 MiB) holds eleven more examples: 05-instancing, 22-windows, 26-occlusion, 27-terrain,
+  33-pom, 37-gpudrivenrendering, 39-assao, 41-tess, 45-bokeh, 50-headless and 51-gpufont, with classes geometry, multi_surface,
+  occlusion and offscreen besides the earlier ones. Each ran in native Metal for 15 s and loaded all its files. Seven ran paced at
+  120 FPS (2 to 4 encoders, 0.17 to 0.74 GPU ms); 26-occlusion, 37-gpudrivenrendering, 41-tess and 45-bokeh ran unpaced at 3600,
+  3900, 2600 and 700 FPS; 39-assao took 31 ms of GPU and 41 encoders per frame, and 41-tess peaked at 3.2 GiB of Metal memory.
+  None has run under Wine yet.
+
 - `perf_cold_warm` records a program twice in a row and returns each run's hitches, hitches per minute and graphics compiler
   time, `first_seen_hitches` (shader_compile hitches only the first run has) and `extra_hitches_in_first` (any cause). It does
   not clear Metal's shader cache, and runs on macOS only. `first_seen_hitches` is the first run's shader_compile hitch count

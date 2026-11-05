@@ -888,7 +888,7 @@ def test_workloads(tmp_path):
     shipped = json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["drawstress"]
     assert len(shipped["sha256"]) == 64 and shipped["sha256"] != "0" * 64 and shipped["url"].startswith("https://")
     examples = json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["bgfx-examples"]
-    assert "workloads-7" in examples["url"] and len(examples["sha256"]) == 64, "workloads-2's archive has no dxil shaders"
+    assert "workloads-8" in examples["url"] and len(examples["sha256"]) == 64, "workloads-2's archive has no dxil shaders"
 
 
 def test_example_traits(tmp_path):
@@ -899,7 +899,7 @@ def test_example_traits(tmp_path):
     for name, traits in listed["example_traits"].items():
         assert traits["class"] in {"cpu_submit", "textured", "postprocess", "gpu_bandwidth", "compute", "gpu_alu",
                                    "streaming", "indirect", "ui_text", "shadows", "overdraw", "readback", "upscale",
-                                   "format_coverage"}, name
+                                   "format_coverage", "geometry", "multi_surface", "occlusion", "offscreen"}, name
         assert traits["native_encoders_per_frame"] > 0, name
 
 
