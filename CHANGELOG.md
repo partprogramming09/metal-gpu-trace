@@ -12,6 +12,11 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   to compare GPU ms when FPS is paced was incomplete: GPU ms follow the performance state too. The `screen` note and
   the `perf_diagnose` vsync recommendation say so now. Two paced runs, such as native Metal and D3D12 under Wine with
   Mullion (1.75 and 2.11 ms for 21-deferred), do compare.
+- Both READMEs document what 0.17.0 added (the `mtl-x64` api, `size` and `example`, the `bgfx-examples` workload, the two
+  macOS levers, and a section on reading numbers across runs: screen lock, vsync, GPU performance state), `perf_sweep`
+  lists `size`, and `es/README.md` gains the seven tool rows it lacked (`perf_ab`, `perf_sweep`, `perf_gate`,
+  `perf_history`, `perf_panel`, `perf_export_trace`, `presentmon_install`). A test now requires a table row for every tool
+  in both READMEs.
 - The screen lock was confirmed as what unpaced native Metal: on the same Mac and the same examples the runs went from
   3 000 to 4 000 FPS with the session locked to 120 FPS (vsync) once it was unlocked.
 

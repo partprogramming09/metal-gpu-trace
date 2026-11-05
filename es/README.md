@@ -124,7 +124,13 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | `perf_compare` | Compara dos grabaciones: cifras principales, encoders, tiempo ocioso de la GPU y los ms de GPU por cuadro de cada etiqueta de encoder, el mayor cambio primero; marca las de menos de 100 frames |
 | `perf_baseline` | Guarda varias grabaciones iguales como referencia con nombre y devuelve el rango que abarca cada cifra entre ellas; sola, lista las referencias |
 | `perf_baseline_record` | Graba el mismo programa `count` veces (3 por defecto) con los argumentos de `perf_record` y guarda las corridas como referencia en una sola llamada |
+| `perf_ab` | Graba el mismo programa con dos entornos (`env_a`, `env_b`: pares `NOMBRE=VALOR`) en el orden A B B A y dice por métrica (FPS, 1 % bajo, ms de GPU, tirones) si B es mejor, peor o igual: mejor o peor solo cuando todos los valores de B quedan fuera del rango de A |
+| `perf_sweep` | Graba el mismo programa una vez por cada valor de una variable (`dim`, `size`, `example`, `api` o `env:NAME`), de 2 a 8 valores, `rounds` veces (una de cada dos rondas en orden inverso), y devuelve por valor la mediana de FPS, 1 % bajo, ms de GPU por cuadro y tirones; con 3 o más valores numéricos ajusta los ms de GPU por cuadro sobre el valor (ms fijos y ms por dibujo para `dim`) con su r2 |
 | `perf_check` | Juzga una grabación contra una referencia: `regressed` si los FPS bajan del rango más de `margin_pct` (3 por defecto), los ms de GPU por cuadro lo superan, o los encoders o command buffers por cuadro lo exceden; `improved` o `same` si no, con las razones y la comparación completa |
+| `perf_gate` | Comprueba una grabación contra presupuestos que fijas (pisos de FPS y de 1 % bajo; techos de tirones, ms de GPU p95, hitches y MiB de Metal) y devuelve pasa o falla con cada límite y valor; una cifra que falta falla |
+| `perf_history` | Sigue FPS, 1 % bajo, ms de GPU, tirones, hitches y MiB de Metal en las corridas cuyo nombre empieza por un prefijo, de la más antigua a la más reciente, con el cambio de la primera a la última |
+| `perf_panel` | Escribe `<nombre>.panel.html`: una página con el tiempo de GPU por cuadro y sus hitches, las cifras, la memoria de Metal y, con dos corridas, A contra B. No tiene servidor y no carga nada de la red; quien la ve oculta o reordena widgets y exporta la disposición como JSON. Con `--http`, `/panel#token=...&runs=a,b` la muestra en vivo, refrescada cada 10 s. `layout` (ids de pestañas en orden) guarda `panel.json` en el directorio de corridas como pestañas por defecto de todo panel, el vivo incluido; la pestaña de contadores de GPU aparece cuando una corrida los tiene |
+| `perf_export_trace` | Escribe los frames de GPU de una grabación como `<corrida>.chrome-trace`, un corte por frame, para ui.perfetto.dev o chrome://tracing |
 | `perf_diagnose` | Dice si una grabación reparte su trabajo de GPU en demasiados encoders cortos, como hacen las capas de traducción, con encoders y command buffers por cuadro, las etiquetas con más tiempo de GPU y el tiempo ocioso de la GPU |
 | `trace_tables` | Lista las tablas de un `.trace` guardado, por el nombre de su grabación o su ruta |
 | `trace_count` | Cuenta las filas de varias tablas de un `.trace` guardado, en total y por proceso; por defecto las que importan para una capa de traducción (intervalos de GPU, encoders, derrames del compilador, shaders compilados, asignaciones, contadores, Time Profiler), para ver una vacía antes de leerla |
@@ -132,16 +138,42 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | `capture_summary` | Resume un `.gputrace`; lista sus 100 llamadas más frecuentes de `calls_total` |
 | `capture_records` | Una página de los registros de un `.gputrace` |
 | `gpu_family` | Los datos de Apple de una familia o chip (`Apple7`, `M1 Pro`, `M3 Max`) |
+| `presentmon_install` | Solo Windows: descarga PresentMon, comprueba su SHA-256 fijado y lo guarda en `%LOCALAPPDATA%\metal-gpu-trace`, donde `perf_record` y `perf_attach` lo encuentran; Claude Code pregunta antes de cada uso |
 | `workload_list` | Lista los programas de prueba que `workload_fetch` puede descargar |
 | `workload_fetch` | Descarga un programa de prueba una vez, comprueba su SHA-256 y lo guarda en `~/Library/Caches/metal-gpu-trace`; Claude Code pregunta antes de cada uso |
 
-`perf_record` acepta `workload`, `api` (`mtl`, `d3d11` o `d3d12`) y `dim` en vez de `program`, para grabar un
-programa de prueba descargado. El primero es
+`perf_record` acepta `workload`, `api` (`mtl`, `mtl-x64`, `vk`, `d3d11` o `d3d12`), `dim`, `size` y `example` en vez de
+`program`, para grabar un programa de prueba descargado (`workload_list` dice qué tiene cada uno). `mtl-x64` es Metal
+nativo compilado para x86_64 y ejecutado bajo Rosetta, como los programas de Wine; `size` (`"1920x1080"`) fija la
+ventana de drawstress. El primer workload es
 [17-drawstress](https://github.com/partprogramming09/metal-gpu-trace/releases/tag/workloads-3) de bgfx (BSD-2,
 9,3 MB), compilado desde su código por `.github/workflows/workloads.yml`: una rejilla de cubos, `dim`³ dibujos por
 cuadro, con sus shaders dentro del programa. El prompt `compare-layer` (`/metal-trace:compare-layer drawstress d3d12`
 en Claude Code) lo graba en Metal nativo y bajo el Wine de `METAL_TRACE_WINE`, y después corre `perf_diagnose` y
 `perf_compare`.
+
+El segundo workload, `bgfx-examples` (25 MiB), trae nueve ejemplos de bgfx, cada uno una carga distinta (muchos cubos,
+texturas, cadenas de render targets, un G-buffer, cómputo, mapas de sombras reflectantes, posprocesado, dibujos que decide
+la GPU): `perf_record(workload="bgfx-examples", api="d3d12", example="21-deferred")`. Dos palancas de macOS cambian el
+Mac durante una grabación: `memory_free_pct` (de 20 a 60) mantiene todo el Mac con ese porcentaje de RAM libre
+(`memory_pressure`), y `background` ejecuta el programa bajo `taskpolicy -b`, un estrangulamiento fuerte. Un programa
+pequeño limitado por la GPU no nota la primera (drawstress siguió en 728 FPS y bajó su memoria residente); la segunda lo
+frena varias veces. Repite una corrida que use cualquiera de las dos.
+
+### Leer las cifras entre corridas
+
+- Un resumen dice dónde corrió y qué hizo la GPU: `machine` (chip, núcleos, RAM, macOS, `screen_locked`), `gpu_activity`
+  (utilización del dispositivo, del renderizador y del tiler, escenas divididas, recuperaciones de la GPU: cubre toda la
+  GPU, no solo el programa), `resource_allocations` (asignaciones por cuadro y por tipo; un total acumulado, no la
+  memoria en uso) y `command_buffer_errors`.
+- Una sesión bloqueada del Mac deja sin ritmo las ventanas de Metal nativo: de 3 000 a 4 000 FPS frente a 120 con vsync,
+  en los mismos ejemplos. Graba con el Mac desbloqueado; `perf_compare` devuelve `screen` cuando una corrida se grabó
+  bloqueada y la otra no.
+- Los ms de GPU por cuadro siguen el estado de rendimiento de la GPU: una corrida a 120 FPS está en Minimum y tarda más ms
+  para el mismo trabajo (21-deferred: 1,75 ms con vsync, 0,27 ms sin él). `perf_compare` devuelve `gpu_state` cuando dos
+  corridas estuvieron en estados distintos, y `perf_diagnose` devuelve `display_synced_hz` cuando los FPS coinciden con
+  una tasa de pantalla. Compara corridas con el mismo ritmo: Metal nativo y D3D12 bajo Wine con Mullion, ambos a
+  120 FPS, sí se comparan.
 
 Los mismos datos están como resources de MCP: `metal-trace://gpu-families` (todos) y
 `metal-trace://gpu-families/apple7` a `apple10`. Repiten con otras palabras las

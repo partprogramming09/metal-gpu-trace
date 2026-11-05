@@ -525,6 +525,19 @@ def test_levers(tmp_path):
     assert mcp.RECORD_PROPS["memory_free_pct"]["type"] == "integer" and mcp.RECORD_PROPS["background"]["type"] == "boolean"
 
 
+def test_readme_lists_every_tool(tmp_path):
+    """Both READMEs hold a table row for every tool the server offers, and name the words the 0.17.0 additions need."""
+    import re
+    import metal_trace_mcp as mcp
+    for name in ("README.md", "es/README.md"):
+        rows = set(re.findall(r"^\| `([a-z_]+)` \|", (TOOLS / name).read_text(encoding="utf-8"), re.M))
+        missing = sorted(set(mcp.TOOLS) - rows)
+        assert not missing, f"{name} lacks rows for {missing}"
+        text = (TOOLS / name).read_text(encoding="utf-8")
+        for word in ("mtl-x64", "bgfx-examples", "memory_free_pct", "gpu_state", "screen_locked", "resource_allocations"):
+            assert word in text, f"{name} does not mention {word}"
+
+
 def test_resource_summary(tmp_path):
     """resource_summary() counts one process's allocation events: total and per frame, by type, per second and after the
     first 3 s, and ignores other processes and events that are not allocations."""
@@ -1864,7 +1877,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_readme_lists_every_tool, test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

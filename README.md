@@ -150,7 +150,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `perf_baseline` | Saves several equal recordings as a named reference and returns the range each number spans across them and `spread_pct`, how much equal runs differ (the noise a change must beat); alone, lists the references. `skip_s` saves each run without its first seconds and `perf_check` applies the same cut to the run it judges |
 | `perf_baseline_record` | Records the same program `count` times (default 3) with `perf_record`'s arguments and saves the runs as a reference in one call. `skip_s` as in `perf_baseline` |
 | `perf_ab` | Records the same program with two environments (`env_a`, `env_b`: `NAME=VALUE` pairs) in the order A B B A and says per metric (FPS, 1 % low, GPU ms, stutter) whether B is better, worse or the same: better or worse only when every B value is outside A's range |
-| `perf_sweep` | Records the same program once per value of one variable (`dim`, `example`, `api` or `env:NAME`), 2 to 8 values, `rounds` times (every other round in reverse order), and returns per value the median FPS, 1 % low, GPU ms per frame and stutter; with 3 or more numeric values it fits GPU ms per frame on the value (fixed ms and ms per draw for `dim`) with its r2 |
+| `perf_sweep` | Records the same program once per value of one variable (`dim`, `size`, `example`, `api` or `env:NAME`), 2 to 8 values, `rounds` times (every other round in reverse order), and returns per value the median FPS, 1 % low, GPU ms per frame and stutter; with 3 or more numeric values it fits GPU ms per frame on the value (fixed ms and ms per draw for `dim`) with its r2 |
 | `perf_check` | Judges a recording against a reference: `regressed` when FPS falls under the range by more than `margin_pct` (default 3), GPU ms per frame rises over it, or encoders or command buffers per frame exceed it; `improved` or `same` otherwise, with the reasons and the full comparison |
 | `perf_gate` | Checks a recording against budgets you set (FPS and 1% low floors; stutter, p95 GPU ms, hitch and Metal MiB ceilings) and returns pass or fail with each limit and value; a missing number fails |
 | `perf_history` | Follows FPS, 1% low, GPU ms, stutter, hitches and Metal MiB across the runs whose name starts with a prefix, oldest first, with the change from first to last |
@@ -167,12 +167,34 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `workload_list` | Lists the test programs `workload_fetch` can download |
 | `workload_fetch` | Downloads a test program once, checks its SHA-256 and keeps it in `~/Library/Caches/metal-gpu-trace`; Claude Code asks before every call |
 
-`perf_record` takes `workload`, `api` (`mtl`, `vk`, `d3d11` or `d3d12`) and `dim` instead of `program`, to record a fetched
-test program. The first one is bgfx's
+`perf_record` takes `workload`, `api` (`mtl`, `mtl-x64`, `vk`, `d3d11` or `d3d12`), `dim`, `size` and `example` instead of
+`program`, to record a fetched test program (`workload_list` says what each has). `mtl-x64` is native Metal built for
+x86_64 and run under Rosetta, like Wine's programs; `size` (`"1920x1080"`) sets drawstress's window. The first workload is bgfx's
 [17-drawstress](https://github.com/partprogramming09/metal-gpu-trace/releases/tag/workloads-3) (BSD-2, 9.3 MB),
 built from source by `.github/workflows/workloads.yml`: a grid of cubes, `dim`³ draws per frame, with its shaders
 inside the program. The `compare-layer` prompt (`/metal-trace:compare-layer drawstress d3d12` in Claude Code) records it
 in native Metal and under the Wine in `METAL_TRACE_WINE`, then runs `perf_diagnose` and `perf_compare`.
+
+The second workload, `bgfx-examples` (25 MiB), holds nine bgfx examples, each a different load (many cubes, textures,
+render-target chains, a G-buffer, compute, reflective shadow maps, post-processing, draws the GPU decides):
+`perf_record(workload="bgfx-examples", api="d3d12", example="21-deferred")`. Two macOS levers change the Mac under a
+recording: `memory_free_pct` (20 to 60) holds the whole Mac at that percentage of RAM free (`memory_pressure`), and
+`background` runs the program under `taskpolicy -b`, a hard throttle. A small GPU-bound program does not feel the first
+(drawstress stayed at 728 FPS and its resident memory fell); the second slows it several times over. Repeat a run that
+uses either.
+
+### Reading the numbers across runs
+
+- A summary says where it ran and what the GPU did: `machine` (chip, cores, RAM, macOS, `screen_locked`), `gpu_activity`
+  (utilization of the device, renderer and tiler, split scenes, GPU recoveries: it covers the whole GPU, not only the
+  program), `resource_allocations` (allocation events per frame, by type; a running total, not memory in use) and
+  `command_buffer_errors`.
+- A locked Mac session leaves native Metal windows unpaced: 3 000 to 4 000 FPS against 120 with vsync, on the same
+  examples. Record with the Mac unlocked; `perf_compare` returns `screen` when one run was recorded locked and the other not.
+- GPU ms per frame follow the GPU's performance state: a run paced at 120 FPS sits in Minimum and takes more ms for
+  the same work (21-deferred: 1.75 ms paced, 0.27 ms unpaced). `perf_compare` returns `gpu_state` when two runs sat in
+  different states, and `perf_diagnose` returns `display_synced_hz` when the FPS sits on a display rate. Compare runs paced
+  alike: native Metal and D3D12 under Wine with Mullion, both at 120 FPS, do compare.
 
 `api=vk` runs the same program through Vulkan on MoltenVK. MoltenVK is not shipped: set `METAL_TRACE_MOLTENVK` to a
 directory (no spaces) holding an arm64 `libMoltenVK.dylib`, such as the one in a Vulkan SDK or `brew install molten-vk`.
