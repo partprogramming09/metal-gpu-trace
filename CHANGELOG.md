@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.20.0 — 2026-11-05
 
 - `bgfx-examples` (release `workloads-7`, 38 MB) holds ten more examples: 08-update, 10-font, 16-shadowmaps, 19-oit, 20-nanovg,
   30-picking, 32-particles, 40-svt, 46-fsr and 47-pixelformats, with classes ui_text, shadows, overdraw, readback, upscale and
