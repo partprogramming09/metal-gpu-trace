@@ -19,6 +19,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   `mtl-x64`, native Metal built for x86_64 and run under Rosetta like Wine's programs, whose layer is named `rosetta` so
   `perf_compare` against `mtl` says it compares two layers. The `workloads-1` archive stays published; a cached
   drawstress from it is not reused, the new one downloads once.
+- `perf_diagnose` returns `display_synced_hz` and says so when the FPS sits within 1 % of a common display rate (24 to 240
+  Hz) with a 95th percentile frame interval no more than 30 % above the median: probably vsync, so compare GPU ms per
+  frame, not FPS. On real runs: D3D11 under Wine at 118.9 FPS gives 120; native Metal at 735 and 3 058 FPS gives none.
 - A macOS summary has `gpu_activity`, from the GPU driver's counters (`ioreg`, no sudo) sampled once a second beside the
   process memory (`<run>.agx.csv`): device, renderer and tiler utilization, the growth of `SplitSceneCount`
   (`split_scenes`) and of `recoveryCount` (`recoveries`, `gpu_recovered`), and the driver's memory in use. The counters

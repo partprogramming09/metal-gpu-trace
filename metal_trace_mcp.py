@@ -1135,6 +1135,20 @@ def tool_perf_panel(name, runs, preset="fps", skip_s=0, layout=None):
             "bytes": target.stat().st_size}
 
 
+REFRESH_RATES = (24, 30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 240)  # common display rates, in Hz
+
+
+def display_synced_hz(gpu):
+    """Returns the display rate a run's FPS sits on, or None: the FPS within 1 % of a common rate and the 95th percentile
+    frame interval within 30 % above the median, which is what a run paced by the display looks like (not proof; a real
+    D3D11 run under Wine at 118.9 FPS had 17 %)."""
+    fps, interval = gpu.get("fps_estimate"), gpu.get("frame_interval_ms") or {}
+    p50, p95 = interval.get("p50"), interval.get("p95")
+    if not fps or not p50 or not p95 or p95 > p50 * 1.3:
+        return None
+    return next((hz for hz in REFRESH_RATES if abs(fps - hz) <= hz * 0.01), None)
+
+
 def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     """Says whether a saved recording splits its GPU work into too many short encoders, the pattern of translation
     layers such as DXMT, Mullion or MoltenVK, with the numbers behind it: encoders and command buffers per frame, the
@@ -1221,6 +1235,10 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
         recommendations.append("Los tirones coinciden con crecimiento de memoria Metal: revisar cargas de recursos en medio de la partida.")
     elif top_cause == "thermal":
         recommendations.append("Los tirones coinciden con un estado térmico distinto de Nominal.")
+    synced = display_synced_hz(gpu)
+    if synced:
+        recommendations.append(f"El FPS ({gpu['fps_estimate']}) coincide con una pantalla de {synced} Hz y los intervalos son regulares: "
+                               "probablemente sincronización vertical; la GPU puede tener margen, compare los ms de GPU por frame y no el FPS.")
     activity = s.get("gpu_activity") or {}
     if activity.get("gpu_recovered"):
         n = activity["recoveries"]
@@ -1243,7 +1261,7 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
             "stutter_analysis": {"stutter_rate_pct": stutter_rate, "worst_spike_ms": worst_spike,
                                  "verdict": stutter_verdict},
             "recommendations": recommendations, "hitches": hitches or None,
-            "gpu_idle": s.get("gpu_idle"), "gpu_activity": s.get("gpu_activity"), "by_label": encoders["by_label"],
+            "display_synced_hz": synced, "gpu_idle": s.get("gpu_idle"), "gpu_activity": s.get("gpu_activity"), "by_label": encoders["by_label"],
             "too_short": frames < 100}
 
 
