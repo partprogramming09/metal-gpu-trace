@@ -3,6 +3,18 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `perf_compare` returns `gpu_state` when two runs spent their time in different GPU performance states (the shares of
+  `gpu_performance_state_share` weighted Minimum 0, Medium 1, Maximum 2, a gap of 0.25 or more). Measured with an unlocked
+  Mac: a native Metal run paced at 120 FPS sits 100 % in Minimum with the GPU idle 82 to 98 % of the time, and the same
+  work takes more GPU ms: 21-deferred 1.75 ms against 0.27 ms unpaced, 01-cubes 0.20 against 0.11. So the 0.17.0 advice
+  to compare GPU ms when FPS is paced was incomplete: GPU ms follow the performance state too. The `screen` note and
+  the `perf_diagnose` vsync recommendation say so now. Two paced runs, such as native Metal and D3D12 under Wine with
+  Mullion (1.75 and 2.11 ms for 21-deferred), do compare.
+- The screen lock was confirmed as what unpaced native Metal: on the same Mac and the same examples the runs went from
+  3 000 to 4 000 FPS with the session locked to 120 FPS (vsync) once it was unlocked.
+
 ## 0.17.0 — 2026-11-05
 
 - Workloads. `bgfx-examples` (release `workloads-4`, 25.2 MiB) holds nine bgfx examples (01-cubes, 06-bump, 09-hdr,

@@ -648,6 +648,14 @@ def measurement(s):
     return "windows" if (s.get("device") or {}).get("platform") == "Windows" else "metal"
 
 
+def gpu_state_level(s):
+    """Returns the time-weighted GPU performance state of a summary (Minimum 0, Medium 1, Maximum 2), or None when it
+    has no state shares."""
+    share = s.get("gpu_performance_state_share") or {}
+    levels = {"Minimum": 0, "Medium": 1, "Maximum": 2}
+    return round(sum(levels[k] * v for k, v in share.items() if k in levels), 3) if share else None
+
+
 def compare_summaries(sa, sb, a, b, short_us=25):
     """perf_compare over two loaded summaries named a and b."""
     metrics = {
@@ -674,7 +682,14 @@ def compare_summaries(sa, sb, a, b, short_us=25):
     if None not in locked and locked[0] != locked[1]:
         result["screen"] = {"a": locked[0], "b": locked[1],
                             "note": "one run was recorded with the screen locked and the other not: a locked session may "
-                                    "leave frames unpaced by the display, so FPS is not comparable; compare GPU ms per frame"}
+                                    "leave frames unpaced by the display, so FPS, and GPU ms (they follow the GPU's performance "
+                                    "state), are not comparable; record both with the Mac unlocked"}
+    levels = [gpu_state_level(s) for s in (sa, sb)]
+    if None not in levels and abs(levels[0] - levels[1]) >= 0.25:
+        result["gpu_state"] = {"a": levels[0], "b": levels[1],
+                               "note": "the GPU spent its time in different performance states (0 is all Minimum, 1 all Medium, "
+                                       "2 all Maximum): the same work takes more GPU ms in a lower state, so GPU ms per frame "
+                                       "are not comparable; pace both runs alike or compare under load (drawstress at a high dim)"}
     ma, mb = measurement(sa), measurement(sb)
     if ma != mb:
         result["measure"] = {"a": ma, "b": mb, "not_comparable": list(NOT_COMPARABLE),
@@ -1238,7 +1253,8 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     synced = display_synced_hz(gpu)
     if synced:
         recommendations.append(f"El FPS ({gpu['fps_estimate']}) coincide con una pantalla de {synced} Hz y los intervalos son regulares: "
-                               "probablemente sincronización vertical; la GPU puede tener margen, compare los ms de GPU por frame y no el FPS.")
+                               "probablemente sincronización vertical; la GPU tiene margen y baja de estado de rendimiento, así que sus ms por frame "
+                               "suben: compare solo ejecuciones con el mismo ritmo.")
     activity = s.get("gpu_activity") or {}
     if activity.get("gpu_recovered"):
         n = activity["recoveries"]
