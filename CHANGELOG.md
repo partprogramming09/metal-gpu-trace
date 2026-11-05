@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.21.0 — 2026-11-05
 
 - `metal_memory_mib.trend_mib_per_min`: the slope of the Metal memory samples of the second half of the recorded time, in MiB
   per minute, to tell a program that keeps growing after start-up from one that settles; `null` with under 5 samples there or
