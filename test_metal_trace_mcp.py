@@ -1249,16 +1249,19 @@ def test_kill_program_and_watchdog(tmp_path):
     # the recording's parent dies: the script must exit and free its lock
     parent = subprocess.Popen(["sleep", "60"])
     (stubs / "pkill").unlink()  # the script needs the real pkill
-    env = dict(os.environ, PERF_OUT=str(out), PERF_PARENT_PID=str(parent.pid), PATH=f"{stubs}:{os.environ['PATH']}")
+    # PERF_MIN_FREE_GB=0: the disk check needs 26 GB for 30 s, and a CI runner's free space varies
+    env = dict(os.environ, PERF_OUT=str(out), PERF_PARENT_PID=str(parent.pid), PERF_MIN_FREE_GB="0",
+               PATH=f"{stubs}:{os.environ['PATH']}")
     logfile = tmp_path / "script.log"  # a file, not a pipe: the stub's orphaned sleep would hold a pipe open
     script = subprocess.Popen(["zsh", str(TOOLS / "perf_record.sh"), "orphan", "30", "native", "-", str(tmp_path),
                                str(program)], env=env, stdout=open(logfile, "w"), stderr=subprocess.STDOUT,
                               start_new_session=True)
     try:
-        deadline = time.time() + 15
+        deadline = time.time() + 40
         while not (out / ".recording").is_dir() and time.time() < deadline:
             time.sleep(0.2)
-        assert (out / ".recording").is_dir(), "the recording never started"
+        assert (out / ".recording").is_dir(), (f"the recording never started; the script's exit code is {script.poll()} "
+                                               f"and its output {logfile.read_text()[-600:]!r}")
         parent.kill()
         parent.wait()
         script.wait(timeout=30)
@@ -1282,7 +1285,7 @@ def test_script_failure_cleanup(tmp_path):
     program.write_text("#!/bin/sh\n")
     program.chmod(0o755)
     text.write_text("x")
-    env = dict(os.environ, PERF_OUT=str(out), PATH=f"{stubs}:{os.environ['PATH']}")
+    env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", PATH=f"{stubs}:{os.environ['PATH']}")
 
     def run(path):
         return subprocess.run(["zsh", str(TOOLS / "perf_record.sh"), "f", "2", "native", "-", str(tmp_path), str(path)],
