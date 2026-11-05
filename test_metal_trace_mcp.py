@@ -515,6 +515,33 @@ def test_levers(tmp_path):
     assert mcp.RECORD_PROPS["memory_free_pct"]["type"] == "integer" and mcp.RECORD_PROPS["background"]["type"] == "boolean"
 
 
+def test_rosetta_layer(tmp_path):
+    """An api marked rosetta in data/workloads.json is named as such in the run's layer, so perf_compare against native
+    Metal says it compares two layers."""
+    import metal_trace_mcp as mcp
+    entry = {"title": "t", "about": "a", "license": "l", "url": "https://example.invalid/x.tar.gz", "bytes": 1,
+             "sha256": "0" * 64, "dir": "demo", "dim_variable": "DIM",
+             "apis": {"mtl": {"program": "demo", "args": "--mtl", "wine": False},
+                      "mtl-x64": {"program": "demo-x64", "args": "--mtl", "wine": False, "rosetta": True}}}
+    saved = mcp.WORKLOADS
+    mcp.WORKLOADS = {"demo": entry}
+    try:
+        assert mcp.workload_layer("demo", "mtl", 20) is None
+        layer = mcp.workload_layer("demo", "mtl-x64", 20)
+        assert "rosetta" in layer and layer["program_env"] == "DIM=20", layer
+        assert mcp.layer_label(layer) == "rosetta"
+        native = {"none": "native Metal, no translation layer", "program_env": "DIM=20"}
+        ma = {"layer": native, "gpu": {"frames": 300}}
+        mb = {"layer": layer, "gpu": {"frames": 300}}
+        got = mcp.layer_change(ma, mb, "a", "b")
+        assert got["same"] is False and got["b"] == "rosetta" and "two layers" in got["note"], got
+    finally:
+        mcp.WORKLOADS = saved
+    shipped = json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["drawstress"]
+    assert shipped["apis"]["mtl-x64"]["rosetta"] is True and shipped["size_variables"] == ["DRAWSTRESS_WIDTH", "DRAWSTRESS_HEIGHT"]
+    assert "workloads-3" in shipped["url"] and len(shipped["sha256"]) == 64
+
+
 def test_gpu_activity(tmp_path):
     """agx_summary() reads the per-second AGX sample: utilization stats, the growth of split scenes and of the recovery
     count, and it tolerates empty cells and a missing column."""
@@ -1783,7 +1810,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

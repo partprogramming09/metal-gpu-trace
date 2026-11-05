@@ -15,6 +15,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   frame), and a run without Instruments swung from 18 to 280 times slower, so it is a throttle, not a switch to the
   efficiency cores. `memory_free_pct=30` left drawstress at 728 FPS but cut its resident memory (p95 165 to 118 MiB):
   the pressure applies, a small GPU-bound program does not feel it. Lower power mode needs `sudo pmset` and is not offered.
+- The drawstress workload moves to release `workloads-3` (9.3 MB): it takes `size` (window `WIDTHxHEIGHT`) and has the api
+  `mtl-x64`, native Metal built for x86_64 and run under Rosetta like Wine's programs, whose layer is named `rosetta` so
+  `perf_compare` against `mtl` says it compares two layers. The `workloads-1` archive stays published; a cached
+  drawstress from it is not reused, the new one downloads once.
 - A macOS summary has `gpu_activity`, from the GPU driver's counters (`ioreg`, no sudo) sampled once a second beside the
   process memory (`<run>.agx.csv`): device, renderer and tiler utilization, the growth of `SplitSceneCount`
   (`split_scenes`) and of `recoveryCount` (`recoveries`, `gpu_recovered`), and the driver's memory in use. The counters

@@ -137,8 +137,8 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 
 `perf_record` acepta `workload`, `api` (`mtl`, `d3d11` o `d3d12`) y `dim` en vez de `program`, para grabar un
 programa de prueba descargado. El primero es
-[17-drawstress](https://github.com/partprogramming09/metal-gpu-trace/releases/tag/workloads-1) de bgfx (BSD-2,
-7,5 MB), compilado desde su código por `.github/workflows/workloads.yml`: una rejilla de cubos, `dim`³ dibujos por
+[17-drawstress](https://github.com/partprogramming09/metal-gpu-trace/releases/tag/workloads-3) de bgfx (BSD-2,
+9,3 MB), compilado desde su código por `.github/workflows/workloads.yml`: una rejilla de cubos, `dim`³ dibujos por
 cuadro, con sus shaders dentro del programa. El prompt `compare-layer` (`/metal-trace:compare-layer drawstress d3d12`
 en Claude Code) lo graba en Metal nativo y bajo el Wine de `METAL_TRACE_WINE`, y después corre `perf_diagnose` y
 `perf_compare`.
