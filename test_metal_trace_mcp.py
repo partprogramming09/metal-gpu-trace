@@ -190,8 +190,9 @@ def test_report(tmp_path):
         perf_report.subprocess.run = saved_run
     toc = ET.fromstring('<trace-toc><run><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
     assert perf_report.missing_tables(toc) == ["ProcessCPUUsage", "device-thermal-state-intervals", "gpu-performance-state-intervals",
-                                               "graphics-compiler-activity-intervals",
-                                               "metal-application-encoders-list", "metal-current-allocated-size"]
+                                               "graphics-compiler-activity-intervals", "metal-application-encoders-list",
+                                               "metal-command-buffer-error", "metal-current-allocated-size",
+                                               "metal-resource-allocations"]
     try:
         perf_report.missing_tables(ET.fromstring("<trace-toc/>"))
         raise AssertionError("a trace without metal-gpu-intervals must fail")
@@ -522,6 +523,32 @@ def test_levers(tmp_path):
         mcp.MEMORY_PRESSURE, mcp.record_run = saved
         mcp.hold_memory_pressure = original
     assert mcp.RECORD_PROPS["memory_free_pct"]["type"] == "integer" and mcp.RECORD_PROPS["background"]["type"] == "boolean"
+
+
+def test_resource_summary(tmp_path):
+    """resource_summary() counts one process's allocation events: total and per frame, by type, per second and after the
+    first 3 s, and ignores other processes and events that are not allocations."""
+    def cell(text, fmt=None):
+        el = ET.Element("v", {"fmt": fmt} if fmt else {})
+        el.text = text
+        return el
+
+    def process(pid):
+        el = ET.Element("process")
+        ET.SubElement(el, "pid", {"fmt": str(pid)})
+        return el
+
+    def row(pid, t_ms, size, kind="Buffer", event="Allocation"):
+        return {"process": process(pid), "timestamp": cell(str(t_ms * 1_000_000)), "resource-size": cell(str(size)),
+                "resource-type": cell(kind), "event-type": cell(event)}
+    rows = [row(7, 100, 1 << 20), row(7, 900, 1 << 20), row(7, 1500, 2 << 20, "Texture"), row(7, 3200, 1 << 20),
+            row(7, 3300, 512 << 10, event="Deallocation"), row(8, 200, 1 << 30), row(7, 5900, 1 << 20)]
+    got = perf_report.resource_summary(rows, 7, frames=50)
+    assert got["events"] == 5 and got["mib"] == 6.0 and got["per_frame"] == 0.1, got
+    assert got["by_type"] == {"Buffer": {"count": 4, "mib": 4.0}, "Texture": {"count": 1, "mib": 2.0}}, got
+    assert got["after_3s"] == {"count": 2, "mib": 2.0} and got["per_second"] == [2, 1, 0, 1, 0, 1], got
+    assert perf_report.resource_summary(rows, 99, frames=50) == {"events": 0}
+    assert perf_report.resource_summary(rows, 7, frames=0)["per_frame"] is None
 
 
 def test_rosetta_layer(tmp_path):
@@ -1825,7 +1852,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
