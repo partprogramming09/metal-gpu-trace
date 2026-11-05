@@ -1396,6 +1396,41 @@ def tool_perf_ab(name, env_a, env_b, rounds=1, skip_s=0, **record):
     return ab_report(name, env_a, env_b, runs, skip_s)
 
 
+def cold_warm_report(name, first, second):
+    """Builds perf_cold_warm's answer from the summaries of its two runs, each (run name, summary): per run the frames,
+    hitches, their causes and the graphics compiler's busy ms, and `first_seen_hitches`, how many more shader_compile
+    hitches the first run had than the second."""
+    def part(run, summary):
+        hitches = summary.get("hitches", {})
+        return {"run": run, "frames": summary.get("gpu", {}).get("frames"), "hitches": hitches.get("count"),
+                "per_minute": hitches.get("per_minute"), "causes": hitches.get("causes", {}),
+                "compiler_busy_ms": summary.get("graphics_compiler", {}).get("busy_ms")}
+    one, two = part(*first), part(*second)
+    seen = max(0, one["causes"].get("shader_compile", 0) - two["causes"].get("shader_compile", 0))
+    return {"name": name, "first": one, "second": two, "first_seen_hitches": seen,
+            "extra_hitches_in_first": max(0, (one["hitches"] or 0) - (two["hitches"] or 0)),
+            "hint": "the Metal shader cache is not cleared between the runs: the first run is cold only if the program's "
+                    "pipelines were not built before; first_seen_hitches counts the shader_compile hitches the first run has "
+                    "and the second does not, extra_hitches_in_first counts those of any cause, and start-up hitches are in both"}
+
+
+def tool_perf_cold_warm(name, **record):
+    """Records the same program twice in a row and says what the first run suffers that the second does not: hitches
+    whose cause is a shader compile (first-seen pipelines), with each run's hitch count and graphics compiler time. Runs
+    are named `name`-first and `name`-second; each recording takes its seconds plus about a minute to read back."""
+    if not name_ok(name):
+        raise ToolError("a name holds only letters, digits, '.', '_' and '-'")
+    record.pop("label", None)
+    runs = []
+    for part in ("first", "second"):
+        label = f"{name}-{part}"
+        before = set(OUT.glob(f"{label}_*.json"))
+        tool_perf_record(label, **record)
+        path = next(iter(set(OUT.glob(f"{label}_*.json")) - before))
+        runs.append((path.stem, json.loads(path.read_text(encoding="utf-8"))))
+    return cold_warm_report(name, *runs)
+
+
 def line_fit(points):
     """Returns (intercept, slope, r2) of the least-squares line through [(x, y)], or None when x never changes."""
     mx, my = sum(x for x, _ in points) / len(points), sum(y for _, y in points) / len(points)
@@ -1631,6 +1666,10 @@ TOOLS = {
          "skip_s": {"type": "number", "description": SKIP},
          **{k: v for k, v in RECORD_PROPS.items() if k not in ("label", "env")}}, ["name", "env_a", "env_b"]),
         hints("Record two settings in A B B A order", destructive=True)),
+    "perf_cold_warm": (tool_perf_cold_warm, schema(
+        {"name": {**S, "description": "name for the runs: letters, digits, '.', '_', '-'"},
+         **{k: v for k, v in RECORD_PROPS.items() if k != "label"}}, ["name"]),
+        hints("Record a run twice to find first-seen shader stutter", destructive=True)),
     "perf_attach": (tool_perf_attach, schema(
         {"label": {**S, "description": "name for the run: letters, digits, '.', '_', '-'"},
          "process": {**S, "description": "pid, or a name in the program's command line such as Game.exe"},
