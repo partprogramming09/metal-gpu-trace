@@ -343,7 +343,7 @@ def counter_stats(info_path, value_path):
                 total += 1
                 stamp = COUNTER_TIME.search(line, start)
                 if stamp:
-                    if stamp[1] == "id" and stamp[3].strip().isdigit():
+                    if stamp[1] == "id" and (stamp[3] or "").strip().isdigit():
                         times[stamp[2]] = int(stamp[3])
                     when = times.get(stamp[2])
                     if when is not None and cid in limiters:

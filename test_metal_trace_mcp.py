@@ -550,6 +550,19 @@ def test_counter_windows(tmp_path):
     assert perf_report.limiter_in(series, 190, 210) == {"name": "ALU Limiter", "mean": 80.0}
     assert perf_report.limiter_in(series, 90, 210) == {"name": "ALU Limiter", "mean": 45.0}, "mean of 10 and 80 against 35 of 50 and 20"
     assert perf_report.limiter_in(series, 500, 600) is None
+    odd = tmp_path / "odd.xml"
+    info.write_text(info.read_text() if info.exists() else "")
+    odd.write_text("<?xml version=\"1.0\"?>\n<trace-query-result>\n<node xpath='x'><schema name=\"gpu-counter-value\"></schema>"
+                   "<row><event-time id=\"1\" fmt=\"empty\"/><uint32 id=\"2\" fmt=\"0\">0</uint32><fixed-decimal id=\"3\" fmt=\"10\">10.0</fixed-decimal><uint64 id=\"4\" fmt=\"7\">7</uint64></row>\n"
+                   "<row><event-time ref=\"1\"/><uint32 id=\"5\" fmt=\"1\">1</uint32><fixed-decimal id=\"6\" fmt=\"50\">50.0</fixed-decimal><uint64 ref=\"4\"/></row>\n"
+                   "</node></trace-query-result>\n")
+    info.write_text("<trace-query-result><node xpath='x'><schema name=\"gpu-counter-info\"><col><mnemonic>counter-id</mnemonic></col>"
+                    "<col><mnemonic>name</mnemonic></col><col><mnemonic>type</mnemonic></col></schema>"
+                    "<row><uint32 id=\"1\" fmt=\"0\">0</uint32><string id=\"2\" fmt=\"ALU Limiter\">ALU Limiter</string><string id=\"3\" fmt=\"Percentage\">Percentage</string></row>\n"
+                    "<row><uint32 id=\"4\" fmt=\"1\">1</uint32><string id=\"5\" fmt=\"Cache Limiter\">Cache Limiter</string><string ref=\"3\"/></row>\n"
+                    "</node></trace-query-result>\n")
+    got = perf_report.counter_stats(info, odd)
+    assert got["samples"] == 2 and got["_series"]["bins"] == {}, "a time cell with no value keeps the counters and leaves the series empty"
     starts = [0.0, 16.0, 32.0, 100.0, 116.0]
     found = perf_report.attribute_hitches([1, 2, 3, 4, 5], starts, [4.0] * 5, [], [], [])
     assert found["worst"][0]["window_ms"] == [32.0, 100.0] and found["worst"][0]["interval_ms"] == 68.0, found
