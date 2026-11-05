@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.18.0 — 2026-11-05
 
 - `perf_compare` returns `gpu_state` when two runs spent their time in different GPU performance states (the shares of
   `gpu_performance_state_share` weighted Minimum 0, Medium 1, Maximum 2, a gap of 0.25 or more). Measured with an unlocked
@@ -17,7 +17,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   lists `size`, and `es/README.md` gains the seven tool rows it lacked (`perf_ab`, `perf_sweep`, `perf_gate`,
   `perf_history`, `perf_panel`, `perf_export_trace`, `presentmon_install`). A test now requires a table row for every tool
   in both READMEs.
-- The screen lock was confirmed as what unpaced native Metal: on the same Mac and the same examples the runs went from
+- The screen lock is confirmed as what left native Metal unpaced: on the same Mac and the same examples the runs went from
   3 000 to 4 000 FPS with the session locked to 120 FPS (vsync) once it was unlocked.
 
 ## 0.17.0 — 2026-11-05
