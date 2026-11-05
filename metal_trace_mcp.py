@@ -185,11 +185,14 @@ def moltenvk_dir():
 
 
 def workload_layer(name, api, dim):
-    """Returns the translation layer a workload's api runs through (MoltenVK, with its size and SHA-256), or None when
-    the api is native Metal or goes through Wine."""
-    if not workload_entry(name)[0]["apis"].get(api, {}).get("moltenvk"):
-        return None
+    """Returns the layer a workload's api runs through (MoltenVK with its size and SHA-256, or Rosetta for Metal built for
+    x86_64), or None when the api is native Metal or goes through Wine."""
     entry = workload_entry(name)[0]
+    if entry["apis"].get(api, {}).get("rosetta"):
+        return {"rosetta": "native Metal built for x86_64 and run under Rosetta 2, like Wine's programs",
+                "program_env": f"{entry['dim_variable']}={int(dim)}" if dim else ""}
+    if not entry["apis"].get(api, {}).get("moltenvk"):
+        return None
     return {"moltenvk": "Vulkan on Metal through MoltenVK", "dylib": file_id(moltenvk_dir() / "libMoltenVK.dylib"),
             "program_env": f"{entry['dim_variable']}={int(dim)}" if dim else ""}
 
@@ -388,6 +391,8 @@ def layer_label(layer):
         return "native"
     if "unknown" in layer:
         return "attached"
+    if "rosetta" in layer:
+        return "rosetta"
     if "moltenvk" in layer:
         return f"moltenvk {((layer.get('dylib') or {}).get('sha256') or '')[:12]}".strip()
     return f"{layer['fingerprint']} {layer['wine']} {layer['wine_version'] or ''}".strip()
@@ -1548,7 +1553,7 @@ RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits
          "args": {**S, "description": "program arguments as in a shell, quotes included"},
          "workload": {**S, "description": "a test program from workload_list, fetched with workload_fetch, instead "
                                           "of program"},
-         "api": {**S, "description": "with workload: mtl (native Metal), vk (Vulkan through MoltenVK: set "
+         "api": {**S, "description": "with workload: mtl (native Metal), mtl-x64 (Metal built for x86_64, run under Rosetta like Wine), vk (Vulkan through MoltenVK: set "
                                                         "METAL_TRACE_MOLTENVK), d3d11 or d3d12 (under wine)"},
          "dim": {**I, "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame"},
          "example": {**S, "description": "with a workload that lists examples in workload_list: the one to run"},
