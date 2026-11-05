@@ -391,6 +391,35 @@ def limiter_in(series, lo_ms, hi_ms):
     return {"name": name, "mean": round(total / count, 3)}
 
 
+VALIDATION_MESSAGE = re.compile(r"^(?:Invalid Metal usage:|-\[MTL.*?\]:\d+: failed assertion)\s*(.*)$")
+PATH_TEXT = re.compile(r"/(?:[\w.@+-]+/)+[\w.@+-]*")
+VALIDATION_KINDS = 20
+
+
+def validation_summary(lines):
+    """Counts Metal validation messages in a program's output by kind (the message without its offset and function, paths
+    replaced by <path>) and returns {"messages", "by_kind" (at most VALIDATION_KINDS, the rest under "other"), "examples" (the
+    first full line of up to five kinds)}, or None when there are none. `lines` is read once. The shader validation layer prints
+    "Invalid Metal usage: <kind> at offset N, executing compute function: "name"" and the API layer a "-[MTL...]:N: failed
+    assertion" line."""
+    kinds, examples = collections.Counter(), {}
+    for line in lines:
+        found = VALIDATION_MESSAGE.match(line.strip())
+        if found:
+            text = PATH_TEXT.sub("<path>", line.strip())
+            kind = re.sub(r" at offset \d+.*$", "", PATH_TEXT.sub("<path>", found[1])).strip()
+            kinds[kind] += 1
+            if len(examples) < 5:
+                examples.setdefault(kind, text)
+    if not kinds:
+        return None
+    top = kinds.most_common(VALIDATION_KINDS)
+    by_kind = dict(top)
+    if len(kinds) > len(top):
+        by_kind["other"] = sum(kinds.values()) - sum(n for _, n in top)
+    return {"messages": sum(kinds.values()), "by_kind": by_kind, "examples": list(examples.values())}
+
+
 def resource_summary(table_rows, pid, frames):
     """Summarizes the Metal resource allocation events of process `pid` from the rows of `metal-resource-allocations`:
     `events` and `mib` allocated (a running total, not memory in use: a drawable's texture each frame counts), `per_frame`, `by_type` (buffer, texture...), `after_3s` (events after the first 3 s of
@@ -630,6 +659,11 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
                 summary["resource_allocations"] = allocations
         if "metal-command-buffer-error" in tables:
             summary["command_buffer_errors"] = sum(1 for _ in rows(tables["metal-command-buffer-error"]))
+        log = out / f"{label}.validation.log"
+        if log.is_file():
+            with log.open(errors="replace") as handle:
+                found = validation_summary(handle)
+            summary["validation"] = found or {"messages": 0}
         counter_series = None
         if all(schema in tables for schema in COUNTER_TABLES):
             found = counter_stats(tables[COUNTER_TABLES[0]], tables[COUNTER_TABLES[1]])

@@ -103,6 +103,19 @@ for pair in ${=PERF_ENV:-}; do extra+=(--env $pair); done
 launcher=(${=PERF_PREFIX:-})
 # PERF_INSTRUMENTS="Time Profiler;Metal GPU Counters" adds Instruments to the Metal System Trace template
 for instrument in ${(s:;:)PERF_INSTRUMENTS:-}; do extra+=(--instrument $instrument); done
+# with Metal validation on, the program's output (where the layers report) is kept in $name.validation.log for the summary
+validate=0 dyld=0
+for pair in ${=PERF_ENV:-}; do
+  [[ $pair == (MTL_SHADER_VALIDATION|MTL_DEBUG_LAYER)=[^0]* ]] && validate=1
+  [[ $pair == DYLD_* ]] && dyld=1
+done
+if (( validate && ! dyld )) && [[ $wine != attach ]]; then
+  extra+=(--env MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1 --target-stdout $out/$name.validation.log)
+  launcher=(/bin/sh -c 'exec "$@" 2>&1' sh $launcher)
+elif (( validate && dyld )); then
+  # /bin/sh is protected by SIP and drops DYLD_* variables before the program starts
+  echo "validation messages are not kept: a DYLD_ variable would not reach the program through the shell that collects them" >&2
+fi
 if [[ $wine == attach ]]; then
   xcrun xctrace record --template "Metal System Trace" --time-limit ${seconds}s --output $out/$name.trace \
     --attach $pid || true
@@ -125,6 +138,7 @@ kill $sampler 2>/dev/null || true
 report=(--label $name --out $out)
 [[ ${PERF_MEMORY:-1} == 0 ]] && report+=(--no-memory)
 python3 -I $here/perf_report.py $out/$name.trace $report
+rm -f $out/$name.validation.log
 # the .trace goes once its numbers are in the .json; KEEP_TRACE=1 keeps it for trace_tables, trace_query or Instruments
 [[ ${KEEP_TRACE:-0} == 1 ]] || rm -rf $out/$name.trace
 if [[ ${KEEP_RUNS:-} == <1-> ]]; then
