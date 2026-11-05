@@ -197,6 +197,8 @@ def workload_command(name, api, dim, wine, args, example=None):
         raise ToolError(f"example is one of {', '.join(examples)} for {name}")
     if example and not examples:
         raise ToolError(f"{name} takes no example")
+    if dim and "dim_variable" not in entry:
+        raise ToolError(f"dim does not apply to {name}")
     if not target.is_dir():
         raise ToolError(f"{name} is not downloaded yet; call workload_fetch first")
     run = entry["apis"][api]

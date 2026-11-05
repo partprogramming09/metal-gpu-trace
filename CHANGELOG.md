@@ -7,6 +7,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - `perf_record` takes `example` for a workload that lists `examples` in `data/workloads.json` (`workload_list` shows
   them): its argument goes after the api's. No workload ships examples yet; the first is the bgfx examples archive.
+- New workload `bgfx-examples` (release `workloads-2`, 24.6 MiB): nine bgfx examples in native Metal, D3D11 and D3D12;
+  `perf_record(workload="bgfx-examples", api=..., example="21-deferred")`. `dim` on a workload without `dim_variable`
+  is refused instead of failing with `KeyError`.
 - `workloads.yml` also builds bgfx's combined `examples` binaries and packs them with `workloads/pack-examples.sh`
   (one flat folder, only the assets nine examples load: 63 MB, 24 MB compressed) as `bgfx-examples-<release>.tar.gz`;
   the default release tag is now `workloads-2`, so a run does not replace the pinned `workloads-1` archive. Each of the

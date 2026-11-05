@@ -1550,6 +1550,15 @@ def test_workload_example(tmp_path):
             except mcp.ToolError as error:
                 assert words in str(error), error
         assert mcp.workload_command("plain", "mtl", None, None, "")[2] == "--mtl"
+        no_dim = {k: v for k, v in entry.items() if k != "dim_variable"}
+        mcp.WORKLOADS = {"demo": no_dim}
+        try:
+            mcp.workload_command("demo", "mtl", 20, None, "", example="01-cubes")
+            raise AssertionError("dim on a workload without dim_variable must fail")
+        except mcp.ToolError as error:
+            assert "dim does not apply to demo" in str(error), error
+        assert mcp.workload_command("demo", "mtl", None, None, "", example="01-cubes")[3] == ""
+        mcp.WORKLOADS = {"demo": entry, "plain": plain}
         assert mcp.tool_workload_list()["workloads"][0]["examples"] == ["21-deferred", "01-cubes"]
     finally:
         mcp.WORKLOADS, mcp.CACHE = saved
