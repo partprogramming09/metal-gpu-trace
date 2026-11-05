@@ -1041,6 +1041,8 @@ def steady_summary(run, skip_s=0):
     worst = [h for h in old.get("worst", []) if h["frame"] > first]
     hitches = {"count": count, "causes": dict(collections.Counter(h["cause"] for h in worst).most_common()),
                "worst": worst}
+    span = starts[-1] - starts[0] if starts else 0
+    hitches["per_minute"] = round(count / (span / 60000), 2) if span > 0 else None
     if limit:
         hitches["threshold_ms"] = limit
     if count > len(worst):
@@ -1416,10 +1418,12 @@ def cold_warm_report(name, first, second):
 
 def tool_perf_cold_warm(name, **record):
     """Records the same program twice in a row and says what the first run suffers that the second does not: hitches
-    whose cause is a shader compile (first-seen pipelines), with each run's hitch count and graphics compiler time. Runs
-    are named `name`-first and `name`-second; each recording takes its seconds plus about a minute to read back."""
+    whose cause is a shader compile (first-seen pipelines: the first run's count minus the second's, never below 0), with
+    each run's hitch count and graphics compiler time. macOS only. Runs are named `name`-first and `name`-second; each recording takes its seconds plus about a minute to read back."""
     if not name_ok(name):
         raise ToolError("a name holds only letters, digits, '.', '_' and '-'")
+    if sys.platform == "win32":
+        raise ToolError("perf_cold_warm reads Metal's shader-compile and hitch tables: it runs on macOS only")
     record.pop("label", None)
     runs = []
     for part in ("first", "second"):

@@ -921,6 +921,22 @@ def test_cold_warm(tmp_path):
     assert report["first_seen_hitches"] == 4 and report["first"]["compiler_busy_ms"] == 120.0, report
     assert report["extra_hitches_in_first"] == 4, report
     assert mcp.cold_warm_report("g", ("a", summary(0, 0.0)), ("b", summary(2, 3.0)))["first_seen_hitches"] == 0
+    single = perf_report.attribute_hitches([0, 1], [0.0, 10.0], [1.0, 1.0], [], [], [])
+    assert single["per_minute"] == 0.0 and perf_report.attribute_hitches([0], [0.0], [1.0], [], [], [])["per_minute"] is None
+    original_out, original_record = mcp.OUT, mcp.tool_perf_record
+    mcp.OUT = tmp_path
+    made = []
+
+    def fake_record(label, **kwargs):  # writes the summary a real recording would
+        made.append((label, kwargs))
+        (tmp_path / f"{label}_20260101-000000.json").write_text(json.dumps(summary(5 if label.endswith("first") else 1, 9.0)))
+    mcp.tool_perf_record = fake_record
+    try:
+        real = mcp.tool_perf_cold_warm("w", program="x", seconds=5)
+    finally:
+        mcp.OUT, mcp.tool_perf_record = original_out, original_record
+    assert [m[0] for m in made] == ["w-first", "w-second"] and made[0][1] == {"program": "x", "seconds": 5}, made
+    assert real["first_seen_hitches"] == 4 and real["first"]["run"] == "w-first_20260101-000000", real
     try:
         mcp.tool_perf_cold_warm("bad name", program="x")
         raise AssertionError("a name with a space must be refused")

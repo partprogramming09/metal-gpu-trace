@@ -277,7 +277,7 @@ def attribute_hitches(frames, starts, totals, compiler, thermal, memory, growth_
     high means the program was busy, low that it waited. The 20 longest hitches are listed."""
     gaps = [b - a for a, b in zip(starts, starts[1:])]
     if not gaps:
-        return {"count": 0, "causes": {}, "worst": []}
+        return {"count": 0, "per_minute": None, "causes": {}, "worst": []}
     limit, causes, found = max(1.5 * statistics.median(gaps), STUTTER_FLOOR_MS), collections.Counter(), []
     for i, gap in enumerate(gaps, 1):
         if gap <= limit:
