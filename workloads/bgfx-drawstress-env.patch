@@ -1,5 +1,5 @@
 diff --git a/examples/17-drawstress/drawstress.cpp b/examples/17-drawstress/drawstress.cpp
-index 87e4c10..9a1b6da 100644
+index 87e4c10..b99a90f 100644
 --- a/examples/17-drawstress/drawstress.cpp
 +++ b/examples/17-drawstress/drawstress.cpp
 @@ -9,6 +9,8 @@
@@ -11,7 +11,24 @@ index 87e4c10..9a1b6da 100644
  #include "imgui/imgui.h"
  
  #include <bgfx/embedded_shader.h>
-@@ -233,6 +235,14 @@ public:
+@@ -217,6 +219,16 @@ public:
+ 		m_deltaTimeAvgNs = 0;
+ 		m_numFrames      = 0;
+ 
++		// DRAWSTRESS_WIDTH and DRAWSTRESS_HEIGHT resize the window before the swap chain is created
++		const char* width  = getenv("DRAWSTRESS_WIDTH");
++		const char* height = getenv("DRAWSTRESS_HEIGHT");
++		if (NULL != width && NULL != height)
++		{
++			m_width  = bx::clamp(atoi(width),  320, 7680);
++			m_height = bx::clamp(atoi(height), 240, 4320);
++			entry::setWindowSize(entry::kDefaultWindowHandle, m_width, m_height);
++		}
++
+ 		bgfx::Init init;
+ 		init.type     = args.m_type;
+ 		init.vendorId = args.m_pciId;
+@@ -233,6 +245,14 @@ public:
  		const bgfx::Caps* caps = bgfx::getCaps();
  		m_maxDim = (int32_t)bx::pow(float(caps->limits.maxDrawCalls), 1.0f/3.0f);
  
@@ -26,7 +43,7 @@ index 87e4c10..9a1b6da 100644
  		// Enable debug text.
  		bgfx::setDebug(m_debug);
  
-@@ -455,6 +465,12 @@ public:
+@@ -455,6 +475,12 @@ public:
  			{
  				m_deltaTimeAvgNs = m_deltaTimeNs / bx::max<int64_t>(1, m_numFrames);
  
@@ -39,7 +56,7 @@ index 87e4c10..9a1b6da 100644
  				if (m_autoAdjust)
  				{
  					if (m_deltaTimeAvgNs < highwm)
-@@ -579,6 +595,7 @@ public:
+@@ -579,6 +605,7 @@ public:
  	uint32_t m_height;
  	uint32_t m_debug;
  	uint32_t m_reset;

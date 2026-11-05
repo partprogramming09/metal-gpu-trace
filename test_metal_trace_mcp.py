@@ -504,6 +504,54 @@ def test_levers(tmp_path):
     assert mcp.RECORD_PROPS["memory_free_pct"]["type"] == "integer" and mcp.RECORD_PROPS["background"]["type"] == "boolean"
 
 
+def test_size(tmp_path):
+    """size ("WxH") becomes the workload's two size variables, is refused for a workload without them or when badly
+    written, and perf_sweep can sweep it."""
+    import metal_trace_mcp as mcp
+    entry = {"title": "t", "about": "a", "license": "l", "url": "https://example.invalid/x.tar.gz", "bytes": 1,
+             "sha256": "0" * 64, "dir": "demo", "dim_variable": "DIM", "size_variables": ["DEMO_W", "DEMO_H"],
+             "apis": {"mtl": {"program": "demo", "args": "--mtl", "wine": False}}}
+    plain = {k: v for k, v in entry.items() if k != "size_variables"}
+    saved, cache = mcp.WORKLOADS, mcp.CACHE
+    mcp.CACHE = tmp_path
+    try:
+        mcp.WORKLOADS = {"demo": entry, "plain": plain}
+        for name in ("demo", "plain"):
+            (tmp_path / f"{name}-{'0' * 12}").mkdir()
+        got = mcp.workload_command("demo", "mtl", 20, None, "", size="1280x720")
+        assert got[3] == "DIM=20 DEMO_W=1280 DEMO_H=720", got
+        assert mcp.workload_command("demo", "mtl", None, None, "")[3] == ""
+        for name, size, words in (("plain", "1280x720", "size does not apply to plain"),
+                                  ("demo", "big", "size is WIDTHxHEIGHT"), ("demo", "100x100", "size is WIDTHxHEIGHT"),
+                                  ("demo", "9000x720", "size is WIDTHxHEIGHT")):
+            try:
+                mcp.workload_command(name, "mtl", None, None, "", size=size)
+                raise AssertionError((name, size))
+            except mcp.ToolError as error:
+                assert words in str(error), error
+        made = []
+
+        def fake_record(label, **kw):
+            made.append((label, kw.get("size")))
+            (tmp_path / f"{label}_20261018-000000.json").write_text(json.dumps(
+                {"gpu": {"frames": 300, "fps_estimate": 100.0, "frame_gpu_ms": {"mean": 4.0}, "stutter_rate_pct": 0.0}}))
+        saved_record, saved_out = mcp.tool_perf_record, mcp.OUT
+        mcp.tool_perf_record, mcp.OUT = fake_record, tmp_path
+        try:
+            got = mcp.tool_perf_sweep("s", "size", ["640x360", "1280x720"], seconds=8)
+            assert made == [("s-1-r1", "640x360"), ("s-2-r1", "1280x720")] and got["fit"] is None, (made, got)
+            try:
+                mcp.tool_perf_sweep("s", "size", ["640x360", "wide"])
+                raise AssertionError("a bad size must fail before recording")
+            except mcp.ToolError as error:
+                assert "WIDTHxHEIGHT" in str(error), error
+        finally:
+            mcp.tool_perf_record, mcp.OUT = saved_record, saved_out
+    finally:
+        mcp.WORKLOADS, mcp.CACHE = saved, cache
+    assert mcp.RECORD_PROPS["size"]["type"] == "string"
+
+
 def test_perf_sweep(tmp_path):
     """perf_sweep records one run per value of one variable, alternating the order each round, takes each metric's
     median per value, fits GPU ms per frame on draws (dim^3) and refuses bad input before recording."""
@@ -1706,7 +1754,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
