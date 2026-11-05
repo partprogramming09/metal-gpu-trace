@@ -164,7 +164,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `capture_records` | One page of a `.gputrace`'s records |
 | `gpu_family` | Apple's facts for a family or chip (`Apple7`, `M1 Pro`, `M3 Max`) |
 | `presentmon_install` | Windows only: downloads PresentMon, checks its pinned SHA-256 and keeps it in `%LOCALAPPDATA%\metal-gpu-trace`, where `perf_record` and `perf_attach` find it; Claude Code asks before every call |
-| `workload_list` | Lists the test programs `workload_fetch` can download |
+| `workload_list` | Lists the test programs `workload_fetch` can download; for `bgfx-examples`, `example_traits` gives each example's class and its encoders per frame in native Metal |
 | `workload_fetch` | Downloads a test program once, checks its SHA-256 and keeps it in `~/Library/Caches/metal-gpu-trace`; Claude Code asks before every call |
 
 `perf_record` takes `workload`, `api` (`mtl`, `mtl-x64`, `vk`, `d3d11` or `d3d12`), `dim`, `size` and `example` instead of

@@ -31,6 +31,17 @@
         "01-cubes": "01-", "06-bump": "06-", "09-hdr": "09-", "21-deferred": "21-", "24-nbody": "24-",
         "31-rsm": "31-", "35-dynamic": "35-", "38-bloom": "38-", "48-drawindirect": "48-"
       },
+      "example_traits": {
+        "01-cubes": {"class": "cpu_submit", "native_encoders_per_frame": 2},
+        "06-bump": {"class": "textured", "native_encoders_per_frame": 2},
+        "09-hdr": {"class": "postprocess", "native_encoders_per_frame": 11},
+        "21-deferred": {"class": "gpu_bandwidth", "native_encoders_per_frame": 5},
+        "24-nbody": {"class": "compute", "native_encoders_per_frame": 3},
+        "31-rsm": {"class": "gpu_alu", "native_encoders_per_frame": 5},
+        "35-dynamic": {"class": "streaming", "native_encoders_per_frame": 2},
+        "38-bloom": {"class": "postprocess", "native_encoders_per_frame": 11},
+        "48-drawindirect": {"class": "indirect", "native_encoders_per_frame": 3}
+      },
       "apis": {
         "mtl": {"program": "examples", "args": "--mtl", "wine": false},
         "d3d11": {"program": "examples.exe", "args": "--d3d11", "wine": true},

@@ -891,6 +891,60 @@ def test_workloads(tmp_path):
     assert "workloads-4" in examples["url"] and len(examples["sha256"]) == 64, "workloads-2's archive has no dxil shaders"
 
 
+def test_example_traits(tmp_path):
+    """Every shipped example has a class and the native encoder count measured for it, and workload_list shows them."""
+    import metal_trace_mcp as mcp
+    listed = {w["name"]: w for w in mcp.tool_workload_list()["workloads"]}["bgfx-examples"]
+    assert set(listed["example_traits"]) == set(listed["examples"]), listed
+    for name, traits in listed["example_traits"].items():
+        assert traits["class"] in {"cpu_submit", "textured", "postprocess", "gpu_bandwidth", "compute", "gpu_alu",
+                                   "streaming", "indirect"}, name
+        assert traits["native_encoders_per_frame"] > 0, name
+
+
+def test_validation(tmp_path):
+    """validation_summary counts the shader and API validation messages of a program's output by kind, whatever the offset."""
+    import perf_report
+    lines = ["Metal GPU Validation Enabled", "",
+             "Invalid Metal usage: Invalid store in 'device' or 'constant' address space at offset 4000000, executing compute function: \"k\" ",
+             "Invalid Metal usage: Invalid store in 'device' or 'constant' address space at offset 8, executing compute function: \"k\"",
+             "Invalid Metal usage: Invalid load in 'constant' address space at offset 12, executing fragment function: \"f\"",
+             "-[MTLDebugComputeCommandEncoder dispatch]:1: failed assertion `Dispatch Threads Validation'"]
+    found = perf_report.validation_summary(lines)
+    assert found["messages"] == 4 and found["by_kind"]["Invalid store in 'device' or 'constant' address space"] == 2, found
+    assert "Dispatch Threads Validation'" in " ".join(found["by_kind"]), found
+    assert len(found["examples"]) == 3, found
+    assert perf_report.validation_summary(["Metal API Validation Enabled"]) is None
+    assert perf_report.validation_summary(["my failed assertion: foo", "/Users/bob/a.c:12: failed assertion `x'"]) is None
+    leak = perf_report.validation_summary(["Invalid Metal usage: bad store at 0x10 in /Users/bob/x/y.metal"])
+    assert "/Users" not in json.dumps(leak) and "<path>" in json.dumps(leak), leak
+    many = perf_report.validation_summary(f"Invalid Metal usage: kind {i}" for i in range(100))
+    assert len(many["by_kind"]) == perf_report.VALIDATION_KINDS + 1 and many["by_kind"]["other"] == 80, many
+    assert len(many["examples"]) == 5
+    stubs, out = tmp_path / "stubs", tmp_path / "runs"
+    stubs.mkdir()
+    out.mkdir()
+    xcrun = stubs / "xcrun"  # an xctrace that records its arguments and fails
+    xcrun.write_text(f'#!/bin/zsh\nprint -r -- "$@" > {stubs}/args\nexit 1\n')
+    xcrun.chmod(0o755)
+    program = tmp_path / "prog"
+    program.write_text("#!/bin/sh\n")
+    program.chmod(0o755)
+
+    def launched(perf_env):
+        env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", PERF_ENV=perf_env, PATH=f"{stubs}:{os.environ['PATH']}")
+        proc = subprocess.run(["zsh", str(TOOLS / "perf_record.sh"), "f", "2", "native", "-", str(tmp_path), str(program)],
+                              capture_output=True, text=True, env=env, timeout=60)
+        return (stubs / "args").read_text(), proc.stderr
+    for on in ("MTL_SHADER_VALIDATION=1", "A=1 MTL_DEBUG_LAYER=2"):
+        assert "--target-stdout" in launched(on)[0], on
+    for off in ("", "MTL_SHADER_VALIDATION=0", "MY_MTL_DEBUG_LAYER=1", "NOT_MTL_SHADER_VALIDATION=1", "MTL_DEBUG_LAYER="):
+        assert "--target-stdout" not in launched(off)[0], off
+    args, warning = launched("MTL_SHADER_VALIDATION=1 DYLD_LIBRARY_PATH=/x")
+    assert "--target-stdout" not in args and "DYLD_" in warning, (args, warning)
+    assert not list(out.iterdir())
+
+
 def test_capture(tmp_path):
     """A small MTSP stream is read record by record, and the summary names the capture without its path."""
     summary = gputrace_read.summarize(write_capture(tmp_path))
@@ -1928,7 +1982,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_counter_windows, test_readme_lists_every_tool, test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_example_traits, test_validation, test_counter_windows, test_readme_lists_every_tool, test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

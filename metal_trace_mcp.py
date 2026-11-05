@@ -241,6 +241,7 @@ def tool_workload_list():
         rows.append({"name": name, "title": entry["title"], "about": entry["about"], "bytes": entry["bytes"],
                      "license": entry["license"], "apis": list(entry["apis"]),
                      **({"examples": list(entry["examples"])} if entry.get("examples") else {}),
+                     **({"example_traits": dict(entry["example_traits"])} if entry.get("example_traits") else {}),
                      "fetched": workload_entry(name)[1].is_dir()})
     return {"workloads": rows}
 
@@ -1594,7 +1595,7 @@ RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits
          "size": {**S, "description": "with a workload that has size_variables (drawstress): the window size, WIDTHxHEIGHT such as 1920x1080"},
          "memory": {"type": "boolean", "description": "default true; false skips the Metal memory table, the slowest "
                                                       "to read (about 40 % faster summary): no metal_mib_peak"},
-         "env": {**S, "description": "NAME=VALUE pairs separated by spaces, set in the program's environment"},
+         "env": {**S, "description": "NAME=VALUE pairs separated by spaces, set in the program's environment; MTL_SHADER_VALIDATION=1 or MTL_DEBUG_LAYER=1 adds `validation` to the summary: the layers' messages counted by kind"},
          "memory_free_pct": {**I, "description": "macOS only, 20 to 60: holds the whole Mac at this percentage of RAM free "
                                                  "while recording (memory_pressure), to see how the program behaves short of memory; lower can freeze the Mac"},
          "background": {"type": "boolean", "description": "macOS only, default false; true runs the program under taskpolicy -b, "

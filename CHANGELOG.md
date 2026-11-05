@@ -3,6 +3,21 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `workload_list` gives each bgfx example in `bgfx-examples` an `example_traits` entry: its `class` (cpu_submit, textured,
+  postprocess, gpu_bandwidth, compute, gpu_alu, streaming, indirect) and `native_encoders_per_frame`, the count measured in native
+  Metal on an M1 Pro, so a recording can be checked against a known answer.
+
+- With `MTL_SHADER_VALIDATION=1` or `MTL_DEBUG_LAYER=1` in `env`, a native or Wine recording keeps the program's output and the
+  summary gets `validation`: `messages`, `by_kind` and up to five `examples` of Metal's validation messages. Shader validation
+  does report a store outside a buffer (offset 4 000 000 in a 4096-byte buffer, a compute kernel), which the command buffer
+  itself finishes without error; `perf_record` turns on `MTL_SHADER_VALIDATION_REPORT_TO_STDERR`, without which the message
+  does not reach the program's output. Checked on a real native recording of that kernel (`messages` 2: the layer printed the
+  store twice); not checked under Wine. Messages are grouped by kind (20 kinds at most, the rest under `other`) with paths
+  replaced by `<path>`. A `DYLD_*` variable in `env` turns the capture off with a warning: the shell that collects the output
+  drops it. Validation slows the GPU: do not compare its ms with a normal run.
+
 ## 0.19.0 — 2026-11-05
 
 - With `counters=true`, each hitch in `hitches.worst` has `window_ms` (the interval before the late frame) and `top_limiter`:
