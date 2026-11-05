@@ -888,7 +888,7 @@ def test_workloads(tmp_path):
     shipped = json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["drawstress"]
     assert len(shipped["sha256"]) == 64 and shipped["sha256"] != "0" * 64 and shipped["url"].startswith("https://")
     examples = json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["bgfx-examples"]
-    assert "workloads-4" in examples["url"] and len(examples["sha256"]) == 64, "workloads-2's archive has no dxil shaders"
+    assert "workloads-6" in examples["url"] and len(examples["sha256"]) == 64, "workloads-2's archive has no dxil shaders"
 
 
 def test_example_traits(tmp_path):
@@ -898,7 +898,8 @@ def test_example_traits(tmp_path):
     assert set(listed["example_traits"]) == set(listed["examples"]), listed
     for name, traits in listed["example_traits"].items():
         assert traits["class"] in {"cpu_submit", "textured", "postprocess", "gpu_bandwidth", "compute", "gpu_alu",
-                                   "streaming", "indirect"}, name
+                                   "streaming", "indirect", "ui_text", "shadows", "overdraw", "readback", "upscale",
+                                   "format_coverage"}, name
         assert traits["native_encoders_per_frame"] > 0, name
 
 
@@ -1909,7 +1910,7 @@ def test_pack_examples(tmp_path):
                   "textures/8k_mars.jpg", "textures/particle.ktx", "textures/figure-rgba.dds", "textures/flare.dds",
                   "textures/pf_alpha_test.dds", "textures/pf_uv_filtering_test.dds", "images/blender_icons16.png",
                   "textures/texture_compression_bc1.ktx", "textures/texture_compression_astc_4x4.dds", "font/droidsans.ttf",
-                  "font/five_minutes.otf"):
+                  "font/five_minutes.otf", "images/image1.jpg", "images/image12.jpg"):
         (runtime / asset).write_text("x")
     shutil.rmtree(out)
     result = subprocess.run(["sh", script, str(bgfx), str(out)], capture_output=True, text=True)
@@ -1920,7 +1921,8 @@ def test_pack_examples(tmp_path):
     assert "shaders/glsl/vs.bin" not in packed and "textures/other.dds" not in packed and "meshes/other.bin" not in packed, packed
     assert (out / "temp").is_dir(), "40-svt crashes without a temp folder"
     for kept in ("textures/8k_mars.jpg", "textures/texture_compression_bc1.ktx", "textures/texture_compression_astc_4x4.dds",
-                 "font/droidsans.ttf", "font/five_minutes.otf", "images/blender_icons16.png"):
+                 "font/droidsans.ttf", "font/five_minutes.otf", "images/blender_icons16.png", "images/image1.jpg",
+                 "images/image12.jpg"):
         assert kept in packed, kept
 
 

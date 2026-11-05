@@ -15,6 +15,8 @@ for asset in textures/fieldstone-n.dds textures/fieldstone-rgba.dds textures/uff
              textures/pf_alpha_test.dds textures/pf_uv_filtering_test.dds images/blender_icons16.png; do
   cp "$runtime/$asset" "$out/$asset"
 done
-# 08-update and 47-pixelformats read every compressed-format sample; 10-font and 20-nanovg read the fonts
+# 08-update and 47-pixelformats read every compressed-format sample; 10-font and 20-nanovg read the fonts;
+# 20-nanovg builds image1.jpg to image12.jpg from a format string and stops loading at the first missing one
 cp "$runtime"/textures/texture_compression_* "$out/textures/"
+cp "$runtime"/images/image*.jpg "$out/images/"
 cp "$runtime"/font/*.ttf "$runtime"/font/*.otf "$out/font/"

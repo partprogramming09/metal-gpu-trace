@@ -5,6 +5,13 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## Unreleased
 
+- `bgfx-examples` (release `workloads-6`, 38 MB) holds ten more examples: 08-update, 10-font, 16-shadowmaps, 19-oit, 20-nanovg,
+  30-picking, 32-particles, 40-svt, 46-fsr and 47-pixelformats, with classes ui_text, shadows, overdraw, readback, upscale and
+  format_coverage. Each ran in native Metal for 10 s at 120 FPS (08-update 14 encoders per frame and 0.98 GPU ms, 46-fsr 5 and
+  2.4 ms with 42 hitches in 973 frames; the others 2 to 5 encoders and 0.15 to 1.5 ms); none has run under Wine yet. 40-svt writes
+  a 370 MB tile cache to `temp/` in the workload's folder on its first run (about 1.5 s) and crashes without that folder, which
+  the archive now holds.
+
 - `workload_list` gives each bgfx example in `bgfx-examples` an `example_traits` entry: its `class` (cpu_submit, textured,
   postprocess, gpu_bandwidth, compute, gpu_alu, streaming, indirect) and `native_encoders_per_frame`, the count measured in native
   Metal on an M1 Pro, so a recording can be checked against a known answer.
