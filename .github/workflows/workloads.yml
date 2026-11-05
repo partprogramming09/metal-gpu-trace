@@ -6,7 +6,7 @@ on:
     inputs:
       release:
         description: release tag that receives the archive
-        default: workloads-7
+        default: workloads-8
 
 jobs:
   drawstress:
