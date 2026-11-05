@@ -37,7 +37,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   numeric values, the line GPU ms per frame follows (fixed ms and ms per draw for `dim`) with its r2.
 - Fix: the `bgfx-examples` archive of `workloads-2` held only the Metal and Direct3D 11 shaders (`metal`, `dxbc`), so its
   Direct3D 12 runs (which read `dxil`) rendered 9 frames in 30 s; `pack-examples.sh` now adds `dxil` and the workflow's
-  default tag is `workloads-4`. With the DXMT tree's own build the same example gave 3 337 frames at 120.5 FPS.
+  default tag is `workloads-4`; the `bgfx-examples` entry in `data/workloads.json` now points at that release (25.2 MiB).
+  With the DXMT tree's own build the same example gave 3 337 frames at 120.5 FPS; from the new archive, D3D12 under
+  Wine with Mullion gives 01-cubes 3 286 frames, 21-deferred 3 067 and 31-rsm 3 341, all about 120 FPS.
 - New workload `bgfx-examples` (release `workloads-2`, 24.6 MiB): nine bgfx examples in native Metal, D3D11 and D3D12;
   `perf_record(workload="bgfx-examples", api=..., example="21-deferred")`. `dim` on a workload without `dim_variable`
   is refused instead of failing with `KeyError`.

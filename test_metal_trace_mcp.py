@@ -796,6 +796,8 @@ def test_workloads(tmp_path):
         mcp.WORKLOADS, mcp.CACHE, mcp.download = saved
     shipped = json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["drawstress"]
     assert len(shipped["sha256"]) == 64 and shipped["sha256"] != "0" * 64 and shipped["url"].startswith("https://")
+    examples = json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["bgfx-examples"]
+    assert "workloads-4" in examples["url"] and len(examples["sha256"]) == 64, "workloads-2's archive has no dxil shaders"
 
 
 def test_capture(tmp_path):
