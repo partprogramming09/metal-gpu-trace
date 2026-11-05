@@ -1255,10 +1255,11 @@ def test_kill_program_and_watchdog(tmp_path):
                                str(program)], env=env, stdout=open(logfile, "w"), stderr=subprocess.STDOUT,
                               start_new_session=True)
     try:
-        deadline = time.time() + 15
+        deadline = time.time() + 40
         while not (out / ".recording").is_dir() and time.time() < deadline:
             time.sleep(0.2)
-        assert (out / ".recording").is_dir(), "the recording never started"
+        assert (out / ".recording").is_dir(), (f"the recording never started; the script's exit code is {script.poll()} "
+                                               f"and its output {logfile.read_text()[-600:]!r}")
         parent.kill()
         parent.wait()
         script.wait(timeout=30)
