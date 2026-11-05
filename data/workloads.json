@@ -16,6 +16,24 @@
         "d3d11": {"program": "drawstress.exe", "args": "--d3d11", "wine": true},
         "d3d12": {"program": "drawstress.exe", "args": "--d3d12", "wine": true}
       }
+    },
+    "bgfx-examples": {
+      "title": "bgfx examples",
+      "about": "Nine of bgfx's examples, each a different load: 01-cubes and 35-dynamic (many cubes, uploads), 06-bump (textured), 09-hdr (render-target chain), 21-deferred (G-buffer and lights), 24-nbody (compute), 31-rsm (reflective shadow maps), 38-bloom (post-processing), 48-drawindirect (draws the GPU decides). Pass example to perf_record.",
+      "license": "BSD-2-Clause (bgfx, Branimir Karadzic); LICENSE-bgfx in the archive",
+      "url": "https://github.com/partprogramming09/metal-gpu-trace/releases/download/workloads-2/bgfx-examples-workloads-2.tar.gz",
+      "sha256": "320a6b3bbc11abe27af4a6ede0cb2e41301d0b67ddc3f005eeff225a7231082c",
+      "bytes": 25776682,
+      "dir": "bgfx-examples",
+      "examples": {
+        "01-cubes": "01-", "06-bump": "06-", "09-hdr": "09-", "21-deferred": "21-", "24-nbody": "24-",
+        "31-rsm": "31-", "35-dynamic": "35-", "38-bloom": "38-", "48-drawindirect": "48-"
+      },
+      "apis": {
+        "mtl": {"program": "examples", "args": "--mtl", "wine": false},
+        "d3d11": {"program": "examples.exe", "args": "--d3d11", "wine": true},
+        "d3d12": {"program": "examples.exe", "args": "--d3d12", "wine": true}
+      }
     }
   }
 }
