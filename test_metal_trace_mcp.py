@@ -442,6 +442,68 @@ def test_baseline_record(tmp_path):
         mcp.tool_perf_record, mcp.OUT, mcp.BASELINES = saved
 
 
+def test_levers(tmp_path):
+    """memory_free_pct holds memory_pressure around a recording and stops it even when the recording fails;
+    background sets PERF_PREFIX for perf_record.sh; out-of-range or Windows use is refused before anything starts."""
+    import metal_trace_mcp as mcp
+    stable = tmp_path / "stable.sh"
+    stable.write_text("#!/bin/sh\necho 'Stable at percent free: 40.'\nsleep 300\n")
+    never = tmp_path / "never.sh"
+    never.write_text("#!/bin/sh\nsleep 300\n")
+    for script in (stable, never):
+        script.chmod(0o755)
+    assert mcp.BACKGROUND_PREFIX.startswith("/") and mcp.BACKGROUND_PREFIX.endswith(" -b"), mcp.BACKGROUND_PREFIX
+    if sys.platform == "darwin":
+        assert os.access(mcp.BACKGROUND_PREFIX.split()[0], os.X_OK), "taskpolicy must exist"
+    saved = mcp.MEMORY_PRESSURE, mcp.record_run
+    try:
+        mcp.MEMORY_PRESSURE = [str(stable)]
+        proc = mcp.hold_memory_pressure(40, 60)
+        assert proc.poll() is None
+        proc.terminate()
+        proc.wait()
+        mcp.MEMORY_PRESSURE = [str(never)]
+        try:
+            mcp.hold_memory_pressure(40, 60, wait_s=1)
+            raise AssertionError("a pressure that is never reached must fail")
+        except mcp.ToolError as error:
+            assert "did not reach" in str(error), error
+        started = []
+        mcp.MEMORY_PRESSURE = [str(stable)]
+        original = mcp.hold_memory_pressure
+
+        def spy(*args, **kwargs):
+            started.append(original(*args, **kwargs))
+            return started[-1]
+        mcp.hold_memory_pressure = spy
+        seen = {}
+
+        def fake_run(*args, **kwargs):
+            seen.update(kwargs, held=started[0].poll() is None)
+            raise RuntimeError("boom")
+        mcp.record_run = fake_run
+        try:
+            mcp.record("x", 5, "native", "-", ".", ["p"], memory_free_pct=40, background=True)
+            raise AssertionError("the failure must come out")
+        except RuntimeError:
+            pass
+        assert seen["held"] and seen["background"] is True, seen
+        started[0].wait(timeout=10)
+        assert started[0].poll() is not None, "memory_pressure must be stopped after the recording"
+        mcp.hold_memory_pressure = original
+        for kwargs in ({"memory_free_pct": 10}, {"memory_free_pct": 61}, {"memory_free_pct": "x"}):
+            try:
+                mcp.check_levers(**kwargs)
+                raise AssertionError(kwargs)
+            except mcp.ToolError as error:
+                assert "memory_free_pct" in str(error), error
+        mcp.check_levers(memory_free_pct=20, background=True)
+    finally:
+        mcp.MEMORY_PRESSURE, mcp.record_run = saved
+        mcp.hold_memory_pressure = original
+    assert mcp.RECORD_PROPS["memory_free_pct"]["type"] == "integer" and mcp.RECORD_PROPS["background"]["type"] == "boolean"
+
+
 def test_perf_sweep(tmp_path):
     """perf_sweep records one run per value of one variable, alternating the order each round, takes each metric's
     median per value, fits GPU ms per frame on draws (dim^3) and refuses bad input before recording."""
@@ -1627,7 +1689,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
