@@ -5,6 +5,14 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## Unreleased
 
+- `metal_memory_mib.trend_mib_per_min`: the slope of the Metal memory samples of the second half of the recorded time, in MiB
+  per minute, to tell a program that keeps growing after start-up from one that settles; `null` with under 5 samples there or
+  under 5 s between them. It is in a recording's own summary only: `skip_s` rebuilds `metal_memory_mib` without it, and
+  `perf_compare`, the panel and the history do not show it.
+  Real 40 s recordings, native: 41-tess (peak 3265 MiB, final 1738) -0.01 and 21-deferred (55 MiB) 0.0, both flat; a growing
+  program has only been seen in the unit test, not in a real recording. A first 21-deferred recording of 40 s overran the 780 s
+  limit and was stopped; the repeat took 240 s.
+
 - `bgfx-examples` (release `workloads-8`, 55 MiB) holds eleven more examples: 05-instancing, 22-windows, 26-occlusion, 27-terrain,
   33-pom, 37-gpudrivenrendering, 39-assao, 41-tess, 45-bokeh, 50-headless and 51-gpufont, with classes geometry, multi_surface,
   occlusion and offscreen besides the earlier ones. Each ran in native Metal for 15 s and loaded all its files. Six ran paced at
