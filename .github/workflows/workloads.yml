@@ -6,7 +6,7 @@ on:
     inputs:
       release:
         description: release tag that receives the archive
-        default: workloads-1
+        default: workloads-2
 
 jobs:
   drawstress:
@@ -38,13 +38,13 @@ jobs:
         working-directory: bgfx
         run: |
           ../GENie/bin/darwin/genie --with-combined-examples --gcc=osx-arm64 gmake
-          make -C .build/projects/gmake-osx-arm64 config=release -j3 example-17-drawstress
+          make -C .build/projects/gmake-osx-arm64 config=release -j3 example-17-drawstress examples
       - name: Windows x64
         working-directory: bgfx
         run: |
           ../GENie/bin/darwin/genie --with-combined-examples --gcc=mingw-gcc gmake
           # the final strip step fails without harm
-          make -R -C .build/projects/gmake-mingw-gcc config=release64 -j3 AR="$MINGW/bin/llvm-ar" example-17-drawstress || true
+          make -R -C .build/projects/gmake-mingw-gcc config=release64 -j3 AR="$MINGW/bin/llvm-ar" example-17-drawstress examples || true
       - name: Archive
         run: |
           mkdir drawstress
@@ -56,7 +56,11 @@ jobs:
             for d in GENie bgfx bx bimg; do echo "$d $(git -C $d rev-parse HEAD)"; done
             echo "llvm-mingw 20260908 ucrt macos-universal"; } > drawstress/BUILD.txt
           tar -czf "drawstress-${{ inputs.release }}.tar.gz" drawstress
-          shasum -a 256 drawstress-*.tar.gz | tee drawstress.sha256
+          sh workloads/pack-examples.sh bgfx bgfx-examples
+          cp bgfx/LICENSE bgfx-examples/LICENSE-bgfx
+          cp drawstress/BUILD.txt bgfx-examples/BUILD.txt
+          tar -czf "bgfx-examples-${{ inputs.release }}.tar.gz" bgfx-examples
+          shasum -a 256 drawstress-*.tar.gz bgfx-examples-*.tar.gz | tee workloads.sha256
           ls -l drawstress drawstress-*.tar.gz
       - name: Release
         env:
@@ -65,4 +69,4 @@ jobs:
           gh release view "${{ inputs.release }}" >/dev/null 2>&1 || \
             gh release create "${{ inputs.release }}" --title "Workloads ${{ inputs.release }}" --prerelease \
               --notes "Test programs for metal-gpu-trace's workload_fetch. Built from source by the workloads workflow; BUILD.txt lists the commits."
-          gh release upload "${{ inputs.release }}" drawstress-*.tar.gz drawstress.sha256 --clobber
+          gh release upload "${{ inputs.release }}" drawstress-*.tar.gz bgfx-examples-*.tar.gz workloads.sha256 --clobber
