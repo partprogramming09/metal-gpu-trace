@@ -525,6 +525,36 @@ def test_levers(tmp_path):
     assert mcp.RECORD_PROPS["memory_free_pct"]["type"] == "integer" and mcp.RECORD_PROPS["background"]["type"] == "boolean"
 
 
+def test_counter_windows(tmp_path):
+    """counter_stats keeps each Limiter's mean per 10 ms bin, and limiter_in names the Limiter with the highest mean over a
+    window; a hitch window with no samples gets None, and attribute_hitches records each hitch's window."""
+    info = tmp_path / "info.xml"
+    info.write_text("<trace-query-result><node xpath='x'><schema name=\"gpu-counter-info\"><col><mnemonic>counter-id</mnemonic></col>"
+                    "<col><mnemonic>name</mnemonic></col><col><mnemonic>type</mnemonic></col></schema>"
+                    "<row><uint32 id=\"1\" fmt=\"0\">0</uint32><string id=\"2\" fmt=\"ALU Limiter\">ALU Limiter</string><string id=\"3\" fmt=\"Percentage\">Percentage</string></row>\n"
+                    "<row><uint32 id=\"4\" fmt=\"1\">1</uint32><string id=\"5\" fmt=\"Cache Limiter\">Cache Limiter</string><string ref=\"3\"/></row>\n"
+                    "<row><uint32 id=\"6\" fmt=\"2\">2</uint32><string id=\"7\" fmt=\"GPU Read Bandwidth\">GPU Read Bandwidth</string><string id=\"8\" fmt=\"Value\">Value</string></row>\n"
+                    "</node></trace-query-result>\n")
+    values = tmp_path / "values.xml"
+    values.write_text("<?xml version=\"1.0\"?>\n<trace-query-result>\n<node xpath='x'><schema name=\"gpu-counter-value\"></schema>"
+                      "<row><event-time id=\"1\" fmt=\"a\">100000000</event-time><uint32 id=\"2\" fmt=\"0\">0</uint32><fixed-decimal id=\"3\" fmt=\"10\">10.0</fixed-decimal><uint64 id=\"4\" fmt=\"7\">7</uint64></row>\n"
+                      "<row><event-time ref=\"1\"/><uint32 id=\"5\" fmt=\"1\">1</uint32><fixed-decimal id=\"6\" fmt=\"50\">50.0</fixed-decimal><uint64 ref=\"4\"/></row>\n"
+                      "<row><event-time ref=\"1\"/><uint32 id=\"7\" fmt=\"2\">2</uint32><fixed-decimal id=\"8\" fmt=\"99\">99.0</fixed-decimal><uint64 ref=\"4\"/></row>\n"
+                      "<row><event-time id=\"9\" fmt=\"b\">200000000</event-time><uint32 ref=\"2\"/><fixed-decimal id=\"10\" fmt=\"80\">80.0</fixed-decimal><uint64 ref=\"4\"/></row>\n"
+                      "<row><event-time ref=\"9\"/><uint32 ref=\"5\"/><fixed-decimal id=\"11\" fmt=\"20\">20.0</fixed-decimal><uint64 ref=\"4\"/></row>\n"
+                      "</node></trace-query-result>\n")
+    got = perf_report.counter_stats(info, values)
+    series = got.pop("_series")
+    assert series["bins"][10]["ALU Limiter"] == [10.0, 1] and "GPU Read Bandwidth" not in series["bins"][10], series
+    assert perf_report.limiter_in(series, 90, 110) == {"name": "Cache Limiter", "mean": 50.0}
+    assert perf_report.limiter_in(series, 190, 210) == {"name": "ALU Limiter", "mean": 80.0}
+    assert perf_report.limiter_in(series, 90, 210) == {"name": "ALU Limiter", "mean": 45.0}, "mean of 10 and 80 against 35 of 50 and 20"
+    assert perf_report.limiter_in(series, 500, 600) is None
+    starts = [0.0, 16.0, 32.0, 100.0, 116.0]
+    found = perf_report.attribute_hitches([1, 2, 3, 4, 5], starts, [4.0] * 5, [], [], [])
+    assert found["worst"][0]["window_ms"] == [32.0, 100.0] and found["worst"][0]["interval_ms"] == 68.0, found
+
+
 def test_readme_lists_every_tool(tmp_path):
     """Both READMEs hold a table row for every tool the server offers, and name the words the 0.17.0 additions need."""
     import re
@@ -1877,7 +1907,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_readme_lists_every_tool, test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_counter_windows, test_readme_lists_every_tool, test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

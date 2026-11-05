@@ -30,6 +30,8 @@ EXPORT_WORKERS = 2
 # Metal GPU Counters (PERF_INSTRUMENTS): about 450 000 samples and 64 MB of XML per recorded second, so its export may take minutes
 COUNTER_TABLES = ("gpu-counter-info", "gpu-counter-value")
 EXPORT_TIMEOUTS = {"gpu-counter-value": 3600}
+COUNTER_TIME = re.compile(r'<event-time (id|ref)="(\d+)"[^>]*?(?:/>|>([^<]*)</)')
+COUNTER_BIN_NS = 10_000_000  # the Limiter counters are kept as means per 10 ms
 COUNTER_CELL = re.compile(r'<(uint32|fixed-decimal) (id|ref)="(\d+)"[^>]*?(?:/>|>([^<]*)</)')
 
 
@@ -294,7 +296,7 @@ def attribute_hitches(frames, starts, totals, compiler, thermal, memory, growth_
         else:
             cause = "cpu_or_wait"
         causes[cause] += 1
-        entry = {"frame": frames[i], "interval_ms": round(gap, 3), "cause": cause}
+        entry = {"frame": frames[i], "interval_ms": round(gap, 3), "cause": cause, "window_ms": [round(lo, 3), round(hi, 3)]}
         if cpu:
             inside = [pct for t, pct in cpu if lo < t <= hi]
             entry["cpu_pct"] = round(statistics.fmean(inside), 1) if inside else None
@@ -314,6 +316,7 @@ def counter_stats(info_path, value_path):
         if cid is not None:
             info[cid] = (text(row.get("name")), text(row.get("type")))
     ints, decimals, per, total = {}, array.array("f"), collections.defaultdict(lambda: array.array("f")), 0
+    limiters, times, bins = {cid for cid, (name, _) in info.items() if name.endswith("Limiter")}, {}, {}
     try:
         with open(value_path, encoding="utf-8") as f:
             for line in f:
@@ -338,6 +341,15 @@ def counter_stats(info_path, value_path):
                 number_ = int(value[2])
                 per[cid].append(float(value[3]) if value[1] == "id" else decimals[number_])
                 total += 1
+                stamp = COUNTER_TIME.search(line, start)
+                if stamp:
+                    if stamp[1] == "id" and stamp[3].strip().isdigit():
+                        times[stamp[2]] = int(stamp[3])
+                    when = times.get(stamp[2])
+                    if when is not None and cid in limiters:
+                        slot = bins.setdefault(when // COUNTER_BIN_NS, {}).setdefault(cid, [0.0, 0])
+                        slot[0] += per[cid][-1]
+                        slot[1] += 1
     finally:
         os.unlink(value_path)
     counters = []
@@ -349,7 +361,25 @@ def counter_stats(info_path, value_path):
                          "p95": round(ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))], 3), "max": round(ordered[-1], 3)})
     limiters = [c for c in counters if c["name"].endswith("Limiter")]
     top = max(limiters, key=lambda c: c["mean"]) if limiters else None
-    return {"samples": total, "counters": counters, "top_limiter": {"name": top["name"], "mean": top["mean"]} if top else None}
+    series = {"bin_ms": COUNTER_BIN_NS // 1_000_000,
+              "bins": {b: {info[cid][0]: slot for cid, slot in by_counter.items()} for b, by_counter in bins.items()}}
+    return {"samples": total, "counters": counters, "top_limiter": {"name": top["name"], "mean": top["mean"]} if top else None,
+            "_series": series}
+
+
+def limiter_in(series, lo_ms, hi_ms):
+    """Returns the Limiter counter with the highest mean over [lo_ms, hi_ms] in a counter_stats `_series`, as
+    {"name", "mean"}, or None when no sample falls in the window."""
+    totals = {}
+    for index in range(int(lo_ms // series["bin_ms"]), int(hi_ms // series["bin_ms"]) + 1):
+        for name, (total, count) in series["bins"].get(index, {}).items():
+            slot = totals.setdefault(name, [0.0, 0])
+            slot[0] += total
+            slot[1] += count
+    if not totals:
+        return None
+    name, (total, count) = max(totals.items(), key=lambda item: item[1][0] / item[1][1])
+    return {"name": name, "mean": round(total / count, 3)}
 
 
 def resource_summary(table_rows, pid, frames):
@@ -591,8 +621,10 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
                 summary["resource_allocations"] = allocations
         if "metal-command-buffer-error" in tables:
             summary["command_buffer_errors"] = sum(1 for _ in rows(tables["metal-command-buffer-error"]))
+        counter_series = None
         if all(schema in tables for schema in COUNTER_TABLES):
             found = counter_stats(tables[COUNTER_TABLES[0]], tables[COUNTER_TABLES[1]])
+            counter_series = found.pop("_series")
             if found["samples"]:
                 summary["gpu_counters"] = found
         pacing = frame_pacing(gaps, totals)
@@ -600,6 +632,11 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             pacing["throttling_analysis"]["thermal_throttling_detected"] = bool(thermal)
         summary["gpu"].update(pacing)
         summary["hitches"] = attribute_hitches(ordered, starts, totals, sorted(compiler), sorted(thermal), allocated, cpu=sorted(cpu))
+        if counter_series and counter_series["bins"]:
+            for hitch in summary["hitches"]["worst"]:
+                limiter = limiter_in(counter_series, *hitch["window_ms"])
+                if limiter:
+                    hitch["top_limiter"] = limiter
     finally:
         # rows() deletes each table's file once read; one left unread by a failure is removed here
         for path in tables.values():

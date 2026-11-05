@@ -3,6 +3,14 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- With `counters=true`, each hitch in `hitches.worst` has `window_ms` (the interval before the late frame) and `top_limiter`:
+  the Limiter counter with the highest mean in that window, from the GPU counters kept as means per 10 ms. On a 3 s drawstress
+  recording with 61 start-up hitches, the 20 listed ones named Texture Write, GPU Last Level Cache and ALU Limiter depending
+  on the window, while the whole run's main limiter was the last level cache. Every hitch has `window_ms`, with or without
+  counters.
+
 ## 0.18.0 — 2026-11-05
 
 - `perf_compare` returns `gpu_state` when two runs spent their time in different GPU performance states (the shares of
