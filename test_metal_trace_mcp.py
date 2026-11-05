@@ -1733,9 +1733,9 @@ def test_pack_examples(tmp_path):
     """pack-examples.sh puts both binaries and only the named assets in one flat folder, and fails when one is missing."""
     bgfx, out = tmp_path / "bgfx", tmp_path / "out"
     runtime = bgfx / "examples" / "runtime"
-    for folder in ("shaders/metal", "shaders/dxbc", "shaders/glsl", "textures", "meshes"):
+    for folder in ("shaders/metal", "shaders/dxbc", "shaders/dxil", "shaders/glsl", "textures", "meshes"):
         (runtime / folder).mkdir(parents=True)
-    for asset in ("shaders/metal/vs.bin", "shaders/dxbc/vs.bin", "shaders/glsl/vs.bin", "textures/uffizi.ktx",
+    for asset in ("shaders/metal/vs.bin", "shaders/dxbc/vs.bin", "shaders/dxil/vs.bin", "shaders/glsl/vs.bin", "textures/uffizi.ktx",
                   "textures/other.dds", "meshes/bunny.bin", "meshes/other.bin"):
         (runtime / asset).write_text("x")
     for path in ("osx-arm64/bin/examples.app/Contents/MacOS/examplesRelease",
@@ -1753,6 +1753,7 @@ def test_pack_examples(tmp_path):
     assert result.returncode == 0, result.stderr
     packed = sorted(str(p.relative_to(out)) for p in out.rglob("*") if p.is_file())
     assert "examples" in packed and "examples.exe" in packed and "shaders/metal/vs.bin" in packed, packed
+    assert "shaders/dxbc/vs.bin" in packed and "shaders/dxil/vs.bin" in packed, "Direct3D 11 reads dxbc and 12 reads dxil"
     assert "shaders/glsl/vs.bin" not in packed and "textures/other.dds" not in packed and "meshes/other.bin" not in packed, packed
 
 

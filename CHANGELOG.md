@@ -35,6 +35,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - `perf_sweep`: records one run per value of `dim`, `example`, `api` or an environment variable (`env:NAME`), 2 to 8
   values and up to 24 recordings, and returns the median FPS, 1 % low, GPU ms and stutter per value; with 3 or more
   numeric values, the line GPU ms per frame follows (fixed ms and ms per draw for `dim`) with its r2.
+- Fix: the `bgfx-examples` archive of `workloads-2` held only the Metal and Direct3D 11 shaders (`metal`, `dxbc`), so its
+  Direct3D 12 runs (which read `dxil`) rendered 9 frames in 30 s; `pack-examples.sh` now adds `dxil` and the workflow's
+  default tag is `workloads-4`. With the DXMT tree's own build the same example gave 3 337 frames at 120.5 FPS.
 - New workload `bgfx-examples` (release `workloads-2`, 24.6 MiB): nine bgfx examples in native Metal, D3D11 and D3D12;
   `perf_record(workload="bgfx-examples", api=..., example="21-deferred")`. `dim` on a workload without `dim_variable`
   is refused instead of failing with `KeyError`.
