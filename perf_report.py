@@ -24,7 +24,7 @@ MEMORY = "metal-current-allocated-size"
 TABLES = ("metal-gpu-intervals", MEMORY, "gpu-performance-state-intervals")
 # read only when the trace has it: without it encoders go without labels
 OPTIONAL = ("metal-application-encoders-list", "graphics-compiler-activity-intervals", "device-thermal-state-intervals",
-            "ProcessCPUUsage")
+            "ProcessCPUUsage", "metal-resource-allocations", "metal-command-buffer-error")
 # each xctrace export keeps a temporary store of gigabytes on a big trace: two at a time bound the disk it needs
 EXPORT_WORKERS = 2
 # Metal GPU Counters (PERF_INSTRUMENTS): about 450 000 samples and 64 MB of XML per recorded second, so its export may take minutes
@@ -352,6 +352,34 @@ def counter_stats(info_path, value_path):
     return {"samples": total, "counters": counters, "top_limiter": {"name": top["name"], "mean": top["mean"]} if top else None}
 
 
+def resource_summary(table_rows, pid, frames):
+    """Summarizes the Metal resource allocation events of process `pid` from the rows of `metal-resource-allocations`:
+    `events` and `mib` allocated (a running total, not memory in use: a drawable's texture each frame counts), `per_frame`, `by_type` (buffer, texture...), `after_3s` (events after the first 3 s of
+    the trace, the start-up) and `per_second` counts from second 0. Deallocations and other processes are left out;
+    {"events": 0} when there are none."""
+    events, total, after, after_bytes, by_type, per_second = 0, 0, 0, 0, {}, collections.Counter()
+    for row in table_rows:
+        when, size = number(row.get("timestamp")), number(row.get("resource-size")) or 0
+        if pid_of(row.get("process")) != pid or text(row.get("event-type")) != "Allocation" or when is None:
+            continue
+        events += 1
+        total += size
+        kind = by_type.setdefault(text(row.get("resource-type")) or "other", [0, 0])
+        kind[0] += 1
+        kind[1] += size
+        per_second[when // 1_000_000_000] += 1
+        if when >= 3_000_000_000:
+            after += 1
+            after_bytes += size
+    if not events:
+        return {"events": 0}
+    mib = lambda n: round(n / 2 ** 20, 1)
+    return {"events": events, "mib": mib(total), "per_frame": round(events / frames, 2) if frames else None,
+            "by_type": {k: {"count": v[0], "mib": mib(v[1])} for k, v in sorted(by_type.items())},
+            "after_3s": {"count": after, "mib": mib(after_bytes)},
+            "per_second": [per_second[s] for s in range(max(per_second) + 1)]}
+
+
 def agx_summary(path):
     """Summarizes a recording's `.agx.csv`, one row per second of the GPU driver's counters, which cover the whole GPU
     and not only the recorded program: utilization of the device, renderer and tiler as stats, `split_scenes` (growth of
@@ -557,6 +585,12 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
                     cpu.append((start / 1e6, float(pct)))
             if cpu:
                 summary["cpu"] = stats([pct for _, pct in cpu])
+        if "metal-resource-allocations" in tables:
+            allocations = resource_summary(rows(tables["metal-resource-allocations"]), pid, len(frames))
+            if allocations["events"]:
+                summary["resource_allocations"] = allocations
+        if "metal-command-buffer-error" in tables:
+            summary["command_buffer_errors"] = sum(1 for _ in rows(tables["metal-command-buffer-error"]))
         if all(schema in tables for schema in COUNTER_TABLES):
             found = counter_stats(tables[COUNTER_TABLES[0]], tables[COUNTER_TABLES[1]])
             if found["samples"]:

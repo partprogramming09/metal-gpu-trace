@@ -22,6 +22,12 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - `perf_diagnose` returns `display_synced_hz` and says so when the FPS sits within 1 % of a common display rate (24 to 240
   Hz) with a 95th percentile frame interval no more than 30 % above the median: probably vsync, so compare GPU ms per
   frame, not FPS. On real runs: D3D11 under Wine at 118.9 FPS gives 120; native Metal at 735 and 3 058 FPS gives none.
+- A macOS summary has `resource_allocations`, from the `metal-resource-allocations` table every recording already holds (so
+  `Metal Resource Events` is not needed): the program's allocation `events`, `mib` allocated (a running total, not memory in
+  use), `per_frame`, `by_type` (buffer, texture), `after_3s` (past the start-up) and `per_second` counts; and
+  `command_buffer_errors`, the rows of `metal-command-buffer-error`. Reading them adds about 5 s per 8 s of recording.
+  Real runs: drawstress native 3.0 allocations per frame (about one is a drawable's texture); 48-drawindirect in D3D12 under
+  Wine with Mullion 8.0, nearly all buffers (different programs: not a comparison of layers). Both had no command buffer errors.
 - A macOS summary has `gpu_activity`, from the GPU driver's counters (`ioreg`, no sudo) sampled once a second beside the
   process memory (`<run>.agx.csv`): device, renderer and tiler utilization, the growth of `SplitSceneCount`
   (`split_scenes`) and of `recoveryCount` (`recoveries`, `gpu_recovered`), and the driver's memory in use. The counters
