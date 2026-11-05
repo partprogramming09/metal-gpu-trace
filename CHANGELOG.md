@@ -7,6 +7,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - `perf_record` takes `example` for a workload that lists `examples` in `data/workloads.json` (`workload_list` shows
   them): its argument goes after the api's. No workload ships examples yet; the first is the bgfx examples archive.
+- `workloads.yml` also builds bgfx's combined `examples` binaries and packs them with `workloads/pack-examples.sh`
+  (one flat folder, only the assets nine examples load: 63 MB, 24 MB compressed) as `bgfx-examples-<release>.tar.gz`;
+  the default release tag is now `workloads-2`, so a run does not replace the pinned `workloads-1` archive. Each of the
+  nine started under native Metal from that folder (01, 06, 09, 21, 24, 31, 35, 38, 48).
 - A macOS summary has `machine`: chip, P and E CPU cores, GPU cores and class, RAM in GiB and macOS version, with no
   host name or UUID, so numbers say where they were measured. It is `null` when the Mac that summarizes the trace has
   other RAM or macOS than the trace's device (a trace recorded elsewhere), or a fact cannot be read.

@@ -1499,6 +1499,33 @@ def test_layout(tmp_path):
         mcp.OUT = saved
 
 
+def test_pack_examples(tmp_path):
+    """pack-examples.sh puts both binaries and only the named assets in one flat folder, and fails when one is missing."""
+    bgfx, out = tmp_path / "bgfx", tmp_path / "out"
+    runtime = bgfx / "examples" / "runtime"
+    for folder in ("shaders/metal", "shaders/dxbc", "shaders/glsl", "textures", "meshes"):
+        (runtime / folder).mkdir(parents=True)
+    for asset in ("shaders/metal/vs.bin", "shaders/dxbc/vs.bin", "shaders/glsl/vs.bin", "textures/uffizi.ktx",
+                  "textures/other.dds", "meshes/bunny.bin", "meshes/other.bin"):
+        (runtime / asset).write_text("x")
+    for path in ("osx-arm64/bin/examples.app/Contents/MacOS/examplesRelease",
+                 "win64_mingw-gcc/bin/examples.app/Contents/MacOS/examplesRelease.exe"):
+        (bgfx / ".build" / path).parent.mkdir(parents=True)
+        (bgfx / ".build" / path).write_text("bin")
+    script = str(TOOLS / "workloads" / "pack-examples.sh")
+    result = subprocess.run(["sh", script, str(bgfx), str(out)], capture_output=True, text=True)
+    assert result.returncode, "a missing asset (fieldstone, meshes) must fail the script"
+    for asset in ("textures/fieldstone-n.dds", "textures/fieldstone-rgba.dds", "meshes/column.bin", "meshes/cube.bin",
+                  "meshes/hollowcube.bin", "meshes/orb.bin", "meshes/tree.bin", "meshes/unit_sphere.bin"):
+        (runtime / asset).write_text("x")
+    shutil.rmtree(out)
+    result = subprocess.run(["sh", script, str(bgfx), str(out)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    packed = sorted(str(p.relative_to(out)) for p in out.rglob("*") if p.is_file())
+    assert "examples" in packed and "examples.exe" in packed and "shaders/metal/vs.bin" in packed, packed
+    assert "shaders/glsl/vs.bin" not in packed and "textures/other.dds" not in packed and "meshes/other.bin" not in packed, packed
+
+
 def test_workload_example(tmp_path):
     """A workload with `examples` needs one named, and its argument follows the api's arguments."""
     import metal_trace_mcp as mcp
@@ -1551,7 +1578,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
