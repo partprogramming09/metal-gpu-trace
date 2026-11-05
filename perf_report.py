@@ -352,6 +352,28 @@ def counter_stats(info_path, value_path):
     return {"samples": total, "counters": counters, "top_limiter": {"name": top["name"], "mean": top["mean"]} if top else None}
 
 
+def read_command(argv):
+    """Returns the standard output of one short system command."""
+    return subprocess.run(argv, capture_output=True, text=True, check=True, timeout=10).stdout
+
+
+def machine_info(device, read=read_command):
+    """Returns the chip, CPU and GPU core counts, RAM and macOS of this Mac, with no name or UUID, or None when its RAM
+    or macOS differ from the trace's `device` (it is not the machine that recorded it) or a fact cannot be read."""
+    try:
+        sysctl = lambda key: read(("sysctl", "-n", key)).strip()
+        gpu = read(("ioreg", "-c", "AGXAccelerator", "-r", "-d", "1"))
+        ram, macos = int(sysctl("hw.memsize")), read(("sw_vers", "-productVersion")).strip()
+        if str(ram) != device.get("memory-size") or macos != (device.get("os-version") or "").split(" ")[0]:
+            return None
+        return {"chip": sysctl("machdep.cpu.brand_string"), "cpu_cores_p": int(sysctl("hw.perflevel0.logicalcpu")),
+                "cpu_cores_e": int(sysctl("hw.perflevel1.logicalcpu")),
+                "gpu_cores": int(re.search(r'"gpu-core-count" = (\d+)', gpu).group(1)),
+                "gpu_class": re.search(r'"IOClass" = "(AGX\w+)"', gpu).group(1), "ram_gib": ram // 2 ** 30, "macos": macos}
+    except (KeyError, ValueError, AttributeError, OSError, subprocess.SubprocessError):
+        return None
+
+
 def summarize(trace, label=None, out=None, memory=True, counters=None):
     """Summarizes `trace`, writes the JSON and CSV files into `out` (default: beside it) and returns the summary.
     With `memory` false the Metal memory table, the slowest to read, is skipped: no metal_memory_mib and no CSV.
@@ -385,6 +407,8 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             },
             "template": toc.findtext(".//template-name"),
             "duration_s": float(toc.findtext(".//summary/duration") or 0),
+            "machine": machine_info({k: v for k, v in (toc.find(".//device").attrib.items()
+                                                       if toc.find(".//device") is not None else [])}),
             # their numbers come out empty
             "missing_tables": missing_tables(toc),
         }
