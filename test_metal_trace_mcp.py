@@ -442,6 +442,46 @@ def test_baseline_record(tmp_path):
         mcp.tool_perf_record, mcp.OUT, mcp.BASELINES = saved
 
 
+def test_perf_sweep(tmp_path):
+    """perf_sweep records one run per value of one variable, alternating the order each round, takes each metric's
+    median per value, fits GPU ms per frame on draws (dim^3) and refuses bad input before recording."""
+    import metal_trace_mcp as mcp
+    made = []
+
+    def fake_record(label, **kw):
+        made.append((label, kw.get("dim"), kw.get("env", "")))
+        dim = kw.get("dim") or 10
+        (tmp_path / f"{label}_20261018-000000.json").write_text(json.dumps(
+            {"gpu": {"frames": 300, "fps_estimate": 1000 / (0.5 + 0.001 * dim ** 3), "frame_gpu_ms": {"mean": 0.5 + 0.001 * dim ** 3},
+                     "stutter_rate_pct": 1.0}}))
+    saved = mcp.tool_perf_record, mcp.OUT
+    mcp.tool_perf_record, mcp.OUT = fake_record, tmp_path
+    try:
+        got = mcp.tool_perf_sweep("t", "dim", [10, 20, 30], rounds=2, seconds=30, label="ignored")
+        assert [m[0] for m in made] == ["t-1-r1", "t-2-r1", "t-3-r1", "t-3-r2", "t-2-r2", "t-1-r2"], made
+        assert [m[1] for m in made] == [10, 20, 30, 30, 20, 10], made
+        assert [r["value"] for r in got["rows"]] == [10, 20, 30] and len(got["rows"][0]["runs"]) == 2, got
+        assert got["rows"][2]["metrics"]["frame_gpu_ms_mean"] == 27.5, got
+        fit = got["fit"]
+        assert fit["x"] == "dim^3" and abs(fit["ms_per_unit"] - 0.001) < 1e-9 and abs(fit["ms_fixed"] - 0.5) < 1e-9, fit
+        assert fit["r2"] == 1.0 and not got["too_short"], got
+        made.clear()
+        env = mcp.tool_perf_sweep("e", "env:MULLION_X", ["0", "1"], env="A=1")
+        assert [m[2] for m in made] == ["A=1 MULLION_X=0", "A=1 MULLION_X=1"] and env["fit"] is None, (made, env)
+        made.clear()
+        for variable, values, rounds in (("fps", [1, 2], 1), ("dim", [10], 1), ("dim", list(range(2, 11)), 1),
+                                         ("dim", [2, 3, 4, 5, 6, 7, 8], 4), ("dim", [10, "x"], 1), ("env:bad name", [1, 2], 1),
+                                         ("dim", [10, 20], 0)):
+            try:
+                mcp.tool_perf_sweep("t", variable, values, rounds=rounds)
+                raise AssertionError((variable, values, rounds))
+            except mcp.ToolError:
+                pass
+        assert not made
+    finally:
+        mcp.tool_perf_record, mcp.OUT = saved
+
+
 def test_perf_ab(tmp_path):
     """perf_ab records A B B A, passes each side's env on, and calls a metric better or worse only when every B value
     lies outside A's range; a bad env or rounds fails before recording."""
@@ -664,7 +704,7 @@ def test_server(tmp_path):
     assert [x["uriTemplate"] for x in replies[17]["result"]["resourceTemplates"]] == ["metal-trace://runs/{run}"]
     assert json.loads(replies[26]["result"]["contents"][0]["text"]) == {"gpu": {"frames": 100}}
     assert replies[27]["error"]["code"] == replies[28]["error"]["code"] == -32002, "a bad run name is not found"
-    assert len(replies[2]["result"]["tools"]) == 22
+    assert len(replies[2]["result"]["tools"]) == 23
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -925,7 +965,7 @@ def test_http(tmp_path):
         assert post(ping, path="/other")[0] == 404
         assert post({"jsonrpc": "2.0", "method": "notifications/initialized"}) == (202, None)
         code, tools = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        assert code == 200 and len(tools["result"]["tools"]) == 22
+        assert code == 200 and len(tools["result"]["tools"]) == 23
         code, runs = post({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                            "params": {"name": "perf_runs", "arguments": {}, "_meta": {"progressToken": "x"}}})
         assert code == 200 and runs["result"]["structuredContent"]["total"] == 0, runs
@@ -1587,7 +1627,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())

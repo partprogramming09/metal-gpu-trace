@@ -56,7 +56,9 @@ INSTRUCTIONS = (
     "encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare, perf_gate and perf_panel leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling); perf_panel writes an HTML page to look at one or two runs in a browser.trace_tables and trace_query "
     "need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, "
     "or every process named like a native program. To compare native Metal with a translation layer without a game "
-    "of one's own: workload_list, workload_fetch, then perf_record with workload and api, or the compare-layer prompt."
+    "of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload "
+    "that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an "
+    "environment variable and fits GPU ms per frame on the value."
 )
 
 
@@ -1265,6 +1267,99 @@ def tool_perf_ab(name, env_a, env_b, rounds=1, skip_s=0, **record):
     return ab_report(name, env_a, env_b, runs, skip_s)
 
 
+def line_fit(points):
+    """Returns (intercept, slope, r2) of the least-squares line through [(x, y)], or None when x never changes."""
+    mx, my = sum(x for x, _ in points) / len(points), sum(y for _, y in points) / len(points)
+    sxx = sum((x - mx) ** 2 for x, _ in points)
+    if not sxx:
+        return None
+    slope = sum((x - mx) * (y - my) for x, y in points) / sxx
+    total = sum((y - my) ** 2 for _, y in points)
+    resid = sum((y - my - slope * (x - mx)) ** 2 for x, y in points)
+    return my - slope * mx, slope, 1 - resid / total if total else 1.0
+
+
+def sweep_values(variable, values):
+    """Returns the values of a sweep checked and typed (integers for dim), or raises ToolError."""
+    env_name = variable[4:] if variable.startswith("env:") else None
+    if env_name is None and variable not in ("dim", "example", "api"):
+        raise ToolError("variable is dim, example, api or env:NAME")
+    if env_name is not None and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", env_name):
+        raise ToolError("env:NAME takes a variable name of letters, digits and '_'")
+    if not isinstance(values, list) or not 2 <= len(values) <= 8:
+        raise ToolError("values is 2 to 8 values")
+    if variable == "dim":
+        try:
+            values = [int(v) for v in values]
+        except (TypeError, ValueError) as error:
+            raise ToolError("dim values are whole numbers") from error
+        if min(values) < 1:
+            raise ToolError("dim values are 1 or more")
+    elif any(not re.fullmatch(r"\S+", str(v)) for v in values):
+        raise ToolError("a value holds no spaces")
+    return values if variable == "dim" else [str(v) for v in values]
+
+
+def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, **record):
+    """Records the same program once per value of one variable (dim, example, api, or env:NAME for an environment
+    variable) and returns, per value, the median of FPS, 1 % low, GPU ms per frame and stutter, and with 3 or more
+    numeric values the straight line GPU ms per frame follows (fixed ms plus ms per draw for dim, per unit otherwise)
+    with its r2. With rounds above 1 the values run in opposite order every other round, so drift hits all alike.
+    Runs are named `name`-<value number>-r<round>; each takes its seconds plus about a minute to read back."""
+    if not name_ok(name):
+        raise ToolError("a name holds only letters, digits, '.', '_' and '-'")
+    check_skip(skip_s)
+    rounds = int(rounds)
+    if not 1 <= rounds <= 5:
+        raise ToolError("rounds is 1 to 5")
+    values = sweep_values(variable, values)
+    if len(values) * rounds > 24:
+        raise ToolError("at most 24 recordings: fewer values or rounds")
+    record.pop("label", None)
+    base_env = check_env(record.pop("env", ""))
+    runs = [[] for _ in values]
+    for rnd in range(rounds):
+        for i in (range(len(values)) if rnd % 2 == 0 else reversed(range(len(values)))):
+            kwargs = dict(record)
+            if variable.startswith("env:"):
+                kwargs["env"] = " ".join(filter(None, [base_env, f"{variable[4:]}={values[i]}"]))
+            else:
+                kwargs[variable] = values[i]
+                if base_env:
+                    kwargs["env"] = base_env
+            label = f"{name}-{i + 1}-r{rnd + 1}"
+            before = set(OUT.glob(f"{label}_*.json"))
+            tool_perf_record(label, **kwargs)
+            runs[i].append(next(iter(set(OUT.glob(f"{label}_*.json")) - before)).stem)
+    rows, frames = [], []
+    for value, names in zip(values, runs):
+        summaries = [steady_summary(r, skip_s) for r in names]
+        frames += [(s.get("gpu") or {}).get("frames", 0) for s in summaries]
+        metrics = {}
+        for key, (path, _) in AB_METRICS.items():
+            found = []
+            for item in summaries:
+                for step in path:
+                    item = item.get(step) if isinstance(item, dict) else None
+                if isinstance(item, (int, float)):
+                    found.append(item)
+            metrics[key] = statistics.median(found) if found else None
+        rows.append({"value": value, "runs": names, "metrics": metrics})
+    result = {"name": name, "variable": variable, "rows": rows, "fit": None, "too_short": min(frames, default=0) < 100}
+    try:
+        xs = [v ** 3 if variable == "dim" else float(v) for v in values]
+    except ValueError:
+        xs = []
+    points = [(x, r["metrics"]["frame_gpu_ms_mean"]) for x, r in zip(xs, rows) if r["metrics"]["frame_gpu_ms_mean"] is not None]
+    fit = line_fit(points) if len(points) >= 3 else None
+    if fit:
+        result["fit"] = {"x": "dim^3" if variable == "dim" else variable, "ms_fixed": round(fit[0], 6),
+                         "ms_per_unit": round(fit[1], 6), "r2": round(fit[2], 4)}
+    if check_skip(skip_s):
+        result["skipped_s"] = check_skip(skip_s)
+    return result
+
+
 def ab_report(name, env_a, env_b, runs, skip_s=0):
     """Builds perf_ab's answer from the summaries of its runs, named in `runs` as {"a": [...], "b": [...]}, each
     without its first `skip_s` seconds."""
@@ -1382,6 +1477,15 @@ TOOLS = {
          "skip_s": {"type": "number", "description": SKIP + "; perf_check applies the same cut to the run it judges"},
          **{k: v for k, v in RECORD_PROPS.items() if k != "label"}}, ["name"]),
         hints("Record a reference", destructive=True)),
+    "perf_sweep": (tool_perf_sweep, schema(
+        {"name": {**S, "description": "name for the runs: letters, digits, '.', '_', '-'"},
+         "variable": {**S, "description": "what changes between runs: dim, example, api, or env:NAME for an environment variable"},
+         "values": {"type": "array", "items": {"type": ["string", "integer"]},
+                    "description": "2 to 8 values of the variable, such as [10, 20, 30] for dim"},
+         "rounds": {**I, "description": "rounds, default 1, at most 5 and at most 24 recordings in all; every other round runs the values in reverse"},
+         "skip_s": {"type": "number", "description": SKIP},
+         **{k: v for k, v in RECORD_PROPS.items() if k != "label"}}, ["name", "variable", "values"]),
+        hints("Record one run per value of a variable", destructive=True)),
     "perf_ab": (tool_perf_ab, schema(
         {"name": {**S, "description": "name for the runs: letters, digits, '.', '_', '-'"},
          "env_a": {**S, "description": "NAME=VALUE pairs for side A, the reference (empty: none)"},

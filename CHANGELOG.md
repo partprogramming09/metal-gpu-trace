@@ -7,6 +7,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - `perf_record` takes `example` for a workload that lists `examples` in `data/workloads.json` (`workload_list` shows
   them): its argument goes after the api's. No workload ships examples yet; the first is the bgfx examples archive.
+- `perf_sweep`: records one run per value of `dim`, `example`, `api` or an environment variable (`env:NAME`), 2 to 8
+  values and up to 24 recordings, and returns the median FPS, 1 % low, GPU ms and stutter per value; with 3 or more
+  numeric values, the line GPU ms per frame follows (fixed ms and ms per draw for `dim`) with its r2.
 - New workload `bgfx-examples` (release `workloads-2`, 24.6 MiB): nine bgfx examples in native Metal, D3D11 and D3D12;
   `perf_record(workload="bgfx-examples", api=..., example="21-deferred")`. `dim` on a workload without `dim_variable`
   is refused instead of failing with `KeyError`.
