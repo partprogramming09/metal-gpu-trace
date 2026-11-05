@@ -1329,6 +1329,18 @@ def test_windows_against_metal(tmp_path):
         assert "not_comparable" in cross["encoders"] and "labels" not in cross
         assert "Not comparable between a Windows and a Metal run" in cross["markdown"]
         assert "measure" not in mcp.tool_perf_compare("mac", "mac2")
+        for run, locked in (("mac", True), ("mac2", False)):
+            locked_summary = summary("macOS", 60.0)
+            locked_summary["machine"] = {"screen_locked": locked}
+            (tmp_path / f"{run}.json").write_text(json.dumps(locked_summary))
+        screen = mcp.tool_perf_compare("mac", "mac2")["screen"]
+        assert screen["a"] is True and screen["b"] is False and "compare GPU ms" in screen["note"], screen
+        locked_summary["machine"] = {"screen_locked": True}
+        (tmp_path / "mac2.json").write_text(json.dumps(locked_summary))
+        assert "screen" not in mcp.tool_perf_compare("mac", "mac2")
+        (tmp_path / "mac.json").write_text(json.dumps(summary("macOS", 60.0)))
+        (tmp_path / "mac2.json").write_text(json.dumps(summary("macOS", 60.0)))
+        assert "screen" not in mcp.tool_perf_compare("mac", "mac2")
         data = mcp.panel_data(["mac", "win"])
         assert data["not_comparable"] == ["gpu_ms_mean", "gpu_ms_p95", "metal_mib_peak"]
         assert [r["source"] for r in data["runs"]] == ["metal", "windows"]
@@ -1677,11 +1689,16 @@ def test_machine(tmp_path):
         ("sysctl", "-n", "hw.memsize"): "17179869184\n",
         ("sw_vers", "-productVersion"): "27.0.1\n",
         ("ioreg", "-c", "AGXAccelerator", "-r", "-d", "1"): '"gpu-core-count" = 16\n"IOClass" = "AGXAcceleratorG13X"\n',
+        ("ioreg", "-n", "Root", "-d1", "-a"): "<key>CGSSessionScreenIsLocked</key><true/>",
     }
     device = {"memory-size": "17179869184", "os-version": "27.0.1 (26A434)"}
     got = perf_report.machine_info(device, facts.__getitem__)
     assert got == {"chip": "Apple M1 Pro", "cpu_cores_p": 8, "cpu_cores_e": 2, "gpu_cores": 16,
-                   "gpu_class": "AGXAcceleratorG13X", "ram_gib": 16, "macos": "27.0.1"}, got
+                   "gpu_class": "AGXAcceleratorG13X", "ram_gib": 16, "macos": "27.0.1", "screen_locked": True}, got
+    facts[("ioreg", "-n", "Root", "-d1", "-a")] = "<key>IOConsoleUsers</key>"
+    assert perf_report.machine_info(device, facts.__getitem__)["screen_locked"] is False
+    del facts[("ioreg", "-n", "Root", "-d1", "-a")]
+    assert perf_report.machine_info(device, facts.__getitem__)["screen_locked"] is None
     assert perf_report.machine_info(dict(device, **{"memory-size": "8589934592"}), facts.__getitem__) is None
     assert perf_report.machine_info(dict(device, **{"os-version": "26.4 (25E1)"}), facts.__getitem__) is None
     assert perf_report.machine_info({}, facts.__getitem__) is None
