@@ -5,12 +5,14 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## Unreleased
 
-- `bgfx-examples` (release `workloads-6`, 38 MB) holds ten more examples: 08-update, 10-font, 16-shadowmaps, 19-oit, 20-nanovg,
+- `bgfx-examples` (release `workloads-7`, 38 MB) holds ten more examples: 08-update, 10-font, 16-shadowmaps, 19-oit, 20-nanovg,
   30-picking, 32-particles, 40-svt, 46-fsr and 47-pixelformats, with classes ui_text, shadows, overdraw, readback, upscale and
-  format_coverage. Each ran in native Metal for 10 s at 120 FPS (08-update 14 encoders per frame and 0.98 GPU ms, 46-fsr 5 and
-  2.4 ms with 42 hitches in 973 frames; the others 2 to 5 encoders and 0.15 to 1.5 ms); none has run under Wine yet. 40-svt writes
-  a 370 MB tile cache to `temp/` in the workload's folder on its first run (about 1.5 s) and crashes without that folder, which
-  the archive now holds.
+  format_coverage. Each ran in native Metal at about 120 FPS for 10 s (20 s for 20-nanovg): 08-update 14 encoders per frame and
+  0.98 GPU ms, 46-fsr 5 and 2.4 ms with 42 hitches in 973 frames, the others 2 to 5 encoders and 0.15 to 1.5 ms; none has run
+  under Wine yet. 20-nanovg's first 10 s run, with its images read from disk for the first time, gave 287 frames and 12 ms of
+  GPU time per frame, and the 20 s run after it 2344 frames and 0.51 ms: skip the start-up with `skip_s`. 40-svt writes a 370 MB
+  tile cache to `temp/` in the workload's folder on its first run (about 1.5 s) and crashes without that folder, which the
+  archive now holds; 20-nanovg stops loading at the first missing `images/imageN.jpg`, so the archive holds all twelve.
 
 - `workload_list` gives each bgfx example in `bgfx-examples` an `example_traits` entry: its `class` (cpu_submit, textured,
   postprocess, gpu_bandwidth, compute, gpu_alu, streaming, indirect) and `native_encoders_per_frame`, the count measured in native

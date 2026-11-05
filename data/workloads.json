@@ -23,9 +23,9 @@
       "title": "bgfx examples",
       "about": "Nineteen of bgfx's examples, each a different load: 01-cubes and 35-dynamic (many cubes, uploads), 06-bump (textured), 09-hdr (render-target chain), 21-deferred (G-buffer and lights), 24-nbody (compute), 31-rsm (reflective shadow maps), 38-bloom (post-processing), 48-drawindirect (draws the GPU decides); and, run only in native Metal so far, 08-update (texture uploads in every compressed format), 10-font and 20-nanovg (text and interface), 16-shadowmaps, 19-oit and 32-particles (transparency and overdraw), 30-picking (GPU read-back), 40-svt (sparse virtual textures: its first run writes a 370 MB tile cache to temp/ in the workload's folder), 46-fsr (upscaling), 47-pixelformats (texture formats). Pass example to perf_record.",
       "license": "BSD-2-Clause (bgfx, Branimir Karadzic); LICENSE-bgfx in the archive",
-      "url": "https://github.com/partprogramming09/metal-gpu-trace/releases/download/workloads-6/bgfx-examples-workloads-6.tar.gz",
-      "sha256": "c5b25350c15ea7b32a497b3b8c6277f5d29df6d798812d1abdeb215cff1cf99a",
-      "bytes": 38077604,
+      "url": "https://github.com/partprogramming09/metal-gpu-trace/releases/download/workloads-7/bgfx-examples-workloads-7.tar.gz",
+      "sha256": "bd41458ee01e4fd93be2779eeabc0e20c314d1313bd365bcc86d71c8e4004187",
+      "bytes": 38168959,
       "dir": "bgfx-examples",
       "examples": {
         "01-cubes": "01-", "06-bump": "06-", "09-hdr": "09-", "21-deferred": "21-", "24-nbody": "24-",

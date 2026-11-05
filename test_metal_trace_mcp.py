@@ -888,7 +888,7 @@ def test_workloads(tmp_path):
     shipped = json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["drawstress"]
     assert len(shipped["sha256"]) == 64 and shipped["sha256"] != "0" * 64 and shipped["url"].startswith("https://")
     examples = json.loads((TOOLS / "data" / "workloads.json").read_text())["workloads"]["bgfx-examples"]
-    assert "workloads-6" in examples["url"] and len(examples["sha256"]) == 64, "workloads-2's archive has no dxil shaders"
+    assert "workloads-7" in examples["url"] and len(examples["sha256"]) == 64, "workloads-2's archive has no dxil shaders"
 
 
 def test_example_traits(tmp_path):
