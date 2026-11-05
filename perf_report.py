@@ -423,10 +423,13 @@ def validation_summary(lines):
 
 
 def memory_trend(allocated):
-    """Returns the slope, in MiB per minute, of the least-squares line through the second half of the Metal memory samples
-    (`allocated` holds (ms, bytes) sorted by time): what the program keeps growing by once it has warmed up. None with under 5
-    samples in that half or under 5 s between them."""
-    half = allocated[len(allocated) // 2:]
+    """Returns the slope, in MiB per minute, of the least-squares line through the Metal memory samples of the second half of
+    the recorded time (`allocated` holds (ms, bytes) sorted by time; a burst of samples while loading does not move the cut):
+    what the program keeps growing by once it has warmed up. None with under 5 samples in that half or under 5 s between them."""
+    if not allocated:
+        return None
+    cut = (allocated[0][0] + allocated[-1][0]) / 2
+    half = [sample for sample in allocated if sample[0] >= cut]
     if len(half) < 5 or half[-1][0] - half[0][0] < 5000:
         return None
     mx, my = statistics.fmean(t for t, _ in half), statistics.fmean(s for _, s in half)

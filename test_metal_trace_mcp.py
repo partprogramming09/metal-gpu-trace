@@ -954,6 +954,8 @@ def test_memory_trend(tmp_path):
     assert perf_report.memory_trend([(t * 1000.0, 50 * mib) for t in range(6)]) is None
     assert perf_report.memory_trend([(t * 100.0, 50 * mib) for t in range(40)]) is None
     assert perf_report.memory_trend([]) is None
+    burst = [(i * 5.0, (100 + i) * mib) for i in range(1000)] + [(5000.0 + t * 1000.0, 1100 * mib) for t in range(1, 36)]
+    assert perf_report.memory_trend(burst) == 0.0, perf_report.memory_trend(burst)
 
 
 def test_validation(tmp_path):
