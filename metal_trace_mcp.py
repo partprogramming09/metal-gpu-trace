@@ -26,7 +26,7 @@ import threading
 import time
 import zipfile
 
-__version__ = "0.21.0"
+__version__ = "0.22.0"
 TOOLS_DIR = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS_DIR))
 import gputrace_read  # noqa: E402

@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.22.0 — 2026-11-05
 
 - New workload `godot`: a lit 3D scene Godot 4.7.2 builds from code (400 meshes, 8 omni lights, a shadowed sun, Forward+, no
   imported assets), with `api` mtl (Godot's Metal driver) and d3d12 (under Wine). A workload entry can now list `downloads`:
