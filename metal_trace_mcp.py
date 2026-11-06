@@ -207,6 +207,11 @@ def check_size(size):
     return int(match[1]), int(match[2])
 
 
+def quote_path(path):
+    """Returns `path` quoted so split_args keeps it as one argument even with spaces in it (a Windows user name, say)."""
+    return f'"{path}"' if sys.platform == "win32" else shlex.quote(str(path))
+
+
 def workload_command(name, api, dim, wine, args, example=None, size=None):
     """Returns the program, Wine, arguments and program environment that run a fetched workload with `api`; a workload
     with `examples` runs the one named by `example`."""
@@ -232,7 +237,7 @@ def workload_command(name, api, dim, wine, args, example=None, size=None):
         program_env = " ".join(filter(None, [program_env, f"DYLD_LIBRARY_PATH={moltenvk_dir()}"]))
     use_wine = run["wine"] and sys.platform != "win32"
     return (target / entry["dir"] / run["program"], wine if use_wine else "native",
-            " ".join(filter(None, [run["args"].replace("{dir}", str(target / entry["dir"])),
+            " ".join(filter(None, [run["args"].replace("{dir}", quote_path(target / entry["dir"])),
                                    examples[example] if example else "", args])), program_env)
 
 

@@ -943,7 +943,11 @@ def test_workload_downloads(tmp_path):
         assert mcp.tool_workload_list()["workloads"][0]["bytes"] == entry["bytes"] + good.stat().st_size
         program, wine, args, env = mcp.workload_command("demo", "mtl", None, None, "")
         assert program.is_file() and os.access(program, os.X_OK), "the zip's file mode must survive"
-        assert args == f"--path {program.parents[4]}/project", (args, program)
+        assert mcp.split_args(args) == ["--path", f"{program.parents[4]}/project"], (args, program)
+        mcp.CACHE = tmp_path / "a cache with spaces"
+        assert mcp.tool_workload_fetch("demo")["downloaded"]
+        spaced = mcp.split_args(mcp.workload_command("demo", "mtl", None, None, "")[2])
+        assert len(spaced) == 2 and "a cache with spaces" in spaced[1], spaced
     finally:
         mcp.WORKLOADS, mcp.CACHE, mcp.download = saved
 
