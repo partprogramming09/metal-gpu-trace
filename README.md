@@ -188,6 +188,14 @@ recording: `memory_free_pct` (20 to 60) holds the whole Mac at that percentage o
 (drawstress stayed at 728 FPS and its resident memory fell); the second slows it several times over. Repeat a run that
 uses either.
 
+The third workload, `godot`, is a lit 3D scene a real engine builds from code (Godot 4.7.2, Forward+): 400 meshes, 8 lights,
+a shadowed sun, `api="mtl"` for Godot's Metal driver and `api="d3d12"` under Wine for its Direct3D 12 driver, with
+`args="-- meshes=800 lights=16"` to change it. `workload_fetch("godot")` keeps the 10 KB project from this repository's release and
+downloads Godot's official macOS (171 MB) and Windows (86 MB) builds from godotengine/godot-builds, checking the SHA-512
+this package pins; it needs about 257 MB and some seconds. The scene has no imported assets, so Godot does not import anything.
+Godot compiles its pipelines on every start, which makes it a case for `perf_cold_warm`: its shader-compile hitches came back
+unchanged in the second run.
+
 ### Reading the numbers across runs
 
 - A summary says where it ran and what the GPU did: `machine` (chip, cores, RAM, macOS, `screen_locked`), `gpu_activity`

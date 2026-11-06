@@ -5,6 +5,15 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## Unreleased
 
+- New workload `godot`: a lit 3D scene Godot 4.7.2 builds from code (400 meshes, 8 omni lights, a shadowed sun, Forward+, no
+  imported assets), with `api` mtl (Godot's Metal driver) and d3d12 (under Wine). A workload entry can now list `downloads`:
+  `workload_fetch` downloads each zip from its publisher (here godotengine/godot-builds, 171 MB for macOS and 86 MB for
+  Windows), checks the SHA-512 `data/workloads.json` pins, refuses links and paths outside the folder, unzips it with its
+  file modes, and `args` may use `{dir}` for the workload's folder. The project archive (1.5 KB, release `workloads-9`) is packed
+  by the workloads workflow with `only_godot`. Run through the tools: the fetch took 9 s for 257 MB, native Metal 121 FPS and
+  Wine D3D12 120 FPS, 14 encoders per frame in both. With `perf_cold_warm` (30 s runs) `first_seen_hitches` was 0 in both
+  because Godot's shader-compile hitches (3 in Metal, 7 in Wine) recur identically in the second run.
+
 - `example_traits` also gives `d3d12_encoders_per_frame`, the median under Wine with Mullion's D3D12 layer: 7 to 23 for most
   examples (2 to 14 in native Metal), 16 for 22-windows, 38-bloom, 41-tess and 46-fsr, and 312 for 26-occlusion (106 render, 99 compute and 104 blit
   encoders per frame against 4 in native Metal, at 80 FPS instead of 120). The 21 examples added after the first nine were

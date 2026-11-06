@@ -73,6 +73,27 @@
         "d3d11": {"program": "examples.exe", "args": "--d3d11", "wine": true},
         "d3d12": {"program": "examples.exe", "args": "--d3d12", "wine": true}
       }
+    },
+    "godot": {
+      "title": "Godot 4.7.2 scene",
+      "about": "A scene Godot's own engine builds from code: 400 spheres and boxes, 8 omni lights (4 with shadows) and a shadowed sun under the Forward+ renderer, with the camera orbiting; no imported assets, so nothing to import. The project (10 KB) is in the archive; workload_fetch also downloads Godot 4.7.2's official editor builds for macOS (171 MB) and Windows (86 MB) from godotengine/godot-builds and checks their SHA-512. api mtl runs Godot's Metal driver, d3d12 its Direct3D 12 driver under Wine. Godot compiles its pipelines on every start, so the first seconds show shader-compile hitches in both runs. Pass args such as \"-- meshes=800 lights=16\" to change the scene.",
+      "license": "MIT (Godot Engine, Juan Linietsky, Ariel Manzur and contributors; the scene project is this repository's)",
+      "url": "https://github.com/partprogramming09/metal-gpu-trace/releases/download/workloads-9/godot-workloads-9.tar.gz",
+      "sha256": "a85320f08e1ac2721288441a5317796de4673a6df6fc727b71c135503adc09c5",
+      "bytes": 1525,
+      "dir": "godot",
+      "downloads": [
+        {"url": "https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_macos.universal.zip",
+         "sha512": "38aa16e5bba2083941fc5b3e54be0089bd4cc35e32415f5b9fd9a8a6a7b9818255d44532ea8ef94b5aef56c4b407c2d634fa4f657e4ebe681ebbf59b7bac69ca",
+         "bytes": 170622178, "into": "bin/mac"},
+        {"url": "https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/Godot_v4.7.2-stable_win64.exe.zip",
+         "sha512": "83decd58fdf67b9d657958a1ae6bf1929c20785315a81effe245874cdc57acb709bf868e00778a96984338c1b29dafdb453c6847747694621c6ecf5da2259993",
+         "bytes": 86013866, "into": "bin/win"}
+      ],
+      "apis": {
+        "mtl": {"program": "bin/mac/Godot.app/Contents/MacOS/Godot", "args": "--path {dir}/project --rendering-driver metal --rendering-method forward_plus", "wine": false},
+        "d3d12": {"program": "bin/win/Godot_v4.7.2-stable_win64.exe", "args": "--path {dir}/project --rendering-driver d3d12 --rendering-method forward_plus", "wine": true}
+      }
     }
   }
 }

@@ -1,15 +1,44 @@
 name: workloads
 
-# builds bgfx 17-drawstress for macOS arm64 and Windows x64 from fixed commits and uploads it to a release
+# builds bgfx 17-drawstress for macOS arm64 and Windows x64 from fixed commits and uploads it to a release;
+# with only_godot it packs just the Godot scene project (the Godot binaries are downloaded by workload_fetch)
 on:
   workflow_dispatch:
     inputs:
       release:
         description: release tag that receives the archive
-        default: workloads-8
+        default: workloads-9
+      only_godot:
+        description: pack only the Godot scene project
+        type: boolean
+        default: false
 
 jobs:
+  godot:
+    if: ${{ inputs.only_godot }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive
+        run: |
+          mkdir -p godot
+          cp -R workloads/godot-project godot/project
+          { echo "Godot scene project of $GITHUB_SERVER_URL/$GITHUB_REPOSITORY at $GITHUB_SHA"
+            echo "Godot 4.7.2-stable binaries: downloaded by workload_fetch from https://github.com/godotengine/godot-builds/releases/tag/4.7.2-stable"; } > godot/BUILD.txt
+          tar -czf "godot-${{ inputs.release }}.tar.gz" godot
+          shasum -a 256 godot-*.tar.gz | tee godot.sha256
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${{ inputs.release }}" >/dev/null 2>&1 || \
+            gh release create "${{ inputs.release }}" --title "Workloads ${{ inputs.release }}" --prerelease \
+              --notes "Test programs for metal-gpu-trace's workload_fetch. Built from source by the workloads workflow; BUILD.txt lists the commits."
+          gh release upload "${{ inputs.release }}" godot-*.tar.gz godot.sha256 --clobber
   drawstress:
+    if: ${{ !inputs.only_godot }}
     runs-on: macos-15
     permissions:
       contents: write

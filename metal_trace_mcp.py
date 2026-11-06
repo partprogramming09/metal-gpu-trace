@@ -16,6 +16,7 @@ import re
 import shlex
 import shutil
 import signal
+import stat
 import statistics
 import subprocess
 import sys
@@ -23,6 +24,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import zipfile
 
 __version__ = "0.21.0"
 TOOLS_DIR = pathlib.Path(__file__).resolve().parent
@@ -205,6 +207,11 @@ def check_size(size):
     return int(match[1]), int(match[2])
 
 
+def quote_path(path):
+    """Returns `path` quoted so split_args keeps it as one argument even with spaces in it (a Windows user name, say)."""
+    return f'"{path}"' if sys.platform == "win32" else shlex.quote(str(path))
+
+
 def workload_command(name, api, dim, wine, args, example=None, size=None):
     """Returns the program, Wine, arguments and program environment that run a fetched workload with `api`; a workload
     with `examples` runs the one named by `example`."""
@@ -230,7 +237,8 @@ def workload_command(name, api, dim, wine, args, example=None, size=None):
         program_env = " ".join(filter(None, [program_env, f"DYLD_LIBRARY_PATH={moltenvk_dir()}"]))
     use_wine = run["wine"] and sys.platform != "win32"
     return (target / entry["dir"] / run["program"], wine if use_wine else "native",
-            " ".join(filter(None, [run["args"], examples[example] if example else "", args])), program_env)
+            " ".join(filter(None, [run["args"].replace("{dir}", quote_path(target / entry["dir"])),
+                                   examples[example] if example else "", args])), program_env)
 
 
 def tool_workload_list():
@@ -238,7 +246,8 @@ def tool_workload_list():
     license and APIs, and whether it is already downloaded."""
     rows = []
     for name, entry in WORKLOADS.items():
-        rows.append({"name": name, "title": entry["title"], "about": entry["about"], "bytes": entry["bytes"],
+        rows.append({"name": name, "title": entry["title"], "about": entry["about"],
+                     "bytes": entry["bytes"] + sum(d["bytes"] for d in entry.get("downloads", [])),
                      "license": entry["license"], "apis": list(entry["apis"]),
                      **({"examples": list(entry["examples"])} if entry.get("examples") else {}),
                      **({"example_traits": dict(entry["example_traits"])} if entry.get("example_traits") else {}),
@@ -263,10 +272,27 @@ def unpack(archive, target):
         tar.extractall(target, **({"filter": "data"} if hasattr(tarfile, "data_filter") else {}))
 
 
+def unzip(archive, target):
+    """Extracts a .zip into `target`, refusing links and any member that would land outside it, and restores the
+    Unix file modes the archive records (the zipfile module drops them)."""
+    with zipfile.ZipFile(archive) as zf:
+        for info in zf.infolist():
+            if (stat.S_ISLNK(info.external_attr >> 16) or info.filename.startswith("/")
+                    or ".." in info.filename.split("/")):
+                raise ToolError(f"the archive holds {info.filename!r}, which may not be extracted; nothing was saved")
+        zf.extractall(target)
+        for info in zf.infolist():
+            mode = (info.external_attr >> 16) & 0o777
+            if mode and not info.is_dir():
+                (pathlib.Path(target) / info.filename).chmod(mode)
+
+
 def tool_workload_fetch(name):
     """Downloads a test program from this project's GitHub releases once, checks its SHA-256 against the one this
     package pins, and keeps it in ~/Library/Caches/metal-gpu-trace; later calls reuse it. The programs are built
-    from source by the project's workloads workflow."""
+    from source by the project's workloads workflow. A workload with `downloads` (Godot) also fetches each of those
+    zip files from its own publisher, checks its SHA-512 against the one data/workloads.json pins and unzips it into
+    the workload's folder."""
     entry, target = workload_entry(name)
     if target.is_dir():
         return {"name": name, "downloaded": False, "fetched": True, "apis": list(entry["apis"])}
@@ -277,8 +303,20 @@ def tool_workload_fetch(name):
         if file_id(archive)["sha256"] != entry["sha256"]:
             raise ToolError(f"{name}'s download does not match the SHA-256 this package pins; nothing was saved")
         unpack(archive, pathlib.Path(tmp) / "out")
+        for item in entry.get("downloads", []):
+            part = pathlib.Path(tmp) / "part.zip"
+            download(item["url"], part, item["bytes"])
+            digest = hashlib.sha512()
+            with open(part, "rb") as f:
+                for block in iter(lambda: f.read(1 << 20), b""):
+                    digest.update(block)
+            if digest.hexdigest() != item["sha512"]:
+                raise ToolError(f"{name}'s {item['into']} download does not match the SHA-512 this package pins; nothing was saved")
+            unzip(part, pathlib.Path(tmp) / "out" / entry["dir"] / item["into"])
+            part.unlink()
         (pathlib.Path(tmp) / "out").rename(target)
-    return {"name": name, "downloaded": True, "fetched": True, "bytes": entry["bytes"], "apis": list(entry["apis"])}
+    return {"name": name, "downloaded": True, "fetched": True, "bytes": entry["bytes"] + sum(d["bytes"] for d in entry.get("downloads", [])),
+            "apis": list(entry["apis"])}
 
 
 # the PresentMon console application perf_record uses on Windows, pinned by size and SHA-256

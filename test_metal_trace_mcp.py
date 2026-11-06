@@ -891,6 +891,67 @@ def test_workloads(tmp_path):
     assert "workloads-8" in examples["url"] and len(examples["sha256"]) == 64, "workloads-2's archive has no dxil shaders"
 
 
+def test_workload_downloads(tmp_path):
+    """A workload with `downloads` fetches each zip from its publisher, checks its SHA-512, unzips it with its file modes into
+    the workload's folder, refuses a wrong hash, a link or a path outside, and substitutes {dir} in the api's arguments."""
+    import hashlib
+    import tarfile
+    import zipfile
+    import metal_trace_mcp as mcp
+    project = tmp_path / "src" / "godot" / "project"
+    project.mkdir(parents=True)
+    (project / "project.godot").write_text("x")
+    base = tmp_path / "base.tar.gz"
+    with tarfile.open(base, "w:gz") as tar:
+        tar.add(tmp_path / "src" / "godot", arcname="godot")
+
+    def make_zip(name, members):
+        path = tmp_path / name
+        with zipfile.ZipFile(path, "w") as zf:
+            for member, mode, link in members:
+                info = zipfile.ZipInfo(member)
+                info.external_attr = ((0o120000 if link else 0o100000) | mode) << 16
+                zf.writestr(info, "bin")
+        return path
+    good = make_zip("good.zip", [("Godot.app/Contents/MacOS/Godot", 0o755, False)])
+    sha512 = lambda p: hashlib.sha512(p.read_bytes()).hexdigest()
+    entry = {"title": "t", "about": "a", "license": "l", "url": "https://example.invalid/base.tar.gz",
+             "sha256": hashlib.sha256(base.read_bytes()).hexdigest(), "bytes": base.stat().st_size, "dir": "godot",
+             "downloads": [{"url": "https://example.invalid/g.zip", "sha512": sha512(good), "bytes": good.stat().st_size, "into": "bin"}],
+             "apis": {"mtl": {"program": "bin/Godot.app/Contents/MacOS/Godot", "args": "--path {dir}/project", "wine": False}}}
+    saved = mcp.WORKLOADS, mcp.CACHE, mcp.download
+    served = {"https://example.invalid/base.tar.gz": base, "https://example.invalid/g.zip": good}
+    mcp.CACHE, mcp.download = tmp_path / "cache", lambda url, path, max_bytes: shutil.copy(served[url], path)
+    try:
+        for archive, words in ((make_zip("link.zip", [("a", 0o777, True)]), "may not be extracted"),
+                               (make_zip("up.zip", [("../escape", 0o644, False)]), "may not be extracted"),
+                               (good, "does not match the SHA-512")):
+            served["https://example.invalid/g.zip"] = archive
+            mcp.WORKLOADS = {"demo": {**entry, "downloads": [{**entry["downloads"][0], "sha512": sha512(good) if words.startswith("may") else "0" * 128}]}}
+            if words.startswith("may"):
+                mcp.WORKLOADS["demo"]["downloads"][0]["sha512"] = sha512(archive)
+            try:
+                mcp.tool_workload_fetch("demo")
+                raise AssertionError(f"{archive.name} must be refused")
+            except mcp.ToolError as error:
+                assert words in str(error), error
+            assert not any(p.name.startswith("demo-") for p in mcp.CACHE.iterdir()), list(mcp.CACHE.iterdir())
+        assert not (tmp_path / "escape").exists()
+        served["https://example.invalid/g.zip"] = good
+        mcp.WORKLOADS = {"demo": entry}
+        assert mcp.tool_workload_fetch("demo")["bytes"] == entry["bytes"] + good.stat().st_size
+        assert mcp.tool_workload_list()["workloads"][0]["bytes"] == entry["bytes"] + good.stat().st_size
+        program, wine, args, env = mcp.workload_command("demo", "mtl", None, None, "")
+        assert program.is_file() and os.access(program, os.X_OK), "the zip's file mode must survive"
+        assert mcp.split_args(args) == ["--path", f"{program.parents[4]}/project"], (args, program)
+        mcp.CACHE = tmp_path / "a cache with spaces"
+        assert mcp.tool_workload_fetch("demo")["downloaded"]
+        spaced = mcp.split_args(mcp.workload_command("demo", "mtl", None, None, "")[2])
+        assert len(spaced) == 2 and "a cache with spaces" in spaced[1], spaced
+    finally:
+        mcp.WORKLOADS, mcp.CACHE, mcp.download = saved
+
+
 def test_example_traits(tmp_path):
     """Every shipped example has a class and the native encoder count measured for it, and workload_list shows them."""
     import metal_trace_mcp as mcp
@@ -2050,7 +2111,7 @@ def test_machine(tmp_path):
 
 
 def main():
-    tests = [test_example_traits, test_memory_trend, test_cold_warm, test_validation, test_counter_windows, test_readme_lists_every_tool, test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    tests = [test_workload_downloads, test_example_traits, test_memory_trend, test_cold_warm, test_validation, test_counter_windows, test_readme_lists_every_tool, test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
     for test in tests:
         with tempfile.TemporaryDirectory() as tmp:
             test(pathlib.Path(tmp).resolve())
