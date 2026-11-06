@@ -3,6 +3,17 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `example_traits` also gives `d3d12_encoders_per_frame`, the median under Wine with Mullion's D3D12 layer: 7 to 23 for most
+  examples (2 to 14 in native Metal), 16 for 22-windows, 38-bloom, 41-tess and 46-fsr, and 312 for 26-occlusion (106 render, 99 compute and 104 blit
+  encoders per frame against 4 in native Metal, at 80 FPS instead of 120). The 21 examples added after the first nine were
+  recorded for 30 s each under Wine D3D12 (116 to 124 FPS except 26-occlusion); the first nine's counts are the earlier
+  measurements. D3D11 has not been run for the new ones. Encoder labels are the generic "Render Command", "Blit Command" and
+  "Compute Command" in both native and Wine runs, with no view names. 30-picking, the read-back example: 4 blit encoders per
+  frame under Wine against 1 native, with the same GPU time (1.49 ms Wine, 1.51 native) and a hitch rate in the range of two
+  native 10 s runs (48.6 a minute under Wine for 30 s; 17 and 42 native): no read-back stall seen.
+
 ## 0.21.0 — 2026-11-05
 
 - `metal_memory_mib.trend_mib_per_min`: the slope of the Metal memory samples of the second half of the recorded time, in MiB

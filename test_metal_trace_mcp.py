@@ -900,7 +900,7 @@ def test_example_traits(tmp_path):
         assert traits["class"] in {"cpu_submit", "textured", "postprocess", "gpu_bandwidth", "compute", "gpu_alu",
                                    "streaming", "indirect", "ui_text", "shadows", "overdraw", "readback", "upscale",
                                    "format_coverage", "geometry", "multi_surface", "occlusion", "offscreen"}, name
-        assert traits["native_encoders_per_frame"] > 0, name
+        assert traits["native_encoders_per_frame"] > 0 and traits["d3d12_encoders_per_frame"] > 0, name
 
 
 def test_cold_warm(tmp_path):
