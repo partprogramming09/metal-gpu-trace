@@ -179,8 +179,9 @@ in native Metal and under the Wine in `METAL_TRACE_WINE`, then runs `perf_diagno
 The second workload, `bgfx-examples` (55 MiB), holds thirty bgfx examples, each a different load (many cubes, textures,
 render-target chains, a G-buffer, compute, reflective shadow maps, post-processing, draws the GPU decides, text and
 interface, shadows, transparency, GPU read-back, virtual textures, upscaling, texture formats, occlusion queries, tessellation,
-multiple windows, off-screen rendering; the last twenty-one only measured
-in native Metal, and 40-svt writes a 370 MB tile cache to `temp/` in the workload's folder on its first run):
+multiple windows, off-screen rendering; the last twenty-one measured in
+native Metal and Wine D3D12 only, `example_traits` in `workload_list` gives each one's class and encoders per frame in both,
+and 40-svt writes a 370 MB tile cache to `temp/` in the workload's folder on its first run):
 `perf_record(workload="bgfx-examples", api="d3d12", example="21-deferred")`. Two macOS levers change the Mac under a
 recording: `memory_free_pct` (20 to 60) holds the whole Mac at that percentage of RAM free (`memory_pressure`), and
 `background` runs the program under `taskpolicy -b`, a hard throttle. A small GPU-bound program does not feel the first
