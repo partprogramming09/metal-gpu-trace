@@ -16,7 +16,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   the scripts are `src/metal_gpu_trace/perf_record.sh` and its neighbours, the self-check is `python3 -I tests/run.py`,
   and `python3 -I src/metal_gpu_trace/metal_trace_mcp.py` starts the server. The installed package and `uvx metal-gpu-trace` are unchanged.
   The CI gate example in the README now passes the seconds `perf_record.sh` requires.
-  The Python 3.9 CI jobs run on ubuntu-24.04: ubuntu-latest moved to 26.04, which has no Python 3.9.
+  The Python 3.9 CI and publish jobs run on ubuntu-24.04: ubuntu-latest moved to 26.04, which has no Python 3.9.
   `windows/winbridge-run-tests.ps1` now runs `tests\test_perf_record_windows.py`: register its new SHA-256 again.
 
 ## 0.22.0 — 2026-11-05

@@ -14,6 +14,7 @@ case $version in
   "metal-gpu-trace "*) ;;
   *) echo "smoke: unexpected --version output: $version" >&2; exit 1 ;;
 esac
+[ "$("$work/venv/bin/python" -m metal_gpu_trace --version)" = "$version" ] || { echo "smoke: python -m metal_gpu_trace failed" >&2; exit 1; }
 reply=$(cd "$work" && printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' \
   | METAL_TRACE_OUT="$work/out" METAL_TRACE_LOG=off "$work/venv/bin/metal-gpu-trace")
