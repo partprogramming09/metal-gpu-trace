@@ -29,11 +29,11 @@ import zipfile
 
 __version__ = "0.22.0"
 TOOLS_DIR = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(TOOLS_DIR))
-import gputrace_read  # noqa: E402
-import perf_report  # noqa: E402
+if __package__ in (None, ""):  # run by path: make the package importable
+    sys.path.insert(0, str(TOOLS_DIR.parent))
+from metal_gpu_trace import gputrace_read, perf_report  # noqa: E402
 if sys.platform == "win32":
-    import perf_record_windows  # noqa: E402
+    from metal_gpu_trace import perf_record_windows  # noqa: E402
 
 OUT = pathlib.Path(os.environ.get("METAL_TRACE_OUT", "perf-runs")).resolve()
 READ = [OUT] + [pathlib.Path(p).resolve() for p in os.environ.get("METAL_TRACE_READ", "").split(os.pathsep) if p]

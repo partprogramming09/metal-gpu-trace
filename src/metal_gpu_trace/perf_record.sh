@@ -24,8 +24,8 @@ if [[ $wine == attach ]]; then
   [[ -n $pid ]] && kill -0 $pid 2>/dev/null || { echo "no running process matches $1" >&2; exit 2; }
 fi
 name=${label}_$(date +%Y%m%d-%H%M%S)
-# default: logs/perf beside the script's directory when it exists, else ./perf-runs
-out=${PERF_OUT:-${here:h}/logs/perf}
+# default: logs/perf beside the clone (the script is in <clone>/src/metal_gpu_trace) when it exists, else ./perf-runs
+out=${PERF_OUT:-${here:h:h:h}/logs/perf}
 [[ -n ${PERF_OUT:-} || -d $out ]] || out=$PWD/perf-runs
 mkdir -p $out
 tmp=${TMPDIR:-/tmp}

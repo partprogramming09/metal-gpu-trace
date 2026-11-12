@@ -13,11 +13,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.9"
-      - run: python -I test_metal_trace_mcp.py
+      - run: python -I tests/run.py
       # the tag, the code and server.json must name the same version
       - run: |
           tag=${GITHUB_REF_NAME#v}
-          code=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' metal_trace_mcp.py)
+          code=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/metal_gpu_trace/metal_trace_mcp.py)
           python -I -c "import json, sys; s = json.load(open('server.json')); sys.exit(0 if s['version'] == s['packages'][0]['version'] == '$tag' == '$code' else 'tag $tag, code $code and server.json differ')"
 
   # the GitHub release goes out even when PyPI is not set up yet

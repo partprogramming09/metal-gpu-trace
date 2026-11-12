@@ -12,18 +12,18 @@ Python 3.9+ standard library, `zsh`, and Xcode (for `xctrace`). MIT license. [Es
 
 | File | What it does |
 | --- | --- |
-| `perf_record.sh` | Records a program for N seconds with Metal System Trace and writes `<label>_<date>.json` (GPU ms per frame, frame intervals, FPS, Metal and resident memory) plus per-frame and memory CSVs. Deletes the `.trace` afterwards unless `KEEP_TRACE=1`. |
-| `perf_report.py` | Summarizes an existing `.trace` the same way. |
-| `gputrace_read.py` | Reads a Metal `.gputrace` capture without Xcode: command buffers, encoders, draws, debug groups. Call names marked `probable` are not confirmed. |
-| `data/apple-gpu-families.json` | Apple7 to Apple10: chips, what each family adds, limits that differ, with Apple's sources. |
-| `metal_trace_mcp.py` | An MCP server over all of the above. |
-| `test_metal_trace_mcp.py` | Self-check without Instruments: `python3 -I test_metal_trace_mcp.py` prints `ok`; `pytest` runs the same tests. |
+| `src/metal_gpu_trace/perf_record.sh` | Records a program for N seconds with Metal System Trace and writes `<label>_<date>.json` (GPU ms per frame, frame intervals, FPS, Metal and resident memory) plus per-frame and memory CSVs. Deletes the `.trace` afterwards unless `KEEP_TRACE=1`. |
+| `src/metal_gpu_trace/perf_report.py` | Summarizes an existing `.trace` the same way. |
+| `src/metal_gpu_trace/gputrace_read.py` | Reads a Metal `.gputrace` capture without Xcode: command buffers, encoders, draws, debug groups. Call names marked `probable` are not confirmed. |
+| `src/metal_gpu_trace/data/apple-gpu-families.json` | Apple7 to Apple10: chips, what each family adds, limits that differ, with Apple's sources. |
+| `src/metal_gpu_trace/metal_trace_mcp.py` | An MCP server over all of the above. |
+| `tests/` | Self-check without Instruments: `python3 -I tests/run.py` prints `ok`; `pytest tests` runs the same tests. |
 
 ## Recording
 
 ```sh
-PERF_OUT=~/perf-runs zsh perf_record.sh game-d3d12 30 /path/to/wine ~/.wine /path/to/game game.exe
-PERF_OUT=~/perf-runs zsh perf_record.sh app-metal 30 native - /path/to/app ./app
+PERF_OUT=~/perf-runs zsh src/metal_gpu_trace/perf_record.sh game-d3d12 30 /path/to/wine ~/.wine /path/to/game game.exe
+PERF_OUT=~/perf-runs zsh src/metal_gpu_trace/perf_record.sh app-metal 30 native - /path/to/app ./app
 ```
 
 Arguments: label, seconds, a Wine directory holding `bin/wine` (or `native`), the Wine prefix, the working directory,
@@ -83,7 +83,7 @@ to add it to the current project only.
 
 ### Windows
 
-On Windows the server records native programs (`perf_record_windows.py`); no Wine and no Metal. `METAL_TRACE_WINE` is not needed: `perf_record` and `perf_attach` use `native`. `METAL_TRACE_READ` is separated by `;`.
+On Windows the server records native programs (`src/metal_gpu_trace/perf_record_windows.py`); no Wine and no Metal. `METAL_TRACE_WINE` is not needed: `perf_record` and `perf_attach` use `native`. `METAL_TRACE_READ` is separated by `;`.
 
 Frames come from Intel's [PresentMon](https://github.com/GameTechDev/PresentMon) console application (MIT): one row per `Present()` of the process, with `MsBetweenPresents` and the GPU time `MsGPUTime`. Download `PresentMon-<version>-x64.exe` from its releases, check its SHA-256 against the one GitHub shows, and call the `presentmon_install` tool, or put it in `%LOCALAPPDATA%\metal-gpu-trace` or on `PATH`, or point `PRESENTMON_EXE` at it. The user must be an administrator or in the "Performance Log Users" group. Without PresentMon the summary falls back to DWM composition intervals (`gpu.source` is `dwm-composition`): they cover the whole desktop, miss games in exclusive full screen, and carry no GPU time. With neither a frame log, PresentMon nor DWM samples, a recording fails; it never invents frames.
 
@@ -98,10 +98,10 @@ claude mcp list
 To run from a clone instead of PyPI (needs Python 3.9 or newer):
 
 ```powershell
-claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=%USERPROFILE%\perf-runs -- python C:\path\to\metal-gpu-trace\metal_trace_mcp.py
+claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=%USERPROFILE%\perf-runs -- python C:\path\to\metal-gpu-trace\src\metal_gpu_trace\metal_trace_mcp.py
 ```
 
-In JSON clients use `"command": "uvx"` (or the full path `where uvx` prints) and Windows paths with doubled backslashes. Claude Desktop reads `%APPDATA%\Claude\claude_desktop_config.json`. Run the Windows tests with `python -m pytest test_perf_record_windows.py`.
+In JSON clients use `"command": "uvx"` (or the full path `where uvx` prints) and Windows paths with doubled backslashes. Claude Desktop reads `%APPDATA%\Claude\claude_desktop_config.json`. Run the Windows tests with `python -m pytest tests/test_perf_record_windows.py`.
 
 ### Claude Desktop, Cursor and other JSON clients
 
@@ -252,7 +252,7 @@ remote access: reach another Mac through an SSH tunnel (`ssh -L 8765:127.0.0.1:8
 ## Windows tests on a real machine
 
 GitHub's `windows-latest` has no GPU and no desktop session, so PresentMon and DWM recordings are only tested on a real
-Windows machine. `windows/winbridge-run-tests.ps1` updates a checkout there and runs `test_perf_record_windows.py`; it is
+Windows machine. `windows/winbridge-run-tests.ps1` updates a checkout there and runs `tests/test_perf_record_windows.py`; it is
 written as a [WinBridge](https://github.com/partprogramming09/winbridge) task (fixed name, script pinned by SHA-256, no
 arguments). To register it, copy it to the laptop, set `$repo` to the checkout's path, take its hash there with
 `Get-FileHash <file> -Algorithm SHA256` (Git may have changed the line endings, so the hash of the copy in this repo is
@@ -270,7 +270,7 @@ jobs:
   perf:
     runs-on: [self-hosted, macOS, ARM64]
     steps:
-      - run: zsh perf_record.sh pr native - . ./app
+      - run: zsh src/metal_gpu_trace/perf_record.sh pr 30 native - . ./app
       - run: metal-gpu-trace check "$(ls -t ~/perf-runs/pr_*.json | head -1 | xargs basename -s .json)" main-ref
 ```
 

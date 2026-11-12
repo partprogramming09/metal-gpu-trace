@@ -5,16 +5,12 @@ import os
 import pathlib
 import subprocess
 import sys
-import tempfile
 import time
-
-TOOLS = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(TOOLS))
 
 import pytest
 
-import perf_record_windows as prw
-import metal_trace_mcp as mcp
+from metal_gpu_trace import perf_record_windows as prw
+from metal_gpu_trace import metal_trace_mcp as mcp
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="needs Windows (ctypes.windll, DWM)")
 
@@ -715,36 +711,3 @@ def test_dwm_combat_stutter_simulation(tmp_path):
     assert pacing["fps_01pct_low"] <= pacing["fps_1pct_low"]
     assert pacing["stutter_rate_pct"] > 5.0
     assert pacing["frame_jitter_ms"] > 3.0
-
-
-def main():
-    tests = [
-        ("attach nonexistent", test_attach_nonexistent_process),
-        ("attach existing", test_attach_existing_process),
-        ("lock handling", test_lock_handling),
-        ("recording and schema", test_recording_and_schema_verification),
-        ("drawstress workload", test_drawstress_workload_parsing),
-        ("timeout and cleanup", test_timeout_and_cleanup),
-        ("vegaflow telemetry bridge", test_vegaflow_telemetry_bridge),
-        ("precision telemetry calculation", test_precision_telemetry_calculation),
-        ("diagnose bottlenecks and recommendations", test_diagnose_bottlenecks_and_recommendations),
-        ("compare summaries enriched metrics", test_compare_summaries_enriched_metrics),
-        ("dwm timing structures and query", test_dwm_timing_structures_and_query),
-        ("attach zenless zone zero real dwm", test_attach_zenless_zone_zero_real_dwm),
-        ("dwm combat stutter simulation", test_dwm_combat_stutter_simulation),
-    ]
-
-
-    print(f"Running {len(tests)} test suites...")
-    for name, test_fn in tests:
-        print(f"  -> Testing: {name} ...", end=" ", flush=True)
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = pathlib.Path(tmp).resolve()
-            test_fn(tmp_path)
-        print("PASS")
-
-    print("\nAll tests passed successfully!")
-
-
-if __name__ == "__main__":
-    main()

@@ -16,10 +16,13 @@ import re
 import shlex
 import statistics
 import subprocess
+import sys
 import threading
 import time
 
-import perf_report
+if __package__ in (None, ""):  # run by path: make the package importable
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+from metal_gpu_trace import perf_report  # noqa: E402
 
 
 SHORT_US = (10, 25, 50, 100, 250, 500, 1000)
@@ -225,6 +228,17 @@ def _enrich_device_with_vegaflow(device, vf_data):
             device["gpu_architecture"] = bus_tag
 
 
+def daemon_candidates(daemon_path=None):
+    """Returns where vegaflow_daemon.exe may be, in order: the given path, build/ under the working directory and its
+    parent, then build/ in the clone root and its parent (the package lives in <clone>/src/metal_gpu_trace)."""
+    exe = "vegaflow_daemon.exe"
+    candidates = [pathlib.Path(daemon_path)] if daemon_path is not None else []
+    candidates += [pathlib.Path("..") / "build" / exe, pathlib.Path("build") / exe]
+    clone = pathlib.Path(__file__).resolve().parents[2]
+    candidates += [clone.parent / "build" / exe, clone / "build" / exe]
+    return candidates
+
+
 def collect_device_info(daemon_path=None):
     """Collects system and hardware device info, optionally enriched via VegaFlow telemetry.
 
@@ -239,17 +253,7 @@ def collect_device_info(daemon_path=None):
         "os-version": platform.version(),
     }
 
-    candidates = []
-    if daemon_path is not None:
-        candidates.append(pathlib.Path(daemon_path))
-    candidates.append(pathlib.Path("../build/vegaflow_daemon.exe"))
-    candidates.append(pathlib.Path("build/vegaflow_daemon.exe"))
-    try:
-        script_dir = pathlib.Path(__file__).resolve().parent
-        candidates.append(script_dir.parent / "build" / "vegaflow_daemon.exe")
-        candidates.append(script_dir / "build" / "vegaflow_daemon.exe")
-    except Exception:
-        pass
+    candidates = daemon_candidates(daemon_path)
 
     daemon_exe = None
     for cand in candidates:

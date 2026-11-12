@@ -9,18 +9,18 @@ para interpretar las cifras. Biblioteca estándar de Python 3.9+, `zsh` y Xcode 
 
 | Archivo | Qué hace |
 | --- | --- |
-| `perf_record.sh` | Graba un programa N segundos con Metal System Trace y escribe `<etiqueta>_<fecha>.json` (ms de GPU por frame, intervalos entre frames, FPS, memoria de Metal y residente) y CSV por frame y de memoria. Borra el `.trace` al terminar salvo con `KEEP_TRACE=1`. |
-| `perf_report.py` | Resume igual un `.trace` ya grabado. |
-| `gputrace_read.py` | Lee una captura `.gputrace` de Metal sin Xcode: command buffers, encoders, dibujos, grupos de depuración. Los nombres marcados `probable` no están confirmados. |
-| `data/apple-gpu-families.json` | Apple7 a Apple10: chips, qué añade cada familia y los límites que cambian, con las fuentes de Apple. |
-| `metal_trace_mcp.py` | Un servidor MCP sobre todo lo anterior. |
-| `test_metal_trace_mcp.py` | Comprobación sin Instruments: `python3 -I test_metal_trace_mcp.py` imprime `ok`; `pytest` corre las mismas pruebas. |
+| `src/metal_gpu_trace/perf_record.sh` | Graba un programa N segundos con Metal System Trace y escribe `<etiqueta>_<fecha>.json` (ms de GPU por frame, intervalos entre frames, FPS, memoria de Metal y residente) y CSV por frame y de memoria. Borra el `.trace` al terminar salvo con `KEEP_TRACE=1`. |
+| `src/metal_gpu_trace/perf_report.py` | Resume igual un `.trace` ya grabado. |
+| `src/metal_gpu_trace/gputrace_read.py` | Lee una captura `.gputrace` de Metal sin Xcode: command buffers, encoders, dibujos, grupos de depuración. Los nombres marcados `probable` no están confirmados. |
+| `src/metal_gpu_trace/data/apple-gpu-families.json` | Apple7 a Apple10: chips, qué añade cada familia y los límites que cambian, con las fuentes de Apple. |
+| `src/metal_gpu_trace/metal_trace_mcp.py` | Un servidor MCP sobre todo lo anterior. |
+| `tests/` | Comprobación sin Instruments: `python3 -I tests/run.py` imprime `ok`; `pytest tests` corre las mismas pruebas. |
 
 ## Grabar
 
 ```sh
-PERF_OUT=~/perf-runs zsh perf_record.sh juego-d3d12 30 /ruta/a/wine ~/.wine /ruta/al/juego juego.exe
-PERF_OUT=~/perf-runs zsh perf_record.sh app-metal 30 native - /ruta/a/app ./app
+PERF_OUT=~/perf-runs zsh src/metal_gpu_trace/perf_record.sh juego-d3d12 30 /ruta/a/wine ~/.wine /ruta/al/juego juego.exe
+PERF_OUT=~/perf-runs zsh src/metal_gpu_trace/perf_record.sh app-metal 30 native - /ruta/a/app ./app
 ```
 
 Argumentos: etiqueta, segundos, un directorio de Wine con `bin/wine` (o `native`), el prefijo de Wine, el directorio

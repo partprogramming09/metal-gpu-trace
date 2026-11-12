@@ -11,7 +11,7 @@ These files record what the project does today, so a refactor can prove it chang
 
 A test fails when the output differs. When the difference is intended:
 
-1. Re-record: `METAL_TRACE_GOLDEN=write python3 -I test_metal_trace_mcp.py`.
+1. Re-record: `METAL_TRACE_GOLDEN=write python3 -I tests/run.py`.
 2. Read the diff of the JSON file and check that only the intended values moved.
 3. Name the change in `CHANGELOG.md`.
 
