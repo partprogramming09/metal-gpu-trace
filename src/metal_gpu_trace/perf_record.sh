@@ -159,6 +159,4 @@ python3 -I $here/perf_report.py $out/$name.trace $report
 rm -f $out/$name.validation.log
 # the .trace goes once its numbers are in the .json; KEEP_TRACE=1 keeps it for trace_tables, trace_query or Instruments
 [[ ${KEEP_TRACE:-0} == 1 ]] || rm -rf $out/$name.trace
-if [[ ${KEEP_RUNS:-} == <1-> ]]; then
-  for old in $out/*.json(N.om[$((KEEP_RUNS + 1)),-1]); do rm -rf ${old:r}.*(N); done
-fi
+if [[ ${KEEP_RUNS:-} == <1-> ]]; then zsh $here/prune_runs.sh $out $KEEP_RUNS; fi

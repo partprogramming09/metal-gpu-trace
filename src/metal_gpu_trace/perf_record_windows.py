@@ -505,7 +505,7 @@ def clean_runs(out_dir, keep_runs):
     if keep_runs is None or keep_runs < 1:
         return
     json_files = sorted(
-        [p for p in out_dir.glob("*.json") if p.name != "baselines.json"],
+        [p for p in out_dir.glob("*.json") if p.name not in ("baselines.json", "panel.json")],
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )

@@ -722,3 +722,36 @@ def test_takeover_rechecks_the_owner(tmp_path):
     assert proc.returncode == 3 and "another recording is running" in proc.stderr, proc
     assert (lock / "pid").read_text() == "4242\n" and not (tmp_path / "xctrace-ran").exists()
     assert not (out / ".recording.takeover").exists(), "the takeover lock is released"
+
+
+def prune_folder(tmp_path):
+    """Writes two recordings plus baselines.json and panel.json, the last two the oldest, and returns the folder."""
+    out = tmp_path / "runs"
+    out.mkdir()
+    for age, name in enumerate(("baselines.json", "panel.json", "old.json", "old.frames.csv", "new.json")):
+        (out / name).write_text("{}")
+        os.utime(out / name, (1_000_000 + age * 100, 1_000_000 + age * 100))
+    return out
+
+
+@macos_only
+def test_prune_keeps_baselines_and_panel_layout(tmp_path):
+    out = prune_folder(tmp_path)
+    subprocess.run(["zsh", str(PKG / "prune_runs.sh"), str(out), "1"], check=True)
+    assert sorted(p.name for p in out.iterdir()) == ["baselines.json", "new.json", "panel.json"]
+
+
+def test_windows_prune_keeps_baselines_and_panel_layout(tmp_path):
+    from metal_gpu_trace import perf_record_windows
+    out = prune_folder(tmp_path)
+    perf_record_windows.clean_runs(out, 1)
+    assert sorted(p.name for p in out.iterdir()) == ["baselines.json", "new.json", "panel.json"]
+
+
+@macos_only
+def test_prune_refuses_a_keep_that_is_not_a_whole_number(tmp_path):
+    out = prune_folder(tmp_path)
+    for keep in ("0", "abc", ""):
+        proc = subprocess.run(["zsh", str(PKG / "prune_runs.sh"), str(out), keep], capture_output=True, text=True)
+        assert proc.returncode == 2 and "keep" in proc.stderr, keep
+    assert len(list(out.iterdir())) == 5

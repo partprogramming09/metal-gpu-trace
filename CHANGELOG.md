@@ -3,6 +3,11 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `KEEP_RUNS` no longer removes `baselines.json` (on macOS) or `panel.json` (on macOS and Windows) when it prunes old
+  recordings: both are `.json` files but not recordings. The macOS pruning lives in `prune_runs.sh`.
+
 ## 0.23.0 — 2026-11-11
 
 - Tool descriptions in `tools/list` are the same on every Python: before 3.13 they kept each docstring's four-space
