@@ -3,11 +3,16 @@ name: test
 on: [push, pull_request]
 
 jobs:
+  # ubuntu-latest (26.04) has no Python 3.9 for setup-python: the 3.9 jobs run on 24.04
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python: ["3.9", "3.13"]
+        include:
+          - python: "3.9"
+            os: ubuntu-24.04
+          - python: "3.13"
+            os: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get install -y zsh
@@ -18,7 +23,7 @@ jobs:
 
   # the installed package must start: catches a file the wheel leaves out, which tests from the checkout cannot see
   wheel:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

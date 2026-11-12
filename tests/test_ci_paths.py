@@ -30,3 +30,14 @@ def test_ci_paths():
     for f in ("tests/test_perf_record_windows.py", "tests/conftest.py"):  # the Windows job runs these
         assert patterns["windows"].search(f), f
     assert not any(p.search("README.md") for p in patterns.values())
+
+
+def test_python39_runner():
+    """Every CI job that installs Python 3.9 runs on ubuntu-24.04: ubuntu-latest (26.04) has no 3.9 build for
+    actions/setup-python, so those jobs failed before any test ran (2026-11-11)."""
+    text = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+    jobs = re.split(r"\n  (?=[a-z]\w*:\n)", text.split("\njobs:\n", 1)[1])
+    with39 = [job for job in jobs if '"3.9"' in job]
+    assert with39, jobs
+    for job in with39:
+        assert "ubuntu-24.04" in job, job
