@@ -10,7 +10,7 @@ import json
 import pathlib
 import sys
 
-__version__ = "0.22.0"
+__version__ = "0.23.0"
 if __package__ in (None, ""):  # run by path: make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from metal_gpu_trace import analysis, http_transport, paths, protocol, stdio, worker  # noqa: E402
