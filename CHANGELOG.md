@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.24.0 — 2026-11-12
 
 - `KEEP_RUNS` no longer removes `baselines.json` (on macOS) or `panel.json` (on macOS and Windows) when it prunes old
   recordings: both are `.json` files but not recordings. The macOS pruning lives in `prune_runs.sh`.
