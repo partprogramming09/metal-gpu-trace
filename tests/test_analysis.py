@@ -427,6 +427,53 @@ def test_panel_says_what_each_run_has(tmp_path):
     assert {"id": "cpu", "reason": "not_in_recording"} in w["missing"]
     assert {x["reason"] for r in (m, w) for x in r["missing"]} <= set(panel.REASONS)
 
+def _warn_summary(fps, gpu_ms, frames, duration, layer):
+    return {"gpu": {"frames": frames, "fps_estimate": fps, "frame_gpu_ms": {"mean": gpu_ms, "p50": gpu_ms, "p95": gpu_ms},
+                    "frame_interval_ms": {"p95": 20.0}},
+            "encoders": {"per_frame": {"p50": 7}, "command_buffers_per_frame": {"p50": 5}, "short_share": {"25": 0.5}, "by_label": []},
+            "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 4}}, "duration_s": duration, "layer": layer}
+
+WINE = {"fingerprint": "dxmt", "wine": "wine-9", "wine_version": "9.0"}
+
+def test_panel_profile_and_primary(tmp_path):
+    """The payload names the project and its profile, and the main metric follows the profile."""
+    from metal_gpu_trace import config, panel
+
+    (tmp_path / "a.json").write_text(json.dumps(_warn_summary(60.0, 4.0, 400, 60.0, {"none": "native"})))
+    saved, saved_project, config.OUT = config.OUT, config.PROJECT, tmp_path
+    try:
+        config.PROJECT = None
+        got = panel.panel_data(["a"])
+        assert got["project"] == {"name": None, "profile": "generic"} and got["primary"] == "fps", got["project"]
+        assert got["rules"] == {"min_frames": 100, "min_seconds_wine": 30, "noise_pct": 3}
+        config.PROJECT = {"name": "mullion", "profile": "translation-layer", "baseline": None, "format": "metal-gpu-trace", "runs": tmp_path}
+        got = panel.panel_data(["a"])
+        assert got["project"] == {"name": "mullion", "profile": "translation-layer"} and got["primary"] == "gpu_ms_mean", got["project"]
+        config.PROJECT["profile"] = "native"
+        assert panel.panel_data(["a"])["primary"] == "fps"
+        assert str(tmp_path) not in json.dumps(got), "no path in the payload"
+    finally:
+        config.OUT, config.PROJECT = saved, saved_project
+
+def test_panel_warnings(tmp_path):
+    """The warnings the panel shows are decided in Python: per run, per pair and for the skip, each once."""
+    from metal_gpu_trace import config, panel
+
+    for name, s in (("a", _warn_summary(60.0, 4.0, 400, 22.0, WINE)), ("b", _warn_summary(50.0, 3.0, 50, 60.0, {"none": "native"})),
+                    ("c", _warn_summary(60.0, 4.0, 400, 60.0, {"none": "native"}))):
+        (tmp_path / f"{name}.json").write_text(json.dumps(s))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        got = panel.panel_data(["a", "b"])["warnings"]
+        for w in ({"id": "short_wine", "run": "a"}, {"id": "few_frames", "run": "b"}, {"id": "single_run_each", "run": None},
+                  {"id": "layers_differ", "run": None}, {"id": "gpu_not_limit", "run": None}, {"id": "summary_only", "run": "a"}):
+            assert w in got, (w, got)
+        assert not any(w["id"] in ("skip_applied", "windows_vs_metal") for w in got) and len(got) == len({(w["id"], w["run"]) for w in got})
+        assert {"id": "few_frames", "run": "a"} not in got and {"id": "short_wine", "run": "b"} not in got
+        assert panel.panel_data(["c"])["warnings"] == [{"id": "summary_only", "run": "c"}]
+    finally:
+        config.OUT = saved
+
 def test_windows_against_metal(tmp_path):
     """A Windows run against a Metal run says which numbers do not compare and skips the encoders, in perf_compare, its
     Markdown and the panel; two runs from one side compare as before."""

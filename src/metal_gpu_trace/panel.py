@@ -63,6 +63,44 @@ def panel_run(run, skip_s=0):
             "encoders": encoders}
 
 
+RULES = {"min_frames": 100, "min_seconds_wine": 30, "noise_pct": 3}
+LOWER_IS_BETTER = {"fps": False, "gpu_ms_mean": True}
+
+
+def direction(metric, change):
+    """Returns better, worse or same for a comparison entry of `metric` (the panel's own rule: under noise_pct is
+    same), or None when it cannot be told."""
+    if not change or change.get("change") is None or metric not in LOWER_IS_BETTER:
+        return None
+    pct = change.get("change_pct")
+    if change["change"] == 0 or (pct is not None and abs(pct) < RULES["noise_pct"]):
+        return "same"
+    return "better" if (change["change"] < 0) == LOWER_IS_BETTER[metric] else "worse"
+
+
+def warnings_for(runs, summaries, data, skip, compare, not_comparable):
+    """Returns the confidence warnings as [{"id", "run"}], each once: skip_applied, few_frames, short_wine and
+    summary_only per run, and, for two runs, single_run_each, layers_differ, windows_vs_metal and gpu_not_limit."""
+    out = [{"id": "skip_applied", "run": None}] if skip else []
+    for name, s, d in zip(runs, summaries, data):
+        if ((s.get("gpu") or {}).get("frames") or 0) < RULES["min_frames"]:
+            out.append({"id": "few_frames", "run": name})
+        duration = s.get("duration_s")
+        if "wine" in (s.get("layer") or {}) and duration is not None and duration < RULES["min_seconds_wine"]:
+            out.append({"id": "short_wine", "run": name})
+        if not d["has"]["frames"]:
+            out.append({"id": "summary_only", "run": name})
+    if len(runs) == 2:
+        out.append({"id": "single_run_each", "run": None})
+        if len({recording.layer_label(s.get("layer")) or "native" for s in summaries}) == 2:
+            out.append({"id": "layers_differ", "run": None})
+        if not_comparable:
+            out.append({"id": "windows_vs_metal", "run": None})
+        if compare and direction("fps", compare.get("fps")) == "worse" and direction("gpu_ms_mean", compare.get("gpu_ms_mean")) == "better":
+            out.append({"id": "gpu_not_limit", "run": None})
+    return out
+
+
 TAB_IDS = ("summary", "ab", "frames", "encoders", "counters", "memory", "data")
 
 
@@ -91,17 +129,21 @@ def panel_data(runs, preset=None, skip_s=0):
         raise paths.ToolError("runs holds one or two run names from perf_runs; the compare preset needs two")
     skip = paths.check_skip(skip_s)
     data = [panel_run(r, skip) for r in runs]
+    summaries = [analysis.steady_summary(r, skip) for r in runs]
     compare, not_comparable, labels = None, [], []
     if len(runs) == 2:
         try:
-            sa, sb = (analysis.steady_summary(r, skip) for r in runs)
-            result = analysis.compare_summaries(sa, sb, *runs)
+            result = analysis.compare_summaries(summaries[0], summaries[1], *runs)
             compare, not_comparable = result["metrics"], (result.get("measure") or {}).get("not_comparable", [])
             labels = result.get("labels") or []
         except (KeyError, TypeError):  # a summary from before the numbers the comparison reads
             pass
+    project = config.PROJECT or {}
+    profile = project.get("profile", "generic")
     return {"preset": preset, "runs": data, "compare": compare, "not_comparable": not_comparable, "labels": labels[:10],
-            "skip_s": skip, "layout": read_layout()}
+            "skip_s": skip, "layout": read_layout(), "project": {"name": project.get("name"), "profile": profile},
+            "primary": "gpu_ms_mean" if profile == "translation-layer" else "fps", "rules": dict(RULES),
+            "warnings": warnings_for(runs, summaries, data, skip, compare, not_comparable)}
 
 
 def tool_perf_panel(name, runs, preset="fps", skip_s=0, layout=None):
