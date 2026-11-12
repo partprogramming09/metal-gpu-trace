@@ -29,7 +29,7 @@ def test_memory_param(tmp_path):
 def test_disk_guard(tmp_path):
     """perf_record.sh refuses to start, before locking or recording, when the disk lacks the space Instruments needs."""
     script = PKG / "perf_record.sh"
-    env = {**os.environ, "PERF_OUT": str(tmp_path), "PERF_MIN_FREE_GB": "99999999"}
+    env = {**os.environ, "PERF_OUT": str(tmp_path), "PERF_LOCK": str(tmp_path / ".recording"), "PERF_MIN_FREE_GB": "99999999"}
     proc = subprocess.run(["zsh", str(script), "g", "30", "native", "-", "-", sys.executable], env=env,
                           capture_output=True, text=True, timeout=60)
     assert proc.returncode == 4 and "not enough free disk" in proc.stderr and "99999999 GB needed" in proc.stderr, proc
@@ -354,7 +354,8 @@ def test_example_traits(tmp_path):
 
 @macos_only
 def test_overrun(tmp_path):
-    """A recording that overruns its deadline is stopped and leaves no files and no lock behind, and the deadline
+    """A recording that overruns its deadline is stopped, leaves no files and no lock behind and names the likely
+    cause (a hidden window: the program renders unpaced and Instruments takes minutes to close the data), and the deadline
     covers a 30 s Wine D3D12 recording (more than 407 s in all on an M1 Pro) and reading back a 60 s one."""
     from metal_gpu_trace import config, paths, recording
     assert recording.deadline(30) > 407 and recording.deadline(60) > 87 * 6
@@ -375,20 +376,21 @@ def test_overrun(tmp_path):
         recording.tool_perf_record("hang", str(program), seconds=1, wine="native")
         raise AssertionError("an overrunning recording must fail")
     except paths.ToolError as error:
-        assert "stopped" in str(error), error
+        assert "stopped" in str(error) and "window visible" in str(error), error
     finally:
         config.OUT, recording.deadline, os.environ["PATH"] = saved
     assert not list(out.iterdir()), list(out.iterdir())
 
 @macos_only
 def test_overrun_removes_lock_with_pid(tmp_path):
-    """The lock of a recording that overruns is removed together with the pid file perf_record.sh wrote in it."""
+    """The server's one lock for every recordings folder (config.LOCK, given to perf_record.sh as PERF_LOCK, its folder
+    created) is taken during a recording, and removed with its pid file when the recording overruns."""
     from metal_gpu_trace import config, paths, recording
     stubs, out, program = hang_stubs(tmp_path)
-    (stubs / "xcrun").write_text("#!/bin/zsh\ntest -s $PERF_OUT/.recording/pid || exit 9\n"
+    (stubs / "xcrun").write_text("#!/bin/zsh\ntest -s $PERF_LOCK/pid || exit 9\n"
                                  "while [[ $1 != --output ]]; do shift; done\nmkdir -p $2\nsleep 60\n")
-    saved = config.OUT, recording.deadline, os.environ["PATH"]
-    config.OUT, recording.deadline = out, lambda seconds: 3
+    saved = config.OUT, recording.deadline, os.environ["PATH"], config.LOCK
+    config.OUT, recording.deadline, config.LOCK = out, lambda seconds: 3, tmp_path / "cache" / "recording.lock"
     os.environ["PATH"] = f"{stubs}:{saved[2]}"
     try:
         recording.tool_perf_record("hang", str(program), seconds=1, wine="native")
@@ -396,8 +398,9 @@ def test_overrun_removes_lock_with_pid(tmp_path):
     except paths.ToolError as error:
         assert "stopped" in str(error), error
     finally:
-        config.OUT, recording.deadline, os.environ["PATH"] = saved
+        config.OUT, recording.deadline, os.environ["PATH"], config.LOCK = saved
     assert not list(out.iterdir()), list(out.iterdir())
+    assert (tmp_path / "cache").is_dir() and not (tmp_path / "cache" / "recording.lock").exists()
 
 @macos_only
 def test_stale_lock_macos(tmp_path):
@@ -412,7 +415,8 @@ def test_stale_lock_macos(tmp_path):
     program.write_text("#!/bin/sh\n")
     for stub in (*stubs.iterdir(), program):
         stub.chmod(0o755)
-    env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", PATH=f"{stubs}:{os.environ['PATH']}")
+    env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_MIN_FREE_GB="0",
+               PATH=f"{stubs}:{os.environ['PATH']}")
 
     def record():
         return subprocess.run(["zsh", str(PKG / "perf_record.sh"), "stale", "1", "native", "-", str(tmp_path), str(program)],
@@ -461,7 +465,8 @@ def test_kill_program_and_watchdog(tmp_path):
     parent = subprocess.Popen(["sleep", "60"])
     (stubs / "pkill").unlink()  # the script needs the real pkill
     # PERF_MIN_FREE_GB=0: the disk check needs 26 GB for 30 s, and a CI runner's free space varies
-    env = dict(os.environ, PERF_OUT=str(out), PERF_PARENT_PID=str(parent.pid), PERF_MIN_FREE_GB="0",
+    env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_PARENT_PID=str(parent.pid),
+               PERF_MIN_FREE_GB="0",
                PATH=f"{stubs}:{os.environ['PATH']}")
     logfile = tmp_path / "script.log"  # a file, not a pipe: the stub's orphaned sleep would hold a pipe open
     script = subprocess.Popen(["zsh", str(PKG / "perf_record.sh"), "orphan", "30", "native", "-", str(tmp_path),
@@ -495,7 +500,8 @@ def test_script_failure_cleanup(tmp_path):
     program.write_text("#!/bin/sh\n")
     program.chmod(0o755)
     text.write_text("x")
-    env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", PATH=f"{stubs}:{os.environ['PATH']}")
+    env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_MIN_FREE_GB="0",
+               PATH=f"{stubs}:{os.environ['PATH']}")
 
     def run(path):
         return subprocess.run(["zsh", str(PKG / "perf_record.sh"), "f", "2", "native", "-", str(tmp_path), str(path)],
@@ -684,9 +690,9 @@ def test_free_lock_only_frees_its_own(tmp_path):
     """A stopped recording frees the .recording lock only when the lock holds its own pid: another recording's lock,
     or one whose owner did not write its pid yet, is left alone."""
     from metal_gpu_trace import config, recording
-    saved, config.OUT = config.OUT, tmp_path
+    saved, config.LOCK = config.LOCK, tmp_path / "recording.lock"
     try:
-        lock = tmp_path / ".recording"
+        lock = tmp_path / "recording.lock"
         lock.mkdir()
         (lock / "pid").write_text("111\n")
         recording.free_lock(222)
@@ -698,7 +704,7 @@ def test_free_lock_only_frees_its_own(tmp_path):
         assert lock.exists(), "a lock without a pid file may belong to a recording that is starting"
         recording.free_lock(111)  # no error when there is nothing to free
     finally:
-        config.OUT = saved
+        config.LOCK = saved
 
 
 @macos_only
@@ -716,9 +722,173 @@ def test_takeover_rechecks_the_owner(tmp_path):
     lock = out / ".recording"
     lock.mkdir()
     (lock / "pid").write_text("4242\n")
-    env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", PATH=f"{stubs}:{os.environ['PATH']}")
+    env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_MIN_FREE_GB="0",
+               PATH=f"{stubs}:{os.environ['PATH']}")
     proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "recheck", "1", "native", "-", str(tmp_path), "/bin/sh"],
                           env=env, capture_output=True, text=True, timeout=60)
     assert proc.returncode == 3 and "another recording is running" in proc.stderr, proc
     assert (lock / "pid").read_text() == "4242\n" and not (tmp_path / "xctrace-ran").exists()
     assert not (out / ".recording.takeover").exists(), "the takeover lock is released"
+
+
+def prune_folder(tmp_path):
+    """Writes two recordings plus baselines.json and panel.json, the last two the oldest, and returns the folder."""
+    out = tmp_path / "runs"
+    out.mkdir()
+    for age, name in enumerate(("baselines.json", "panel.json", "old.json", "old.frames.csv", "new.json")):
+        (out / name).write_text("{}")
+        os.utime(out / name, (1_000_000 + age * 100, 1_000_000 + age * 100))
+    return out
+
+
+@macos_only
+def test_prune_keeps_baselines_and_panel_layout(tmp_path):
+    out = prune_folder(tmp_path)
+    subprocess.run(["zsh", str(PKG / "prune_runs.sh"), str(out), "1"], check=True)
+    assert sorted(p.name for p in out.iterdir()) == ["baselines.json", "new.json", "panel.json"]
+
+
+def test_windows_prune_keeps_baselines_and_panel_layout(tmp_path):
+    from metal_gpu_trace import perf_record_windows
+    out = prune_folder(tmp_path)
+    perf_record_windows.clean_runs(out, 1)
+    assert sorted(p.name for p in out.iterdir()) == ["baselines.json", "new.json", "panel.json"]
+
+
+@macos_only
+def test_prune_refuses_a_keep_that_is_not_a_whole_number(tmp_path):
+    out = prune_folder(tmp_path)
+    for keep in ("0", "abc", ""):
+        proc = subprocess.run(["zsh", str(PKG / "prune_runs.sh"), str(out), keep], capture_output=True, text=True)
+        assert proc.returncode == 2 and "keep" in proc.stderr, keep
+    assert len(list(out.iterdir())) == 5
+
+
+@macos_only
+def test_keep_runs_after_a_recording_keeps_baselines_and_panel_layout(tmp_path):
+    """perf_record.sh prunes through prune_runs.sh once its summary is written: KEEP_RUNS=1 leaves the new recording,
+    baselines.json and panel.json."""
+    out = prune_folder(tmp_path)
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    (stubs / "xcrun").write_text("#!/bin/zsh\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\n")
+    (stubs / "python3").write_text('#!/bin/zsh\nwhile [[ $1 != --label ]]; do shift; done\necho "{}" > $4/$2.json\n')
+    for stub in stubs.iterdir():
+        stub.chmod(0o755)
+    env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", KEEP_RUNS="1",
+               PATH=f"{stubs}:{os.environ['PATH']}")
+    proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "kept", "1", "native", "-", str(tmp_path), "/bin/sh"],
+                          env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc
+    left = {p.name for p in out.iterdir()}
+    assert {"baselines.json", "panel.json"} <= left and not any(n.startswith("old.") for n in left), left
+    assert len([n for n in left if n.startswith("kept_") and n.endswith(".json")]) == 1, left
+
+
+def test_tests_never_take_the_users_recording_lock():
+    from metal_gpu_trace import config
+    assert config.LOCK.parent != config.CACHE and "metal-gpu-trace-tests-" in str(config.LOCK), config.LOCK
+
+
+@macos_only
+def test_script_takes_the_shared_lock_by_default(tmp_path):
+    """Run by hand, without PERF_LOCK, perf_record.sh takes the same lock in the user's cache as the MCP server, so a
+    recording by hand and one by the server exclude each other whatever their folders."""
+    stubs, out, home = tmp_path / "stubs", tmp_path / "runs", tmp_path / "home"
+    stubs.mkdir()
+    lock = home / "Library" / "Caches" / "metal-gpu-trace" / "recording.lock"
+    (stubs / "xcrun").write_text(f"#!/bin/zsh\ntest -s {lock}/pid && touch {tmp_path}/locked\nexit 1\n")
+    (stubs / "xcrun").chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k != "PERF_LOCK"}
+    env.update(PERF_OUT=str(out), PERF_MIN_FREE_GB="0", HOME=str(home), PATH=f"{stubs}:{os.environ['PATH']}")
+    subprocess.run(["zsh", str(PKG / "perf_record.sh"), "byhand", "1", "native", "-", str(tmp_path), "/bin/sh"],
+                   env=env, capture_output=True, text=True, timeout=60)
+    assert (tmp_path / "locked").exists() and not lock.exists() and not (out / ".recording").exists()
+
+
+@macos_only
+def test_recordings_into_two_folders_run_one_at_a_time(tmp_path):
+    from metal_gpu_trace import config, paths, recording
+    stubs, out, program = hang_stubs(tmp_path)
+    lock = tmp_path / "cache" / "recording.lock"
+    lock.mkdir(parents=True)
+    (lock / "pid").write_text(f"{os.getpid()}\n")  # another project's recording, alive
+    saved = config.OUT, config.LOCK, os.environ["PATH"]
+    config.OUT, config.LOCK = out, lock
+    os.environ["PATH"] = f"{stubs}:{saved[2]}"
+    try:
+        recording.tool_perf_record("second", str(program), seconds=1, wine="native")
+        raise AssertionError("a second recording must wait for the first")
+    except paths.ToolError as error:
+        assert "another recording is running" in str(error), error
+    finally:
+        config.OUT, config.LOCK, os.environ["PATH"] = saved
+    assert (lock / "pid").exists() and not list(out.glob("second_*"))
+
+
+def test_lock_path_is_absolute(tmp_path):
+    code = "from metal_gpu_trace import config; print(config.LOCK)"
+    for given in ("rel/recording.lock", "~/x/recording.lock"):
+        env = dict(os.environ, METAL_TRACE_LOCK=given, HOME=str(tmp_path), PYTHONPATH=str(ROOT / "src"))
+        got = subprocess.run([sys.executable, "-c", code], env=env, cwd=tmp_path, capture_output=True, text=True).stdout
+        assert pathlib.Path(got.strip()).is_absolute() and "~" not in got, (given, got)
+
+
+@macos_only
+def test_no_gpu_work_is_an_error(tmp_path):
+    """A program that ends without any GPU work (Wine failing to start it) is an error that says how it ended and
+    after how long, and its empty run is not saved; a run with GPU work is returned as before."""
+    from metal_gpu_trace import config, paths, recording
+    package, out = tmp_path / "package", tmp_path / "runs"
+    package.mkdir()
+    out.mkdir()
+    script = package / "perf_record.sh"  # writes the summary the real script would, from SUMMARY
+    script.write_text('#!/bin/zsh\nprint -r -- "$SUMMARY" > "$PERF_OUT/${1}_1.json"\ntouch "$PERF_OUT/${1}_1.frames.csv"\n')
+    empty = {"process": {"name": "wine", "termination-reason": "exit(1)"}, "duration_s": 2.027,
+             "gpu": {"intervals": 0, "frames": 0}}
+    working = {"process": {"name": "x"}, "duration_s": 20.0, "gpu": {"intervals": 900, "frames": 300}}
+    saved = config.PACKAGE_DIR, config.OUT, os.environ.get("SUMMARY")
+    config.PACKAGE_DIR, config.OUT = package, out
+    try:
+        os.environ["SUMMARY"] = json.dumps(empty)
+        try:
+            recording.record_run("w", 30, "native", "-", str(tmp_path), [str(script)], layer={"none": "x"})
+            raise AssertionError("a run without GPU work must fail")
+        except paths.ToolError as error:
+            assert "exit(1)" in str(error) and "2.0 s" in str(error) and "no GPU work" in str(error), error
+        assert not list(out.iterdir()), f"the empty run was kept: {list(out.iterdir())}"
+        neighbour = out / "w_1_20261112-101010.json"  # another run whose label starts like this one's file name
+        neighbour.write_text("{}")
+        (out / "w_1.trace").mkdir()  # the .trace a KEEP_TRACE=1 recording leaves
+        os.environ["KEEP_TRACE"] = "1"
+        try:
+            recording.record_run("w", 30, "native", "-", str(tmp_path), [str(script)], layer={"none": "x"})
+            raise AssertionError("a run without GPU work must fail")
+        except paths.ToolError as error:
+            assert "w_1.trace is kept" in str(error), error
+        finally:
+            os.environ.pop("KEEP_TRACE")
+        assert sorted(p.name for p in out.iterdir()) == ["w_1.trace", "w_1_20261112-101010.json"], list(out.iterdir())
+        shutil.rmtree(out / "w_1.trace")
+        neighbour.unlink()
+        os.environ["SUMMARY"] = json.dumps(working)
+        got = recording.record_run("ok", 20, "native", "-", str(tmp_path), [str(script)], layer={"none": "x"})
+        assert got["gpu"]["frames"] == 300 and (out / "ok_1.json").exists()
+    finally:
+        config.PACKAGE_DIR, config.OUT = saved[0], saved[1]
+        os.environ.pop("SUMMARY") if saved[2] is None else os.environ.update(SUMMARY=saved[2])
+
+
+def test_crossover_version(tmp_path):
+    """CrossOver's wine --version prints several "Key: Value" lines: the layer keeps its product name and public
+    version on one line; a plain Wine keeps its one line."""
+    from metal_gpu_trace import recording
+    for printed, expected in (("wine-11.0", "wine-11.0"),
+                              ("Product Name: CrossOver\nPublic Version: 26.3.0\nProduct Version: 26.3.0.39832\n"
+                               "Build Tag: cxoffice-26.3.0rc2\nBuild Timestamp: 20260715T103801Z", "CrossOver 26.3.0"),
+                              ("", None)):
+        wine = tmp_path / printed[:4].strip() / "wine-dir"
+        (wine / "bin").mkdir(parents=True, exist_ok=True)
+        (wine / "bin" / "wine").write_text(f"#!/bin/sh\nprintf '%s\\n' '{printed}'\n" if printed else "#!/bin/sh\n")
+        (wine / "bin" / "wine").chmod(0o755)
+        assert recording.layer_of(str(wine), str(tmp_path / "prefix"))["wine_version"] == expected, printed

@@ -3,6 +3,69 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- `KEEP_RUNS` no longer removes `baselines.json` (on macOS) or `panel.json` (on macOS and Windows) when it prunes old
+  recordings: both are `.json` files but not recordings. The macOS pruning lives in `prune_runs.sh`.
+- Recordings take one lock whatever folder they go to (`recording.lock` in the user's cache; `METAL_TRACE_LOCK`
+  moves the server's, `PERF_LOCK` the script's), so recordings into different folders still run one at a time.
+  Before, the lock was `.recording` beside the recordings.
+- Projects: a `metal-gpu-trace.json` in a repository (found from the working directory upwards, or named by
+  `METAL_TRACE_PROJECT`) names the project and the folder its recordings go to and are read from, ahead of
+  `METAL_TRACE_OUT`. The folder must be new, empty or marked as the server's (a plain file, not a folder or a
+  link) by a project of the same name (the mark the server leaves holds the name; an empty mark, written by hand or left
+  by an earlier build, takes the name of the first project that uses the folder), and may not be the project's folder, one above it, the home folder or the disk's root under any spelling
+  (APFS ignores case) or through a broken link, so `KEEP_RUNS` never prunes other files; a wrong file is reported by every tool, naming the field. The new tool `project_info` says which project is
+  active and where its folder comes from, and `perf_runs` names it in `project`.
+- The panel's data now carries every decision, so the page only draws it: `perf_panel` opens a recording that has no
+  `.frames.csv` (its numbers, no curves); each run says which sections it has (`has`) and why the others are missing
+  (`missing`: only in Metal, record with counters, cut by `skip_s`, or not in the recording); the payload names the project, its profile and the main metric (`gpu_ms_mean` for a
+  `translation-layer` project, `fps` otherwise) and lists the warnings (`warnings`: few frames, under 30 s under
+  Wine, a single run each, different layers, Windows against Metal, FPS worse with GPU ms better, summary only,
+  reference cut differently); with a project `baseline` it adds `tests` (`perf_check`'s verdict for each run, or why
+  one cannot be judged) and `changes` (each recent build of the same program against the reference, judged by the
+  same rule, now `analysis.judge`).
+- The panel page is redrawn from that data: the project bar and the reference check come first (the verdict of each run,
+  its place inside the reference's range, a heat map and a trend of the newest builds, and a dumbbell for A against B),
+  then one page with the warnings as tags, a "go to" index, only the sections the recordings have data for, and a tray
+  "Not collected" that says why each missing piece is missing and what to do. A `translation-layer` project leads with GPU ms
+  per frame and says why; the definitions say what a 1% low is here. `tests` is a new section id of `panel.json` (first by
+  default); a `panel.json` without it is still valid and gains it. Each check in `tests` carries the run's own `values`.
+- Files in the runs folder that are cut short or in the wrong form no longer break the panel, `perf_runs` or
+  `perf_history`: a `.frames.csv` or `.metal_memory.csv` leaves out the lines it cannot read (a last line cut short, a
+  value that is not a finite number), a link to nothing, a summary still being written or one of the wrong type is
+  skipped in the listings, and in the panel a summary or `baselines.json` of the wrong form, too deep or not UTF-8 gives
+  an error that names the file and not its path. `perf_compare`, `perf_check`, `perf_gate`, `perf_diagnose` and
+  `perf_baseline` answer a summary or reference whose sections have the wrong type with an error too, not `internal
+  error`. `perf_runs`, `perf_history` and
+  the run names no longer take `panel.json` for a recording, whatever its case on a volume that ignores it.
+- `perf_panel` checks everything before it writes (a call that fails leaves `panel.json` as it was, and a new `layout`
+  replaces a `panel.json` that cannot be read), and turns NaN and infinity into null. `perf_panel`, `perf_baseline` and
+  `perf_export_trace` open the file they write without following a link, and refuse a link or a folder there. A
+  `baselines.json` that is not a JSON object is an error that names it.
+  Its curves now keep at most 5000 points (the step rounds up; before, a recording of fewer than twice the limit kept every point), and with
+  `skip_s` the Metal memory curve starts where the cut does, as the numbers do.
+- The server starts when `METAL_TRACE_OUT` is a link loop (before Python 3.13 that raised while importing): every tool
+  then says the folder cannot be used.
+- Run, prefix and panel names hold up to 120 bytes; a recording's label up to 100, so the run it makes (the label,
+  the date and the time) stays within the limit.
+- A recording whose program stops presenting (its window hidden behind another) no longer turns the rest of the run
+  into one frame of seconds: Instruments numbers frames by presents and kept every later command buffer in the last
+  frame number (in real runs, 279 frames with a mean of 40 ms where a run that kept presenting had 4 447 at 2.6 ms).
+  That work is left out of the frame numbers and reported in `gpu.unpresented` (when it began, how long, its command
+  buffers and share of GPU time); `perf_compare`, `perf_check`, `perf_baseline` and `perf_diagnose` say so,
+  `perf_gate` fails such a run and `metal-gpu-trace check` exits 2, unless `skip_s` leaves the whole stall out. The
+  GPU's idle time still counts that work as busy, and no frame interval spans it. A load of a second or more that
+  presents nothing is reported the same way. `INSTRUCTIONS` asks to keep the program's window visible.
+- `perf_record` fails when the program did no GPU work (under Wine, a program that ends at start-up), saying how it
+  ended and after how long, instead of returning an empty summary as a success; with `KEEP_TRACE=1` its
+  `.trace` is kept.
+- A recording stopped at its deadline names the likely cause: a hidden window, whose program renders without the
+  display's pace (01-cubes: 57 459 command buffers in 15 s), so Instruments took about 23 minutes to close a 20 s
+  recording; record with the window visible, or for fewer seconds.
+- A CrossOver Wine's version is stored as one line (`CrossOver 26.3.0`) instead of the five lines its `wine --version`
+  prints.
+
 ## 0.23.0 — 2026-11-11
 
 - Tool descriptions in `tools/list` are the same on every Python: before 3.13 they kept each docstring's four-space

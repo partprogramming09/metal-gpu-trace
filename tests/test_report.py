@@ -621,3 +621,95 @@ def test_public_arguments_paths_inside_words():
     assert cut(r"/out:C:\Users\ann\x.log") == "x.log"
     assert cut("file:///Users/ann/x.html") == "file:x.html"
     assert cut("-w 1 http://example.com/a") == "-w 1 http://example.com/a", "a URL with a host is not a local path"
+
+
+def stalled_spans(presented=200, stalled_cbs=1000):
+    """Spans (frame, start ns, duration ns, encoder, command buffer) as a recording whose program stops presenting:
+    `presented` frames of one command buffer every 4.5 ms, then Instruments keeps every later command buffer in the
+    last frame number, as it did for drawstress behind another window."""
+    spans, t = [], 0
+    for i in range(presented):
+        spans.append((i + 1, t, 2_000_000, f"e{i}", f"c{i}"))
+        t += 4_500_000
+    for j in range(stalled_cbs):
+        spans.append((presented, t, 2_000_000, f"s{j}", f"d{j}"))
+        t += 4_500_000
+    return spans
+
+
+def test_unpresented_tail():
+    """A frame number that holds thousands of command buffers over seconds is work that never reached the display: it
+    is reported with when it began and how much it held, and not counted as a frame."""
+    got = perf_report.unpresented(stalled_spans())
+    assert got["frames"] == [200], got
+    assert got["from_s"] == round(199 * 0.0045, 3) and got["command_buffers"] == 1001, got
+    assert got["span_s"] == round(1000 * 0.0045 + 0.002, 3), got
+    assert got["gpu_ms"] == round(1001 * 2.0, 3) and got["share_of_gpu_time"] == round(1001 / 1200, 3), got
+    assert perf_report.unpresented(stalled_spans(stalled_cbs=0)) is None, "a run that presents throughout has none"
+
+
+def test_unpresented_spares_heavy_frames():
+    """Frames with many command buffers each (a D3D12 game under Wine) or a short burst are not mistaken for a stalled
+    display: only a frame far above the run's own command buffers per frame and lasting a second counts, so a load of
+    a second or more that presents nothing is reported too."""
+    many = [(f, f * 16_000_000 + k * 1_000_000, 500_000, f"e{f}.{k}", f"c{f}.{k}") for f in range(1, 300) for k in range(12)]
+    assert perf_report.unpresented(many) is None
+    loading = [(1, k * 1_000_000, 900_000, f"l{k}", f"l{k}") for k in range(40)]  # 40 command buffers in 40 ms
+    loading += [(f, 40_000_000 + f * 16_000_000, 4_000_000, f"e{f}", f"c{f}") for f in range(2, 300)]
+    assert perf_report.unpresented(loading) is None, "a short burst is a heavy frame, not a stall"
+    long_load = [(1, k * 40_000_000, 30_000_000, f"l{k}", f"l{k}") for k in range(40)]  # 40 command buffers over 1.6 s
+    long_load += [(f, 1_600_000_000 + f * 16_000_000, 4_000_000, f"e{f}", f"c{f}") for f in range(2, 300)]
+    assert perf_report.unpresented(long_load)["frames"] == [1], "work of a second or more that presents nothing counts"
+
+
+def test_summary_leaves_out_unpresented(tmp_path):
+    """summarize() computes frames, GPU ms, encoders and idle time only from presented frames and says what it left
+    out in gpu.unpresented, so the stalled tail does not become one frame of seconds."""
+    def table(columns, body):
+        cols = "".join(f"<col><mnemonic>{c}</mnemonic></col>" for c in columns)
+        return f"<trace-query-result><node><schema>{cols}</schema>{body}</node></trace-query-result>"
+
+    body = "".join(f'<row><start-time>{s}</start-time><duration>{d}</duration><gpu-channel-name>Vertex</gpu-channel-name>'
+                   f'<gpu-frame-number>{f}</gpu-frame-number><process><pid>7</pid></process>'
+                   f'<id>{c}</id><id>{e}</id></row>' for f, s, d, e, c in stalled_spans())
+    paths = {"metal-gpu-intervals": table(("start", "duration", "channel-name", "frame-number", "process",
+                                           "cmdbuffer-id", "encoder-id"), body),
+             "gpu-performance-state-intervals": table(("start",), "")}
+    toc = ET.fromstring('<trace-toc><run><info><target><process type="launched" pid="7" name="x"/></target>'
+                        '</info><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
+
+    def fake(trace, schemas, optional=()):
+        files = {}
+        for name, xml in paths.items():
+            files[name] = str(tmp_path / f"{name}.xml")
+            pathlib.Path(files[name]).write_text(xml)
+        return toc, files
+
+    saved = perf_report.toc_and_tables
+    perf_report.toc_and_tables = fake
+    try:
+        s = perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=False)
+    finally:
+        perf_report.toc_and_tables = saved
+    gpu = s["gpu"]
+    assert gpu["frames"] == 199 and gpu["frame_gpu_ms"]["max"] == 2.0, gpu
+    assert gpu["unpresented"]["frames"] == [200] and gpu["unpresented"]["command_buffers"] == 1001, gpu["unpresented"]
+    assert s["encoders"]["command_buffers_per_frame"]["max"] == 1, s["encoders"]
+    csv_rows = (tmp_path / "x.frames.csv").read_text().splitlines()
+    assert len(csv_rows) == 200 and not csv_rows[-1].startswith("200,"), csv_rows[-1]
+
+
+def test_unpresented_mid_run():
+    """A stall that ends (the window shown again) leaves the presented frames on both sides: the GPU stays busy over
+    the stall in gpu_idle, and the time across it is not a frame interval."""
+    before = stalled_spans(presented=200, stalled_cbs=400)
+    t = before[-1][1] + 4_500_000
+    after = [(201 + i, t + i * 4_500_000, 2_000_000, f"a{i}", f"b{i}") for i in range(200)]
+    spans = before + after
+    stall = perf_report.unpresented(spans)
+    assert stall["frames"] == [200], stall
+    kept = perf_report.presented(spans, stall)
+    assert {s[0] for s in kept["spans"]} == set(range(1, 200)) | set(range(201, 401)), "only the stalled frame goes"
+    assert kept["idle"]["idle_share"] == perf_report.idle_gaps(spans)["idle_share"], kept["idle"]
+    assert kept["idle"]["idle_ms_per_frame"]["count"] == 399, "the unpresented frame is not a frame of idle time"
+    assert max(kept["gaps"]) < 5.0, "the stall is not a frame interval"

@@ -1,6 +1,8 @@
 """Tests of the analysis tools: compare, baseline, gate, history, panel, diagnose, A/B, sweep and cold/warm."""
 import json
 import os
+import pathlib
+import re
 
 import support  # noqa: F401  (puts src/ on sys.path)
 
@@ -361,10 +363,10 @@ def test_panel(tmp_path):
         assert str(tmp_path) not in html and evil not in html, "no path and no raw </script> in the page"
         assert html.count("<script") == 1 and "default-src 'none'" in html
         assert html.count("runName(i, true)") >= 3 and html.count("cTitle:") == 2 and "working set" in html, "short run names in cards and tables; the RSS note"
-        assert html.count("wBottleneck:") == 2 and "direction(\"fps\", DATA.compare.fps)" in html, "the FPS-worse-GPU-better warning"
-        assert html.count("shader_compile:") == 2 and all(f'{tab}(card)' in html for tab in ("summary", "frames", "memory", "ab", "data", "encoders", "counters")), \
-            "both languages explain the causes and every tab exists"
-        payload = json.loads(html.split("let DATA = ", 1)[1].split(";\nconst COLORS", 1)[0].replace("\\u003c", "<"))
+        assert html.count("gpu_not_limit:") == 2 and "function warnings(" not in html, "the FPS-worse-GPU-better warning is the payload's"
+        assert html.count("shader_compile:") == 2 and all(f'{tab}(card)' in html for tab in panel.TAB_IDS), \
+            "both languages explain the causes and every section exists"
+        payload = payload_of(html)
         run = payload["runs"][0]
         assert run["marks"] == [[3260.0, 4.0, 60.0, evil, 120.0]] and [3260.0, 4.0] in run["frames"], run["marks"]
         assert len(run["frames"]) < 60 and run["memory"] == [[0.0, 1.0], [100.0, 2.0]], len(run["frames"])
@@ -373,7 +375,7 @@ def test_panel(tmp_path):
         assert sorted(r["run"] for r in analysis.tool_perf_runs()["rows"]) == ["a", "b"], "the panel is not a run"
         assert panel.tool_perf_panel("one", ["a"])["runs"] == ["a"]
         (tmp_path / "c.json").write_text(json.dumps(summary(40.0)))
-        for args in (("p", ["c"]), ("p", ["a"], "nope"), ("p", ["a"], "compare"), ("p", []), ("../p", ["a"])):
+        for args in (("p", ["a"], "nope"), ("p", ["a"], "compare"), ("p", []), ("../p", ["a"])):
             try:
                 panel.tool_perf_panel(*args)
                 raise AssertionError(f"{args} must fail")
@@ -381,6 +383,367 @@ def test_panel(tmp_path):
                 pass
     finally:
         config.OUT, config.PANEL_POINTS = saved, saved_points
+
+def payload_of(html):
+    """Returns the payload a saved panel holds."""
+    return json.loads(html.split("let DATA = ", 1)[1].split(";\nconst COLORS", 1)[0].replace("\\u003c", "<"))
+
+def test_panel_page_draws_from_the_payload(tmp_path):
+    """The page has a text in each language for every reason, warning and hint the payload can carry, a place for what
+    was not recorded, and nothing it loads or builds from data as markup."""
+    from metal_gpu_trace import config, panel
+
+    (tmp_path / "a.json").write_text(json.dumps(_warn_summary(60.0, 4.0, 400, 60.0, {"none": "native"})))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        html = (tmp_path / panel.tool_perf_panel("p", ["a"])["file"]).read_text()
+    finally:
+        config.OUT = saved
+    for key in panel.REASONS + ("short_wine", "few_frames", "summary_only", "gpu_not_limit", "skip_applied", "single_run_each",
+                                "layers_differ", "windows_vs_metal", "reference_skip"):
+        assert html.count(f"{key}:") == 2, key                  # one text per language
+    labels = re.findall(r"\n    s: \{([^\n]*)\}", html)
+    assert len(labels) == 2 and all(f"{section}:" in text for text in labels for section in panel.SECTIONS), labels   # a label per section and language
+    assert "named.has" not in html and 'list.some(w => w.id === "tests")' in html and "IDS.includes(w.id)" in html, "only tests is added to a layout; no inherited key is a section"
+    assert "const NOISE_PCT" not in html, "the margin comes from the payload"
+    assert "function sectionShown(" in html and 'id="missing"' in html and 'id="goto"' in html
+    assert not re.search(r'(src|href)\s*=\s*["\']?https?:', html)   # the SVG namespace (http://www.w3.org/2000/svg) may be there
+    assert html.count("<script") == 1 and "default-src 'none'" in html and not any(x in html for x in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function"))
+
+def test_panel_page_tests_mode(tmp_path):
+    """The page draws the verdict, the range bars, the heat map, the trend and the dumbbell from the payload, and says what
+    to do when the project has no reference."""
+    from metal_gpu_trace import analysis, config, panel
+
+    frames = "frame,start_ms,gpu_ms_total\n" + "".join(f"{i + 1},{i * 16.0},4.0\n" for i in range(200))
+    for name, fps in (("r1", 62.4), ("r2", 62.4), ("r3", 62.2), ("new", 63.0)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(_change_summary("g", fps)))
+        (tmp_path / f"{name}.frames.csv").write_text(frames)
+    saved = config.OUT, config.BASELINES, config.PROJECT
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"])
+        config.PROJECT = {"name": "p", "profile": "generic", "baseline": "ref", "format": "metal-gpu-trace", "runs": tmp_path}
+        html = (tmp_path / panel.tool_perf_panel("p", ["new"])["file"]).read_text()
+    finally:
+        config.OUT, config.BASELINES, config.PROJECT = saved
+    payload = payload_of(html)
+    assert payload["tests"]["checks"]["new"]["verdict"] in ("same", "improved", "regressed") and payload["changes"]["runs"]
+    for fn in ("function rangeBar(", "function heatmap(", "function trend(", "function dumbbell(", "function verdictCard("):
+        assert fn in html, fn
+    for key in ("no_project_baseline", "baseline_not_found", "perf_baseline_record"):
+        assert html.count(f"{key}:" if key != "perf_baseline_record" else key) == 2, key
+    for verdict in ("same", "improved", "regressed"):
+        assert html.count(f"v_{verdict}:") == 2, verdict
+
+def test_panel_page_profile(tmp_path):
+    """The page explains each project profile in both languages, and a translation-layer project leads with GPU ms."""
+    from metal_gpu_trace import config, panel, project
+
+    (tmp_path / "a.json").write_text(json.dumps(_warn_summary(60.0, 4.0, 400, 60.0, {"none": "native"})))
+    saved, saved_project, config.OUT = config.OUT, config.PROJECT, tmp_path
+    try:
+        config.PROJECT = {"name": "p", "profile": "translation-layer", "baseline": None, "format": "metal-gpu-trace", "runs": tmp_path}
+        html = (tmp_path / panel.tool_perf_panel("p", ["a"])["file"]).read_text()
+        assert payload_of(html)["primary"] == "gpu_ms_mean" and payload_of(html)["project"]["profile"] == "translation-layer"
+    finally:
+        config.OUT, config.PROJECT = saved, saved_project
+    for name in project.PROFILES:
+        assert html.count(f'"profile_{name}":') == 2, name       # one text per language
+    assert "vsync" in html and "percentil 99" in html and "99th percentile" in html, "the definitions say what a number is here"
+    assert "singleGpu:" in html and html.count("main:") >= 2, "the headline and the first card follow the main metric"
+
+def test_panel_opens_a_run_without_frames(tmp_path):
+    """A run with no frames.csv opens with its summary numbers and no curves; trimming the start-up still needs the frames."""
+    from metal_gpu_trace import config, panel, paths
+
+    (tmp_path / "c.json").write_text(json.dumps({"gpu": {"frames": 400, "fps_estimate": 40.0, "frame_gpu_ms": {"mean": 4.0}},
+                                                 "layer": {"none": "native"}}))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        run = panel.panel_data(["c"])["runs"][0]
+        assert run["frames"] == [] and run["marks"] == [] and run["memory"] == [] and run["gpu"]["fps_estimate"] == 40.0, run
+        try:
+            panel.panel_data(["c"], skip_s=2)
+            raise AssertionError("skip_s needs the frames")
+        except paths.ToolError as error:
+            assert "per-frame file" in str(error), error
+    finally:
+        config.OUT = saved
+
+def test_panel_says_what_each_run_has(tmp_path):
+    """Each run says which sections it has data for and, for the others, a reason from a closed list."""
+    from metal_gpu_trace import config, panel
+
+    mac = {"gpu": {"frames": 400, "fps_estimate": 60.0, "fps_1pct_low": 50.0}, "hitches": {"count": 0, "threshold_ms": 30.0},
+           "encoders": {"by_label": [{"label": "x", "per_frame": 1.0, "total_ms": 5.0}]}, "cpu": {"mean": 20.0}, "layer": {"none": "native"}}
+    win = {"device": {"platform": "Windows"}, "gpu": {"frames": 400, "fps_estimate": 60.0}, "process_rss_mib": {"max": 500.0},
+           "layer": {"none": "native"}}
+    for name, s in (("mac", mac), ("win", win)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(s))
+    (tmp_path / "mac.frames.csv").write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n2,16.0,4.0\n")
+    (tmp_path / "mac.metal_memory.csv").write_text("time_ms,metal_allocated_bytes\n0,1048576\n")
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        m, w = panel.panel_data(["mac", "win"])["runs"]
+    finally:
+        config.OUT = saved
+    assert m["has"] == {"frames": True, "hitches": True, "lows": True, "encoders": True, "counters": False, "memory": True,
+                        "thermal": False, "cpu": True}, m["has"]
+    assert m["missing"] == [{"id": "counters", "reason": "record_with_counters"}, {"id": "thermal", "reason": "not_in_recording"}]
+    assert [x["id"] for x in m["missing"]] == [s for s in panel.SECTIONS if not m["has"][s]]
+    assert w["has"]["memory"] and not w["has"]["frames"] and not w["has"]["encoders"]
+    assert {"id": "frames", "reason": "no_frames_file"} in w["missing"]
+    assert {"id": "encoders", "reason": "metal_only"} in w["missing"] and {"id": "counters", "reason": "metal_only"} in w["missing"]
+    assert {"id": "cpu", "reason": "not_in_recording"} in w["missing"]
+    assert {x["reason"] for r in (m, w) for x in r["missing"]} <= set(panel.REASONS)
+
+def _warn_summary(fps, gpu_ms, frames, duration, layer):
+    return {"gpu": {"frames": frames, "fps_estimate": fps, "frame_gpu_ms": {"mean": gpu_ms, "p50": gpu_ms, "p95": gpu_ms},
+                    "frame_interval_ms": {"p95": 20.0}},
+            "encoders": {"per_frame": {"p50": 7}, "command_buffers_per_frame": {"p50": 5}, "short_share": {"25": 0.5}, "by_label": []},
+            "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 4}}, "duration_s": duration, "layer": layer}
+
+WINE = {"fingerprint": "dxmt", "wine": "wine-9", "wine_version": "9.0"}
+
+def test_panel_profile_and_primary(tmp_path):
+    """The payload names the project and its profile, and the main metric follows the profile."""
+    from metal_gpu_trace import config, panel
+
+    (tmp_path / "a.json").write_text(json.dumps(_warn_summary(60.0, 4.0, 400, 60.0, {"none": "native"})))
+    saved, saved_project, config.OUT = config.OUT, config.PROJECT, tmp_path
+    try:
+        config.PROJECT = None
+        got = panel.panel_data(["a"])
+        assert got["project"] == {"name": None, "profile": "generic"} and got["primary"] == "fps", got["project"]
+        assert got["rules"] == {"min_frames": 100, "min_seconds_wine": 30, "noise_pct": 3}
+        config.PROJECT = {"name": "mullion", "profile": "translation-layer", "baseline": None, "format": "metal-gpu-trace", "runs": tmp_path}
+        got = panel.panel_data(["a"])
+        assert got["project"] == {"name": "mullion", "profile": "translation-layer"} and got["primary"] == "gpu_ms_mean", got["project"]
+        config.PROJECT["profile"] = "native"
+        assert panel.panel_data(["a"])["primary"] == "fps"
+        assert str(tmp_path) not in json.dumps(got), "no path in the payload"
+    finally:
+        config.OUT, config.PROJECT = saved, saved_project
+
+def test_panel_warnings(tmp_path):
+    """The warnings the panel shows are decided in Python: per run, per pair and for the skip, each once."""
+    from metal_gpu_trace import config, panel
+
+    for name, s in (("a", _warn_summary(60.0, 4.0, 400, 22.0, WINE)), ("b", _warn_summary(50.0, 3.0, 50, 60.0, {"none": "native"})),
+                    ("c", _warn_summary(60.0, 4.0, 400, 60.0, {"none": "native"}))):
+        (tmp_path / f"{name}.json").write_text(json.dumps(s))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        got = panel.panel_data(["a", "b"])["warnings"]
+        for w in ({"id": "short_wine", "run": "a"}, {"id": "few_frames", "run": "b"}, {"id": "single_run_each", "run": None},
+                  {"id": "layers_differ", "run": None}, {"id": "gpu_not_limit", "run": None}, {"id": "summary_only", "run": "a"}):
+            assert w in got, (w, got)
+        assert not any(w["id"] in ("skip_applied", "windows_vs_metal") for w in got) and len(got) == len({(w["id"], w["run"]) for w in got})
+        assert {"id": "few_frames", "run": "a"} not in got and {"id": "short_wine", "run": "b"} not in got
+        assert panel.panel_data(["c"])["warnings"] == [{"id": "summary_only", "run": "c"}]
+    finally:
+        config.OUT = saved
+
+def test_panel_tests_mode(tmp_path):
+    """With a project reference the panel carries perf_check's verdict for each run, a run that cannot be judged says
+    why without stopping the panel, and with no usable reference it says what to do."""
+    from metal_gpu_trace import analysis, config, panel
+
+    frames = "frame,start_ms,gpu_ms_total\n" + "".join(f"{i + 1},{i * 16.0},4.0\n" for i in range(200))
+    for name, fps in (("r1", 62.4), ("r2", 62.4), ("r3", 62.2), ("new", 63.0), ("old", 70.0)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(_warn_summary(fps, 4.0, 200, 60.0, {"none": "native"})))
+        if name != "old":
+            (tmp_path / f"{name}.frames.csv").write_text(frames)
+    saved = config.OUT, config.BASELINES, config.PROJECT
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"])
+        analysis.tool_perf_baseline("ref2", ["r1", "r2", "r3"], skip_s=2)
+        config.PROJECT = {"name": "p", "profile": "generic", "baseline": "ref", "format": "metal-gpu-trace", "runs": tmp_path}
+        got = panel.panel_data(["new", "old"])
+        t = got["tests"]
+        assert t["baseline"] == "ref" and t["runs"] == ["r1", "r2", "r3"] and t["skip_s"] == 0 and got["tests_hint"] is None, t
+        assert t["range"]["fps"] == {"min": 62.2, "max": 62.4} and "fps" in t["spread_pct"]
+        for run in ("new", "old"):
+            check = analysis.tool_perf_check(run, "ref")
+            assert {k: v for k, v in t["checks"][run].items() if k != "values"} == {k: check[k] for k in ("verdict", "regressed", "improved", "unchecked")}, t["checks"][run]
+        assert t["checks"]["new"]["values"] == {"fps": 63.0, "gpu_ms_mean": 4.0, "encoders_per_frame_p50": 7, "command_buffers_per_frame_p50": 5}, t["checks"]["new"]
+        assert "comparison" not in json.dumps(t) and str(tmp_path) not in json.dumps(got)
+        config.PROJECT["baseline"] = "ref2"
+        got = panel.panel_data(["new", "old"])
+        t = got["tests"]
+        assert t["skip_s"] == 2 and t["checks"]["new"]["verdict"] and t["checks"]["old"]["verdict"] is None, t["checks"]
+        assert "per-frame file" in t["checks"]["old"]["error"] and {"id": "reference_skip", "run": None} in got["warnings"]
+        assert {"id": "reference_skip", "run": None} not in panel.panel_data(["new"], skip_s=2)["warnings"]
+        config.PROJECT["baseline"] = "nope"
+        got = panel.panel_data(["new"])
+        assert got["tests"] is None and got["tests_hint"] == "baseline_not_found", got["tests_hint"]
+        config.PROJECT = None
+        got = panel.panel_data(["new"])
+        assert got["tests"] is None and got["tests_hint"] == "no_project_baseline"
+    finally:
+        config.OUT, config.BASELINES, config.PROJECT = saved
+
+def _change_summary(program, fps, gpu_ms=4.0, encoders=7, buffers=5, peak=90.0):
+    s = _warn_summary(fps, gpu_ms, 400, 60.0, {"none": "native"})
+    s["encoders"].update(per_frame={"p50": encoders}, command_buffers_per_frame={"p50": buffers})
+    return {**s, "process": {"arguments": program}, "metal_memory_mib": {"peak": peak}}
+
+def test_judge_matches_perf_check(tmp_path):
+    """analysis.judge is perf_check's rule: it says worse for exactly the metrics perf_check lists as regressed and
+    better for those it lists as improved."""
+    from metal_gpu_trace import analysis, config
+
+    for name, fps in (("r1", 62.4), ("r2", 62.4), ("r3", 62.2)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(_change_summary("g", fps)))
+    saved = config.OUT, config.BASELINES
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"])
+        span = analysis.ranges(analysis.load_baselines()["ref"]["summaries"])
+        for i, (fps, gpu, enc, buf) in enumerate(((70.0, 4.0, 7, 5), (50.0, 5.0, 8, 6), (62.3, 3.0, 6, 4), (64.2, 4.1, 7, 5), (60.4, 4.1, 7, 5))):
+            (tmp_path / f"x{i}.json").write_text(json.dumps(_change_summary("g", fps, gpu, enc, buf)))
+            check = analysis.tool_perf_check(f"x{i}", "ref")
+            s = json.loads((tmp_path / f"x{i}.json").read_text())
+            for metric, (get, _) in analysis.CHECKED.items():
+                got = analysis.judge(metric, get(s), span[metric], 3)
+                assert (got == "worse") == (metric in [r["metric"] for r in check["regressed"]]), (i, metric, got)
+                assert (got == "better") == (metric in [r["metric"] for r in check["improved"]]), (i, metric, got)
+        assert analysis.judge("fps", None, span["fps"], 3) is None and analysis.judge("fps", 60.0, None, 3) is None
+    finally:
+        config.OUT, config.BASELINES = saved
+
+def test_changes_against(tmp_path):
+    """changes_against lists the newest runs of the reference's program with each metric's change against the
+    reference and perf_check's own verdict; other programs, the reference's own runs and paths stay out."""
+    from metal_gpu_trace import analysis, config, panel
+
+    program = f"{tmp_path}/game.exe"
+    for name, prog, fps, age in (("r1", program, 62.4, 0), ("r2", program, 62.4, 0), ("r3", program, 62.2, 0), ("x", program, 63.4, 10),
+                                 ("y", program, 70.0, 20), ("z", "other.exe", 63.4, 30)):
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(_change_summary(prog, fps)))
+        os.utime(path, (1_700_000_000 + age, 1_700_000_000 + age))
+    saved = config.OUT, config.BASELINES
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"])
+        got = panel.changes_against("ref")
+        assert [r["run"] for r in got["runs"]] == ["x", "y"], got["runs"]
+        assert got["metrics"] == [*analysis.CHECKED, "metal_mib_peak"]
+        assert got["runs"][0]["values"]["fps"] == {"value": 63.4, "pct": 1.7, "direction": "same"}, got["runs"][0]
+        assert got["runs"][1]["values"]["fps"]["direction"] == "better"
+        assert got["runs"][0]["values"]["metal_mib_peak"]["direction"] is None
+        assert got["reference"]["fps"] == {"mean": 62.333, "min": 62.2, "max": 62.4}, got["reference"]["fps"]
+        assert [r["run"] for r in panel.changes_against("ref", limit=1)["runs"]] == ["y"]
+        assert str(tmp_path) not in json.dumps(got)
+    finally:
+        config.OUT, config.BASELINES = saved
+
+def test_changes_against_edges(tmp_path):
+    """The change in % is against the reference's mean; a Windows build against a Metal reference is judged on FPS
+    alone; a reference with no program matches nothing even when a build has an empty process; a True is not 1."""
+    from metal_gpu_trace import analysis, config, panel
+
+    def write(name, summary):
+        (tmp_path / f"{name}.json").write_text(json.dumps(summary))
+    for name, fps in (("r1", 60.0), ("r2", 60.0), ("r3", 60.0)):
+        write(name, _change_summary("g", fps))
+    win = _change_summary("g", 60.0, gpu_ms=9.0)
+    win["device"] = {"platform": "Windows"}
+    write("win", win)
+    write("big", _change_summary("g", 90.0))
+    write("flag", {**_change_summary("g", 60.0), "gpu": {**_change_summary("g", 60.0)["gpu"], "fps_estimate": True}})
+    for name, offset in (("win", 1), ("big", 2), ("flag", 3)):
+        os.utime(tmp_path / f"{name}.json", (1_700_000_000 + offset, 1_700_000_000 + offset))
+    saved = config.OUT, config.BASELINES
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"])
+        got = {r["run"]: r["values"] for r in panel.changes_against("ref")["runs"]}
+        assert got["big"]["fps"]["pct"] == 50.0 and got["big"]["fps"]["direction"] == "better", got["big"]["fps"]
+        assert got["win"]["fps"]["direction"] == "same" and got["win"]["gpu_ms_mean"]["direction"] is None, got["win"]
+        assert got["win"]["encoders_per_frame_p50"]["direction"] is None
+        assert got["flag"]["fps"] == {"value": None, "pct": None, "direction": None}, got["flag"]["fps"]
+        for name in ("p1", "p2"):
+            summary = _change_summary(None, 60.0)
+            del summary["process"]
+            write(name, summary)
+        write("empty", {**_change_summary(None, 60.0), "process": {}})
+        analysis.tool_perf_baseline("noprog", ["p1", "p2"])
+        assert panel.changes_against("noprog")["runs"] == []
+    finally:
+        config.OUT, config.BASELINES = saved
+
+def test_panel_review_findings(tmp_path):
+    """Windows against Metal never says the GPU is not the limit; a reference with no program matches nothing; a broken
+    baselines.json leaves the panel open; one run named twice warns once; skip_s and the changes key show up."""
+    from metal_gpu_trace import analysis, config, panel
+
+    win = _warn_summary(50.0, 3.0, 400, 60.0, {"none": "native"})
+    win["device"] = {"platform": "Windows"}
+    for name, s in (("m", _warn_summary(60.0, 4.0, 400, 60.0, {"none": "native"})), ("w", win),
+                    ("p1", _change_summary(None, 62.4)), ("p2", _change_summary(None, 62.2)), ("lone", {"gpu": {"fps_estimate": 1}})):
+        if name == "p1" or name == "p2":
+            del s["process"]
+        (tmp_path / f"{name}.json").write_text(json.dumps(s))
+    frames = "frame,start_ms,gpu_ms_total\n" + "".join(f"{i + 1},{i * 16.0},4.0\n" for i in range(200))
+    for name in ("m", "w"):
+        (tmp_path / f"{name}.frames.csv").write_text(frames)
+    saved = config.OUT, config.BASELINES, config.PROJECT
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        got = panel.panel_data(["m", "w"])
+        ids = [x["id"] for x in got["warnings"]]
+        assert "windows_vs_metal" in ids and "gpu_not_limit" not in ids, ids
+        assert {"id": "skip_applied", "run": None} in panel.panel_data(["m"], skip_s=2)["warnings"]
+        twice = panel.panel_data(["m", "m"])["warnings"]
+        assert len(twice) == len({(x["id"], x["run"]) for x in twice}), twice
+        assert panel.panel_data(["m"])["changes"] is None
+        analysis.tool_perf_baseline("noprog", ["p1", "p2"])
+        config.PROJECT = {"name": "p", "profile": "generic", "baseline": "noprog", "format": "metal-gpu-trace", "runs": tmp_path}
+        got = panel.panel_data(["m"])
+        assert got["changes"]["runs"] == [], got["changes"]
+        analysis.tool_perf_baseline("ref", ["m"])
+        config.PROJECT["baseline"] = "ref"
+        got = panel.panel_data(["m", "w"])
+        assert got["changes"]["metrics"] and got["tests"]["checks"]["w"]["unchecked"], got["tests"]["checks"]
+        (tmp_path / "baselines.json").write_text("{not json")
+        got = panel.panel_data(["m"])
+        assert got["tests"] is None and got["tests_hint"] == "baseline_not_found", got["tests_hint"]
+        (tmp_path / "baselines.json").write_text(json.dumps({"ref": {"runs": ["m"]}}))
+        assert panel.panel_data(["m"])["tests_hint"] == "baseline_not_found"
+    finally:
+        config.OUT, config.BASELINES, config.PROJECT = saved
+
+def test_panel_pending_review_points(tmp_path):
+    """A skip_s cut says why the CPU is missing, a frames file with no rows is no frames file, and a run whose metrics
+    could not be checked is not called the same as the reference."""
+    from metal_gpu_trace import analysis, config, panel
+
+    full = _change_summary("g", 62.0)
+    full["cpu"] = {"mean": 20.0}
+    (tmp_path / "a.json").write_text(json.dumps(full))
+    (tmp_path / "a.frames.csv").write_text("frame,start_ms,gpu_ms_total\n" + "".join(f"{i + 1},{i * 16.0},4.0\n" for i in range(200)))
+    (tmp_path / "hdr.json").write_text(json.dumps(full))
+    (tmp_path / "hdr.frames.csv").write_text("frame,start_ms,gpu_ms_total\n")
+    (tmp_path / "bare.json").write_text(json.dumps({"gpu": {"frames": 400}}))
+    saved = config.OUT, config.BASELINES, config.PROJECT
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        assert panel.panel_data(["a"])["runs"][0]["has"]["cpu"]
+        cut = panel.panel_data(["a"], skip_s=1)["runs"][0]
+        assert not cut["has"]["cpu"] and {"id": "cpu", "reason": "start_skipped"} in cut["missing"], cut["missing"]
+        hdr = panel.panel_data(["hdr"])["runs"][0]
+        assert not hdr["has"]["frames"] and {"id": "frames", "reason": "no_frames_file"} in hdr["missing"]
+        analysis.tool_perf_baseline("ref", ["a"])
+        config.PROJECT = {"name": "p", "profile": "generic", "baseline": "ref", "format": "metal-gpu-trace", "runs": tmp_path}
+        check = panel.panel_data(["bare"])["tests"]["checks"]["bare"]
+        assert check["verdict"] is None and "no number" in check["error"], check
+        assert set(panel.REASONS) >= {"start_skipped"}
+    finally:
+        config.OUT, config.BASELINES, config.PROJECT = saved
 
 def test_windows_against_metal(tmp_path):
     """A Windows run against a Metal run says which numbers do not compare and skips the encoders, in perf_compare, its
@@ -505,6 +868,180 @@ def test_history(tmp_path):
     finally:
         config.OUT, config.BASELINES = saved
 
+def test_listings_survive_hostile_files(tmp_path):
+    """perf_runs and perf_history skip a link to nothing, a file of the wrong type and a summary cut short, and never take
+    panel.json for a recording; read_frames leaves out a frame number too big for a float; names fit the files they make."""
+    from metal_gpu_trace import analysis, config, paths
+
+    good = {"gpu": {"frames": 300, "fps_estimate": 60.0, "frame_gpu_ms": {"mean": 4.0}}, "hitches": {"count": 1}}
+    for name in ("v0", "v1"):
+        (tmp_path / f"{name}.json").write_text(json.dumps(good))
+    os.symlink(tmp_path / "nowhere.json", tmp_path / "v2.json")
+    (tmp_path / "v3.json").write_text('{"gpu": {"frames": 3')
+    for name, hostile in (("v4", {"gpu": "x", "process": "x"}), ("v5", {"metal_memory_mib": "x"}), ("v6", {"layer": 5}),
+                          ("v7", {"layer": {"a": 1}}), ("v8", {"process_rss_mib": "x"})):
+        (tmp_path / f"{name}.json").write_text(json.dumps(hostile))
+    (tmp_path / "panel.json").write_text(json.dumps([{"id": "tests", "on": True}]))
+    (tmp_path / "v0.frames.csv").write_text("frame,start_ms,gpu_ms_total\n" + "9" * 400 + ",1.0,1.0\n1," + "9" * 400 + ",1.0\n2,5.0,1.0\n")
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        runs = {r["run"] for r in analysis.tool_perf_runs()["rows"]}
+        assert {"v0", "v1"} <= runs and not runs & {"v2", "v3", "panel"}, runs
+        assert [r["run"] for r in analysis.tool_perf_history("v")["runs"]][:2] == ["v0", "v1"]
+        try:
+            analysis.tool_perf_history("p")
+            raise AssertionError("panel.json is not a recording")
+        except paths.ToolError as error:
+            assert "no run starts with p" in str(error), error
+        assert analysis.read_frames("v0") == [(2, 5.0, 1.0)]
+    finally:
+        config.OUT, config.BASELINES = saved
+    (tmp_path / "baselines.json").write_text("{}")
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        for spelling in ("Baselines", "BASELINES", "Panel", "panel"):  # a volume that ignores case opens the same file
+            try:
+                paths.run_path(spelling)
+                raise AssertionError(f"{spelling} is not a recording")
+            except paths.ToolError:
+                pass
+    finally:
+        config.OUT, config.BASELINES = saved
+    assert paths.name_ok("a" * 120) and not paths.name_ok("a" * 121) and not paths.name_ok("\u00e9" * 61)
+
+
+def test_a_new_layout_repairs_a_broken_panel_json(tmp_path):
+    """perf_panel with `layout` replaces a panel.json that cannot be read: it is how a broken one gets fixed."""
+    from metal_gpu_trace import config, panel
+
+    (tmp_path / "r1.json").write_text(json.dumps(_change_summary("g", 60.0)))
+    (tmp_path / "panel.json").write_text("{not json")
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        panel.tool_perf_panel("p", ["r1"], layout=["summary"])
+        assert json.loads((tmp_path / "panel.json").read_text())[0] == {"id": "summary", "on": True}
+        assert panel.read_layout()[0]["id"] == "summary"
+    finally:
+        config.OUT, config.BASELINES = saved
+
+def test_tools_answer_a_summary_of_the_wrong_type_with_a_tool_error(tmp_path):
+    """perf_compare, perf_check, perf_gate, perf_diagnose and perf_baseline say a recording or a reference is not in the
+    form the recorder writes with a ToolError, never with a stray exception, whichever section has the wrong type."""
+    from metal_gpu_trace import analysis, config, paths
+
+    def write(name, summary):
+        (tmp_path / f"{name}.json").write_text(json.dumps(summary))
+    for name in ("r1", "r2", "r3", "good"):
+        write(name, _change_summary("g", 60.0))
+    hostile = {"s1": {"gpu": "x"}, "s2": {"gpu": {"fps_estimate": "fast", "frame_gpu_ms": "x", "frames": "many"}},
+               "s3": {"encoders": "x", "gpu": {"fps_estimate": 60.0}}, "s4": {"encoders": {"per_frame": "x", "short_share": 3}},
+               "s5": {"hitches": 5, "metal_memory_mib": [1], "gpu": {"fps_estimate": [60]}}, "s6": {"encoders": {"per_frame": {"p50": "x"}, "short_share": {"25": "x"}}}}
+    for name, summary in hostile.items():
+        write(name, summary)
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"])
+        evil = {"summaries": [{"gpu": "x"}, {"gpu": {"fps_estimate": "x"}}], "runs": ["r1", "r2"], "skip_s": 0}
+        (tmp_path / "baselines.json").write_text(json.dumps({"ref": json.loads((tmp_path / "baselines.json").read_text())["ref"], "evil": evil}))
+        calls = []
+        for bad in hostile:
+            calls += [(f"compare {bad}", lambda bad=bad: analysis.tool_perf_compare("good", bad)),
+                      (f"compare {bad} first", lambda bad=bad: analysis.tool_perf_compare(bad, "good")),
+                      (f"check {bad}", lambda bad=bad: analysis.tool_perf_check(bad, "ref")),
+                      (f"gate {bad}", lambda bad=bad: analysis.tool_perf_gate(bad, fps_min=30.0, hitches_max=3, metal_mib_max=100.0)),
+                      (f"diagnose {bad}", lambda bad=bad: analysis.tool_perf_diagnose(bad)),
+                      (f"baseline {bad}", lambda bad=bad: analysis.tool_perf_baseline("n_" + bad, [bad, "r1", "r2"]))]
+        calls += [("check against evil", lambda: analysis.tool_perf_check("good", "evil")),
+                  ("list references", lambda: analysis.tool_perf_baseline())]
+        refused = 0
+        for label, call in calls:
+            try:
+                call()
+            except paths.ToolError as error:
+                refused += 1
+                assert str(tmp_path) not in str(error), (label, error)
+            except Exception as error:  # noqa: BLE001 (the point of the test)
+                raise AssertionError(f"{label}: {type(error).__name__} escaped: {error}") from None
+        assert refused >= len(hostile), f"only {refused} of {len(calls)} calls were refused"
+    finally:
+        config.OUT, config.BASELINES = saved
+
+def test_write_file_does_not_follow_a_link(tmp_path):
+    """paths.write_file writes a file, replacing one, and refuses a link instead of writing through it."""
+    from metal_gpu_trace import paths
+
+    target = tmp_path / "page.html"
+    paths.write_file(target, "one")
+    paths.write_file(target, "two")
+    assert target.read_text() == "two"
+    victim = tmp_path / "precious.txt"
+    victim.write_text("PRECIOUS")
+    link = tmp_path / "link.html"
+    os.symlink(victim, link)
+    try:
+        paths.write_file(link, "overwritten")
+        raise AssertionError("a link must be refused")
+    except paths.ToolError as error:
+        assert "link" in str(error) and str(tmp_path) not in str(error), error
+    assert victim.read_text() == "PRECIOUS"
+    (tmp_path / "folder").mkdir()
+    try:
+        paths.write_file(tmp_path / "folder", "x")
+        raise AssertionError("a folder is not a file")
+    except paths.ToolError:
+        pass
+
+
+def test_the_tools_that_write_into_the_runs_folder_do_not_follow_a_link(tmp_path):
+    """perf_baseline and trace_chrome (the files they write) refuse a link planted in the runs folder."""
+    from metal_gpu_trace import analysis, config, paths, traces
+
+    victim = tmp_path / "precious.txt"
+    victim.write_text("{}")
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    for name in ("r1", "r2", "r3"):
+        (runs / f"{name}.json").write_text(json.dumps(_change_summary("g", 60.0)))
+    (runs / "r1.frames.csv").write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n")
+    os.symlink(victim, runs / "baselines.json")
+    os.symlink(victim, runs / "r1.chrome-trace")
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (runs, runs / "baselines.json")
+    try:
+        for call in (lambda: analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"]),
+                     lambda: traces.tool_perf_export_trace("r1")):
+            try:
+                call()
+                raise AssertionError("a link must be refused")
+            except paths.ToolError:
+                pass
+        (runs / "baselines.json").unlink()
+        (runs / "baselines.json").write_text("not json")
+        try:
+            analysis.tool_perf_baseline()
+            raise AssertionError("a baselines.json that is not JSON must be refused")
+        except paths.ToolError as error:
+            assert "baselines.json" in str(error) and str(tmp_path) not in str(error), error
+    finally:
+        config.OUT, config.BASELINES = saved
+    assert victim.read_text() == "{}"
+
+
+def test_importing_the_server_survives_an_unusable_metal_trace_out(tmp_path):
+    """A METAL_TRACE_OUT that cannot be resolved (a link loop raises on Python before 3.13) does not stop the import:
+    project.apply reports it in every tool call instead."""
+    import subprocess
+    import sys
+
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop)
+    src = pathlib.Path(__file__).resolve().parent.parent / "src"
+    code = (f"import sys; sys.path.insert(0, {str(src)!r}); from metal_gpu_trace import config, project; "
+            "project.apply(None, {'METAL_TRACE_OUT': " + repr(str(loop)) + "}); print('ok', bool(config.PROJECT_ERROR) or sys.version_info >= (3, 13))")
+    got = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, cwd=tmp_path,
+                         env={"HOME": str(tmp_path), "PATH": os.environ.get("PATH", ""), "METAL_TRACE_OUT": str(loop)})
+    assert got.returncode == 0 and got.stdout.strip() == "ok True", got.stderr[-300:]
+
+
 def test_layout(tmp_path):
     """perf_panel(layout=...) saves panel.json (the listed tabs on, in order, the rest off), every panel carries it, and a
     panel.json that is not a list of tabs, or a layout with an unknown tab, is refused."""
@@ -523,7 +1060,10 @@ def test_layout(tmp_path):
         html = (tmp_path / "p.panel.html").read_text()
         payload = json.loads(html.split("let DATA = ", 1)[1].split(";\nconst COLORS", 1)[0])
         assert payload["layout"] == saved_layout and panel.panel_data(["a"])["layout"] == saved_layout
-        assert "defaultLayout()" in html
+        assert "defaultLayout()" in html and panel.TAB_IDS[0] == "tests" and next(w for w in saved_layout if w["id"] == "tests")["on"] is False
+        (tmp_path / "panel.json").write_text(json.dumps([{"id": i, "on": True} for i in panel.TAB_IDS if i != "tests"]))
+        assert "tests" not in [w["id"] for w in panel.panel_data(["a"])["layout"]], "a panel.json from before the tests section is valid"
+        (tmp_path / "panel.json").write_text(json.dumps(saved_layout))
         panel.tool_perf_panel("q", ["a"])  # a panel without layout keeps the saved one
         assert json.loads((tmp_path / "panel.json").read_text()) == saved_layout
         for bad in ("summary", ["nope"]):
@@ -575,3 +1115,61 @@ def test_windows_runs_without_encoders(tmp_path):
     finally:
         config.OUT = saved
     assert verdict["too_many_short_encoders"] is False, verdict
+
+
+def test_perf_runs_names_the_project(tmp_path):
+    """perf_runs says which project's recordings it lists, and null without a project file."""
+    from metal_gpu_trace import analysis, config
+    saved = config.OUT, config.BASELINES, config.PROJECT
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        config.PROJECT = None
+        assert analysis.tool_perf_runs()["project"] is None
+        config.PROJECT = {"name": "mullion"}
+        assert analysis.tool_perf_runs()["project"] == "mullion"
+    finally:
+        config.OUT, config.BASELINES, config.PROJECT = saved
+
+
+def test_unpresented_is_surfaced(tmp_path):
+    """A run whose program stopped presenting carries gpu.unpresented: perf_compare, perf_check, perf_baseline and
+    perf_diagnose say so with a note, and perf_gate fails it, since its frame numbers cover only part of the run."""
+    from metal_gpu_trace import analysis, config
+    stall = {"frames": [252], "from_s": 3.363, "span_s": 17.4, "command_buffers": 4141, "gpu_ms": 10977.0,
+             "share_of_gpu_time": 0.91}
+
+    def summary(unpresented=None):
+        gpu = {"frames": 300, "fps_estimate": 230.0, "frame_gpu_ms": {"mean": 2.6, "p95": 3.4}, "frame_interval_ms": {"p95": 7.0}}
+        if unpresented:
+            gpu["unpresented"] = unpresented
+        return {"gpu": gpu, "encoders": {"per_frame": {"p50": 2}, "command_buffers_per_frame": {"p50": 1},
+                                         "short_share": {"25": 0.01}, "by_label": []},
+                "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 1.6}}}
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        (tmp_path / "good.json").write_text(json.dumps(summary()))
+        (tmp_path / "bad.json").write_text(json.dumps(summary(stall)))
+        compared = analysis.tool_perf_compare("good", "bad")
+        assert compared["unpresented"]["runs"] == {"bad": stall} and "window" in compared["unpresented"]["note"], compared
+        assert "unpresented" not in analysis.tool_perf_compare("good", "good")
+        assert analysis.tool_perf_baseline("ref", ["good", "bad"])["unpresented"]["runs"] == {"bad": stall}
+        assert "unpresented" not in analysis.tool_perf_baseline("clean", ["good"])
+        assert analysis.tool_perf_check("bad", "clean")["unpresented"]["runs"] == {"bad": stall}
+        gate = analysis.tool_perf_gate("bad", fps_min=1)
+        assert not gate["pass"] and gate["unpresented"]["runs"] == {"bad": stall}, gate
+        assert analysis.tool_perf_gate("good", fps_min=1)["pass"]
+        diagnosis = analysis.tool_perf_diagnose("bad")
+        assert diagnosis["unpresented"]["runs"] == {"bad": stall} and "3.363" in diagnosis["recommendations"][0], diagnosis
+        assert "unpresented" not in analysis.tool_perf_diagnose("good")
+        frames = "frame,start_ms,gpu_ms_total\n" + "".join(f"{i},{1000 + i * 10},2.0\n" for i in range(300))
+        early = dict(stall, from_s=0.2, span_s=1.5)
+        (tmp_path / "load.json").write_text(json.dumps(summary(early)))
+        (tmp_path / "load.frames.csv").write_text(frames)
+        assert not analysis.tool_perf_gate("load", fps_min=1)["pass"], "the whole run holds the stall"
+        assert analysis.tool_perf_gate("load", fps_min=1, skip_s=1)["pass"], "skip_s past the stall leaves it out"
+        (tmp_path / "late.json").write_text(json.dumps(summary(stall)))
+        (tmp_path / "late.frames.csv").write_text(frames)
+        assert not analysis.tool_perf_gate("late", fps_min=1, skip_s=1)["pass"], "a stall after the cut stays"
+        assert "presentados" in diagnosis["recommendations"][0], diagnosis["recommendations"][0]
+    finally:
+        config.OUT, config.BASELINES = saved

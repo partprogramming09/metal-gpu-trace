@@ -74,7 +74,7 @@ def test_server(tmp_path):
     ]
     proc = subprocess.run([sys.executable, "-I", str(PKG / "metal_trace_mcp.py")], text=True, capture_output=True,
                           input="\n".join(json.dumps(r) for r in requests) + "\n", timeout=60,
-                          env=dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="info"))
+                          cwd=tmp_path, env=dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="info"))
     lines = [json.loads(line) for line in proc.stdout.splitlines()]
     replies = {r["id"]: r for r in lines if r["id"] is not None}
     assert sorted(replies) == list(range(1, 29)), (replies, proc.stderr)
@@ -95,7 +95,7 @@ def test_server(tmp_path):
     assert [x["uriTemplate"] for x in replies[17]["result"]["resourceTemplates"]] == ["metal-trace://runs/{run}"]
     assert json.loads(replies[26]["result"]["contents"][0]["text"]) == {"gpu": {"frames": 100}}
     assert replies[27]["error"]["code"] == replies[28]["error"]["code"] == -32002, "a bad run name is not found"
-    assert len(replies[2]["result"]["tools"]) == 24
+    assert len(replies[2]["result"]["tools"]) == 25
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -130,7 +130,7 @@ def test_no_runs_directory(tmp_path):
     request = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "perf_runs", "arguments": {}}}
     proc = subprocess.run([sys.executable, "-I", str(PKG / "metal_trace_mcp.py")], text=True, capture_output=True,
                           input=json.dumps(request) + "\n", timeout=60,
-                          env=dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="off"))
+                          cwd=tmp_path, env=dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="off"))
     assert json.loads(proc.stdout)["result"]["structuredContent"]["total"] == 0, proc.stdout
     assert not out.exists()
 
@@ -171,7 +171,7 @@ def test_progress_and_cancel(tmp_path):
     # over stdio: the cancel notification ends the call while the server still answers ping
     proc = subprocess.Popen([sys.executable, "-I", str(PKG / "metal_trace_mcp.py")], text=True, bufsize=1,
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                            env=dict(os.environ, METAL_TRACE_OUT=str(out), PATH=f"{stubs}:{os.environ['PATH']}"))
+                            cwd=tmp_path, env=dict(os.environ, METAL_TRACE_OUT=str(out), PATH=f"{stubs}:{os.environ['PATH']}"))
     def say(message):
         proc.stdin.write(json.dumps(message) + "\n")
         proc.stdin.flush()
@@ -192,8 +192,8 @@ def test_progress_and_cancel(tmp_path):
     assert not list(out.iterdir()), list(out.iterdir())
 
 def test_check_cli(tmp_path):
-    """`metal-gpu-trace check` exits 0 for same or improved, 1 for regressed, 2 for a run that cannot be judged, and
-    prints one JSON line without the full comparison."""
+    """`metal-gpu-trace check` exits 0 for same or improved, 1 for regressed, 2 for a run that cannot be judged (too
+    short, or its program stopped presenting), and prints one JSON line without the full comparison."""
     from metal_gpu_trace import analysis, config
 
     def summary(fps, frames=300):
@@ -202,8 +202,9 @@ def test_check_cli(tmp_path):
                 "encoders": {"per_frame": {"p50": 7}, "command_buffers_per_frame": {"p50": 5},
                              "short_share": {"25": 0.5}, "by_label": []},
                 "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 4}}}
+    stalled = dict(summary(61.0), gpu=dict(summary(61.0)["gpu"], unpresented={"frames": [9], "from_s": 3.0}))
     for name, s in {"r1": summary(60.0), "r2": summary(62.0), "ok": summary(61.0), "bad": summary(40.0),
-                    "short": summary(61.0, frames=50)}.items():
+                    "short": summary(61.0, frames=50), "stalled": stalled}.items():
         (tmp_path / f"{name}.json").write_text(json.dumps(s))
     saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
     try:
@@ -213,7 +214,7 @@ def test_check_cli(tmp_path):
 
     def check(*args):
         proc = subprocess.run([sys.executable, "-I", str(PKG / "metal_trace_mcp.py"), "check", *args], text=True,
-                              capture_output=True, env=dict(os.environ, METAL_TRACE_OUT=str(tmp_path)))
+                              capture_output=True, cwd=tmp_path, env=dict(os.environ, METAL_TRACE_OUT=str(tmp_path)))
         return proc.returncode, proc.stdout, proc.stderr
     code, out, _ = check("ok", "ds")
     assert code == 0 and json.loads(out)["verdict"] == "same" and "comparison" not in out, (code, out)
@@ -221,6 +222,8 @@ def test_check_cli(tmp_path):
     assert code == 1 and json.loads(out)["regressed"][0]["metric"] == "fps", (code, out)
     assert check("bad", "ds", "--margin-pct", "99")[0] == 0, "a wide margin lets it pass"
     assert check("short", "ds")[0] == 2, "a run under 100 frames cannot be judged"
+    code, out, _ = check("stalled", "ds")
+    assert code == 2 and "unpresented" in json.loads(out), "a run that stopped presenting cannot be judged"
     for bad in (("nope", "ds"), ("ok", "nope"), ("ok",), ("ok", "ds", "--margin-pct", "x")):
         assert check(*bad)[0] == 2, bad
 
@@ -235,16 +238,16 @@ def test_http(tmp_path):
     stubs, out, program = hang_stubs(tmp_path)
     script = [sys.executable, "-I", str(PKG / "metal_trace_mcp.py"), "--http", "--port"]
     env = dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="off", PATH=f"{stubs}:{os.environ['PATH']}")
-    without = subprocess.run([*script, "0"], capture_output=True, text=True, timeout=30,
+    without = subprocess.run([*script, "0"], cwd=tmp_path, capture_output=True, text=True, timeout=30,
                              env={k: v for k, v in env.items() if k != "METAL_TRACE_TOKEN"})
     assert without.returncode == 2 and "METAL_TRACE_TOKEN" in without.stderr, without
-    assert subprocess.run([*script, "0"], capture_output=True, text=True, timeout=30,
+    assert subprocess.run([*script, "0"], cwd=tmp_path, capture_output=True, text=True, timeout=30,
                           env=dict(env, METAL_TRACE_TOKEN="short")).returncode == 2, "a short token is refused"
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
     token = "t" * 32
-    proc = subprocess.Popen([*script, str(port)], env=dict(env, METAL_TRACE_TOKEN=token), stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen([*script, str(port)], cwd=tmp_path, env=dict(env, METAL_TRACE_TOKEN=token), stderr=subprocess.DEVNULL)
 
     def post(body, headers=None, path="/mcp", method="POST"):
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
@@ -273,7 +276,7 @@ def test_http(tmp_path):
         assert post(ping, path="/other")[0] == 404
         assert post({"jsonrpc": "2.0", "method": "notifications/initialized"}) == (202, None)
         code, tools = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        assert code == 200 and len(tools["result"]["tools"]) == 24
+        assert code == 200 and len(tools["result"]["tools"]) == 25
         code, runs = post({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                            "params": {"name": "perf_runs", "arguments": {}, "_meta": {"progressToken": "x"}}})
         assert code == 200 and runs["result"]["structuredContent"]["total"] == 0, runs
@@ -627,7 +630,9 @@ def test_tool_shape(tmp_path):
     from metal_gpu_trace import protocol
     from metal_gpu_trace import metal_trace_mcp
     tools = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-    assert len(tools) == 24
+    assert len(tools) == 25
+    info = next(t for t in tools if t["name"] == "project_info")
+    assert info["annotations"]["readOnlyHint"] is True and not info["inputSchema"].get("properties"), info
     for tool in tools:
         assert tool["title"] == tool["annotations"]["title"], tool["name"]
         if not tool["inputSchema"].get("properties"):
@@ -651,7 +656,7 @@ def stdio_cancel_run(tmp_path, cancel, token):
     stubs, out, program = hang_stubs(tmp_path)
     proc = subprocess.Popen([sys.executable, "-I", str(PKG / "metal_trace_mcp.py")], text=True, bufsize=1,
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                            env=dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="off",
+                            cwd=tmp_path, env=dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="off",
                                      PATH=f"{stubs}:{os.environ['PATH']}"))
     guard = threading.Timer(60, proc.kill)
     guard.start()
@@ -1172,3 +1177,48 @@ def test_capabilities_alone_make_a_modern_request(tmp_path):
     reply = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list",
                              "params": {"_meta": {"io.modelcontextprotocol/clientCapabilities": {}}}})
     assert reply["error"]["code"] == -32602, reply
+
+
+def test_broken_project_file_is_explained_not_ignored(tmp_path):
+    """With a broken metal-gpu-trace.json the server still starts and lists its tools, and every tool call, every run
+    resource and /panel/data answer with what is wrong in the file instead of reading ./perf-runs."""
+    import http.client
+    import socket
+    import time
+    (tmp_path / "metal-gpu-trace.json").write_text('{"name": "m", "runs": "r", "folder": "x"}')
+    (tmp_path / "perf-runs").mkdir()
+    (tmp_path / "perf-runs" / "a.json").write_text("{}")
+    env = dict(os.environ, METAL_TRACE_LOG="off", HOME=str(tmp_path / "h"))
+    env.pop("METAL_TRACE_OUT", None)
+    messages = [{"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "perf_runs", "arguments": {}}},
+                {"jsonrpc": "2.0", "id": 3, "method": "resources/read", "params": {"uri": "metal-trace://runs/a"}}]
+    proc = subprocess.run([sys.executable, "-I", str(PKG / "metal_trace_mcp.py")], input="".join(
+        json.dumps(m) + "\n" for m in messages), capture_output=True, text=True, timeout=60, cwd=tmp_path, env=env)
+    replies = {r["id"]: r for r in map(json.loads, proc.stdout.splitlines())}
+    assert replies[1]["result"]["tools"], replies[1]
+    assert replies[2]["result"]["isError"] and "folder" in replies[2]["result"]["content"][0]["text"], replies[2]
+    assert "folder" in replies[3]["error"]["message"], replies[3]
+    assert str(tmp_path) not in proc.stdout
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    token = "t" * 32
+    server = subprocess.Popen([sys.executable, "-I", str(PKG / "metal_trace_mcp.py"), "--http", "--port", str(port)],
+                              cwd=tmp_path, env=dict(env, METAL_TRACE_TOKEN=token), stderr=subprocess.DEVNULL)
+    try:
+        for _ in range(100):
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+                conn.request("GET", "/panel/data", headers={"Authorization": f"Bearer {token}"})
+                reply = conn.getresponse()
+                break
+            except OSError:
+                time.sleep(0.1)
+        else:
+            raise AssertionError("the HTTP server did not start")
+        body = json.loads(reply.read())
+        assert reply.status == 400 and "folder" in body["error"], (reply.status, body)
+    finally:
+        server.kill()
+        server.wait()

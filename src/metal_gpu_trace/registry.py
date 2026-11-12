@@ -1,5 +1,5 @@
 """What clients read: the tool list with its schemas, the resources and the prompts."""
-from metal_gpu_trace import analysis, config, experiments, panel, recording, traces, workloads
+from metal_gpu_trace import analysis, config, experiments, panel, project, recording, traces, workloads
 
 
 OBJECT = {"type": "object"}
@@ -95,6 +95,7 @@ TOOLS = {
          "process": {**S, "description": "pid, or a name in the program's command line such as Game.exe"},
          "seconds": {**I, "description": "recording length, default 20; the export afterwards takes several minutes under Wine"}},
         ["label", "process"]), hints("Record a running program", destructive=False)),
+    "project_info": (project.tool_project_info, schema({}), hints("Show the active project")),
     "perf_runs": (analysis.tool_perf_runs, schema(PAGE), hints("List recordings")),
     "perf_compare": (analysis.tool_perf_compare, schema(
         {"a": {**S, "description": "run name from perf_runs: the reference, such as the run before a change"},
@@ -141,7 +142,7 @@ TOOLS = {
                                                              "is A, the reference"},
          "preset": {**S, "description": "fps (default) or compare (needs two runs)"},
          "skip_s": {"type": "number", "description": SKIP},
-         "layout": {"type": "array", "items": S, "description": "tabs to show, in order: summary, ab, frames, encoders, counters, memory, data; "
+         "layout": {"type": "array", "items": S, "description": "tabs to show, in order: tests, summary, ab, frames, encoders, counters, memory, data; "
                                                                 "saved as panel.json in the runs directory as the default for every panel"}},
         ["name", "runs"]),
         hints("Write an HTML panel", destructive=False, idempotent=True)),
