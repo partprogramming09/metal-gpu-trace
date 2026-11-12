@@ -14,7 +14,7 @@ NOT_MODULES = {"__init__", "__main__"}  # __main__ starts the server when import
 # lower numbers are lower layers; a module imports modules of its own layer or below, never above
 LAYERS = {
     "config": 0, "logs": 0, "metrics": 0, "gputrace_read": 0, "perf_report": 0, "perf_record_windows": 0,
-    "paths": 1,
+    "paths": 1, "project": 1,
     "recording": 2, "workloads": 2, "analysis": 2, "experiments": 2, "panel": 2, "traces": 2,
     "registry": 3,
     "worker": 4,
