@@ -513,6 +513,62 @@ def test_panel_tests_mode(tmp_path):
     finally:
         config.OUT, config.BASELINES, config.PROJECT = saved
 
+def _change_summary(program, fps, gpu_ms=4.0, encoders=7, buffers=5, peak=90.0):
+    s = _warn_summary(fps, gpu_ms, 400, 60.0, {"none": "native"})
+    s["encoders"].update(per_frame={"p50": encoders}, command_buffers_per_frame={"p50": buffers})
+    return {**s, "process": {"arguments": program}, "metal_memory_mib": {"peak": peak}}
+
+def test_judge_matches_perf_check(tmp_path):
+    """analysis.judge is perf_check's rule: it says worse for exactly the metrics perf_check lists as regressed and
+    better for those it lists as improved."""
+    from metal_gpu_trace import analysis, config
+
+    for name, fps in (("r1", 62.4), ("r2", 62.4), ("r3", 62.2)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(_change_summary("g", fps)))
+    saved = config.OUT, config.BASELINES
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"])
+        span = analysis.ranges(analysis.load_baselines()["ref"]["summaries"])
+        for i, (fps, gpu, enc, buf) in enumerate(((70.0, 4.0, 7, 5), (50.0, 5.0, 8, 6), (62.3, 3.0, 6, 4), (64.2, 4.1, 7, 5), (60.4, 4.1, 7, 5))):
+            (tmp_path / f"x{i}.json").write_text(json.dumps(_change_summary("g", fps, gpu, enc, buf)))
+            check = analysis.tool_perf_check(f"x{i}", "ref")
+            s = json.loads((tmp_path / f"x{i}.json").read_text())
+            for metric, (get, _) in analysis.CHECKED.items():
+                got = analysis.judge(metric, get(s), span[metric], 3)
+                assert (got == "worse") == (metric in [r["metric"] for r in check["regressed"]]), (i, metric, got)
+                assert (got == "better") == (metric in [r["metric"] for r in check["improved"]]), (i, metric, got)
+        assert analysis.judge("fps", None, span["fps"], 3) is None and analysis.judge("fps", 60.0, None, 3) is None
+    finally:
+        config.OUT, config.BASELINES = saved
+
+def test_changes_against(tmp_path):
+    """changes_against lists the newest runs of the reference's program with each metric's change against the
+    reference and perf_check's own verdict; other programs, the reference's own runs and paths stay out."""
+    from metal_gpu_trace import analysis, config, panel
+
+    program = f"{tmp_path}/game.exe"
+    for name, prog, fps, age in (("r1", program, 62.4, 0), ("r2", program, 62.4, 0), ("r3", program, 62.2, 0), ("x", program, 63.4, 10),
+                                 ("y", program, 70.0, 20), ("z", "other.exe", 63.4, 30)):
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(_change_summary(prog, fps)))
+        os.utime(path, (1_700_000_000 + age, 1_700_000_000 + age))
+    saved = config.OUT, config.BASELINES
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"])
+        got = panel.changes_against("ref")
+        assert [r["run"] for r in got["runs"]] == ["x", "y"], got["runs"]
+        assert got["metrics"] == [*analysis.CHECKED, "metal_mib_peak"]
+        assert got["runs"][0]["values"]["fps"] == {"value": 63.4, "pct": 1.7, "direction": "same"}, got["runs"][0]
+        assert got["runs"][1]["values"]["fps"]["direction"] == "better"
+        assert got["runs"][0]["values"]["metal_mib_peak"]["direction"] is None
+        assert got["reference"]["fps"] == {"mean": 62.333, "min": 62.2, "max": 62.4}, got["reference"]["fps"]
+        assert [r["run"] for r in panel.changes_against("ref", limit=1)["runs"]] == ["y"]
+        assert str(tmp_path) not in json.dumps(got)
+    finally:
+        config.OUT, config.BASELINES = saved
+
 def test_windows_against_metal(tmp_path):
     """A Windows run against a Metal run says which numbers do not compare and skips the encoders, in perf_compare, its
     Markdown and the panel; two runs from one side compare as before."""

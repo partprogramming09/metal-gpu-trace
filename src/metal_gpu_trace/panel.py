@@ -124,6 +124,61 @@ def tests_mode(runs, baseline):
             "spread_pct": analysis.spreads(span), "checks": checks}, None
 
 
+CHANGE_METRICS = (*analysis.CHECKED, "metal_mib_peak")
+
+
+def metric_value(metric, s):
+    """Returns a summary's value of one of CHANGE_METRICS, or None when it lacks it."""
+    try:
+        return s.get("metal_memory_mib", {}).get("peak") if metric == "metal_mib_peak" else analysis.CHECKED[metric][0](s)
+    except (KeyError, TypeError, AttributeError):
+        return None
+
+
+def changes_against(baseline, limit=8):
+    """Returns how the newest `limit` recordings of the reference's program (same process.arguments, not the
+    reference's own runs, oldest first) stand against the reference `baseline`: its mean, min and max per metric and,
+    per run, the value, its % against the mean and its direction (better, worse or same by analysis.judge, which is
+    perf_check's rule; None where perf_check does not judge: Metal memory, a number the run lacks, or a Windows run
+    against a Metal reference except for FPS). A run that cannot be read the way the reference was saved (it lacks the
+    frames a skip_s needs) is left out. No path travels."""
+    saved = analysis.load_baselines().get(baseline)
+    if saved is None:
+        raise paths.ToolError(f"no reference {baseline}; perf_baseline with no arguments lists them")
+    first, skip = saved["summaries"][0], saved.get("skip_s", 0)
+    span = analysis.ranges(saved["summaries"])
+    reference = {}
+    for metric in CHANGE_METRICS:
+        values = [metric_value(metric, s) for s in saved["summaries"]]
+        reference[metric] = None if None in values else {"mean": round(sum(values) / len(values), 3), "min": min(values), "max": max(values)}
+    program = (first.get("process") or {}).get("arguments")
+    found = []
+    for path in config.OUT.glob("*.json"):
+        if path.name in (config.BASELINES.name, "panel.json") or path.stem in saved["runs"]:
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if isinstance(raw, dict) and (raw.get("process") or {}).get("arguments") == program:
+            found.append((path.stat().st_mtime, path.stem))
+    runs = []
+    for _, name in sorted(found, reverse=True)[:limit][::-1]:
+        try:
+            s = analysis.steady_summary(name, skip)
+        except paths.ToolError:
+            continue
+        cross = analysis.measurement(first) != analysis.measurement(s)
+        values = {}
+        for metric in CHANGE_METRICS:
+            value, mean = metric_value(metric, s), (reference[metric] or {}).get("mean")
+            judged = metric in analysis.CHECKED and not (cross and metric != "fps")
+            values[metric] = {"value": value, "pct": round(100 * (value - mean) / mean, 1) if value is not None and mean else None,
+                              "direction": analysis.judge(metric, value, span[metric], RULES["noise_pct"]) if judged else None}
+        runs.append({"run": name, "values": values})
+    return {"metrics": list(CHANGE_METRICS), "reference": reference, "runs": runs}
+
+
 TAB_IDS = ("summary", "ab", "frames", "encoders", "counters", "memory", "data")
 
 
@@ -170,7 +225,8 @@ def panel_data(runs, preset=None, skip_s=0):
     return {"preset": preset, "runs": data, "compare": compare, "not_comparable": not_comparable, "labels": labels[:10],
             "skip_s": skip, "layout": read_layout(), "project": {"name": project.get("name"), "profile": profile},
             "primary": "gpu_ms_mean" if profile == "translation-layer" else "fps", "rules": dict(RULES),
-            "warnings": warnings, "tests": tests, "tests_hint": tests_hint}
+            "warnings": warnings, "tests": tests, "tests_hint": tests_hint,
+            "changes": changes_against(tests["baseline"]) if tests else None}
 
 
 def tool_perf_panel(name, runs, preset="fps", skip_s=0, layout=None):

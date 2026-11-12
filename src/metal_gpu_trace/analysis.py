@@ -218,6 +218,22 @@ def spreads(span):
             for m, r in span.items()}
 
 
+def judge(metric, value, span, margin_pct):
+    """Returns how a checked metric's `value` stands against the reference's `span` ({"min", "max"}): worse when it is
+    past the bad end by more than margin_pct (no margin for the encoder and command buffer counts, which are
+    exact), better when past the good end, same inside; None when the value or the span is missing. This is
+    perf_check's rule, and the panel uses it for every build it draws."""
+    if value is None or span is None:
+        return None
+    higher_is_worse = CHECKED[metric][1]
+    margin = 0 if metric.endswith("_p50") else margin_pct / 100
+    if higher_is_worse and value > span["max"] * (1 + margin) or not higher_is_worse and value < span["min"] * (1 - margin):
+        return "worse"
+    if higher_is_worse and value < span["min"] * (1 - margin) or not higher_is_worse and value > span["max"] * (1 + margin):
+        return "better"
+    return "same"
+
+
 def tool_perf_check(run, baseline, margin_pct=3):
     """Judges a recording against a reference saved with perf_baseline: regressed when FPS falls under the
     reference's lowest FPS by more than margin_pct, GPU ms per frame rises over its highest by more than margin_pct,
@@ -235,7 +251,7 @@ def tool_perf_check(run, baseline, margin_pct=3):
     span = ranges(ref["summaries"])
     worse, better, unchecked = [], [], []
     cross = measurement(ref["summaries"][0]) != measurement(s)
-    for metric, (get, higher_is_worse) in CHECKED.items():
+    for metric, (get, _) in CHECKED.items():
         if cross and metric != "fps":
             unchecked.append(metric)
             continue
@@ -246,13 +262,11 @@ def tool_perf_check(run, baseline, margin_pct=3):
         if value is None or span[metric] is None:
             unchecked.append(metric)
             continue
+        direction = judge(metric, value, span[metric], margin_pct)
         lo, hi = span[metric]["min"], span[metric]["max"]
-        margin = 0 if metric.endswith("_p50") else margin_pct / 100
-        if higher_is_worse and value > hi * (1 + margin):
+        if direction == "worse":
             worse.append(reason(metric, value, lo, hi))
-        elif not higher_is_worse and value < lo * (1 - margin):
-            worse.append(reason(metric, value, lo, hi))
-        elif higher_is_worse and value < lo * (1 - margin) or not higher_is_worse and value > hi * (1 + margin):
+        elif direction == "better":
             better.append(reason(metric, value, lo, hi))
     verdict = "regressed" if worse else "improved" if better else "same"
     result = {"run": run, "baseline": baseline, "verdict": verdict, "margin_pct": margin_pct, "regressed": worse,
