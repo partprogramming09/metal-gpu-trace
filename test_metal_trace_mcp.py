@@ -221,7 +221,8 @@ def test_pacing_and_hitches():
     gaps = [10.0] * 98 + [30.0, 10.0]
     got = perf_report.frame_pacing(gaps, [5.0] * 100)
     assert got["fps_1pct_low"] == 33.3 and got["fps_01pct_low"] is None, got
-    assert got["stutter_rate_pct"] == 1.0 and got["frame_jitter_ms"] == 2.0, got
+    # jitter is the population standard deviation of the intervals (statistics.pstdev), not the sample one (2.0)
+    assert got["stutter_rate_pct"] == 1.0 and got["frame_jitter_ms"] == 1.99, got
     assert got["throttling_analysis"]["thermal_throttling_detected"] is False, got
     assert perf_report.frame_pacing([], []) == {}
     uncapped = [1.8] * 90 + [3.0] * 9 + [24.0]
@@ -230,16 +231,19 @@ def test_pacing_and_hitches():
     starts = [sum(uncapped[:i]) for i in range(101)]
     noise = perf_report.attribute_hitches(list(range(101)), starts, [1.0] * 101, [], [], [])
     assert noise["count"] == 1 and noise["threshold_ms"] == 8.0 and noise["worst"][0]["interval_ms"] == 24.0, noise
-    starts = [0, 10, 20, 50, 60, 100, 110, 150, 160, 200, 210]
+    # five long intervals, one cause each: 20-50 compiler, 60-100 thermal, 110-150 nothing (cpu_or_wait),
+    # 160-200 GPU busy for 39 of 40 ms (gpu_heavy), 200-250 Metal memory +20 MiB (memory_growth)
+    starts = [0, 10, 20, 50, 60, 100, 110, 150, 160, 200, 250, 260]
     frames = list(range(len(starts)))
     totals = [5] * len(starts)
     totals[8] = 39
-    memory = [(0, 0), (160, 0), (200, 20 * 2**20)]
+    memory = [(0, 0), (200, 0), (250, 20 * 2**20)]
     got = perf_report.attribute_hitches(frames, starts, totals, [(25, 30)], [(70, 80)], memory)
     assert got["count"] == 5 and got["threshold_ms"] == 15.0, got
     assert [h["cause"] for h in sorted(got["worst"], key=lambda h: h["frame"])] == [
         "shader_compile", "thermal", "cpu_or_wait", "gpu_heavy", "memory_growth"], got
-    assert perf_report.attribute_hitches([1], [0], [1], [], [], []) == {"count": 0, "causes": {}, "worst": []}
+    assert perf_report.attribute_hitches([1], [0], [1], [], [], []) == {"count": 0, "per_minute": None, "causes": {},
+                                                                        "worst": []}
     assert "cpu_pct" not in got["worst"][0], "no CPU samples, no cpu_pct"
     cpu = [(t, 300.0) for t in range(0, 160, 10)] + [(t, 100.0) for t in range(160, 211, 10)]
     busy = perf_report.attribute_hitches(frames, starts, totals, [(25, 30)], [(70, 80)], memory, cpu=cpu)
@@ -2110,11 +2114,105 @@ def test_machine(tmp_path):
     assert perf_report.machine_info(device, {}.__getitem__) is None
 
 
+GOLDEN = TOOLS / "tests" / "golden"
+
+
+def golden(name, value):
+    """Compares `value` with tests/golden/<name>.json, the recorded behaviour a refactor must keep. With
+    METAL_TRACE_GOLDEN=write it records `value` instead: do that only for an intended change, named in the CHANGELOG."""
+    path = GOLDEN / f"{name}.json"
+    text = json.dumps(value, indent=1, sort_keys=True, ensure_ascii=False) + "\n"
+    if os.environ.get("METAL_TRACE_GOLDEN") == "write":
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    assert path.exists(), f"golden file missing: {path.name} (record it with METAL_TRACE_GOLDEN=write)"
+    assert json.loads(path.read_text(encoding="utf-8")) == json.loads(text), f"{name} differs from its golden file"
+
+
+GOLDEN_MESSAGES = [
+    {"method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                                        "clientInfo": {"name": "t", "version": "0"}}},
+    {"method": "initialize", "params": {"protocolVersion": "1999-01-01", "capabilities": {},
+                                        "clientInfo": {"name": "t", "version": "0"}}},
+    {"method": "tools/list"},
+    {"method": "resources/list"},
+    {"method": "resources/templates/list"},
+    {"method": "prompts/list"},
+    {"method": "prompts/get", "params": {"name": "compare-layer", "arguments": {"workload": "drawstress"}}},
+    {"method": "resources/read", "params": {"uri": "metal-trace://runs/none_such"}},
+    {"method": "tools/call", "params": {"name": "gpu_family", "arguments": {"name": "M3"}}},
+    {"method": "tools/call", "params": {"name": "no_such_tool", "arguments": {}}},
+    {"method": "no/such/method"},
+    {"method": "ping"},
+]
+
+
+def test_golden_protocol(tmp_path):
+    """The server answers a fixed set of messages exactly as recorded in tests/golden/protocol.json."""
+    import metal_trace_mcp as mcp
+    saved = mcp.OUT
+    mcp.OUT = tmp_path
+    try:
+        replies = [mcp.handle({"jsonrpc": "2.0", "id": i, **m}) for i, m in enumerate(GOLDEN_MESSAGES)]
+    finally:
+        mcp.OUT = saved
+    for reply in replies:
+        info = (reply.get("result") or {}).get("serverInfo")
+        if info:
+            info["version"] = "<version>"
+    golden("protocol", replies)
+
+
+def test_tool_descriptions_have_no_indent(tmp_path):
+    """No line of a tool description starts with whitespace, whatever the Python (before 3.13 docstrings keep their
+    indent)."""
+    import metal_trace_mcp as mcp
+    for tool in mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]:
+        assert not any(line[:1].isspace() for line in tool["description"].splitlines()), tool["name"]
+
+
+def test_golden_metrics(tmp_path):
+    """The numbers perf_report and perf_record_windows compute from fixed inputs stay as recorded in
+    tests/golden/metrics.json: proof that a refactor leaves the measurements alone."""
+    import perf_record_windows
+    spans = [(0, 0, 10_000, 1, 1), (0, 12_000, 8_000, 2, 1), (1, 40_000, 1_000, 3, 2)]
+    labels = {1: "[0] Shadow 1", 2: "[1] Main", 3: "[2] Shadow 2"}
+    shared = {}
+    for side, module in (("mac", perf_report), ("windows", perf_record_windows)):
+        shared[side] = {
+            "stats": module.stats([1.0, 2.0, 3.0, 10.0]),
+            "encoder_stats_empty": module.encoder_stats([], {}),
+            "encoder_stats": module.encoder_stats(spans, labels),
+            "idle_gaps_empty": module.idle_gaps([]),
+            "idle_gaps": module.idle_gaps(spans),
+            "label_name": module.label_name("[3] Shadow 12"),
+            "public_arguments": module.public_arguments("/opt/x/game.exe -w 1"),
+        }
+    gaps = [10.0] * 98 + [30.0, 10.0]
+    starts = [0, 10, 20, 50, 60, 100, 110, 150, 160, 200, 250, 260]
+    totals = [5] * len(starts)
+    totals[8] = 39
+    shared["mac_only"] = {
+        "frame_pacing": perf_report.frame_pacing(gaps, [5.0] * 100),
+        "attribute_hitches": perf_report.attribute_hitches(list(range(len(starts))), starts, totals, [(25, 30)],
+                                                           [(70, 80)], [(0, 0), (200, 0), (250, 20 * 2**20)]),
+    }
+    golden("metrics", shared)
+
+
 def main():
-    tests = [test_workload_downloads, test_example_traits, test_memory_trend, test_cold_warm, test_validation, test_counter_windows, test_readme_lists_every_tool, test_resource_summary, test_rosetta_layer, test_gpu_activity, test_size, test_levers, test_perf_sweep, test_pack_examples, test_workload_example, test_machine, test_layout, test_gpu_counters, test_skip_start_up, test_history, test_gate_and_spread, test_windows_against_metal, test_panel,test_disk_guard, test_memory_param, test_no_memory, test_toc_and_tables,test_report,test_encoders, test_diagnose, test_compare, test_baseline, test_trace_count, test_baseline_record, test_layer, test_workloads, test_capture, test_server, test_no_runs_directory, test_overrun, test_progress_and_cancel, test_check_cli, test_markdown_and_export, test_http, test_queue, test_http_timeout, test_kill_program_and_watchdog, test_script_failure_cleanup, test_moltenvk]
+    """Runs every test_* function of this module in source order, so a new test cannot be left out of a list; a test
+    that takes tmp_path gets a fresh temporary directory."""
+    import inspect
+    tests = sorted((f for name, f in globals().items() if name.startswith("test_") and callable(f)),
+                   key=lambda f: inspect.unwrap(f).__code__.co_firstlineno)
     for test in tests:
-        with tempfile.TemporaryDirectory() as tmp:
-            test(pathlib.Path(tmp).resolve())
+        if inspect.signature(test).parameters:
+            with tempfile.TemporaryDirectory() as tmp:
+                test(pathlib.Path(tmp).resolve())
+        else:
+            test()
+    print(f"{len(tests)} tests ok")
     print("ok")
 
 

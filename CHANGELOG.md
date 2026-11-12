@@ -3,6 +3,16 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## 0.23.0 — unreleased
+
+- Tool descriptions in `tools/list` are the same on every Python: before 3.13 they kept each docstring's four-space
+  indent, so clients received extra whitespace on 3.9 to 3.12.
+- The self-check runs every `test_*` function it finds (`main()` listed them by hand and had left out two). The pacing
+  test that never ran now passes: its scenario was missing the long interval meant for `memory_growth`, and jitter is
+  the population standard deviation the code has always reported (1.99 ms in the test, not 2.0).
+- Golden files in `tests/golden/` pin the server's replies and the numbers `perf_report` and the Windows recorder compute;
+  a `wheel` CI job installs the built package and checks that it starts.
+
 ## 0.22.0 — 2026-11-05
 
 - New workload `godot`: a lit 3D scene Godot 4.7.2 builds from code (400 meshes, 8 omni lights, a shadowed sun, Forward+, no

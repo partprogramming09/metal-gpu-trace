@@ -16,6 +16,17 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -I test_metal_trace_mcp.py
 
+  # the installed package must start: catches a file the wheel leaves out, which tests from the checkout cannot see
+  wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - uses: astral-sh/setup-uv@v6
+      - run: sh tests/smoke_wheel.sh python
+
   # the Windows and macOS jobs run only when a file they cover changed: a docs-only change does not wait for them
   changes:
     runs-on: ubuntu-latest

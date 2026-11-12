@@ -1,0 +1,1403 @@
+[
+ {
+  "id": 0,
+  "jsonrpc": "2.0",
+  "result": {
+   "capabilities": {
+    "prompts": {},
+    "resources": {},
+    "tools": {}
+   },
+   "instructions": "Records GPU use on Apple silicon with Metal System Trace. One recording runs at a time; keep other GPU work off the Mac while it records. Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare, perf_gate and perf_panel leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling); perf_panel writes an HTML page to look at one or two runs in a browser.trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
+   "protocolVersion": "2025-06-18",
+   "serverInfo": {
+    "name": "metal-trace",
+    "version": "<version>"
+   }
+  }
+ },
+ {
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": {
+   "capabilities": {
+    "prompts": {},
+    "resources": {},
+    "tools": {}
+   },
+   "instructions": "Records GPU use on Apple silicon with Metal System Trace. One recording runs at a time; keep other GPU work off the Mac while it records. Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare, perf_gate and perf_panel leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling); perf_panel writes an HTML page to look at one or two runs in a browser.trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
+   "protocolVersion": "2025-06-18",
+   "serverInfo": {
+    "name": "metal-trace",
+    "version": "<version>"
+   }
+  }
+ },
+ {
+  "id": 2,
+  "jsonrpc": "2.0",
+  "result": {
+   "tools": [
+    {
+     "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Record a program"
+     },
+     "description": "Records `program` (an .exe under Wine, or a macOS binary with wine=\"native\"), or a test program fetched with\nworkload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per\nframe, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest\nto read). When it ends it stops every program of that Wine prefix (wineserver -k), or every process named like\nthe program with native. counters=true also records Metal GPU Counters (`gpu_counters` in the summary: the units the\nGPU waited on, its utilization, occupancy and memory bandwidth); it adds about 40 s of read-back per recorded second.",
+     "inputSchema": {
+      "properties": {
+       "api": {
+        "description": "with workload: mtl (native Metal), mtl-x64 (Metal built for x86_64, run under Rosetta like Wine), vk (Vulkan through MoltenVK: set METAL_TRACE_MOLTENVK), d3d11 or d3d12 (under wine)",
+        "type": "string"
+       },
+       "args": {
+        "description": "program arguments as in a shell, quotes included",
+        "type": "string"
+       },
+       "background": {
+        "description": "macOS only, default false; true runs the program under taskpolicy -b, which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run",
+        "type": "boolean"
+       },
+       "counters": {
+        "description": "default false; true also records Metal GPU Counters (gpu_counters in the summary); not under Windows; adds about 40 s of read-back per recorded second",
+        "type": "boolean"
+       },
+       "dim": {
+        "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame",
+        "type": "integer"
+       },
+       "env": {
+        "description": "NAME=VALUE pairs separated by spaces, set in the program's environment; MTL_SHADER_VALIDATION=1 or MTL_DEBUG_LAYER=1 adds `validation` to the summary: the layers' messages counted by kind",
+        "type": "string"
+       },
+       "example": {
+        "description": "with a workload that lists examples in workload_list: the one to run",
+        "type": "string"
+       },
+       "label": {
+        "description": "name for the run: letters, digits, '.', '_', '-'",
+        "type": "string"
+       },
+       "memory": {
+        "description": "default true; false skips the Metal memory table, the slowest to read (about 40 % faster summary): no metal_mib_peak",
+        "type": "boolean"
+       },
+       "memory_free_pct": {
+        "description": "macOS only, 20 to 60: holds the whole Mac at this percentage of RAM free while recording (memory_pressure), to see how the program behaves short of memory; lower can freeze the Mac",
+        "type": "integer"
+       },
+       "prefix": {
+        "description": "Wine prefix, default WINEPREFIX or ~/.wine; ignored with native",
+        "type": "string"
+       },
+       "program": {
+        "description": "path of the .exe, or of the macOS binary with wine=native",
+        "type": "string"
+       },
+       "seconds": {
+        "description": "recording length, default 20; use 30 under Wine, whose start-up takes part of it; the export afterwards takes several minutes under Wine",
+        "type": "integer"
+       },
+       "size": {
+        "description": "with a workload that has size_variables (drawstress): the window size, WIDTHxHEIGHT such as 1920x1080",
+        "type": "string"
+       },
+       "wine": {
+        "description": "Wine directory holding bin/wine, or native",
+        "type": "string"
+       },
+       "workdir": {
+        "description": "directory the program starts in, default the program's own",
+        "type": "string"
+       },
+       "workload": {
+        "description": "a test program from workload_list, fetched with workload_fetch, instead of program",
+        "type": "string"
+       }
+      },
+      "required": [
+       "label"
+      ],
+      "type": "object"
+     },
+     "name": "perf_record",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Record a reference"
+     },
+     "description": "Records the same program `count` times in a row with perf_record's arguments and saves the runs as the\nreference `name` for perf_check, returning the range each number spans across them. Runs are named\n`name`-1, `name`-2, ... Each recording takes its seconds plus about a minute to read back. skip_s as in\nperf_baseline: the reference leaves out each run's start-up.",
+     "inputSchema": {
+      "properties": {
+       "api": {
+        "description": "with workload: mtl (native Metal), mtl-x64 (Metal built for x86_64, run under Rosetta like Wine), vk (Vulkan through MoltenVK: set METAL_TRACE_MOLTENVK), d3d11 or d3d12 (under wine)",
+        "type": "string"
+       },
+       "args": {
+        "description": "program arguments as in a shell, quotes included",
+        "type": "string"
+       },
+       "background": {
+        "description": "macOS only, default false; true runs the program under taskpolicy -b, which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run",
+        "type": "boolean"
+       },
+       "count": {
+        "description": "equal recordings to make, default 3",
+        "type": "integer"
+       },
+       "counters": {
+        "description": "default false; true also records Metal GPU Counters (gpu_counters in the summary); not under Windows; adds about 40 s of read-back per recorded second",
+        "type": "boolean"
+       },
+       "dim": {
+        "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame",
+        "type": "integer"
+       },
+       "env": {
+        "description": "NAME=VALUE pairs separated by spaces, set in the program's environment; MTL_SHADER_VALIDATION=1 or MTL_DEBUG_LAYER=1 adds `validation` to the summary: the layers' messages counted by kind",
+        "type": "string"
+       },
+       "example": {
+        "description": "with a workload that lists examples in workload_list: the one to run",
+        "type": "string"
+       },
+       "memory": {
+        "description": "default true; false skips the Metal memory table, the slowest to read (about 40 % faster summary): no metal_mib_peak",
+        "type": "boolean"
+       },
+       "memory_free_pct": {
+        "description": "macOS only, 20 to 60: holds the whole Mac at this percentage of RAM free while recording (memory_pressure), to see how the program behaves short of memory; lower can freeze the Mac",
+        "type": "integer"
+       },
+       "name": {
+        "description": "reference name: letters, digits, '.', '_', '-'",
+        "type": "string"
+       },
+       "prefix": {
+        "description": "Wine prefix, default WINEPREFIX or ~/.wine; ignored with native",
+        "type": "string"
+       },
+       "program": {
+        "description": "path of the .exe, or of the macOS binary with wine=native",
+        "type": "string"
+       },
+       "seconds": {
+        "description": "recording length, default 20; use 30 under Wine, whose start-up takes part of it; the export afterwards takes several minutes under Wine",
+        "type": "integer"
+       },
+       "size": {
+        "description": "with a workload that has size_variables (drawstress): the window size, WIDTHxHEIGHT such as 1920x1080",
+        "type": "string"
+       },
+       "skip_s": {
+        "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them; perf_check applies the same cut to the run it judges",
+        "type": "number"
+       },
+       "wine": {
+        "description": "Wine directory holding bin/wine, or native",
+        "type": "string"
+       },
+       "workdir": {
+        "description": "directory the program starts in, default the program's own",
+        "type": "string"
+       },
+       "workload": {
+        "description": "a test program from workload_list, fetched with workload_fetch, instead of program",
+        "type": "string"
+       }
+      },
+      "required": [
+       "name"
+      ],
+      "type": "object"
+     },
+     "name": "perf_baseline_record",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Record one run per value of a variable"
+     },
+     "description": "Records the same program once per value of one variable (dim, example, api, size, or env:NAME for an environment\nvariable) and returns, per value, the median of FPS, 1 % low, GPU ms per frame and stutter, and with 3 or more\nnumeric values the straight line GPU ms per frame follows (fixed ms plus ms per draw for dim, per unit otherwise)\nwith its r2. With rounds above 1 the values run in opposite order every other round, so drift hits all alike.\nRuns are named `name`-<value number>-r<round>; each takes its seconds plus about a minute to read back.",
+     "inputSchema": {
+      "properties": {
+       "api": {
+        "description": "with workload: mtl (native Metal), mtl-x64 (Metal built for x86_64, run under Rosetta like Wine), vk (Vulkan through MoltenVK: set METAL_TRACE_MOLTENVK), d3d11 or d3d12 (under wine)",
+        "type": "string"
+       },
+       "args": {
+        "description": "program arguments as in a shell, quotes included",
+        "type": "string"
+       },
+       "background": {
+        "description": "macOS only, default false; true runs the program under taskpolicy -b, which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run",
+        "type": "boolean"
+       },
+       "counters": {
+        "description": "default false; true also records Metal GPU Counters (gpu_counters in the summary); not under Windows; adds about 40 s of read-back per recorded second",
+        "type": "boolean"
+       },
+       "dim": {
+        "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame",
+        "type": "integer"
+       },
+       "env": {
+        "description": "NAME=VALUE pairs separated by spaces, set in the program's environment; MTL_SHADER_VALIDATION=1 or MTL_DEBUG_LAYER=1 adds `validation` to the summary: the layers' messages counted by kind",
+        "type": "string"
+       },
+       "example": {
+        "description": "with a workload that lists examples in workload_list: the one to run",
+        "type": "string"
+       },
+       "memory": {
+        "description": "default true; false skips the Metal memory table, the slowest to read (about 40 % faster summary): no metal_mib_peak",
+        "type": "boolean"
+       },
+       "memory_free_pct": {
+        "description": "macOS only, 20 to 60: holds the whole Mac at this percentage of RAM free while recording (memory_pressure), to see how the program behaves short of memory; lower can freeze the Mac",
+        "type": "integer"
+       },
+       "name": {
+        "description": "name for the runs: letters, digits, '.', '_', '-'",
+        "type": "string"
+       },
+       "prefix": {
+        "description": "Wine prefix, default WINEPREFIX or ~/.wine; ignored with native",
+        "type": "string"
+       },
+       "program": {
+        "description": "path of the .exe, or of the macOS binary with wine=native",
+        "type": "string"
+       },
+       "rounds": {
+        "description": "rounds, default 1, at most 5 and at most 24 recordings in all; every other round runs the values in reverse",
+        "type": "integer"
+       },
+       "seconds": {
+        "description": "recording length, default 20; use 30 under Wine, whose start-up takes part of it; the export afterwards takes several minutes under Wine",
+        "type": "integer"
+       },
+       "size": {
+        "description": "with a workload that has size_variables (drawstress): the window size, WIDTHxHEIGHT such as 1920x1080",
+        "type": "string"
+       },
+       "skip_s": {
+        "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them",
+        "type": "number"
+       },
+       "values": {
+        "description": "2 to 8 values of the variable, such as [10, 20, 30] for dim",
+        "items": {
+         "type": [
+          "string",
+          "integer"
+         ]
+        },
+        "type": "array"
+       },
+       "variable": {
+        "description": "what changes between runs: dim, example, api, size, or env:NAME for an environment variable",
+        "type": "string"
+       },
+       "wine": {
+        "description": "Wine directory holding bin/wine, or native",
+        "type": "string"
+       },
+       "workdir": {
+        "description": "directory the program starts in, default the program's own",
+        "type": "string"
+       },
+       "workload": {
+        "description": "a test program from workload_list, fetched with workload_fetch, instead of program",
+        "type": "string"
+       }
+      },
+      "required": [
+       "name",
+       "variable",
+       "values"
+      ],
+      "type": "object"
+     },
+     "name": "perf_sweep",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Record two settings in A B B A order"
+     },
+     "description": "Records the same program with two environments in the order A B B A (repeated `rounds` times, so drift hits both\nsides equally) and says per metric whether B is better, worse or the same as A, with every value behind it.\nenv_a and env_b are NAME=VALUE pairs separated by spaces; empty means none. Runs are named `name`-a1, `name`-b1, ...\nEach recording takes its seconds plus about a minute to read back. skip_s leaves out the first seconds of every\nrecording (the start-up) when the verdicts are drawn, as perf_compare does; the recordings are whole.",
+     "inputSchema": {
+      "properties": {
+       "api": {
+        "description": "with workload: mtl (native Metal), mtl-x64 (Metal built for x86_64, run under Rosetta like Wine), vk (Vulkan through MoltenVK: set METAL_TRACE_MOLTENVK), d3d11 or d3d12 (under wine)",
+        "type": "string"
+       },
+       "args": {
+        "description": "program arguments as in a shell, quotes included",
+        "type": "string"
+       },
+       "background": {
+        "description": "macOS only, default false; true runs the program under taskpolicy -b, which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run",
+        "type": "boolean"
+       },
+       "counters": {
+        "description": "default false; true also records Metal GPU Counters (gpu_counters in the summary); not under Windows; adds about 40 s of read-back per recorded second",
+        "type": "boolean"
+       },
+       "dim": {
+        "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame",
+        "type": "integer"
+       },
+       "env_a": {
+        "description": "NAME=VALUE pairs for side A, the reference (empty: none)",
+        "type": "string"
+       },
+       "env_b": {
+        "description": "NAME=VALUE pairs for side B, the change under test (empty: none)",
+        "type": "string"
+       },
+       "example": {
+        "description": "with a workload that lists examples in workload_list: the one to run",
+        "type": "string"
+       },
+       "memory": {
+        "description": "default true; false skips the Metal memory table, the slowest to read (about 40 % faster summary): no metal_mib_peak",
+        "type": "boolean"
+       },
+       "memory_free_pct": {
+        "description": "macOS only, 20 to 60: holds the whole Mac at this percentage of RAM free while recording (memory_pressure), to see how the program behaves short of memory; lower can freeze the Mac",
+        "type": "integer"
+       },
+       "name": {
+        "description": "name for the runs: letters, digits, '.', '_', '-'",
+        "type": "string"
+       },
+       "prefix": {
+        "description": "Wine prefix, default WINEPREFIX or ~/.wine; ignored with native",
+        "type": "string"
+       },
+       "program": {
+        "description": "path of the .exe, or of the macOS binary with wine=native",
+        "type": "string"
+       },
+       "rounds": {
+        "description": "A B B A rounds, default 1 (4 recordings), at most 5",
+        "type": "integer"
+       },
+       "seconds": {
+        "description": "recording length, default 20; use 30 under Wine, whose start-up takes part of it; the export afterwards takes several minutes under Wine",
+        "type": "integer"
+       },
+       "size": {
+        "description": "with a workload that has size_variables (drawstress): the window size, WIDTHxHEIGHT such as 1920x1080",
+        "type": "string"
+       },
+       "skip_s": {
+        "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them",
+        "type": "number"
+       },
+       "wine": {
+        "description": "Wine directory holding bin/wine, or native",
+        "type": "string"
+       },
+       "workdir": {
+        "description": "directory the program starts in, default the program's own",
+        "type": "string"
+       },
+       "workload": {
+        "description": "a test program from workload_list, fetched with workload_fetch, instead of program",
+        "type": "string"
+       }
+      },
+      "required": [
+       "name",
+       "env_a",
+       "env_b"
+      ],
+      "type": "object"
+     },
+     "name": "perf_ab",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Record a run twice to find first-seen shader stutter"
+     },
+     "description": "Records the same program twice in a row and says what the first run suffers that the second does not: hitches\nwhose cause is a shader compile (first-seen pipelines: the first run's count minus the second's, never below 0), with\neach run's hitch count and graphics compiler time. macOS only. Runs are named `name`-first and `name`-second; each recording takes its seconds plus about a minute to read back.",
+     "inputSchema": {
+      "properties": {
+       "api": {
+        "description": "with workload: mtl (native Metal), mtl-x64 (Metal built for x86_64, run under Rosetta like Wine), vk (Vulkan through MoltenVK: set METAL_TRACE_MOLTENVK), d3d11 or d3d12 (under wine)",
+        "type": "string"
+       },
+       "args": {
+        "description": "program arguments as in a shell, quotes included",
+        "type": "string"
+       },
+       "background": {
+        "description": "macOS only, default false; true runs the program under taskpolicy -b, which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run",
+        "type": "boolean"
+       },
+       "counters": {
+        "description": "default false; true also records Metal GPU Counters (gpu_counters in the summary); not under Windows; adds about 40 s of read-back per recorded second",
+        "type": "boolean"
+       },
+       "dim": {
+        "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame",
+        "type": "integer"
+       },
+       "env": {
+        "description": "NAME=VALUE pairs separated by spaces, set in the program's environment; MTL_SHADER_VALIDATION=1 or MTL_DEBUG_LAYER=1 adds `validation` to the summary: the layers' messages counted by kind",
+        "type": "string"
+       },
+       "example": {
+        "description": "with a workload that lists examples in workload_list: the one to run",
+        "type": "string"
+       },
+       "memory": {
+        "description": "default true; false skips the Metal memory table, the slowest to read (about 40 % faster summary): no metal_mib_peak",
+        "type": "boolean"
+       },
+       "memory_free_pct": {
+        "description": "macOS only, 20 to 60: holds the whole Mac at this percentage of RAM free while recording (memory_pressure), to see how the program behaves short of memory; lower can freeze the Mac",
+        "type": "integer"
+       },
+       "name": {
+        "description": "name for the runs: letters, digits, '.', '_', '-'",
+        "type": "string"
+       },
+       "prefix": {
+        "description": "Wine prefix, default WINEPREFIX or ~/.wine; ignored with native",
+        "type": "string"
+       },
+       "program": {
+        "description": "path of the .exe, or of the macOS binary with wine=native",
+        "type": "string"
+       },
+       "seconds": {
+        "description": "recording length, default 20; use 30 under Wine, whose start-up takes part of it; the export afterwards takes several minutes under Wine",
+        "type": "integer"
+       },
+       "size": {
+        "description": "with a workload that has size_variables (drawstress): the window size, WIDTHxHEIGHT such as 1920x1080",
+        "type": "string"
+       },
+       "wine": {
+        "description": "Wine directory holding bin/wine, or native",
+        "type": "string"
+       },
+       "workdir": {
+        "description": "directory the program starts in, default the program's own",
+        "type": "string"
+       },
+       "workload": {
+        "description": "a test program from workload_list, fetched with workload_fetch, instead of program",
+        "type": "string"
+       }
+      },
+      "required": [
+       "name"
+      ],
+      "type": "object"
+     },
+     "name": "perf_cold_warm",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Record a running program"
+     },
+     "description": "Records a program that is already running, by pid or by a name in its command line (Game.exe under Wine),\nfor `seconds` and returns the same summary as perf_record; the program keeps running. For games started by\nSteam, CrossOver, NotProton or any launcher: start the game or its benchmark there first.",
+     "inputSchema": {
+      "properties": {
+       "label": {
+        "description": "name for the run: letters, digits, '.', '_', '-'",
+        "type": "string"
+       },
+       "process": {
+        "description": "pid, or a name in the program's command line such as Game.exe",
+        "type": "string"
+       },
+       "seconds": {
+        "description": "recording length, default 20; the export afterwards takes several minutes under Wine",
+        "type": "integer"
+       }
+      },
+      "required": [
+       "label",
+       "process"
+      ],
+      "type": "object"
+     },
+     "name": "perf_attach",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List recordings"
+     },
+     "description": "Lists the saved recordings, newest first, with frames, FPS, GPU ms per frame, memory peaks and the translation\nlayer each ran on (fingerprint and Wine, or native).",
+     "inputSchema": {
+      "properties": {
+       "limit": {
+        "description": "rows per page, default 50, at most 500",
+        "type": "integer"
+       },
+       "offset": {
+        "description": "first row, default 0",
+        "type": "integer"
+       }
+      },
+      "required": [],
+      "type": "object"
+     },
+     "name": "perf_runs",
+     "outputSchema": {
+      "properties": {
+       "next_offset": {
+        "type": [
+         "integer",
+         "null"
+        ]
+       },
+       "offset": {
+        "type": "integer"
+       },
+       "rows": {
+        "type": "array"
+       },
+       "total": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "total",
+       "offset",
+       "rows",
+       "next_offset"
+      ],
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Compare two recordings"
+     },
+     "description": "Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the\nheadline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and\ncommand buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's\ncount and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:\nwith different layers it compares layers, not one change. A Windows run against a Metal run has `measure`: the\nGPU ms and Metal memory differ in kind and the encoders exist only in Metal, so use FPS, its lows, stutter and\njitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has\n`markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,\nwhere shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the\nper-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.\n`screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable.",
+     "inputSchema": {
+      "properties": {
+       "a": {
+        "description": "run name from perf_runs: the reference, such as the run before a change",
+        "type": "string"
+       },
+       "b": {
+        "description": "run name from perf_runs: the run to compare against a",
+        "type": "string"
+       },
+       "markdown": {
+        "description": "also return the numbers as Markdown tables, default false",
+        "type": "boolean"
+       },
+       "short_us": {
+        "description": "an encoder under this GPU time counts as short: 10, 25 (default), 50, 100, 250, 500 or 1000",
+        "type": "integer"
+       },
+       "skip_s": {
+        "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them",
+        "type": "number"
+       }
+      },
+      "required": [
+       "a",
+       "b"
+      ],
+      "type": "object"
+     },
+     "name": "perf_compare",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Name a reference"
+     },
+     "description": "Names a reference for perf_check, or lists them. With name and runs (names from perf_runs, several runs of the\nsame program recorded with no change between them), it saves copies of their summaries as the reference `name`,\nreplacing a previous one, and returns the range each number spans across them: that range, not one run, is what\nperf_check judges against, since repeated runs differ by a few percent, and `spread_pct`, each range's width in %\nof its midpoint: the noise of this program on this machine, which a change must exceed. With name alone it shows that reference;\nwith nothing it lists them. With skip_s the reference keeps each run without its first skip_s seconds (the\nstart-up, as perf_compare's skip_s) and perf_check applies the same cut to the run it judges, so both are\nsteady-state; the runs need their per-frame files for that.",
+     "inputSchema": {
+      "properties": {
+       "name": {
+        "description": "reference name: letters, digits, '.', '_', '-'; alone, shows that reference",
+        "type": "string"
+       },
+       "runs": {
+        "description": "run names from perf_runs to save as this reference, ideally 3 or more equal runs; replaces a previous one",
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "skip_s": {
+        "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them; perf_check applies the same cut to the run it judges",
+        "type": "number"
+       }
+      },
+      "required": [],
+      "type": "object"
+     },
+     "name": "perf_baseline",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Check a run against a reference"
+     },
+     "description": "Judges a recording against a reference saved with perf_baseline: regressed when FPS falls under the\nreference's lowest FPS by more than margin_pct, GPU ms per frame rises over its highest by more than margin_pct,\nor encoders or command buffers per frame exceed its highest; improved when a number leaves the range the other\nway and none regressed; same otherwise. Frame pacing, short encoders and GPU idle time are reported by the\ncomparison but do not decide: they vary too much between equal runs. A run from Windows against a Metal\nreference (or the reverse) is judged on FPS alone. A reference saved with skip_s judges the run without its first\nskip_s seconds too (`skipped_s` says so). Returns the reasons and perf_compare's\nfull comparison against the reference's first run.",
+     "inputSchema": {
+      "properties": {
+       "baseline": {
+        "description": "a reference name from perf_baseline",
+        "type": "string"
+       },
+       "margin_pct": {
+        "description": "how far outside the reference's range FPS or GPU ms per frame may fall before counting, default 3",
+        "type": "number"
+       },
+       "run": {
+        "description": "a run name from perf_runs",
+        "type": "string"
+       }
+      },
+      "required": [
+       "run",
+       "baseline"
+      ],
+      "type": "object"
+     },
+     "name": "perf_check",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Export frames to Perfetto"
+     },
+     "description": "Writes a recording's GPU frames as a Chrome trace file, `<run>.chrome-trace` in the runs directory, that\nui.perfetto.dev and chrome://tracing open: one slice per GPU frame, from its start for its GPU time (the sum of\nits encoders' time, so a frame with parallel encoders can show shorter than it took), with the compute, fragment\nand vertex split as arguments. Returns the file name and the number of frames.",
+     "inputSchema": {
+      "properties": {
+       "run": {
+        "description": "a run name from perf_runs",
+        "type": "string"
+       }
+      },
+      "required": [
+       "run"
+      ],
+      "type": "object"
+     },
+     "name": "perf_export_trace",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Check a run against budgets"
+     },
+     "description": "Checks a recording against budgets and says pass or fail: a floor for FPS and the 1% low, a ceiling for the\nstutter rate, the p95 GPU ms per frame, the hitch count and the peak Metal MiB. Give at least one. A number the\nrecording lacks fails its budget (value null): a gate must not pass on missing data. Returns each budget with its\nlimit, the value and whether it held. Use it as a bar a change must clear, where perf_check judges against equal runs.\nskip_s leaves out the first seconds of the recording (the start-up), as perf_compare does.",
+     "inputSchema": {
+      "properties": {
+       "fps_1pct_low_min": {
+        "description": "the 1% low FPS must be at least this",
+        "type": "number"
+       },
+       "fps_min": {
+        "description": "the FPS must be at least this",
+        "type": "number"
+       },
+       "gpu_ms_p95_max": {
+        "description": "the p95 GPU ms per frame at most this",
+        "type": "number"
+       },
+       "hitches_max": {
+        "description": "the number of hitches at most this",
+        "type": "number"
+       },
+       "metal_mib_max": {
+        "description": "the peak Metal memory in MiB at most this",
+        "type": "number"
+       },
+       "run": {
+        "description": "a run name from perf_runs",
+        "type": "string"
+       },
+       "skip_s": {
+        "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them",
+        "type": "number"
+       },
+       "stutter_rate_pct_max": {
+        "description": "the share of stutter frames, in %, at most this",
+        "type": "number"
+       }
+      },
+      "required": [
+       "run"
+      ],
+      "type": "object"
+     },
+     "name": "perf_gate",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Follow a number across runs"
+     },
+     "description": "Lists the recordings whose name starts with `prefix`, oldest first, with their FPS, 1% low, GPU ms, stutter,\nhitches and peak Metal MiB, and the change from the first to the last: how a number moved over a series of runs, such as\none recording per version of a translation layer. Read a trend as real only when it exceeds the spread_pct that\nperf_baseline reports for equal runs. Runs from Windows and Metal in one series are flagged: their GPU ms and\nmemory do not compare. skip_s leaves out the first seconds of each recording (the start-up), as perf_compare does.",
+     "inputSchema": {
+      "properties": {
+       "limit": {
+        "description": "newest runs to keep, default 50",
+        "type": "integer"
+       },
+       "prefix": {
+        "description": "the start of the run names to follow: letters, digits, '.', '_', '-'",
+        "type": "string"
+       },
+       "skip_s": {
+        "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them",
+        "type": "number"
+       }
+      },
+      "required": [
+       "prefix"
+      ],
+      "type": "object"
+     },
+     "name": "perf_history",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Write an HTML panel"
+     },
+     "description": "Writes one HTML file, `<name>.panel.html` in the runs directory, that shows one or two recordings in a\nbrowser without a server: GPU time per frame with the hitches marked, the numbers (FPS and its lows, frame\ntime, jitter, stutter, memory, thermal state), Metal memory over time and, for two runs, A against B. The file\nholds the data itself, no path, and loads nothing from the network; the viewer can hide and reorder the\nwidgets and export the layout as JSON. preset `fps` is the timeline, numbers and memory; `compare` (two runs)\nputs A against B first. skip_s leaves out the first seconds of each recording (the start-up), as perf_compare does.\nlayout (tab ids in the order to show) is saved as panel.json in the runs directory and becomes the default tab\norder of every panel, the live one too, until the viewer changes it in the browser; ids left out are hidden but\ncan be switched back on; tabs are summary, ab, frames, encoders, counters, memory and data, and a panel.json\nyou wrote yourself, or copied from the panel's Layout JSON, works the same.\nReturns the file name, the runs, the frames shown and the file's bytes.",
+     "inputSchema": {
+      "properties": {
+       "layout": {
+        "description": "tabs to show, in order: summary, ab, frames, encoders, counters, memory, data; saved as panel.json in the runs directory as the default for every panel",
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "name": {
+        "description": "name for the panel file: letters, digits, '.', '_', '-'",
+        "type": "string"
+       },
+       "preset": {
+        "description": "fps (default) or compare (needs two runs)",
+        "type": "string"
+       },
+       "runs": {
+        "description": "one or two run names from perf_runs; with two, the first is A, the reference",
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "skip_s": {
+        "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them",
+        "type": "number"
+       }
+      },
+      "required": [
+       "name",
+       "runs"
+      ],
+      "type": "object"
+     },
+     "name": "perf_panel",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Diagnose encoder use"
+     },
+     "description": "Says whether a saved recording splits its GPU work into too many short encoders, the pattern of translation\nlayers such as DXMT, Mullion or MoltenVK, with the numbers behind it: encoders and command buffers per frame, the\nshare of short encoders, the labels with the most GPU time and the GPU's idle time. Read the idle time together\nwith the FPS: a program waiting for vsync idles too. Defaults come from bgfx 17-drawstress on an M1 Pro: 7\nencoders per frame and 50% under 25 us under Mullion, 2 and 2% in native Metal.",
+     "inputSchema": {
+      "properties": {
+       "min_encoders": {
+        "description": "encoders per frame (median) from which the verdict can be yes, default 4",
+        "type": "integer"
+       },
+       "run": {
+        "description": "a run name from perf_runs",
+        "type": "string"
+       },
+       "short_share": {
+        "description": "share of short encoders from which the verdict is yes, default 0.25",
+        "type": "number"
+       },
+       "short_us": {
+        "description": "an encoder under this GPU time counts as short: 10, 25 (default), 50, 100, 250, 500 or 1000",
+        "type": "integer"
+       }
+      },
+      "required": [
+       "run"
+      ],
+      "type": "object"
+     },
+     "name": "perf_diagnose",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List a trace's tables"
+     },
+     "description": "Lists the data tables (schemas) a .trace recording holds; recordings keep their .trace only with KEEP_TRACE=1.",
+     "inputSchema": {
+      "properties": {
+       "trace": {
+        "description": "a run name from perf_runs whose trace_kept is true, or the path of a .trace",
+        "type": "string"
+       }
+      },
+      "required": [
+       "trace"
+      ],
+      "type": "object"
+     },
+     "name": "trace_tables",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Count a trace's rows"
+     },
+     "description": "Counts the rows of several tables of a kept .trace, in all and per process, so a recording's useful tables\nshow before reading them: a table with 0 rows needs another instrument or Xcode, not a bigger page.",
+     "inputSchema": {
+      "properties": {
+       "tables": {
+        "description": "table names from trace_tables; default the tables that matter for a translation layer",
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "trace": {
+        "description": "a run name from perf_runs whose trace_kept is true, or the path of a .trace",
+        "type": "string"
+       }
+      },
+      "required": [
+       "trace"
+      ],
+      "type": "object"
+     },
+     "name": "trace_count",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Read a trace table"
+     },
+     "description": "Returns one page of rows of one table of a .trace as {column: value}, optionally only one process's rows.",
+     "inputSchema": {
+      "properties": {
+       "limit": {
+        "description": "rows per page, default 50, at most 500",
+        "type": "integer"
+       },
+       "offset": {
+        "description": "first row, default 0",
+        "type": "integer"
+       },
+       "pid": {
+        "description": "keep only this process's rows",
+        "type": "integer"
+       },
+       "schema": {
+        "description": "a table name that trace_tables lists, such as metal-gpu-intervals",
+        "type": "string"
+       },
+       "trace": {
+        "description": "a run name from perf_runs whose trace_kept is true, or the path of a .trace",
+        "type": "string"
+       }
+      },
+      "required": [
+       "trace",
+       "schema"
+      ],
+      "type": "object"
+     },
+     "name": "trace_query",
+     "outputSchema": {
+      "properties": {
+       "next_offset": {
+        "type": [
+         "integer",
+         "null"
+        ]
+       },
+       "offset": {
+        "type": "integer"
+       },
+       "rows": {
+        "type": "array"
+       },
+       "total": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "total",
+       "offset",
+       "rows",
+       "next_offset"
+      ],
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Summarize a capture"
+     },
+     "description": "Reads a Metal .gputrace capture without Xcode: command buffers, encoders, draws, debug groups, and the 100\nmost frequent call ids out of calls_total.",
+     "inputSchema": {
+      "properties": {
+       "capture": {
+        "description": "path of a .gputrace bundle saved from Xcode, inside METAL_TRACE_OUT or METAL_TRACE_READ",
+        "type": "string"
+       }
+      },
+      "required": [
+       "capture"
+      ],
+      "type": "object"
+     },
+     "name": "capture_summary",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Read a capture's records"
+     },
+     "description": "Returns one page of the records of a .gputrace command stream, with their Metal call names when known.",
+     "inputSchema": {
+      "properties": {
+       "capture": {
+        "description": "path of a .gputrace bundle saved from Xcode, inside METAL_TRACE_OUT or METAL_TRACE_READ",
+        "type": "string"
+       },
+       "limit": {
+        "description": "rows per page, default 50, at most 500",
+        "type": "integer"
+       },
+       "offset": {
+        "description": "first row, default 0",
+        "type": "integer"
+       }
+      },
+      "required": [
+       "capture"
+      ],
+      "type": "object"
+     },
+     "name": "capture_records",
+     "outputSchema": {
+      "properties": {
+       "next_offset": {
+        "type": [
+         "integer",
+         "null"
+        ]
+       },
+       "offset": {
+        "type": "integer"
+       },
+       "rows": {
+        "type": "array"
+       },
+       "total": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "total",
+       "offset",
+       "rows",
+       "next_offset"
+      ],
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Apple GPU family facts"
+     },
+     "description": "Apple's published facts for one GPU family, by family (\"Apple7\") or chip (\"M1 Pro\"): its chips, what it adds,\nits limits, plus the limits shared by all families and the footnotes. Source URLs are in the result.",
+     "inputSchema": {
+      "properties": {
+       "name": {
+        "description": "a family (Apple7 to Apple10) or a chip (M1 Pro, M2, M4 Max, A17 Pro)",
+        "type": "string"
+       }
+      },
+      "required": [
+       "name"
+      ],
+      "type": "object"
+     },
+     "name": "gpu_family",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "List test programs"
+     },
+     "description": "Lists the test programs workload_fetch can download, such as bgfx's drawstress: what each measures, its size,\nlicense and APIs, and whether it is already downloaded.",
+     "inputSchema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+     },
+     "name": "workload_list",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "_meta": {
+      "anthropic/requiresUserInteraction": true
+     },
+     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Download a test program"
+     },
+     "description": "Downloads a test program from this project's GitHub releases once, checks its SHA-256 against the one this\npackage pins, and keeps it in ~/Library/Caches/metal-gpu-trace; later calls reuse it. The programs are built\nfrom source by the project's workloads workflow. A workload with `downloads` (Godot) also fetches each of those\nzip files from its own publisher, checks its SHA-512 against the one data/workloads.json pins and unzips it into\nthe workload's folder.",
+     "inputSchema": {
+      "properties": {
+       "name": {
+        "description": "a workload name from workload_list, such as drawstress",
+        "type": "string"
+       }
+      },
+      "required": [
+       "name"
+      ],
+      "type": "object"
+     },
+     "name": "workload_fetch",
+     "outputSchema": {
+      "type": "object"
+     }
+    },
+    {
+     "_meta": {
+      "anthropic/requiresUserInteraction": true
+     },
+     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": false,
+      "title": "Install PresentMon (Windows)"
+     },
+     "description": "Windows only: downloads Intel's PresentMon console application (MIT) from its GitHub release, checks its\nSHA-256 against the one this package pins, and keeps it in %LOCALAPPDATA%\\metal-gpu-trace, where perf_record and\nperf_attach find it; later calls reuse it. It needs administrator rights or the Performance Log Users group to run.",
+     "inputSchema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+     },
+     "name": "presentmon_install",
+     "outputSchema": {
+      "type": "object"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": 3,
+  "jsonrpc": "2.0",
+  "result": {
+   "resources": [
+    {
+     "description": "Apple silicon GPU families Apple7 to Apple10: chips, first family with each feature, and limits that differ. Facts restated from Apple's public documents, not Apple's text. Check a device with MTLDevice.supportsFamily; families nest, so an Apple9 GPU also supports Apple7 and Apple8.",
+     "mimeType": "application/json",
+     "name": "Apple GPU families",
+     "uri": "metal-trace://gpu-families"
+    },
+    {
+     "description": "Apple's published facts for Apple7",
+     "mimeType": "application/json",
+     "name": "Apple7 GPU family",
+     "uri": "metal-trace://gpu-families/apple7"
+    },
+    {
+     "description": "Apple's published facts for Apple8",
+     "mimeType": "application/json",
+     "name": "Apple8 GPU family",
+     "uri": "metal-trace://gpu-families/apple8"
+    },
+    {
+     "description": "Apple's published facts for Apple9",
+     "mimeType": "application/json",
+     "name": "Apple9 GPU family",
+     "uri": "metal-trace://gpu-families/apple9"
+    },
+    {
+     "description": "Apple's published facts for Apple10",
+     "mimeType": "application/json",
+     "name": "Apple10 GPU family",
+     "uri": "metal-trace://gpu-families/apple10"
+    }
+   ]
+  }
+ },
+ {
+  "id": 4,
+  "jsonrpc": "2.0",
+  "result": {
+   "resourceTemplates": [
+    {
+     "description": "The saved summary of a recording named as perf_runs lists it",
+     "mimeType": "application/json",
+     "name": "Run summary",
+     "uriTemplate": "metal-trace://runs/{run}"
+    }
+   ]
+  }
+ },
+ {
+  "id": 5,
+  "jsonrpc": "2.0",
+  "result": {
+   "prompts": [
+    {
+     "arguments": [
+      {
+       "description": "a workload from workload_list, default drawstress",
+       "name": "workload"
+      },
+      {
+       "description": "the API run under Wine: d3d12 (default) or d3d11",
+       "name": "api"
+      }
+     ],
+     "description": "Records a test program in native Metal and under a translation layer, then diagnoses and compares both runs",
+     "name": "compare-layer"
+    }
+   ]
+  }
+ },
+ {
+  "id": 6,
+  "jsonrpc": "2.0",
+  "result": {
+   "description": "Records a test program in native Metal and under a translation layer, then diagnoses and compares both runs",
+   "messages": [
+    {
+     "content": {
+      "text": "Compare drawstress in native Metal with drawstress through d3d12 under the Wine in METAL_TRACE_WINE, with the metal-trace tools:\n1. workload_fetch name=drawstress (it is skipped when already downloaded).\n2. perf_record label=drawstress-mtl workload=drawstress api=mtl seconds=20.\n3. perf_record label=drawstress-d3d12 workload=drawstress api=d3d12 seconds=30.\n4. perf_compare a=<the mtl run> b=<the other run>, and perf_diagnose on the other run for its verdict.\nReport perf_compare's metrics and encoders as one table (a, b, change), then its labels with the largest change in GPU ms per frame, then the verdict. Say which runs are in too_short, and that one pair of runs is not enough to call a difference real: repeat both before concluding.",
+      "type": "text"
+     },
+     "role": "user"
+    }
+   ]
+  }
+ },
+ {
+  "error": {
+   "code": -32002,
+   "data": {
+    "uri": "metal-trace://runs/none_such"
+   },
+   "message": "Resource not found"
+  },
+  "id": 7,
+  "jsonrpc": "2.0"
+ },
+ {
+  "id": 8,
+  "jsonrpc": "2.0",
+  "result": {
+   "content": [
+    {
+     "text": "{\"family\": \"Apple9\", \"mac_chips\": [\"M3 series\", \"M4 series\"], \"other_chips\": [\"A17 Pro\", \"A18\"], \"adds\": [\"full 64-bit atomics\", \"BC pixel formats on every device\", \"mesh draws in indirect command buffers\", \"indirect mesh draw arguments\", \"ICB memory barriers for rendering\", \"row-major matrices in acceleration structures\", \"per-component motion in ray tracing\", \"MetalFX denoised upscaling\", \"Dynamic Caching (registers allocated as the program runs)\"], \"limits\": {\"mesh_grid_threadgroups\": 1048575, \"argument_buffer_samplers_per_stage\": 500000, \"mesh_payload_and_geometry_per_draw\": \"not stated\", \"texture_2d_px\": 16384}, \"same_on_all\": {\"threads_per_threadgroup\": 1024, \"threadgroup_memory_bytes\": 32768, \"mesh_pipeline_payload_bytes\": 16384, \"argument_buffer_textures_or_buffers_per_stage\": 1000000}, \"footnotes\": [\"64-bit atomics: none on Apple7; Apple8 has only ulong min/max, only on macOS; the full set starts with Apple9.\", \"Mesh draws in indirect command buffers start with Apple9; earlier families refuse such mesh pipelines.\", \"Inline constexpr samplers count toward the argument buffer sampler limit.\", \"Mesh shaders on Apple7 and Apple8 can use up to 4 GB of payload and mesh geometry per draw.\", \"Function pointers and ray tracing in render pipelines are not compatible with mesh shading.\"], \"guards\": {\"M1 only\": \"Apple7 && !Apple8\", \"before M3\": \"!Apple9\"}, \"sources\": {\"families\": \"https://developer.apple.com/documentation/metal/mtlgpufamily\", \"feature_set_tables\": \"https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf\", \"feature_set_tables_date\": \"2026-05-21\", \"m3_tech_talk\": \"https://developer.apple.com/videos/play/tech-talks/111375/\"}}",
+     "type": "text"
+    }
+   ],
+   "structuredContent": {
+    "adds": [
+     "full 64-bit atomics",
+     "BC pixel formats on every device",
+     "mesh draws in indirect command buffers",
+     "indirect mesh draw arguments",
+     "ICB memory barriers for rendering",
+     "row-major matrices in acceleration structures",
+     "per-component motion in ray tracing",
+     "MetalFX denoised upscaling",
+     "Dynamic Caching (registers allocated as the program runs)"
+    ],
+    "family": "Apple9",
+    "footnotes": [
+     "64-bit atomics: none on Apple7; Apple8 has only ulong min/max, only on macOS; the full set starts with Apple9.",
+     "Mesh draws in indirect command buffers start with Apple9; earlier families refuse such mesh pipelines.",
+     "Inline constexpr samplers count toward the argument buffer sampler limit.",
+     "Mesh shaders on Apple7 and Apple8 can use up to 4 GB of payload and mesh geometry per draw.",
+     "Function pointers and ray tracing in render pipelines are not compatible with mesh shading."
+    ],
+    "guards": {
+     "M1 only": "Apple7 && !Apple8",
+     "before M3": "!Apple9"
+    },
+    "limits": {
+     "argument_buffer_samplers_per_stage": 500000,
+     "mesh_grid_threadgroups": 1048575,
+     "mesh_payload_and_geometry_per_draw": "not stated",
+     "texture_2d_px": 16384
+    },
+    "mac_chips": [
+     "M3 series",
+     "M4 series"
+    ],
+    "other_chips": [
+     "A17 Pro",
+     "A18"
+    ],
+    "same_on_all": {
+     "argument_buffer_textures_or_buffers_per_stage": 1000000,
+     "mesh_pipeline_payload_bytes": 16384,
+     "threadgroup_memory_bytes": 32768,
+     "threads_per_threadgroup": 1024
+    },
+    "sources": {
+     "families": "https://developer.apple.com/documentation/metal/mtlgpufamily",
+     "feature_set_tables": "https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf",
+     "feature_set_tables_date": "2026-05-21",
+     "m3_tech_talk": "https://developer.apple.com/videos/play/tech-talks/111375/"
+    }
+   }
+  }
+ },
+ {
+  "error": {
+   "code": -32602,
+   "message": "unknown tool no_such_tool"
+  },
+  "id": 9,
+  "jsonrpc": "2.0"
+ },
+ {
+  "error": {
+   "code": -32601,
+   "message": "unknown method no/such/method"
+  },
+  "id": 10,
+  "jsonrpc": "2.0"
+ },
+ {
+  "id": 11,
+  "jsonrpc": "2.0",
+  "result": {}
+ }
+]

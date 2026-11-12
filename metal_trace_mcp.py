@@ -9,6 +9,7 @@ downloads go to ~/Library/Caches/metal-gpu-trace.
 import collections
 import csv
 import hashlib
+import inspect
 import json
 import os
 import pathlib
@@ -1977,7 +1978,7 @@ def handle(message):
         result = {"contents": [{"uri": uri, "mimeType": "application/json",
                                 "text": json.dumps(RESOURCES[uri][2](), ensure_ascii=False)}]}
     elif method == "tools/list":
-        result = {"tools": [{"name": n, "description": f.__doc__.strip(), "inputSchema": s,
+        result = {"tools": [{"name": n, "description": inspect.cleandoc(f.__doc__), "inputSchema": s,
                              "outputSchema": PAGED if n in PAGED_TOOLS else OBJECT, "annotations": hints}
                             | ({"_meta": META[n]} if n in META else {}) for n, (f, s, hints) in TOOLS.items()]}
     elif method == "prompts/list":
