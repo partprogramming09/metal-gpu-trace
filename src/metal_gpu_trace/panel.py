@@ -96,9 +96,9 @@ def warnings_for(runs, summaries, data, skip, compare, not_comparable):
             out.append({"id": "layers_differ", "run": None})
         if not_comparable:
             out.append({"id": "windows_vs_metal", "run": None})
-        if compare and direction("fps", compare.get("fps")) == "worse" and direction("gpu_ms_mean", compare.get("gpu_ms_mean")) == "better":
+        if compare and not not_comparable and direction("fps", compare.get("fps")) == "worse" and direction("gpu_ms_mean", compare.get("gpu_ms_mean")) == "better":
             out.append({"id": "gpu_not_limit", "run": None})
-    return out
+    return list({(w["id"], w["run"]): w for w in out}.values())
 
 
 def tests_mode(runs, baseline):
@@ -107,20 +107,24 @@ def tests_mode(runs, baseline):
     perf_check cannot judge carries its reason; the others are unaffected."""
     if baseline is None:
         return None, "no_project_baseline"
-    saved = analysis.load_baselines().get(baseline)
+    try:
+        saved = analysis.load_baselines().get(baseline)
+        span = analysis.ranges(saved["summaries"]) if saved else None
+        runs_of_reference = list(saved["runs"]) if saved else None
+    except (ValueError, KeyError, TypeError, AttributeError, OSError):  # baselines.json that is not a reference file
+        saved = None
     if saved is None:
         return None, "baseline_not_found"
-    span = analysis.ranges(saved["summaries"])
     checks = {}
     for run in runs:
         try:
-            result = analysis.tool_perf_check(run, baseline)
+            result = analysis.tool_perf_check(run, baseline, margin_pct=RULES["noise_pct"])
             checks[run] = {k: result[k] for k in ("verdict", "regressed", "improved", "unchecked")}
         except paths.ToolError as error:
             checks[run] = {"verdict": None, "error": str(error)}
         except (KeyError, TypeError):  # a summary from before the numbers the verdict reads
             checks[run] = {"verdict": None, "error": f"{run} cannot be judged; record it again"}
-    return {"baseline": baseline, "runs": list(saved["runs"]), "skip_s": saved.get("skip_s", 0), "range": span,
+    return {"baseline": baseline, "runs": runs_of_reference, "skip_s": saved.get("skip_s", 0), "range": span,
             "spread_pct": analysis.spreads(span), "checks": checks}, None
 
 
@@ -153,14 +157,17 @@ def changes_against(baseline, limit=8):
         reference[metric] = None if None in values else {"mean": round(sum(values) / len(values), 3), "min": min(values), "max": max(values)}
     program = (first.get("process") or {}).get("arguments")
     found = []
+    if program is None:  # no program to match: every summary without one would match
+        return {"metrics": list(CHANGE_METRICS), "reference": reference, "runs": []}
     for path in config.OUT.glob("*.json"):
         if path.name in (config.BASELINES.name, "panel.json") or path.stem in saved["runs"]:
             continue
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-        except ValueError:
+        except (ValueError, OSError):
             continue
-        if isinstance(raw, dict) and (raw.get("process") or {}).get("arguments") == program:
+        process = raw.get("process") if isinstance(raw, dict) else None
+        if isinstance(process, dict) and process.get("arguments") == program:
             found.append((path.stat().st_mtime, path.stem))
     runs = []
     for _, name in sorted(found, reverse=True)[:limit][::-1]:

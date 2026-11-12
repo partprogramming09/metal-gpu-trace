@@ -569,6 +569,47 @@ def test_changes_against(tmp_path):
     finally:
         config.OUT, config.BASELINES = saved
 
+def test_panel_review_findings(tmp_path):
+    """Windows against Metal never says the GPU is not the limit; a reference with no program matches nothing; a broken
+    baselines.json leaves the panel open; one run named twice warns once; skip_s and the changes key show up."""
+    from metal_gpu_trace import analysis, config, panel
+
+    win = _warn_summary(50.0, 3.0, 400, 60.0, {"none": "native"})
+    win["device"] = {"platform": "Windows"}
+    for name, s in (("m", _warn_summary(60.0, 4.0, 400, 60.0, {"none": "native"})), ("w", win),
+                    ("p1", _change_summary(None, 62.4)), ("p2", _change_summary(None, 62.2)), ("lone", {"gpu": {"fps_estimate": 1}})):
+        if name == "p1" or name == "p2":
+            del s["process"]
+        (tmp_path / f"{name}.json").write_text(json.dumps(s))
+    frames = "frame,start_ms,gpu_ms_total\n" + "".join(f"{i + 1},{i * 16.0},4.0\n" for i in range(200))
+    for name in ("m", "w"):
+        (tmp_path / f"{name}.frames.csv").write_text(frames)
+    saved = config.OUT, config.BASELINES, config.PROJECT
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        got = panel.panel_data(["m", "w"])
+        ids = [x["id"] for x in got["warnings"]]
+        assert "windows_vs_metal" in ids and "gpu_not_limit" not in ids, ids
+        assert {"id": "skip_applied", "run": None} in panel.panel_data(["m"], skip_s=2)["warnings"]
+        twice = panel.panel_data(["m", "m"])["warnings"]
+        assert len(twice) == len({(x["id"], x["run"]) for x in twice}), twice
+        assert panel.panel_data(["m"])["changes"] is None
+        analysis.tool_perf_baseline("noprog", ["p1", "p2"])
+        config.PROJECT = {"name": "p", "profile": "generic", "baseline": "noprog", "format": "metal-gpu-trace", "runs": tmp_path}
+        got = panel.panel_data(["m"])
+        assert got["changes"]["runs"] == [], got["changes"]
+        analysis.tool_perf_baseline("ref", ["m"])
+        config.PROJECT["baseline"] = "ref"
+        got = panel.panel_data(["m", "w"])
+        assert got["changes"]["metrics"] and got["tests"]["checks"]["w"]["unchecked"], got["tests"]["checks"]
+        (tmp_path / "baselines.json").write_text("{not json")
+        got = panel.panel_data(["m"])
+        assert got["tests"] is None and got["tests_hint"] == "baseline_not_found", got["tests_hint"]
+        (tmp_path / "baselines.json").write_text(json.dumps({"ref": {"runs": ["m"]}}))
+        assert panel.panel_data(["m"])["tests_hint"] == "baseline_not_found"
+    finally:
+        config.OUT, config.BASELINES, config.PROJECT = saved
+
 def test_windows_against_metal(tmp_path):
     """A Windows run against a Metal run says which numbers do not compare and skips the encoders, in perf_compare, its
     Markdown and the panel; two runs from one side compare as before."""

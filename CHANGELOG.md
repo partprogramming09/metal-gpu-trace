@@ -16,6 +16,14 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   link), and may not be the project's folder, one above it, the home folder or the disk's root under any spelling
   (APFS ignores case) or through a broken link, so `KEEP_RUNS` never prunes other files; a wrong file is reported by every tool, naming the field. The new tool `project_info` says which project is
   active and where its folder comes from, and `perf_runs` names it in `project`.
+- The panel's data now carries every decision, so the page only draws it: `perf_panel` opens a recording that has no
+  `.frames.csv` (its numbers, no curves); each run says which sections it has (`has`) and why the others are missing
+  (`missing`); the payload names the project, its profile and the main metric (`gpu_ms_mean` for a
+  `translation-layer` project, `fps` otherwise) and lists the warnings (`warnings`: few frames, under 30 s under
+  Wine, a single run each, different layers, Windows against Metal, FPS worse with GPU ms better, summary only,
+  reference cut differently); with a project `baseline` it adds `tests` (`perf_check`'s verdict for each run, or why
+  one cannot be judged) and `changes` (each recent build of the same program against the reference, judged by the
+  same rule, now `analysis.judge`).
 
 ## 0.23.0 — 2026-11-11
 
