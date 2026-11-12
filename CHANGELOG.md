@@ -3,7 +3,7 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## 0.23.0 — unreleased
+## 0.23.0 — 2026-11-11
 
 - Tool descriptions in `tools/list` are the same on every Python: before 3.13 they kept each docstring's four-space
   indent, so clients received extra whitespace on 3.9 to 3.12.
