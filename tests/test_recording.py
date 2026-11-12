@@ -699,3 +699,26 @@ def test_free_lock_only_frees_its_own(tmp_path):
         recording.free_lock(111)  # no error when there is nothing to free
     finally:
         config.OUT = saved
+
+
+@macos_only
+def test_takeover_rechecks_the_owner(tmp_path):
+    """The takeover reads the owner again once it holds .recording.takeover: an owner seen dead before and alive after
+    (another recording took the lock in between) keeps its lock, and this recording refuses with exit 3."""
+    stubs, out = tmp_path / "stubs", tmp_path / "runs"
+    stubs.mkdir()
+    out.mkdir()
+    (stubs / "xcrun").write_text(f"#!/bin/zsh\ntouch {tmp_path}/xctrace-ran\n")
+    (stubs / "ps").write_text(f"#!/bin/zsh\nn=$(cat {tmp_path}/ps-calls 2>/dev/null || echo 0)\n"
+                              f"echo $((n + 1)) > {tmp_path}/ps-calls\n(( n >= 1 ))\n")  # dead first, alive after
+    for stub in stubs.iterdir():
+        stub.chmod(0o755)
+    lock = out / ".recording"
+    lock.mkdir()
+    (lock / "pid").write_text("4242\n")
+    env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", PATH=f"{stubs}:{os.environ['PATH']}")
+    proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "recheck", "1", "native", "-", str(tmp_path), "/bin/sh"],
+                          env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 3 and "another recording is running" in proc.stderr, proc
+    assert (lock / "pid").read_text() == "4242\n" and not (tmp_path / "xctrace-ran").exists()
+    assert not (out / ".recording.takeover").exists(), "the takeover lock is released"

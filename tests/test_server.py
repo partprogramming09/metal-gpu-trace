@@ -1110,3 +1110,13 @@ def test_experiments_refuse_label(tmp_path):
         reply = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                                  "params": {"name": tool, "arguments": {**arguments, "label": "x"}}})
         assert "bad arguments: unknown argument label" in reply["result"]["content"][0]["text"], (tool, reply)
+
+
+def test_capabilities_alone_make_a_modern_request(tmp_path):
+    """A request whose _meta holds the client capabilities but no version is a modern request that lacks its version:
+    -32602, not an old-era request served as usual."""
+    from metal_gpu_trace import protocol
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+    reply = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list",
+                             "params": {"_meta": {"io.modelcontextprotocol/clientCapabilities": {}}}})
+    assert reply["error"]["code"] == -32602, reply

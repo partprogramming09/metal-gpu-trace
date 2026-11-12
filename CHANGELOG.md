@@ -75,7 +75,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   single-dash flag (`-I/x`, `-isystem/x`), after `name=`, `name:` (`file:///x`), `@`, a comma or a quote glued to a
   word or never closed, and inside a quoted value (`-exec "load /x/y"`) are cut too.
 - Internal: the experiments share `recording.record_new_summary`, the panel page is read once and cached, the golden
-  file pins the 2026-07-28 replies too, and a test checks each tool's schema against its function's arguments.
+  file pins the 2026-07-28 replies too, a test checks each tool's schema against its function's arguments, and
+  hand-made mutants of the protocol, header, argument, redaction and lock logic are all caught by the tests.
 - Documentation for contributors: `docs/architecture.md` (layers and request flow), ADRs 0001 to 0003 (src layout,
   both MCP eras, the Python 3.9 floor), `docs/guides/run-from-a-clone.md`, `CONTRIBUTING.md`; the Spanish README now
   has every section of the English one.
