@@ -31,7 +31,7 @@ INSTRUCTIONS = (
 )
 
 protocol.configure(instructions=INSTRUCTIONS, version=__version__)
-worker.configure(send=stdio.send, answer=protocol.answer)
+worker.configure(send=stdio.send, answer=protocol.answer, finish=protocol.finish)
 
 
 def check_cli(args):

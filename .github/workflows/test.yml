@@ -32,6 +32,14 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: sh tests/smoke_wheel.sh python
 
+  # the official MCP SDK, as an independent client, talks to the server in both eras (pinned: bump on purpose)
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uvx --python 3.13 --with mcp==2.3.0 --with pytest pytest -q -p no:cacheprovider tests/conformance
+
   # the Windows and macOS jobs run only when a file they cover changed: a docs-only change does not wait for them
   changes:
     runs-on: ubuntu-latest

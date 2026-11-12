@@ -30,6 +30,23 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - Shared summaries no longer show the folders of a Wine program's Windows-path arguments: `C:\Games\x\game.exe` becomes
   `game.exe` on macOS too (it was cut only when recording on Windows).
 
+- MCP 2026-07-28 (stateless): `server/discover`, and every request may carry its version and client capabilities in
+  `_meta`. Modern results carry `resultType: "complete"` and the server info, lists and reads carry `ttlMs` and
+  `cacheScope` (recordings are private, ttl 0), a missing resource is `-32602`, an unsupported version is `-32022` with
+  the supported list, and `ping` is gone. Clients that `initialize` keep the behaviour they had.
+- `initialize` now offers `2025-11-25` (the newest version before 2026-07-28), also for an unknown version.
+- Each tool carries `title` at the top level, and tools without parameters declare `additionalProperties: false`;
+  a test keeps every description and the instructions under the 4096 characters Claude Code reads.
+- A cancelled call gets no reply over stdio, as the spec asks; over HTTP with an `initialize` client the POST still
+  gets its error result. A modern HTTP client cancels by closing the connection, and that call stops, even when another
+  client uses the same request id.
+- HTTP follows Streamable HTTP: `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` (Base64 form included) are
+  checked against the body (400 with `-32020` when they differ, 404 with `-32601` for an unknown method), an
+  unsupported legacy version is 400, `DELETE` is 405 instead of 501, and a notification gets 202 with no body.
+- A `conformance` CI job connects the official MCP Python SDK (`mcp` 2.3.0) to the server in both eras: discover,
+  initialize, list the tools and call one. MCP Inspector 2.15.0 (`--cli`, `tools/list`) connects too, checked once
+  by hand.
+
 ## 0.22.0 — 2026-11-05
 
 - New workload `godot`: a lit 3D scene Godot 4.7.2 builds from code (400 meshes, 8 omni lights, a shadowed sun, Forward+, no

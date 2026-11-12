@@ -16,6 +16,12 @@ def send(message):
         sys.stdout.flush()
 
 
+def reply_unless_cancelled(reply):
+    """Writes the reply to a tools/call, unless the client cancelled that call: the spec says to send nothing for it."""
+    if reply.get("id") not in worker.CANCELLED:
+        send(reply)
+
+
 def serve_stdio():
     """Serves newline-delimited JSON-RPC on stdin and stdout until stdin closes."""
     for stream in (sys.stdin, sys.stdout):
@@ -34,7 +40,7 @@ def serve_stdio():
                 # a tool call runs on the worker thread so ping and notifications/cancelled are read meanwhile; calls
                 # still run one at a time, as only one recording may run at once
                 worker.CALLS[message["id"]] = threading.Event()
-                worker.submit(message, send)
+                worker.submit(message, reply_unless_cancelled)
                 continue
             reply = protocol.handle(message)
         except json.JSONDecodeError:

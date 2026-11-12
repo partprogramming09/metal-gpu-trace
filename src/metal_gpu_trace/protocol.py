@@ -1,4 +1,7 @@
-"""JSON-RPC: answers one request. The server's INSTRUCTIONS and version come in through configure()."""
+"""JSON-RPC: answers one request, in the old era (initialize first) or the 2026-07-28 era (the version in each request's
+_meta). The server's INSTRUCTIONS and version come in through configure()."""
+from __future__ import annotations
+
 import inspect
 import json
 
@@ -17,7 +20,63 @@ def configure(instructions, version):
 
 
 # newest first; initialize answers with the client's version when listed here, else the first
-PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+LEGACY_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
+MODERN_VERSIONS = ("2026-07-28",)
+META_VERSION = "io.modelcontextprotocol/protocolVersion"
+META_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities"
+META_SERVER = "io.modelcontextprotocol/serverInfo"
+MODERN_METHODS = ("server/discover", "tools/list", "tools/call", "resources/list", "resources/read",
+                  "resources/templates/list", "prompts/list", "prompts/get")  # no initialize, no ping
+CACHE_HOUR_MS = 3600000
+CACHED = ("server/discover", "tools/list", "prompts/list", "resources/list", "resources/templates/list")
+RUNS_URI = "metal-trace://runs/"
+
+
+def era(message: dict) -> str:
+    """Returns "modern" for a server/discover or a request whose params._meta holds the protocol version or the client
+    capabilities, else "legacy". initialize is always legacy."""
+    if not isinstance(message, dict) or message.get("method") == "initialize":
+        return "legacy"
+    if message.get("method") == "server/discover":
+        return "modern"
+    params = message.get("params")
+    meta = params.get("_meta") if isinstance(params, dict) else None
+    return "modern" if isinstance(meta, dict) and (META_VERSION in meta or META_CAPABILITIES in meta) else "legacy"
+
+
+def version_error(mid, requested) -> dict:
+    """Returns the -32022 error for a protocol version this server does not speak."""
+    return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32022, "message": "Unsupported protocol version",
+                                                   "data": {"supported": list(MODERN_VERSIONS), "requested": requested}}}
+
+
+def check_modern(message: dict) -> dict | None:
+    """Returns the JSON-RPC error for a modern request whose _meta lacks the version or the client capabilities
+    (-32602) or names a version this server does not speak (-32022); None when it is fine."""
+    mid, params = message.get("id"), message.get("params")
+    meta = params.get("_meta") if isinstance(params, dict) else None
+    meta = meta if isinstance(meta, dict) else {}
+    version = meta.get(META_VERSION)
+    if not isinstance(version, str) or not isinstance(meta.get(META_CAPABILITIES), dict):
+        return {"jsonrpc": "2.0", "id": mid, "error": {
+            "code": -32602, "message": f"_meta must hold {META_VERSION} (a string) and {META_CAPABILITIES} (an object)"}}
+    return None if version in MODERN_VERSIONS else version_error(mid, version)
+
+
+def decorate(result: dict, method: str, era: str, uri: str | None) -> dict:
+    """Returns the result of `method` as its era wants it: a modern result says it is complete and names the server,
+    and a list, a read or a discover adds how long a client may cache it; a legacy result is returned as it is."""
+    if era != "modern":
+        return result
+    if _version is None:
+        raise RuntimeError("protocol.configure() was not called: import metal_gpu_trace.metal_trace_mcp first")
+    decorated = {**result, "resultType": "complete",
+                 "_meta": {**(result.get("_meta") or {}), META_SERVER: {"name": "metal-trace", "version": _version}}}
+    if method in CACHED or (method == "resources/read" and not str(uri).startswith(RUNS_URI)):
+        decorated.update(ttlMs=CACHE_HOUR_MS, cacheScope="public")
+    elif method == "resources/read":  # a recording's summary can be rewritten
+        decorated.update(ttlMs=0, cacheScope="private")
+    return decorated
 
 
 def handle(message):
@@ -29,13 +88,23 @@ def handle(message):
         return None
     if not isinstance(params, dict):
         return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32600, "message": "params must be an object"}}
+    kind = era(message)
+    if kind == "modern":
+        if (error := check_modern(message)) is not None:
+            return error
+        if method not in MODERN_METHODS:
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"unknown method {method}"}}
+    missing = -32602 if kind == "modern" else -32002  # the 2026-07-28 spec dropped -32002
     if method == "initialize":
         if _version is None:
             raise RuntimeError("protocol.configure() was not called: import metal_gpu_trace.metal_trace_mcp first")
         asked = params.get("protocolVersion")
-        result = {"protocolVersion": asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
+        result = {"protocolVersion": asked if asked in LEGACY_VERSIONS else LEGACY_VERSIONS[0],
                   "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
                   "serverInfo": {"name": "metal-trace", "version": _version}, "instructions": _instructions}
+    elif method == "server/discover":
+        result = {"supportedVersions": list(MODERN_VERSIONS), "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
+                  "instructions": _instructions}
     elif method == "ping":
         result = {}
     elif method == "resources/templates/list":
@@ -47,23 +116,24 @@ def handle(message):
                                 for uri, (name, about, _) in registry.RESOURCES.items()]}
     elif method == "resources/read":
         uri = params.get("uri")
-        if isinstance(uri, str) and uri.startswith("metal-trace://runs/"):
+        if isinstance(uri, str) and uri.startswith(RUNS_URI):
             try:
-                text = paths.run_path(uri[len("metal-trace://runs/"):]).read_text(encoding="utf-8")
+                text = paths.run_path(uri[len(RUNS_URI):]).read_text(encoding="utf-8")
             except paths.ToolError:
                 text = None
             if text is None:
-                return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32002, "message": "Resource not found",
+                return {"jsonrpc": "2.0", "id": mid, "error": {"code": missing, "message": "Resource not found",
                                                                "data": {"uri": uri}}}
-            return {"jsonrpc": "2.0", "id": mid, "result": {"contents": [{"uri": uri, "mimeType": "application/json",
-                                                                         "text": text}]}}
-        if uri not in registry.RESOURCES:
-            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32002, "message": "Resource not found",
+            result = {"contents": [{"uri": uri, "mimeType": "application/json", "text": text}]}
+        elif uri not in registry.RESOURCES:
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": missing, "message": "Resource not found",
                                                            "data": {"uri": uri}}}
-        result = {"contents": [{"uri": uri, "mimeType": "application/json",
-                                "text": json.dumps(registry.RESOURCES[uri][2](), ensure_ascii=False)}]}
+        else:
+            result = {"contents": [{"uri": uri, "mimeType": "application/json",
+                                    "text": json.dumps(registry.RESOURCES[uri][2](), ensure_ascii=False)}]}
     elif method == "tools/list":
-        result = {"tools": [{"name": n, "description": inspect.cleandoc(f.__doc__), "inputSchema": s,
+        result = {"tools": [{"name": n, "title": hints["title"], "description": inspect.cleandoc(f.__doc__),
+                             "inputSchema": s if s.get("properties") else {**s, "additionalProperties": False},
                              "outputSchema": registry.PAGED if n in registry.PAGED_TOOLS else registry.OBJECT, "annotations": hints}
                             | ({"_meta": registry.META[n]} if n in registry.META else {}) for n, (f, s, hints) in registry.TOOLS.items()]}
     elif method == "prompts/list":
@@ -86,7 +156,15 @@ def handle(message):
                       (params.get("_meta") or {}).get("progressToken"))
     else:
         return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"unknown method {method}"}}
-    return {"jsonrpc": "2.0", "id": mid, "result": result}
+    return {"jsonrpc": "2.0", "id": mid, "result": decorate(result, method, kind, params.get("uri"))}
+
+
+def finish(message: dict, reply: dict) -> dict:
+    """Returns `reply`, a tools/call result the worker built itself (queue full, cancelled), as the era of `message`
+    wants it."""
+    if era(message) == "modern" and isinstance(reply.get("result"), dict):
+        return {**reply, "result": decorate(reply["result"], "tools/call", "modern", None)}
+    return reply
 
 
 def request_id_of(message):
