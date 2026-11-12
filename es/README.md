@@ -95,13 +95,18 @@ guardan y se leen en `runs` en vez de en `METAL_TRACE_OUT` (`METAL_TRACE_READ` s
 | --- | --- |
 | `name` | El nombre del proyecto (letras, dígitos, `.`, `_`, `-`). Obligatoria. |
 | `runs` | La carpeta de las grabaciones. Obligatoria. Tiene que ser nueva, estar vacía o tener ya la marca del servidor (un archivo `.metal-gpu-trace-runs` normal, no una carpeta ni un enlace): `KEEP_RUNS` borra allí los `.json` antiguos, así que se rechaza una carpeta con otros archivos. |
-| `profile` | `translation-layer`, `native` o `generic` (la de serie). Por ahora solo lo informa `project_info`. |
-| `baseline` | El nombre de la referencia del proyecto (`perf_baseline`). Por ahora solo la informa `project_info`; `perf_check` sigue usando la referencia que se le pasa. |
+| `profile` | `translation-layer`, `native` o `generic` (la de serie). `perf_panel` abre con los ms de GPU por cuadro en `translation-layer` (con vsync, los FPS dejan de distinguir builds) y con los FPS en los demás, y redacta sus definiciones en consecuencia; `project_info` lo informa. |
+| `baseline` | El nombre de la referencia del proyecto (`perf_baseline`). `perf_panel` juzga cada corrida contra ella, como lo haría `perf_check`, y `project_info` la informa; `perf_check` sigue usando la referencia que se le pasa. |
 | `format` | `metal-gpu-trace`, el único por ahora. |
 
 Cualquier otra clave, o un valor equivocado, es un error que cada herramienta explica, con el campo, hasta que se
 arregle el archivo. `project_info` dice qué proyecto está activo y de dónde sale su carpeta. Sin archivo de proyecto
 no cambia nada: se usa `METAL_TRACE_OUT`, o `./perf-runs`, como antes.
+
+Con un `baseline`, `perf_panel` pone arriba de la página la comprobación contra la referencia: el veredicto de cada
+corrida (el que da `perf_check`, con un margen del 3 %), el rango de la referencia, un mapa de calor y la tendencia de las
+grabaciones más recientes del mismo programa. Sin `baseline`, o si la referencia nombrada no existe, la página lo dice y
+muestra el resto.
 
 ### Claude Code
 
@@ -204,7 +209,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | `perf_check` | Juzga una grabación contra una referencia: `regressed` si los FPS bajan del rango más de `margin_pct` (3 por defecto), los ms de GPU por cuadro lo superan, o los encoders o command buffers por cuadro lo exceden; `improved` o `same` si no, con las razones y la comparación completa |
 | `perf_gate` | Comprueba una grabación contra presupuestos que fijas (pisos de FPS y de 1 % bajo; techos de tirones, ms de GPU p95, hitches y MiB de Metal) y devuelve pasa o falla con cada límite y valor; una cifra que falta falla |
 | `perf_history` | Sigue FPS, 1 % bajo, ms de GPU, tirones, hitches y MiB de Metal en las corridas cuyo nombre empieza por un prefijo, de la más antigua a la más reciente, con el cambio de la primera a la última |
-| `perf_panel` | Escribe `<nombre>.panel.html`: una página con el tiempo de GPU por cuadro y sus hitches, las cifras, la memoria de Metal y, con dos corridas, A contra B. No tiene servidor y no carga nada de la red; quien la ve oculta o reordena widgets y exporta la disposición como JSON. Con `--http`, `/panel#token=...&runs=a,b` la muestra en vivo, refrescada cada 10 s. `layout` (ids de pestañas en orden) guarda `panel.json` en el directorio de corridas como pestañas por defecto de todo panel, el vivo incluido; la pestaña de contadores de GPU aparece cuando una corrida los tiene |
+| `perf_panel` | Escribe `<nombre>.panel.html`: una página que abre con la comprobación contra la referencia del proyecto (el veredicto de cada corrida, dónde cae en el rango de la referencia, un mapa de calor y la tendencia de las builds más recientes) y luego muestra solo las secciones para las que las grabaciones tienen datos: el tiempo de GPU por cuadro y sus hitches, las cifras, la memoria de Metal y, con dos corridas, A contra B; lo que una grabación no recopiló se lista con lo que hay que hacer. Un proyecto `translation-layer` abre con los ms de GPU por cuadro, no con los FPS. Una grabación sin su `.frames.csv` se abre con sus cifras y sin curvas (no junto con `skip_s`). No tiene servidor y no carga nada de la red; quien la ve oculta o reordena widgets y exporta la disposición como JSON. Con `--http`, `/panel#token=...&runs=a,b` la muestra en vivo, refrescada cada 10 s. `layout` (ids de las secciones en orden: `tests`, `summary`, `ab`, `frames`, `encoders`, `counters`, `memory`, `data`) guarda `panel.json` en el directorio de corridas como orden por defecto de todo panel, el vivo incluido; un `panel.json` anterior a `tests` sigue funcionando |
 | `perf_export_trace` | Escribe los frames de GPU de una grabación como `<corrida>.chrome-trace`, un corte por frame, para ui.perfetto.dev o chrome://tracing |
 | `perf_diagnose` | Dice si una grabación reparte su trabajo de GPU en demasiados encoders cortos, como hacen las capas de traducción, con encoders y command buffers por cuadro, las etiquetas con más tiempo de GPU y el tiempo ocioso de la GPU |
 | `trace_tables` | Lista las tablas de un `.trace` guardado, por el nombre de su grabación o su ruta |
@@ -294,7 +299,8 @@ Cómo sigue la especificación MCP ([2025-11-25](https://modelcontextprotocol.io
   quita), sin argumentos ni rutas.
 - Las listas van por páginas (`offset`, `limit`, 50 por defecto, 500 como mucho) con `total` y `next_offset`; un
   resultado de más de 40 000 caracteres se rechaza con la indicación de pedir una página más pequeña.
-- Solo lee archivos dentro de `METAL_TRACE_OUT` y de los directorios de `METAL_TRACE_READ` (separados por `:`).
+- Solo lee archivos dentro de la carpeta de grabaciones (`METAL_TRACE_OUT`, o el `runs` del proyecto) y de los directorios
+  de `METAL_TRACE_READ` (separados por `:`).
 - Los fallos vuelven como resultados `isError` que dicen qué hacer, sin trazas de pila ni rutas locales. Los
   resúmenes recortan las rutas absolutas al nombre del archivo, así que se pueden compartir.
 - Cada llamada a `xctrace` tiene tiempo límite.
@@ -327,7 +333,7 @@ de línea, así que el hash de la copia de este repositorio no es el que sirve) 
 
 `metal-gpu-trace check CORRIDA REFERENCIA [--margin-pct N]` corre `perf_check` sin cliente e imprime una línea JSON
 (veredicto, razones, pistas). Código de salida 0: igual o mejor; 1: empeoró; 2: no se pudo juzgar (no existe la
-corrida o la referencia, o tiene menos de 100 frames). Las corridas se leen de `METAL_TRACE_OUT`. Grabar necesita
+corrida o la referencia, o tiene menos de 100 frames). Las corridas se leen de la carpeta de grabaciones (`METAL_TRACE_OUT`, o el `runs` del proyecto). Grabar necesita
 Instruments, así que el job corre en un runner macOS propio:
 
 ```yaml

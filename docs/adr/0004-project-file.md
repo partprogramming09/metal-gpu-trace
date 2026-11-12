@@ -40,6 +40,12 @@ https://modelcontextprotocol.io/specification/versioning, read on 2026-11-12.
 - **Negative / cost:** the working directory decides the project, so a client started elsewhere uses another folder or
   none; `project_info` makes that visible.
 - **Harder:** recordings already in a shared folder must be moved by hand to their project's folder.
+- **Added later (2026-11-12, same branch; the decision stands):** `profile` and `baseline` are used by the panel, not
+  only reported: `baseline` gives the panel its reference check (each run judged as `perf_check` does, a heat map and a
+  trend of recent builds) and `profile` picks the main metric (GPU ms per frame for `translation-layer`, FPS
+  otherwise). `perf_check` and the `check` command still take the reference as an argument and do not read the project
+  file, so the reference is named in two places when both are used. In the runs folder, `baselines.json` and `panel.json`
+  are not recordings: `KEEP_RUNS` keeps them and `perf_runs` does not list them.
 
 ## Revisit when
 A client needs one server for several projects at once (the folder would then come from each tool call), or the

@@ -91,9 +91,13 @@ each project's folder on its own. `runs` is relative to the file, starts with `~
 | --- | --- |
 | `name` | The project's name (letters, digits, `.`, `_`, `-`). Required. |
 | `runs` | The recordings folder. Required. It must be new, empty or already marked by the server (a plain `.metal-gpu-trace-runs` file, not a folder or a link): `KEEP_RUNS` removes old `.json` files there, so a folder holding other files is refused. |
-| `profile` | `translation-layer`, `native` or `generic` (the default). For now `project_info` only reports it. |
-| `baseline` | The name of the project's reference (`perf_baseline`). For now `project_info` only reports it; `perf_check` still takes the reference it is given. |
+| `profile` | `translation-layer`, `native` or `generic` (the default). `perf_panel` leads with GPU ms per frame for `translation-layer` (with vsync, FPS stops telling builds apart) and with FPS for the others, and words its definitions to match; `project_info` reports it. |
+| `baseline` | The name of the project's reference (`perf_baseline`). `perf_panel` judges each run against it, as `perf_check` would, and `project_info` reports it; `perf_check` itself still takes the reference it is given. |
 | `format` | `metal-gpu-trace`, the only one for now. |
+
+With a `baseline`, `perf_panel` puts a reference check at the top of the page: a verdict for each run (the one
+`perf_check` gives, with a 3 % margin), the reference's range, a heat map and a trend of the newest recordings of the
+same program. Without one, or when the named reference does not exist, the page says so and still shows the rest.
 
 Any other key, or a wrong value, is an error that every tool reports, naming the field, until the file is fixed.
 `project_info` says which project is active and where its folder comes from. Without a project file nothing changes:
@@ -185,7 +189,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `perf_check` | Judges a recording against a reference: `regressed` when FPS falls under the range by more than `margin_pct` (default 3), GPU ms per frame rises over it, or encoders or command buffers per frame exceed it; `improved` or `same` otherwise, with the reasons and the full comparison |
 | `perf_gate` | Checks a recording against budgets you set (FPS and 1% low floors; stutter, p95 GPU ms, hitch and Metal MiB ceilings) and returns pass or fail with each limit and value; a missing number fails |
 | `perf_history` | Follows FPS, 1% low, GPU ms, stutter, hitches and Metal MiB across the runs whose name starts with a prefix, oldest first, with the change from first to last |
-| `perf_panel` | Writes `<name>.panel.html`: one page that leads with the project's reference check (a verdict for each run, where it falls in the reference's range, a heat map and a trend of the newest builds) and then shows only the sections the recordings have data for: GPU time per frame and its hitches, the numbers, Metal memory and, for two runs, A against B; what a recording did not collect is listed with what to do. A `translation-layer` project leads with GPU ms per frame, not FPS. It has no server and loads nothing from the network; the viewer hides or reorders widgets and exports the layout as JSON. With `--http`, `/panel#token=...&runs=a,b` shows it live, refreshed every 10 s. `layout` (section ids in order: `tests`, `summary`, `ab`, `frames`, `encoders`, `counters`, `memory`, `data`) saves `panel.json` in the runs directory as the default order of every panel, the live one included; a `panel.json` from before `tests` existed still works |
+| `perf_panel` | Writes `<name>.panel.html`: one page that leads with the project's reference check (a verdict for each run, where it falls in the reference's range, a heat map and a trend of the newest builds) and then shows only the sections the recordings have data for: GPU time per frame and its hitches, the numbers, Metal memory and, for two runs, A against B; what a recording did not collect is listed with what to do. A `translation-layer` project leads with GPU ms per frame, not FPS. A recording without its `.frames.csv` opens with its numbers and no curves (not together with `skip_s`). It has no server and loads nothing from the network; the viewer hides or reorders widgets and exports the layout as JSON. With `--http`, `/panel#token=...&runs=a,b` shows it live, refreshed every 10 s. `layout` (section ids in order: `tests`, `summary`, `ab`, `frames`, `encoders`, `counters`, `memory`, `data`) saves `panel.json` in the runs directory as the default order of every panel, the live one included; a `panel.json` from before `tests` existed still works |
 | `perf_export_trace` | Writes a recording's GPU frames as `<run>.chrome-trace`, one slice per frame, for ui.perfetto.dev or chrome://tracing |
 | `perf_diagnose` | Says whether a recording splits its GPU work into too many short encoders, as translation layers do, with encoders and command buffers per frame, the labels with the most GPU time and the GPU's idle time |
 | `trace_tables` | Lists the tables of a kept `.trace`, named by its run or its path |
@@ -266,7 +270,8 @@ How it follows the MCP specification ([2025-11-25](https://modelcontextprotocol.
   no arguments or paths.
 - Lists come in pages (`offset`, `limit`, default 50, at most 500) with `total` and `next_offset`; a result over
   40 000 characters is refused with a hint to ask for a smaller page.
-- Files are read only inside `METAL_TRACE_OUT` and the directories in `METAL_TRACE_READ` (separated by `:`).
+- Files are read only inside the recordings folder (`METAL_TRACE_OUT`, or the project's `runs`) and the directories in
+  `METAL_TRACE_READ` (separated by `:`).
 - Failures come back as `isError` results that say what to do, without stack traces or local paths. Summaries cut
   absolute paths to file names, so they can be shared.
 - Every `xctrace` call has a timeout.
@@ -298,7 +303,7 @@ not the one to use), and add a `[tasks.<name>]` table with `script` and `sha256`
 
 `metal-gpu-trace check RUN BASELINE [--margin-pct N]` runs `perf_check` without a client and prints one JSON line
 (verdict, reasons, hints). Exit code 0: same or improved; 1: regressed; 2: could not be judged (no such run or
-reference, or under 100 frames). Runs are read from `METAL_TRACE_OUT`. Recording needs Instruments, so the job runs on
+reference, or under 100 frames). Runs are read from the recordings folder (`METAL_TRACE_OUT`, or the project's `runs`). Recording needs Instruments, so the job runs on
 a self-hosted macOS runner:
 
 ```yaml

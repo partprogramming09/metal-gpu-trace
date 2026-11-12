@@ -7,7 +7,7 @@ ADR status: proposed · accepted · rejected · superseded by NNNN.
 ## For people
 | Document | Answers |
 |---|---|
-| [architecture.md](architecture.md) | How the modules are layered and how one request flows through them |
+| [architecture.md](architecture.md) | How the modules are layered, how one request flows through them, where recordings live and how the panel gets its data |
 | [adr/0001-src-layout.md](adr/0001-src-layout.md) | Why the code is a package in `src/` with tests in `tests/` (accepted) |
 | [adr/0002-dual-era-mcp.md](adr/0002-dual-era-mcp.md) | Why the server speaks both MCP eras, and where it deviates (accepted) |
 | [adr/0003-python-3-9-floor.md](adr/0003-python-3-9-floor.md) | Why Python 3.9 is the oldest supported version (accepted) |
