@@ -92,7 +92,7 @@ def public_arguments(arguments):
     argument that starts with `-`, a quote or a new absolute path; the words in between belong to it and only the name
     after its last separator stays, so no folder name is left. A quoted path is one argument, ended by its quote.
     Consequences: a plain word that follows a path with no flag between them is read as part of the path, and its
-    file name keeps it (`/opt/a/game.exe level1` gives `game.exe level1`, as it always did); a file name with spaces
+    file name keeps it (`/opt/a/game.exe level1` gives `game.exe level1`); a file name with spaces
     stays whole; a path that ends in a separator names a folder and leaves nothing; and a space followed by `/` or
     `C:\\` always starts a new path. A path inside a word is cut the same way: after a single-dash flag (`-I/x`),
     after `name=`, `name:` (`file:///x`), `@` or a comma, after a quote glued to a word or never closed, and inside a

@@ -1,6 +1,6 @@
 """Summarizes an Instruments "Metal System Trace" recording of one launched program: GPU time per frame and memory.
 
-Usage: python3 -I perf_report.py <recording.trace> [--label NAME] [--out DIR] [--no-memory]
+Usage: python3 -I src/metal_gpu_trace/perf_report.py <recording.trace> [--label NAME] [--out DIR] [--no-memory]
 Writes <out>/<label>.json (summary), <label>.frames.csv (one row per GPU frame) and <label>.metal_memory.csv (Metal
 memory over time). A <recording>.rss.csv beside the trace adds the process's resident memory.
 """

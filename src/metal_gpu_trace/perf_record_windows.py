@@ -951,7 +951,7 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
 def main():
     import sys
     if len(sys.argv) < 7:
-        sys.exit("Usage: python perf_record_windows.py <label> <seconds> <wine|native|attach> <prefix> <workdir> <command...>")
+        sys.exit("Usage: python src\\metal_gpu_trace\\perf_record_windows.py <label> <seconds> <wine|native|attach> <prefix> <workdir> <command...>")
     label = sys.argv[1]
     seconds = int(sys.argv[2])
     wine = sys.argv[3]

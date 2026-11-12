@@ -32,6 +32,11 @@ CACHED = ("server/discover", "tools/list", "prompts/list", "resources/list", "re
 RUNS_URI = "metal-trace://runs/"
 
 
+def _require_configured():
+    if _version is None:
+        raise RuntimeError("protocol.configure() was not called: import metal_gpu_trace.metal_trace_mcp first")
+
+
 def era(message: dict) -> str:
     """Returns "modern" for a server/discover or a request whose params._meta holds the protocol version or the client
     capabilities, else "legacy". initialize is always legacy."""
@@ -68,8 +73,7 @@ def decorate(result: dict, method: str, era: str, uri: str | None) -> dict:
     and a list, a read or a discover adds how long a client may cache it; a legacy result is returned as it is."""
     if era != "modern":
         return result
-    if _version is None:
-        raise RuntimeError("protocol.configure() was not called: import metal_gpu_trace.metal_trace_mcp first")
+    _require_configured()
     decorated = {**result, "resultType": "complete",
                  "_meta": {**(result.get("_meta") or {}), META_SERVER: {"name": "metal-trace", "version": _version}}}
     if method in CACHED or (method == "resources/read" and not str(uri).startswith(RUNS_URI)):
@@ -101,8 +105,7 @@ def handle(message):
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"unknown method {method}"}}
     missing = -32602 if kind == "modern" else -32002  # the 2026-07-28 spec dropped -32002
     if method == "initialize":
-        if _version is None:
-            raise RuntimeError("protocol.configure() was not called: import metal_gpu_trace.metal_trace_mcp first")
+        _require_configured()
         asked = params.get("protocolVersion")
         result = {"protocolVersion": asked if asked in LEGACY_VERSIONS else LEGACY_VERSIONS[0],
                   "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
@@ -127,8 +130,6 @@ def handle(message):
             try:
                 text = paths.run_path(uri[len(RUNS_URI):]).read_text(encoding="utf-8")
             except paths.ToolError:
-                text = None
-            if text is None:
                 return {"jsonrpc": "2.0", "id": mid, "error": {"code": missing, "message": "Resource not found",
                                                                "data": {"uri": uri}}}
             result = {"contents": [{"uri": uri, "mimeType": "application/json", "text": text}]}

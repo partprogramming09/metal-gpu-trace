@@ -71,8 +71,8 @@ table (`LAYERS`) and fails when an import goes upward.
 +------------------------------------------------------------------+
 ```
 
-`perf_record.sh` (zsh) drives Instruments and calls `perf_report.py`; `data/` holds the GPU family facts and the
-workload list.
+`perf_record.sh` (zsh) drives Instruments and calls `perf_report.py`; `src/metal_gpu_trace/data/` holds the GPU
+family facts and the workload list.
 
 ## Two rules that keep it testable
 
