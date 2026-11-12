@@ -1,10 +1,9 @@
 """Experiments that record several runs: baseline_record, A/B, cold/warm and sweeps."""
-import json
 import re
 import statistics
 import sys
 
-from metal_gpu_trace import analysis, config, paths, recording, workloads
+from metal_gpu_trace import analysis, paths, recording, workloads
 
 
 def tool_perf_baseline_record(name, count=3, skip_s=0, **record):
@@ -20,9 +19,7 @@ def tool_perf_baseline_record(name, count=3, skip_s=0, **record):
         raise paths.ToolError("count is 1 to 10")
     runs = []
     for i in range(1, count + 1):
-        before = set(config.OUT.glob(f"{name}-{i}_*.json"))
-        recording.tool_perf_record(f"{name}-{i}", **record)
-        runs.append(next(iter(set(config.OUT.glob(f"{name}-{i}_*.json")) - before)).stem)
+        runs.append(recording.record_new_summary(f"{name}-{i}", **record)[0])
     return analysis.tool_perf_baseline(name, runs, skip_s)
 
 
@@ -56,15 +53,11 @@ def tool_perf_ab(name, env_a, env_b, rounds=1, skip_s=0, **record):
     rounds = int(rounds)
     if not 1 <= rounds <= 5:
         raise paths.ToolError("rounds is 1 to 5")
-    record.pop("env", None)
-    record.pop("label", None)
     recording.check_env(env_a), recording.check_env(env_b)
     runs = {"a": [], "b": []}
     for side in "abba" * rounds:
         label = f"{name}-{side}{len(runs[side]) + 1}"
-        before = set(config.OUT.glob(f"{label}_*.json"))
-        recording.tool_perf_record(label, env=env_a if side == "a" else env_b, **record)
-        runs[side].append(next(iter(set(config.OUT.glob(f"{label}_*.json")) - before)).stem)
+        runs[side].append(recording.record_new_summary(label, env=env_a if side == "a" else env_b, **record)[0])
     return ab_report(name, env_a, env_b, runs, skip_s)
 
 
@@ -94,14 +87,10 @@ def tool_perf_cold_warm(name, **record):
         raise paths.ToolError("a name holds only letters, digits, '.', '_' and '-'")
     if sys.platform == "win32":
         raise paths.ToolError("perf_cold_warm reads Metal's shader-compile and hitch tables: it runs on macOS only")
-    record.pop("label", None)
     runs = []
     for part in ("first", "second"):
         label = f"{name}-{part}"
-        before = set(config.OUT.glob(f"{label}_*.json"))
-        recording.tool_perf_record(label, **record)
-        path = next(iter(set(config.OUT.glob(f"{label}_*.json")) - before))
-        runs.append((path.stem, json.loads(path.read_text(encoding="utf-8"))))
+        runs.append(recording.record_new_summary(label, **record))
     return cold_warm_report(name, *runs)
 
 
@@ -156,7 +145,6 @@ def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, **record):
     values = sweep_values(variable, values)
     if len(values) * rounds > 24:
         raise paths.ToolError("at most 24 recordings: fewer values or rounds")
-    record.pop("label", None)
     base_env = recording.check_env(record.pop("env", ""))
     runs = [[] for _ in values]
     for rnd in range(rounds):
@@ -169,9 +157,7 @@ def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, **record):
                 if base_env:
                     kwargs["env"] = base_env
             label = f"{name}-{i + 1}-r{rnd + 1}"
-            before = set(config.OUT.glob(f"{label}_*.json"))
-            recording.tool_perf_record(label, **kwargs)
-            runs[i].append(next(iter(set(config.OUT.glob(f"{label}_*.json")) - before)).stem)
+            runs[i].append(recording.record_new_summary(label, **kwargs)[0])
     rows, frames = [], []
     for value, names in zip(values, runs):
         summaries = [analysis.steady_summary(r, skip_s) for r in names]

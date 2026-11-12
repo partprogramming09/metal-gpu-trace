@@ -39,13 +39,31 @@ done
 
 # one recording at a time: two programs sharing the GPU spoil both measurements
 lock=$out/.recording
-mkdir $lock 2>/dev/null || { echo "another recording is running ($lock); remove it if none is" >&2; exit 3; }
+# the lock holds its owner's pid: a lock whose owner is gone (killed, power loss) is taken over once. The takeover
+# runs under a second mkdir lock, so two recordings that find the same dead lock cannot both take it; ps -p also sees
+# a live owner that belongs to another user, where kill -0 fails
+busy() {
+  echo "another recording is running ($lock); remove it if none is (and $lock.takeover, if it is there)" >&2
+  exit 3
+}
+dead_owner() { local owner=$(cat $lock/pid 2>/dev/null || true); [[ $owner == <-> ]] && ! ps -p $owner >/dev/null 2>&1; }
+if ! mkdir $lock 2>/dev/null; then
+  dead_owner && mkdir $lock.takeover 2>/dev/null || busy
+  trap 'rmdir $lock.takeover 2>/dev/null' EXIT  # ours now: never leave it behind
+  trap 'exit 130' INT TERM
+  taken=1
+  if dead_owner; then rm -rf $lock && mkdir $lock 2>/dev/null && taken=0; fi
+  rmdir $lock.takeover 2>/dev/null || true
+  trap - EXIT INT TERM
+  (( taken == 0 )) || busy
+fi
+echo $$ > $lock/pid
 before=(${tmp%/}/instruments*.ktrace(N))
 # Frees the lock and the temporary .ktrace files that xctrace left in $TMPDIR during this run.
 cleanup() {
   local rc=$?
   kill ${watchdog:-} ${sampler:-} 2>/dev/null || true
-  rmdir $lock 2>/dev/null
+  rm -rf $lock
   for k in ${tmp%/}/instruments*.ktrace(N); do (( ${before[(Ie)$k]} )) || rm -rf $k; done
   # a failed recording leaves no partial files behind
   if (( rc )); then rm -rf $out/$name.*(N); fi

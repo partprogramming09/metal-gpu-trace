@@ -138,7 +138,6 @@ def test_progress_and_cancel(tmp_path):
     """A recording reports progress to a client that sent a progressToken and stops, leaving no files, when the client
     cancels it; ping is answered while it runs."""
     import threading
-    import time
     from metal_gpu_trace import config, paths, recording, registry, worker
     from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
     stubs, out, program = hang_stubs(tmp_path)
@@ -160,7 +159,7 @@ def test_progress_and_cancel(tmp_path):
     assert not list(out.iterdir()), list(out.iterdir())
     import io
     real, sys.stdout = sys.stdout, io.StringIO()
-    registry.TOOLS["t"] = (lambda: recording.progress(1, 2, "half") or {}, None, None)
+    registry.TOOLS["t"] = (lambda: recording.progress(1, 2, "half") or {}, {"type": "object"}, None)
     try:
         worker.call("t", {}, 7, "tok")
         line = sys.stdout.getvalue()
@@ -180,7 +179,7 @@ def test_progress_and_cancel(tmp_path):
         say({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
             "name": "perf_record", "_meta": {"progressToken": "t"},
             "arguments": {"label": "hang", "program": str(program), "seconds": 1, "wine": "native"}}})
-        time.sleep(2)
+        wait_until(lambda: list(out.glob("*.trace")), timeout=30)  # the recording is under way: xctrace has started
         say({"jsonrpc": "2.0", "id": 2, "method": "ping"})
         assert json.loads(proc.stdout.readline())["id"] == 2, "ping must be answered during a recording"
         say({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 1}})
@@ -306,7 +305,7 @@ def test_http(tmp_path):
             "name": "perf_record", "arguments": {"label": "hang", "program": str(program), "seconds": 1, "wine": "native"}}}
         thread = threading.Thread(target=lambda: result.append(post(call)))
         thread.start()
-        time.sleep(2)
+        wait_until(lambda: list(out.glob("*.trace")), timeout=30)  # the recording is under way: xctrace has started
         assert post({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 7}})[0] == 202
         thread.join(30)
         code, reply = result[0]
@@ -320,7 +319,6 @@ def test_queue(tmp_path):
     """Tool calls wait in a queue of MAX_QUEUE: one past it is refused at once, and cancelling a queued call answers
     it at once instead of after the call ahead of it."""
     import threading
-    import time
     from metal_gpu_trace import config, registry, worker
     from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
     gate, replies, log = threading.Event(), {}, os.environ.get("METAL_TRACE_LOG")
@@ -333,7 +331,7 @@ def test_queue(tmp_path):
                    lambda r: replies.__setitem__(i, r))
     try:
         submit(0)
-        time.sleep(0.3)  # the worker has taken call 0 and waits on the gate
+        wait_until(lambda: not worker.QUEUE)  # the worker has taken call 0 and waits on the gate
         for i in range(1, config.MAX_QUEUE + 1):
             submit(i)
         submit(999)
@@ -423,6 +421,18 @@ GOLDEN_MESSAGES = [
     {"method": "no/such/method"},
     {"method": "ping"},
 ]
+MODERN_META = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+               "io.modelcontextprotocol/clientCapabilities": {}}
+GOLDEN_MESSAGES += [  # the 2026-07-28 era: the version and capabilities travel in each request's _meta
+    {"method": "server/discover", "params": {"_meta": MODERN_META}},
+    {"method": "tools/list", "params": {"_meta": MODERN_META}},
+    {"method": "tools/call", "params": {"name": "gpu_family", "arguments": {"name": "M3"}, "_meta": MODERN_META}},
+    {"method": "resources/read", "params": {"uri": "metal-trace://gpu-families", "_meta": MODERN_META}},
+    {"method": "resources/read", "params": {"uri": "metal-trace://runs/none_such", "_meta": MODERN_META}},
+    {"method": "ping", "params": {"_meta": MODERN_META}},
+    {"method": "tools/list", "params": {"_meta": {**MODERN_META, "io.modelcontextprotocol/protocolVersion": "2099-01-01"}}},
+    {"method": "tools/list", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28"}}},
+]
 
 def test_golden_protocol(tmp_path):
     """The server answers a fixed set of messages exactly as recorded in tests/golden/protocol.json."""
@@ -435,9 +445,10 @@ def test_golden_protocol(tmp_path):
     finally:
         config.OUT = saved
     for reply in replies:
-        info = (reply.get("result") or {}).get("serverInfo")
-        if info:
-            info["version"] = "<version>"
+        result = reply.get("result") or {}
+        for info in (result.get("serverInfo"), (result.get("_meta") or {}).get("io.modelcontextprotocol/serverInfo")):
+            if info:
+                info["version"] = "<version>"
     golden("protocol", replies)
 
 def initialize(version):
@@ -893,3 +904,209 @@ def test_cancel_item_takes_a_queued_call_out():
         del registry.TOOLS["gate"]
         worker.CALLS.pop(7, None)
     assert [r["id"] for r in replies] == ["g"], replies
+
+
+def test_bad_arguments_vs_internal():
+    """A call that breaks the tool's schema (an unknown or a missing argument) is `bad arguments`; a TypeError raised
+    inside a tool is an internal error, not the client's fault."""
+    from metal_gpu_trace import metal_trace_mcp, registry, worker  # noqa: F401  (configures worker)
+
+    def text(result):
+        assert result["isError"], result
+        return result["content"][0]["text"]
+    assert text(worker.call("gpu_family", {"nombre": "M3"})).startswith("bad arguments: unknown argument nombre")
+    assert text(worker.call("gpu_family", {})).startswith("bad arguments: missing argument name")
+    registry.TOOLS["broken"] = (lambda: None + 1, {"type": "object"}, {})
+    try:
+        assert text(worker.call("broken", {})) == "internal error: TypeError"
+    finally:
+        del registry.TOOLS["broken"]
+
+
+def test_envelope():
+    """Each message is classified before it is dispatched: a request needs jsonrpc 2.0 and a string method (else
+    -32600), a response from the client is ignored without a reply."""
+    from metal_gpu_trace import protocol
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+    for bad in ({"jsonrpc": "2.0", "id": 1}, {"jsonrpc": "2.0", "id": 1, "method": 5}, {"id": 1, "method": "ping"},
+                {"jsonrpc": "1.0", "id": 1, "method": "ping"}):
+        reply = protocol.handle(bad)
+        assert reply["error"]["code"] == -32600 and reply["id"] == 1, (bad, reply)
+    assert protocol.handle({"jsonrpc": "2.0", "id": 1, "result": {}}) is None
+    assert protocol.handle({"jsonrpc": "2.0", "id": 1, "error": {"code": -1, "message": "x"}}) is None
+    assert protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "ping"}) == {"jsonrpc": "2.0", "id": 1, "result": {}}
+    assert protocol.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+
+
+def test_http_unreadable_body_is_a_parse_error(tmp_path):
+    """A body that is not UTF-8, or nests so deep that the parser gives up, is answered 400 with -32700, and no
+    exception reaches the handler thread (which would print a traceback)."""
+    import http.client
+    with local_http(tmp_path) as server:
+        for body in (b'{"jsonrpc": "2.0", "id": 1, "method": "\xff\xfe"}', b"[" * 100000 + b"]" * 100000):
+            conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=30)
+            conn.request("POST", "/mcp", body, {"Authorization": f"Bearer {server.token}"})
+            response = conn.getresponse()
+            reply = json.loads(response.read())
+            conn.close()
+            # Python 3.15's parser reads any depth: its answer is then an ordinary -32600 for a message that is a list
+            code = -32700 if response.status == 400 else -32600
+            assert response.status in (200, 400) and reply["error"]["code"] == code and reply["id"] is None, (response.status, reply)
+            assert response.status == 400 or body.startswith(b"["), "an unreadable body must not get past the parser"
+        assert not server.errors, server.errors
+
+
+def test_prompt_dispatch():
+    """prompts/get renders the prompt it is asked for, not always compare-layer, and prompts/list does not show the
+    render function."""
+    from metal_gpu_trace import protocol, registry
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+    registry.PROMPTS["t"] = {"description": "t", "arguments": [], "render": lambda: "T"}
+    try:
+        got = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "prompts/get", "params": {"name": "t"}})["result"]
+        assert got["description"] == "t" and got["messages"][0]["content"]["text"] == "T", got
+        listed = protocol.handle({"jsonrpc": "2.0", "id": 2, "method": "prompts/list"})["result"]["prompts"]
+        assert {p["name"] for p in listed} == {"compare-layer", "t"} and all("render" not in p for p in listed), listed
+        assert "Compare drawstress" in protocol.handle(
+            {"jsonrpc": "2.0", "id": 3, "method": "prompts/get", "params": {"name": "compare-layer"}}
+        )["result"]["messages"][0]["content"]["text"]
+    finally:
+        del registry.PROMPTS["t"]
+
+
+def test_http_reply_broken_pipe():
+    """A client that closed its connection before the reply is written costs one log line, not an exception."""
+    from metal_gpu_trace import http_transport, logs
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+
+    class Gone:
+        def write(self, data):
+            raise BrokenPipeError(32, "Broken pipe")
+
+        def flush(self):
+            pass
+    handler_class = http_transport.http_handler("t" * 32)
+    handler = handler_class.__new__(handler_class)  # no socket: only wfile is used
+    handler.wfile, handler.request_version, handler.requestline, handler.command = Gone(), "HTTP/1.1", "POST /mcp HTTP/1.1", "POST"
+    seen, real = [], logs.log
+    logs.log = seen.append
+    try:
+        assert handler.reply(200, {}) is None
+    finally:
+        logs.log = real
+    assert seen == ["client closed the connection"], seen
+
+
+def test_instructions_spacing():
+    """The text clients read on connecting has a space after each full stop: no `browser.trace_tables`."""
+    import re
+    from metal_gpu_trace import metal_trace_mcp
+    assert not re.search(r"[a-z]\.(trace|perf|capture|gpu|workload)_", metal_trace_mcp.INSTRUCTIONS)
+
+
+def test_panel_html_is_cached_and_patched_once():
+    """panel_html(connect_self) returns the page, with the CSP that lets the live panel fetch its own data when
+    connect_self is true, and reads the file once per variant."""
+    from metal_gpu_trace import panel
+    plain, live = panel.panel_html(False), panel.panel_html(True)
+    assert "default-src 'none'" in plain and "connect-src" not in plain, "the saved panel loads nothing"
+    assert live == plain.replace("default-src 'none'", "default-src 'none'; connect-src 'self'") != plain
+    assert panel.panel_html(True) is live and panel.panel_html.cache_info().hits >= 1
+
+
+def test_http_modern_notification_without_meta(tmp_path):
+    """A notification under the 2026-07-28 header but without _meta gets 202: the spec puts _meta on requests only and
+    defines no header rules for notifications. A request without _meta under that header is still refused (400)."""
+    with local_http(tmp_path) as server:
+        notification = {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 99}}
+        assert http_post(server, notification, {"MCP-Protocol-Version": "2026-07-28"})[:2] == (202, None)
+        assert http_post(server, {"jsonrpc": "2.0", "id": 1, "method": "ping"},
+                         {"MCP-Protocol-Version": "2026-07-28"})[0] == 400
+
+
+def test_http_close_spares_another_client_with_the_same_id(tmp_path):
+    """Two clients over HTTP use the same id: A's recording runs, B's call waits in the queue. A closes its connection;
+    A's call stops and B still gets 200 with its own result."""
+    import socket
+    import threading
+    from metal_gpu_trace import worker
+    with local_http(tmp_path) as server:
+        call = hang_call("hang", "same", server.program)
+        call["params"]["_meta"] = MODERN_META
+        body = json.dumps(call).encode()
+        head = (f"POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{server.port}\r\nAuthorization: Bearer {server.token}\r\n"
+                f"Content-Type: application/json\r\nMCP-Protocol-Version: 2026-07-28\r\nMcp-Method: tools/call\r\n"
+                f"Mcp-Name: perf_record\r\nContent-Length: {len(body)}\r\n\r\n").encode()
+        sock = socket.create_connection(("127.0.0.1", server.port), timeout=5)
+        sock.sendall(head + body)
+        wait_until(lambda: any(server.out.iterdir()))  # A's recording started
+        b_call = modern("tools/call", {"name": "gpu_family", "arguments": {"name": "M3"}})
+        b_call["id"] = "same"
+        result = []
+        thread = threading.Thread(target=lambda: result.append(
+            http_post(server, b_call, modern_headers("tools/call", "gpu_family"))))
+        thread.start()
+        wait_until(lambda: len(worker.QUEUE) > 0)  # B waits behind A
+        sock.close()
+        thread.join(30)
+        status, reply, _ = result[0]
+        assert status == 200 and not reply["result"].get("isError"), reply
+        assert reply["result"]["structuredContent"]["family"] == "Apple9", reply
+
+
+def test_tool_schemas_match_signatures(tmp_path):
+    """Every argument a tool function names is in its inputSchema (tools/call refuses names the schema lacks, so a
+    missing one would break calls that used to work), every argument without a default is required, and a schema
+    name the function does not take only appears when the function forwards **kwargs."""
+    import inspect
+    from metal_gpu_trace import registry
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+    for name, (function, schema, _) in registry.TOOLS.items():
+        parameters = inspect.signature(function).parameters.values()
+        named = {p.name: p for p in parameters if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)}
+        forwards = any(p.kind == p.VAR_KEYWORD for p in parameters)
+        properties, required = set(schema.get("properties", {})), set(schema.get("required", []))
+        assert set(named) <= properties, (name, set(named) - properties)
+        assert {n for n, p in named.items() if p.default is p.empty} <= required, name
+        assert forwards or properties <= set(named), (name, properties - set(named))
+
+
+def test_arguments_must_be_an_object(tmp_path):
+    """tools/call with arguments that are not an object is a bad call, not a server fault."""
+    from metal_gpu_trace import protocol
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+    for arguments in (5, ["name"], "M3"):
+        reply = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                 "params": {"name": "gpu_family", "arguments": arguments}})
+        assert reply["result"]["isError"], arguments
+        assert "bad arguments: arguments must be an object" in reply["result"]["content"][0]["text"], reply
+
+
+def test_http_modern_cancel_notification_cancels_nothing(tmp_path):
+    """Under the 2026-07-28 header a client cancels by closing its connection, so a notifications/cancelled is
+    accepted (202) and ignored: it cannot stop another client's call that shares the id."""
+    import threading
+    with local_http(tmp_path) as server:
+        result = []
+        call = hang_call("hang", 8, server.program)
+        thread = threading.Thread(target=lambda: result.append(http_post(server, call)))
+        thread.start()
+        wait_until(lambda: any(server.out.iterdir()))
+        cancel = {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 8}}
+        assert http_post(server, cancel, {"MCP-Protocol-Version": "2026-07-28"})[:2] == (202, None)
+        from metal_gpu_trace import worker
+        assert 8 not in worker.CANCELLED and not worker.CALLS[8].is_set(), "the old-era call goes on"
+        worker.cancel_call(8)
+        thread.join(30)
+
+
+def test_experiments_refuse_label(tmp_path):
+    """perf_ab, perf_cold_warm and perf_sweep name their runs themselves: a label they used to drop silently is now an
+    unknown argument, refused before anything records."""
+    from metal_gpu_trace import protocol
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+    for tool, arguments in (("perf_ab", {"name": "t", "env_a": "", "env_b": "X=1"}), ("perf_cold_warm", {"name": "t"}),
+                            ("perf_sweep", {"name": "t", "variable": "dim", "values": [1, 2]})):
+        reply = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                 "params": {"name": tool, "arguments": {**arguments, "label": "x"}}})
+        assert "bad arguments: unknown argument label" in reply["result"]["content"][0]["text"], (tool, reply)

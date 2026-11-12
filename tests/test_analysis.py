@@ -201,7 +201,7 @@ def test_perf_sweep(tmp_path):
     saved = recording.tool_perf_record, config.OUT
     recording.tool_perf_record, config.OUT = fake_record, tmp_path
     try:
-        got = experiments.tool_perf_sweep("t", "dim", [10, 20, 30], rounds=2, seconds=30, label="ignored")
+        got = experiments.tool_perf_sweep("t", "dim", [10, 20, 30], rounds=2, seconds=30)
         assert [m[0] for m in made] == ["t-1-r1", "t-2-r1", "t-3-r1", "t-3-r2", "t-2-r2", "t-1-r2"], made
         assert [m[1] for m in made] == [10, 20, 30, 30, 20, 10], made
         assert [r["value"] for r in got["rows"]] == [10, 20, 30] and len(got["rows"][0]["runs"]) == 2, got
@@ -240,7 +240,7 @@ def test_perf_ab(tmp_path):
     saved = recording.tool_perf_record, config.OUT
     recording.tool_perf_record, config.OUT = fake_record, tmp_path
     try:
-        got = experiments.tool_perf_ab("t", "", "MULLION_X=1", seconds=30, label="ignored")
+        got = experiments.tool_perf_ab("t", "", "MULLION_X=1", seconds=30)
         assert made == [("t-a1", ""), ("t-b1", "MULLION_X=1"), ("t-b2", "MULLION_X=1"), ("t-a2", "")], made
         assert got["metrics"]["fps_estimate"]["verdict"] == "better", got
         assert got["metrics"]["frame_gpu_ms_mean"]["verdict"] == "same", got

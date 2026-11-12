@@ -187,7 +187,7 @@ PROMPTS = {
         "arguments": [{"name": "workload", "description": "a workload from workload_list, default drawstress"},
                       {"name": "api", "description": "the API run under Wine: d3d12 (default) or d3d11"}],
     },
-}
+}  # each prompt also holds "render", the function that builds its text from the arguments; prompts/list leaves it out
 
 
 def prompt_compare_layer(workload="drawstress", api="d3d12"):
@@ -203,3 +203,6 @@ def prompt_compare_layer(workload="drawstress", api="d3d12"):
         "change in GPU ms per frame, then the verdict. Say which runs are in too_short, and that one pair of runs is "
         "not enough to call a difference real: repeat both before concluding."
     )
+
+
+PROMPTS["compare-layer"]["render"] = prompt_compare_layer

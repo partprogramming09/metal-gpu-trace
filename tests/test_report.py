@@ -582,3 +582,42 @@ def test_perf_report_runs_by_path():
     """perf_record.sh runs perf_report.py by its path with -I: it must find the package (metrics) on its own."""
     proc = subprocess.run([sys.executable, "-I", str(PKG / "perf_report.py"), "--help"], text=True, capture_output=True)
     assert proc.returncode == 0 and "usage: perf_report.py" in proc.stdout, proc.stderr
+
+
+def test_public_arguments_spaces_in_paths():
+    """A path with spaces in its folders leaves no folder name behind: a path runs from its first word to the next
+    argument that starts with '-', and only its file name stays."""
+    from metal_gpu_trace import metrics
+    assert metrics.public_arguments(r"C:\Users\Ann Lee\save.dat") == "save.dat"
+    assert metrics.public_arguments("/Users/Ann Lee/x") == "x"
+    assert metrics.public_arguments(r"C:\Program Files\x\game.exe -w 1") == "game.exe -w 1"
+
+
+def test_public_arguments_forms():
+    """Quoted paths, --option=path, UNC paths, two paths in a row and a path that names a folder are cut to file names
+    too, and arguments that are not absolute paths are kept as they are."""
+    from metal_gpu_trace import metrics
+    cut = metrics.public_arguments
+    assert cut(r'"C:\Users\Ann Lee\save.dat" -w 1') == "save.dat -w 1"
+    assert cut("'/Users/Ann Lee/x' -w 1") == "x -w 1"
+    assert cut("--save=/Users/Ann Lee/x --fast") == "--save=x --fast"
+    assert cut(r'--save="C:\Users\Ann Lee\x" -w') == "--save=x -w"
+    assert cut(r"\\server\Ann Lee\share\x.dat -w 1") == "x.dat -w 1"
+    assert cut("/Users/Ann Lee/a.dat /Users/Bo Li/b.dat") == "a.dat b.dat"
+    assert cut("/Users/Ann Lee/ -w 1") == "-w 1", "a path that ends in a separator names a folder: nothing stays"
+    assert cut("-w 1 --name=Ann level.one") == "-w 1 --name=Ann level.one"
+    assert cut("") == cut(None) == ""
+
+
+def test_public_arguments_paths_inside_words():
+    """A path inside a quoted value, after a short flag, after `name=` or `name:`, or in a file URL is cut too; a POSIX
+    path whose name holds a Windows path keeps only the last part."""
+    from metal_gpu_trace import metrics
+    cut = metrics.public_arguments
+    assert cut('-exec "load /Users/ann/cfg/x.cfg"') == '-exec "load x.cfg"'
+    assert cut("-exec 'load /Users/ann/x' -w") == "-exec 'load x' -w"
+    assert cut("-I/Users/ann/inc -w") == "-Iinc -w"
+    assert cut("savedir=/Users/ann/x") == "savedir=x"
+    assert cut(r"/out:C:\Users\ann\x.log") == "x.log"
+    assert cut("file:///Users/ann/x.html") == "file:x.html"
+    assert cut("-w 1 http://example.com/a") == "-w 1 http://example.com/a", "a URL with a host is not a local path"

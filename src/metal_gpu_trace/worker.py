@@ -124,6 +124,19 @@ def cancel_item(message, event):
     event.set()
 
 
+def check_arguments(schema, arguments):
+    """Returns why `arguments` do not fit the tool `schema`, or None when they do: it checks only the `required` names
+    and, when the schema lists `properties`, the names it does not know. Types stay with each tool."""
+    if not isinstance(arguments, dict):
+        return "arguments must be an object"
+    unknown = sorted(k for k in arguments if k not in schema["properties"]) if "properties" in schema else []
+    missing = [k for k in schema.get("required", ()) if k not in arguments]
+    for word, names in (("unknown", unknown), ("missing", missing)):
+        if names:
+            return f"{word} argument{'s' if len(names) > 1 else ''} {', '.join(names)}"
+    return None
+
+
 def call(name, arguments, request_id=None, token=None):
     """Runs one tool and returns its MCP result, with failures as isError results that say what to do. A client's
     notifications/cancelled for `request_id` stops it; `token` is the client's progressToken, if it sent one."""
@@ -136,6 +149,8 @@ def call(name, arguments, request_id=None, token=None):
     try:
         if recording.cancelled():
             raise paths.ToolError("the call was cancelled before it started")
+        if (problem := check_arguments(registry.TOOLS[name][1], arguments)) is not None:
+            raise paths.ToolError(f"bad arguments: {problem}")
         value = registry.TOOLS[name][0](**arguments)
         if not isinstance(value, dict):
             raise RuntimeError(f"{name} returned {type(value).__name__}, not an object")
@@ -143,8 +158,6 @@ def call(name, arguments, request_id=None, token=None):
         if len(text) > config.MAX_TEXT:
             raise paths.ToolError(f"the result has {len(text)} characters; ask for a smaller page with limit")
         result = {"content": [{"type": "text", "text": text}], "structuredContent": value}
-    except TypeError as error:
-        result = {"content": [{"type": "text", "text": f"bad arguments: {error}"}], "isError": True}
     except (paths.ToolError, FileNotFoundError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         result = {"content": [{"type": "text", "text": str(error)}], "isError": True}
     except Exception as error:  # an unexpected failure is reported to the client, not fatal to the server

@@ -43,7 +43,8 @@ def check_headers(headers, message, era):
     Old era: MCP-Protocol-Version, when sent, is one of protocol.LEGACY_VERSIONS (400). Modern era, for a request: it
     names the _meta version, which is supported (400 -32022), Mcp-Method names the method, which exists (404 -32601),
     and Mcp-Name names params.name or params.uri where the method has one; a missing or different value is 400
-    -32020. A modern notification is let through: the spec defines no header rules for it."""
+    -32020. A notification under a modern version header is let through, with or without _meta: the spec defines no
+    header rules for it."""
     mid = message.get("id") if isinstance(message, dict) else None
 
     def refuse(status, code, text):
@@ -51,6 +52,8 @@ def check_headers(headers, message, era):
                         "error": {"code": code, "message": text}}
     version = headers.get("MCP-Protocol-Version")
     if era == "legacy":
+        if mid is None and version in protocol.MODERN_VERSIONS:
+            return None  # a modern notification has no _meta (the spec puts it on requests only), so it looks legacy
         if version is not None and version not in protocol.LEGACY_VERSIONS:
             return refuse(400, -32600, f"unsupported MCP-Protocol-Version {version}")
         return None
@@ -87,12 +90,16 @@ def http_handler(token):
 
         def reply(self, code, body=None, kind="application/json"):
             data = b"" if body is None else body.encode() if isinstance(body, str) else json.dumps(body).encode()
-            self.send_response(code)
-            if body is not None:  # an empty body (202, 404, 405) has no type
-                self.send_header("Content-Type", kind)
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.send_response(code)
+                if body is not None:  # an empty body (202, 404, 405) has no type
+                    self.send_header("Content-Type", kind)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            except ConnectionError:  # BrokenPipeError and ConnectionResetError: the client left during a long call
+                self.close_connection = True  # the socket is dead: do not wait for another request on it
+                logs.log("client closed the connection")
 
         def foreign(self):
             """Returns whether the request names a Host or an Origin that is not this machine."""
@@ -116,13 +123,16 @@ def http_handler(token):
                 return self.reply(413)
             try:
                 message = json.loads(self.rfile.read(length))
-            except json.JSONDecodeError:
+            except (ValueError, RecursionError):  # not JSON, not UTF-8 (UnicodeDecodeError), or nested too deep
                 return self.reply(400, {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}})
             era = protocol.era(message)
             if (failure := check_headers(self.headers, message, era)) is not None:
                 return self.reply(*failure)
             if isinstance(message, dict) and message.get("method") == "notifications/cancelled":
-                worker.cancel_call(protocol.request_id_of(message))
+                # a modern client cancels by closing its connection; its notification would cancel by id, which
+                # another client may share, so it is accepted and ignored
+                if self.headers.get("MCP-Protocol-Version") not in protocol.MODERN_VERSIONS:
+                    worker.cancel_call(protocol.request_id_of(message))
                 return self.reply(202)
             if isinstance(message, dict) and message.get("method") == "tools/call" and \
                     isinstance(message.get("id"), (str, int)):
@@ -163,9 +173,7 @@ def http_handler(token):
                 return self.reply(403)
             if url.path == "/panel":
                 # the page holds no data and reads the token from the URL fragment, which never reaches the server
-                page_html = panel.panel_html()
-                return self.reply(200, page_html.replace("default-src 'none'", "default-src 'none'; connect-src 'self'"),
-                                  "text/html; charset=utf-8")
+                return self.reply(200, panel.panel_html(True), "text/html; charset=utf-8")
             if self.unauthorized():
                 return self.reply(401)
             query = parse_qs(url.query)

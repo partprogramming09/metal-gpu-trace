@@ -45,7 +45,31 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   unsupported legacy version is 400, `DELETE` is 405 instead of 501, and a notification gets 202 with no body.
 - A `conformance` CI job connects the official MCP Python SDK (`mcp` 2.3.0) to the server in both eras: discover,
   initialize, list the tools and call one. MCP Inspector 2.15.0 (`--cli`, `tools/list`) connects too, checked once
-  by hand.
+  by hand. The same SDK also connects over Streamable HTTP (`--http`, with the bearer token) in the 2026-07-28 era.
+- `tools/call` tells a bad call from a server fault: an unknown or missing argument is `bad arguments: unknown
+  argument x`, `bad arguments: missing argument y` or `bad arguments: arguments must be an object`; a `TypeError`
+  inside a tool (a wrong argument type, too) is `internal error: TypeError`. Arguments a tool used to drop silently
+  are now refused: `label` on `perf_ab`, `perf_cold_warm` and `perf_sweep`, and `env` on `perf_ab`.
+- JSON-RPC messages are classified before dispatch: a request without a string `method` or without `"jsonrpc": "2.0"`
+  gets `-32600` instead of `-32601`, and responses from the client are ignored without a reply.
+- Over HTTP, a body that is not UTF-8 or nests too deeply for the parser is answered `400` with `-32700` instead of an
+  uncaught exception in the handler thread; a client that closes the connection before the reply costs one log line
+  instead of a traceback.
+- Over HTTP, a notification under the `2026-07-28` version header gets `202` even without `_meta` (the spec puts
+  `_meta` on requests only); before it was refused with `400`. A `notifications/cancelled` under that header is
+  accepted and ignored, since a modern client cancels by closing its connection and an id may be shared.
+- `prompts/get` renders the prompt it is asked for, and `prompts/list` no longer exposes the internal `render`
+  function.
+- On macOS a `.recording` lock left by a process that no longer exists is taken over by the next recording; a lock
+  whose owner is alive (any user's) still refuses with exit 3, and two recordings that find the same dead lock cannot
+  both take it. A recording stopped for overrunning or cancelled removes its lock only when the lock holds its pid.
+- A typo in the server instructions (`browser.trace_tables`), which changes the `instructions` text in `initialize`
+  and `server/discover`.
+- `process.arguments` in summaries no longer keeps folder names from paths with spaces (`C:\Users\Ann Lee\save.dat`,
+  `/Users/Ann Lee/x`); quoted paths, `--option=path` values, UNC paths, paths after a short flag (`-I/x`), after
+  `name=` or `name:` (`file:///x`) and inside a quoted value (`-exec "load /x/y"`) are cut too.
+- Internal: the experiments share `recording.record_new_summary`, the panel page is read once and cached, the golden
+  file pins the 2026-07-28 replies too, and a test checks each tool's schema against its function's arguments.
 - CI supply chain: every action is pinned to a commit SHA, workflows default to read-only `permissions`, and the
   `mcp-publisher` download is pinned to v1.8.9 and checked against its sha256. `SECURITY.md` says how to report a
   vulnerability; `.gitattributes` keeps every text file in LF, so the PowerShell scripts hash the same on every checkout.

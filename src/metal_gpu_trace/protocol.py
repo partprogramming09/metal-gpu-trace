@@ -84,6 +84,11 @@ def handle(message):
     if not isinstance(message, dict):
         return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid Request"}}
     method, mid, params = message.get("method"), message.get("id"), message.get("params") or {}
+    if "method" not in message and mid is not None and ("result" in message or "error" in message):
+        return None  # a response to a request this server never sends
+    bad_id = mid if isinstance(mid, (str, int)) else None
+    if message.get("jsonrpc") != "2.0" or not isinstance(method, str):
+        return {"jsonrpc": "2.0", "id": bad_id, "error": {"code": -32600, "message": "Invalid Request"}}
     if mid is None:
         return None
     if not isinstance(params, dict):
@@ -137,16 +142,17 @@ def handle(message):
                              "outputSchema": registry.PAGED if n in registry.PAGED_TOOLS else registry.OBJECT, "annotations": hints}
                             | ({"_meta": registry.META[n]} if n in registry.META else {}) for n, (f, s, hints) in registry.TOOLS.items()]}
     elif method == "prompts/list":
-        result = {"prompts": [{"name": name, **p} for name, p in registry.PROMPTS.items()]}
+        result = {"prompts": [{"name": name, **{k: v for k, v in p.items() if k != "render"}}
+                               for name, p in registry.PROMPTS.items()]}
     elif method == "prompts/get":
         if params.get("name") not in registry.PROMPTS:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "unknown prompt"}}
         arguments = {k: v for k, v in (params.get("arguments") or {}).items() if v and paths.name_ok(str(v))}
         try:
-            text = registry.prompt_compare_layer(**arguments)
+            text = registry.PROMPTS[params["name"]]["render"](**arguments)
         except TypeError:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "unknown prompt argument"}}
-        result = {"description": registry.PROMPTS["compare-layer"]["description"],
+        result = {"description": registry.PROMPTS[params["name"]]["description"],
                   "messages": [{"role": "user", "content": {"type": "text", "text": text}}]}
     elif method == "tools/call":
         name = params.get("name")

@@ -1,4 +1,5 @@
 """The HTML panel that shows one or two runs."""
+import functools
 import json
 
 from metal_gpu_trace import analysis, config, paths, recording
@@ -7,9 +8,13 @@ from metal_gpu_trace import analysis, config, paths, recording
 PANEL_PRESETS = ("fps", "compare")
 
 
-def panel_html():
-    """Returns the text of the panel page, with no data in it."""
-    return (config.PACKAGE_DIR / "data" / "panel.html").read_text(encoding="utf-8")
+@functools.lru_cache(maxsize=None)
+def panel_html(connect_self):
+    """Returns the text of the panel page, with no data in it. `connect_self` is true for the live panel that
+    http_transport serves, whose page may fetch its data from the server it came from; the saved panel file loads
+    nothing."""
+    page = (config.PACKAGE_DIR / "data" / "panel.html").read_text(encoding="utf-8")
+    return page.replace("default-src 'none'", "default-src 'none'; connect-src 'self'") if connect_self else page
 
 
 def panel_run(run, skip_s=0):
@@ -101,7 +106,7 @@ def tool_perf_panel(name, runs, preset="fps", skip_s=0, layout=None):
     payload = panel_data(runs, preset, skip_s)
     data = payload["runs"]
     text = json.dumps(payload, separators=(",", ":")).replace("<", "\\u003c")
-    page_html = panel_html().replace("/*PAYLOAD*/null", text)
+    page_html = panel_html(False).replace("/*PAYLOAD*/null", text)
     target = config.OUT / f"{name}.panel.html"
     target.write_text(page_html, encoding="utf-8")
     return {"file": target.name, "runs": list(runs), "frames": sum(len(r["frames"]) for r in data),

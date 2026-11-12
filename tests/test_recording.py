@@ -380,19 +380,82 @@ def test_overrun(tmp_path):
         config.OUT, recording.deadline, os.environ["PATH"] = saved
     assert not list(out.iterdir()), list(out.iterdir())
 
+@macos_only
+def test_overrun_removes_lock_with_pid(tmp_path):
+    """The lock of a recording that overruns is removed together with the pid file perf_record.sh wrote in it."""
+    from metal_gpu_trace import config, paths, recording
+    stubs, out, program = hang_stubs(tmp_path)
+    (stubs / "xcrun").write_text("#!/bin/zsh\ntest -s $PERF_OUT/.recording/pid || exit 9\n"
+                                 "while [[ $1 != --output ]]; do shift; done\nmkdir -p $2\nsleep 60\n")
+    saved = config.OUT, recording.deadline, os.environ["PATH"]
+    config.OUT, recording.deadline = out, lambda seconds: 3
+    os.environ["PATH"] = f"{stubs}:{saved[2]}"
+    try:
+        recording.tool_perf_record("hang", str(program), seconds=1, wine="native")
+        raise AssertionError("an overrunning recording must fail")
+    except paths.ToolError as error:
+        assert "stopped" in str(error), error
+    finally:
+        config.OUT, recording.deadline, os.environ["PATH"] = saved
+    assert not list(out.iterdir()), list(out.iterdir())
+
+@macos_only
+def test_stale_lock_macos(tmp_path):
+    """A .recording lock whose pid is dead is taken over by the next recording; one whose pid is alive still refuses."""
+    stubs, out = tmp_path / "stubs", tmp_path / "runs"
+    stubs.mkdir()
+    out.mkdir()
+    (stubs / "xcrun").write_text(f"#!/bin/zsh\ntouch {tmp_path}/xctrace-ran\n"
+                                 "while [[ $1 != --output ]]; do shift; done\nmkdir -p $2\n")
+    (stubs / "pkill").write_text("#!/bin/zsh\nexit 1\n")
+    program = tmp_path / "stale-4242"
+    program.write_text("#!/bin/sh\n")
+    for stub in (*stubs.iterdir(), program):
+        stub.chmod(0o755)
+    env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", PATH=f"{stubs}:{os.environ['PATH']}")
+
+    def record():
+        return subprocess.run(["zsh", str(PKG / "perf_record.sh"), "stale", "1", "native", "-", str(tmp_path), str(program)],
+                              env=env, capture_output=True, text=True, timeout=60)
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    lock = out / ".recording"
+    lock.mkdir()
+    (lock / "pid").write_text(f"{dead.pid}\n")
+    proc = record()
+    assert (tmp_path / "xctrace-ran").exists() and "another recording" not in proc.stderr, proc
+    assert not lock.exists(), "the recording that took the lock frees it"
+    lock.mkdir()
+    (lock / "pid").write_text(f"{os.getpid()}\n")  # alive: this test's own process
+    proc = record()
+    assert proc.returncode == 3 and "another recording is running" in proc.stderr, proc
+    assert (lock / "pid").read_text().strip() == str(os.getpid()), "a live owner's lock is left alone"
+    (lock / "pid").write_text(f"{dead.pid}\n")
+    (out / ".recording.takeover").mkdir()  # another recording is taking the dead lock over right now
+    proc = record()
+    assert proc.returncode == 3 and "another recording is running" in proc.stderr, proc
+    assert (lock / "pid").read_text().strip() == str(dead.pid), "only one recording takes a dead lock over"
+    assert ".recording.takeover" in proc.stderr, "a takeover lock left by a killed recording is named, to remove"
+
 def test_kill_program_and_watchdog(tmp_path):
     """kill_program ends a program that ignores SIGTERM, and perf_record.sh stops its recording, frees its lock and
     its program when the server named in PERF_PARENT_PID dies."""
+    import secrets
     import shutil
     import time
     from metal_gpu_trace import recording
-    stubs, out, program = hang_stubs(tmp_path)
-    # a program that ignores SIGTERM, under a name only this test uses
-    stubborn = tmp_path / "ignoreterm-4242"
+    from support import wait_until
+    stubs, out, hung = hang_stubs(tmp_path)
+    # the names pkill -x gets hold only this test's processes: a random token (8 hex digits, so that the name stays
+    # within the 16 characters macOS keeps of a process name)
+    token = secrets.token_hex(4)
+    program = hung.rename(tmp_path / f"hang-{token}")
+    # a program that ignores SIGTERM
+    stubborn = tmp_path / f"ig-{token}"
     shutil.copy(shutil.which("sleep"), stubborn)
     proc = subprocess.Popen(["sh", "-c", f"trap '' TERM; exec {stubborn} 60"])
-    time.sleep(0.5)
-    recording.kill_program("ignoreterm-4242")
+    wait_until(lambda: subprocess.run(["pgrep", "-x", stubborn.name], capture_output=True).returncode == 0)
+    recording.kill_program(stubborn.name)
     assert proc.wait(timeout=15) is not None, "kill_program must escalate to SIGKILL"
     # the recording's parent dies: the script must exit and free its lock
     parent = subprocess.Popen(["sleep", "60"])
@@ -416,7 +479,7 @@ def test_kill_program_and_watchdog(tmp_path):
     finally:
         if script.poll() is None:
             script.kill()
-        subprocess.run(["pkill", "-f", str(stubs / "xcrun")], capture_output=True)
+        subprocess.run(["pkill", "-f", str(program)], capture_output=True)  # the xcrun stub holds it in its arguments
     assert not list(out.iterdir()), f"the lock and the partial files must go: {list(out.iterdir())} {logfile.read_text()[-400:]!r}"
 
 def test_script_failure_cleanup(tmp_path):
@@ -593,3 +656,46 @@ def test_daemon_candidates():
                 ROOT / "build" / exe]
     assert prw.daemon_candidates() == expected, prw.daemon_candidates()
     assert prw.daemon_candidates("x.exe")[0] == pathlib.Path("x.exe")
+
+
+def test_record_new_summary(tmp_path):
+    """record_new_summary records with perf_record and returns the name and the summary of the run that recording
+    wrote, not of an older run with the same label."""
+    from metal_gpu_trace import config, paths, recording
+    (tmp_path / "x_old.json").write_text('{"old": true}')
+
+    def fake_record(label, **record):
+        (tmp_path / f"{label}_new.json").write_text(json.dumps({"seen": record}))
+    saved = recording.tool_perf_record, config.OUT
+    recording.tool_perf_record, config.OUT = fake_record, tmp_path
+    try:
+        assert recording.record_new_summary("x", seconds=3) == ("x_new", {"seen": {"seconds": 3}})
+        recording.tool_perf_record = lambda label, **record: None
+        try:
+            recording.record_new_summary("x")
+            raise AssertionError("a recording that wrote no summary must fail")
+        except paths.ToolError as error:
+            assert "no summary" in str(error), error
+    finally:
+        recording.tool_perf_record, config.OUT = saved
+
+
+def test_free_lock_only_frees_its_own(tmp_path):
+    """A stopped recording frees the .recording lock only when the lock holds its own pid: another recording's lock,
+    or one whose owner did not write its pid yet, is left alone."""
+    from metal_gpu_trace import config, recording
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        lock = tmp_path / ".recording"
+        lock.mkdir()
+        (lock / "pid").write_text("111\n")
+        recording.free_lock(222)
+        assert (lock / "pid").read_text() == "111\n", "another recording's lock stays"
+        recording.free_lock(111)
+        assert not lock.exists()
+        lock.mkdir()
+        recording.free_lock(111)
+        assert lock.exists(), "a lock without a pid file may belong to a recording that is starting"
+        recording.free_lock(111)  # no error when there is nothing to free
+    finally:
+        config.OUT = saved

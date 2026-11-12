@@ -74,13 +74,63 @@ def idle_gaps(spans):
             "idle_share": round(sum(gaps) / whole, 3) if whole else None}
 
 
+# one argument: an optional `--name=` prefix, then a "quoted", 'quoted' or bare value
+_ARGUMENT = re.compile(r"""(?=\S)(?P<option>-[^\s=]*=)?(?:"(?P<double>[^"]*)"|'(?P<single>[^']*)'|(?P<bare>\S*))""")
+_WINDOWS_PATH = re.compile(r"^(?:[a-zA-Z]:[\\/]|\\\\)")  # C:\ or C:/ (a Wine program's paths), or a UNC path
+# where a path starts inside a word: after a short flag (-I/x), after `name=` or `name:`; `://host` is a URL, not a path
+_INNER_PATH = re.compile(r"(?:^-[A-Za-z]|[=:])(?=/(?!/[^/])|[a-zA-Z]:[\\/])")
+
+
 def public_arguments(arguments):
-    """Returns a command line with each absolute path cut to its file name, so summaries can be shared: POSIX paths
-    and Windows drive paths (C:\\… or C:/…, as a Wine program gets them), on every platform."""
-    def clean(arg):
-        if arg.startswith("/"):
-            return pathlib.PurePosixPath(arg).name
-        if re.match(r"^[a-zA-Z]:[\\/]", arg):
-            return pathlib.PureWindowsPath(arg).name
-        return arg
-    return " ".join(clean(a) for a in (arguments or "").split())
+    """Returns a command line with each absolute path cut to its file name, so summaries can be shared: POSIX paths,
+    Windows drive and UNC paths (as a Wine program gets them) and the value of `--option=path`, on every platform.
+
+    The line comes without quoting that can be trusted, so a folder name with spaces (`C:\\Users\\Ann Lee\\save.dat`)
+    cannot be told from two arguments. The rule is that an unquoted absolute path runs from its first word to the next
+    argument that starts with `-`, a quote or a new absolute path; the words in between belong to it and only the name
+    after its last separator stays, so no folder name is left. A quoted path is one argument, ended by its quote.
+    Consequences: a plain word that follows a path with no flag between them is read as part of the path, and its
+    file name keeps it (`/opt/a/game.exe level1` gives `game.exe level1`, as it always did); a file name with spaces
+    stays whole; a path that ends in a separator names a folder and leaves nothing; and a space followed by `/` or
+    `C:\\` always starts a new path. A path inside a word is cut the same way: after a short flag (`-I/x`), after
+    `name=` or `name:` (`file:///x`), and inside a quoted value (`-exec "load /x/y"`). Relative paths and URLs with a
+    host are not cut: they hold no user's folder."""
+    def is_path(text):
+        return text.startswith("/") or bool(_WINDOWS_PATH.match(text))
+
+    def file_name(path):
+        if path.endswith(("/", "\\")):
+            return ""
+        name = (pathlib.PureWindowsPath if _WINDOWS_PATH.match(path) else pathlib.PurePosixPath)(path).name
+        return name.rsplit("\\", 1)[-1].strip()  # /out:C:\x\y.log is one POSIX name that holds a Windows path
+    out, run = [], None  # run: [option prefix, the words of the path so far]
+
+    def end_run():
+        nonlocal run
+        if run is not None:
+            out.append(run[0] + file_name(" ".join(run[1])))
+            run = None
+    for match in _ARGUMENT.finditer(arguments or ""):
+        option = match["option"] or ""
+        quoted = match["double"] if match["double"] is not None else match["single"]
+        value = match["bare"] if quoted is None else quoted
+        if is_path(value):
+            end_run()
+            if quoted is None:
+                run = [option, [value]]
+            else:
+                out.append(option + file_name(value))
+        elif run is not None and quoted is None and not option and not value.startswith("-"):
+            run[1].append(value)
+        elif quoted is not None:  # a quoted value that is not a path may still hold one: `-exec "load /x/y"`
+            end_run()
+            mark = '"' if match["double"] is not None else "'"
+            out.append(option + mark + public_arguments(quoted) + mark)
+        elif (inner := _INNER_PATH.search(value)) is not None:  # -I/x, name=/x, file:///x
+            end_run()
+            run = [option + value[:inner.end()], [value[inner.end():]]]
+        else:
+            end_run()
+            out.append(match[0])
+    end_run()
+    return " ".join(word for word in out if word)

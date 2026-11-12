@@ -248,6 +248,18 @@ def record(label, seconds, wine, prefix, workdir, command, *args, memory_free_pc
             hold.wait()
 
 
+
+def free_lock(pid):
+    """Removes the .recording lock of a recording that was killed, when it holds `pid` (perf_record.sh's own pid):
+    a lock with another pid, or with none yet, may belong to another recording and stays."""
+    lock = config.OUT / ".recording"
+    try:
+        owner = (lock / "pid").read_text().strip()
+    except OSError:
+        return
+    if owner == str(pid):
+        shutil.rmtree(lock, ignore_errors=True)
+
 def record_run(label, seconds, wine, prefix, workdir, command, program_env="", memory=True, layer=None, counters=False,
                background=False):
     """Runs perf_record.sh and returns the summary it wrote, stopping the whole recording and deleting its files if
@@ -295,8 +307,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
             elif wine != "attach":
                 subprocess.run([str(pathlib.Path(wine) / "bin" / "wineserver"), "-k"],
                                env=dict(env, WINEPREFIX=str(prefix)), capture_output=True, timeout=30)
-            if (config.OUT / ".recording").is_dir():
-                (config.OUT / ".recording").rmdir()
+            free_lock(proc.pid)
             # the partial .trace and CSVs of this run
             for path in (set(config.OUT.glob(f"{label}_*")) - before) | (set(tmp.glob("instruments*.ktrace")) - ktraces):
                 shutil.rmtree(path) if path.is_dir() else path.unlink()
@@ -319,3 +330,14 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
     summary["layer"] = layer
     new[-1].write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return summary
+
+
+def record_new_summary(label, **record):
+    """Records with tool_perf_record(label, **record) and returns (run name, summary) of the summary that recording
+    wrote: experiments that record several runs read each one back through here."""
+    known = set(config.OUT.glob(f"{label}_*.json"))
+    tool_perf_record(label, **record)
+    new = sorted(set(config.OUT.glob(f"{label}_*.json")) - known)
+    if not new:
+        raise paths.ToolError(f"the recording of {label} wrote no summary")
+    return new[-1].stem, json.loads(new[-1].read_text(encoding="utf-8"))
