@@ -93,6 +93,16 @@ def registry_overrides(prefix):
     return found
 
 
+def wine_version(printed):
+    """Returns the one-line version `wine --version` printed: CrossOver's "Product Name" and "Public Version" lines
+    joined, a plain Wine's line as is, or None when it printed nothing."""
+    lines = [line.strip() for line in printed.splitlines() if line.strip()]
+    fields = dict(line.split(": ", 1) for line in lines if ": " in line)
+    if "Product Name" in fields and "Public Version" in fields:
+        return f"{fields['Product Name']} {fields['Public Version']}"
+    return lines[0] if lines else None
+
+
 def layer_of(wine, prefix, program_env=""):
     """Returns what identifies the translation layer a recording runs on: the Wine version, the overrides in force
     and the size and SHA-256 of LAYER_DLLS in Wine and in the prefix, with a short fingerprint of all of it. Which of
@@ -106,8 +116,8 @@ def layer_of(wine, prefix, program_env=""):
         return {"unknown": "an attached process's Wine and prefix are not known", "program_env": env}
     wine, prefix = pathlib.Path(wine), pathlib.Path(prefix)
     try:
-        version = subprocess.run([str(wine / "bin" / "wine"), "--version"], capture_output=True, text=True,
-                                 timeout=30).stdout.strip()
+        version = wine_version(subprocess.run([str(wine / "bin" / "wine"), "--version"], capture_output=True, text=True,
+                                              timeout=30).stdout)
     except (OSError, subprocess.TimeoutExpired):
         version = None
     caller = os.environ.get("WINEDLLOVERRIDES")
@@ -314,7 +324,10 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
                 shutil.rmtree(path) if path.is_dir() else path.unlink()
             if left > 0:
                 raise paths.ToolError("the recording was cancelled; nothing was saved")
-            raise paths.ToolError(f"the recording took over {limit} s and was stopped; nothing was saved")
+            raise paths.ToolError(f"the recording took over {limit} s and was stopped; nothing was saved. The likely "
+                                  "cause is a hidden window: the program stops presenting, renders without the "
+                                  "display's pace, and Instruments takes minutes to close that much data; record "
+                                  "again with the program's window visible, or for fewer seconds")
         try:
             _, stderr = proc.communicate(timeout=min(1, left))
             break
@@ -328,6 +341,16 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
         reason = (stderr.strip().splitlines() or ["no summary was written"])[-1]
         raise paths.ToolError(f"recording failed (exit {proc.returncode}): {reason}")
     summary = json.loads(new[-1].read_text(encoding="utf-8"))
+    if not (summary.get("gpu") or {}).get("intervals"):
+        run, keep = new[-1].stem, os.environ.get("KEEP_TRACE") == "1"
+        for path in set(config.OUT.glob(f"{run}.*")) - before:
+            if not (keep and path.suffix == ".trace"):
+                shutil.rmtree(path) if path.is_dir() else path.unlink()
+        ended = (summary.get("process") or {}).get("termination-reason") or "unknown"
+        kept = f"; {run}.trace is kept (KEEP_RUNS does not prune it: delete it by hand)" if keep and (config.OUT / f"{run}.trace").exists() else ""
+        raise paths.ToolError(f"the program did no GPU work: it ended ({ended}) after {summary.get('duration_s', 0):.1f} s "
+                              f"of recording, and its summary was not saved{kept}; check that it starts (under Wine: "
+                              "the Wine build, the prefix and the program's own log)")
     summary["layer"] = layer
     new[-1].write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return summary

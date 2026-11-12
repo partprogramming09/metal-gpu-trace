@@ -56,10 +56,10 @@ def encoder_stats(spans, labels):
     }
 
 
-def idle_gaps(spans):
+def idle_gaps(spans, unframed=()):
     """Returns the time the GPU ran none of the process's work between its first and last interval: per frame (each
-    gap counts in the frame of the work that ends it), gaps over 1 ms and share of the whole span. `spans` as in
-    encoder_stats."""
+    gap counts in the frame of the work that ends it; frames in `unframed` count in the whole only), gaps over 1 ms
+    and share of the whole span. `spans` as in encoder_stats."""
     ordered = sorted((start, start + duration, frame) for frame, start, duration, _, _ in spans)
     if not ordered:
         return {"idle_ms_per_frame": {"count": 0}}
@@ -70,7 +70,8 @@ def idle_gaps(spans):
             idle[frame] += (start - end) / 1e6
         end = max(end, stop)
     whole = (end - ordered[0][0]) / 1e6
-    return {"idle_ms_per_frame": stats(list(idle.values())), "gaps_over_1ms": sum(g > 1 for g in gaps),
+    per_frame = [v for frame, v in idle.items() if frame not in unframed]
+    return {"idle_ms_per_frame": stats(per_frame), "gaps_over_1ms": sum(g > 1 for g in gaps),
             "idle_share": round(sum(gaps) / whole, 3) if whole else None}
 
 

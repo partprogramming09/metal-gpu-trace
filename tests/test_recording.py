@@ -354,7 +354,8 @@ def test_example_traits(tmp_path):
 
 @macos_only
 def test_overrun(tmp_path):
-    """A recording that overruns its deadline is stopped and leaves no files and no lock behind, and the deadline
+    """A recording that overruns its deadline is stopped, leaves no files and no lock behind and names the likely
+    cause (a hidden window: the program renders unpaced and Instruments takes minutes to close the data), and the deadline
     covers a 30 s Wine D3D12 recording (more than 407 s in all on an M1 Pro) and reading back a 60 s one."""
     from metal_gpu_trace import config, paths, recording
     assert recording.deadline(30) > 407 and recording.deadline(60) > 87 * 6
@@ -375,7 +376,7 @@ def test_overrun(tmp_path):
         recording.tool_perf_record("hang", str(program), seconds=1, wine="native")
         raise AssertionError("an overrunning recording must fail")
     except paths.ToolError as error:
-        assert "stopped" in str(error), error
+        assert "stopped" in str(error) and "window visible" in str(error), error
     finally:
         config.OUT, recording.deadline, os.environ["PATH"] = saved
     assert not list(out.iterdir()), list(out.iterdir())
@@ -831,3 +832,63 @@ def test_lock_path_is_absolute(tmp_path):
         env = dict(os.environ, METAL_TRACE_LOCK=given, HOME=str(tmp_path), PYTHONPATH=str(ROOT / "src"))
         got = subprocess.run([sys.executable, "-c", code], env=env, cwd=tmp_path, capture_output=True, text=True).stdout
         assert pathlib.Path(got.strip()).is_absolute() and "~" not in got, (given, got)
+
+
+@macos_only
+def test_no_gpu_work_is_an_error(tmp_path):
+    """A program that ends without any GPU work (Wine failing to start it) is an error that says how it ended and
+    after how long, and its empty run is not saved; a run with GPU work is returned as before."""
+    from metal_gpu_trace import config, paths, recording
+    package, out = tmp_path / "package", tmp_path / "runs"
+    package.mkdir()
+    out.mkdir()
+    script = package / "perf_record.sh"  # writes the summary the real script would, from SUMMARY
+    script.write_text('#!/bin/zsh\nprint -r -- "$SUMMARY" > "$PERF_OUT/${1}_1.json"\ntouch "$PERF_OUT/${1}_1.frames.csv"\n')
+    empty = {"process": {"name": "wine", "termination-reason": "exit(1)"}, "duration_s": 2.027,
+             "gpu": {"intervals": 0, "frames": 0}}
+    working = {"process": {"name": "x"}, "duration_s": 20.0, "gpu": {"intervals": 900, "frames": 300}}
+    saved = config.PACKAGE_DIR, config.OUT, os.environ.get("SUMMARY")
+    config.PACKAGE_DIR, config.OUT = package, out
+    try:
+        os.environ["SUMMARY"] = json.dumps(empty)
+        try:
+            recording.record_run("w", 30, "native", "-", str(tmp_path), [str(script)], layer={"none": "x"})
+            raise AssertionError("a run without GPU work must fail")
+        except paths.ToolError as error:
+            assert "exit(1)" in str(error) and "2.0 s" in str(error) and "no GPU work" in str(error), error
+        assert not list(out.iterdir()), f"the empty run was kept: {list(out.iterdir())}"
+        neighbour = out / "w_1_20261112-101010.json"  # another run whose label starts like this one's file name
+        neighbour.write_text("{}")
+        (out / "w_1.trace").mkdir()  # the .trace a KEEP_TRACE=1 recording leaves
+        os.environ["KEEP_TRACE"] = "1"
+        try:
+            recording.record_run("w", 30, "native", "-", str(tmp_path), [str(script)], layer={"none": "x"})
+            raise AssertionError("a run without GPU work must fail")
+        except paths.ToolError as error:
+            assert "w_1.trace is kept" in str(error), error
+        finally:
+            os.environ.pop("KEEP_TRACE")
+        assert sorted(p.name for p in out.iterdir()) == ["w_1.trace", "w_1_20261112-101010.json"], list(out.iterdir())
+        shutil.rmtree(out / "w_1.trace")
+        neighbour.unlink()
+        os.environ["SUMMARY"] = json.dumps(working)
+        got = recording.record_run("ok", 20, "native", "-", str(tmp_path), [str(script)], layer={"none": "x"})
+        assert got["gpu"]["frames"] == 300 and (out / "ok_1.json").exists()
+    finally:
+        config.PACKAGE_DIR, config.OUT = saved[0], saved[1]
+        os.environ.pop("SUMMARY") if saved[2] is None else os.environ.update(SUMMARY=saved[2])
+
+
+def test_crossover_version(tmp_path):
+    """CrossOver's wine --version prints several "Key: Value" lines: the layer keeps its product name and public
+    version on one line; a plain Wine keeps its one line."""
+    from metal_gpu_trace import recording
+    for printed, expected in (("wine-11.0", "wine-11.0"),
+                              ("Product Name: CrossOver\nPublic Version: 26.3.0\nProduct Version: 26.3.0.39832\n"
+                               "Build Tag: cxoffice-26.3.0rc2\nBuild Timestamp: 20260715T103801Z", "CrossOver 26.3.0"),
+                              ("", None)):
+        wine = tmp_path / printed[:4].strip() / "wine-dir"
+        (wine / "bin").mkdir(parents=True, exist_ok=True)
+        (wine / "bin" / "wine").write_text(f"#!/bin/sh\nprintf '%s\\n' '{printed}'\n" if printed else "#!/bin/sh\n")
+        (wine / "bin" / "wine").chmod(0o755)
+        assert recording.layer_of(str(wine), str(tmp_path / "prefix"))["wine_version"] == expected, printed
