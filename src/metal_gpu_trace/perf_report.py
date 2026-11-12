@@ -167,6 +167,54 @@ def missing_tables(toc):
     return sorted(({"metal-current-allocated-size", "gpu-performance-state-intervals"} | set(OPTIONAL)) - schemas)
 
 
+# a frame number holding this many command buffers, this many times the run's median, over this long was never presented
+UNPRESENTED_MIN_BUFFERS = 32
+UNPRESENTED_FACTOR = 8
+UNPRESENTED_MIN_S = 1.0
+
+
+def unpresented(spans):
+    """Returns the frame numbers that hold work never presented, with when it began, how long it lasted, its command
+    buffers and GPU time, or None when every frame presented. Instruments numbers frames by presents, so a program that
+    renders without presenting (its window hidden) leaves every later command buffer in its last frame number. spans
+    are (frame, start ns, duration ns, encoder id, command buffer id)."""
+    buffers, first, last, busy = collections.defaultdict(set), {}, {}, collections.defaultdict(int)
+    for frame, start, duration, _, buffer in spans:
+        buffers[frame].add(buffer)
+        first[frame] = min(first.get(frame, start), start)
+        last[frame] = max(last.get(frame, start + duration), start + duration)
+        busy[frame] += duration
+    if not buffers:
+        return None
+    usual = statistics.median(len(b) for b in buffers.values())
+    stalled = sorted(f for f, b in buffers.items()
+                     if len(b) >= max(UNPRESENTED_MIN_BUFFERS, UNPRESENTED_FACTOR * usual)
+                     and (last[f] - first[f]) / 1e9 >= UNPRESENTED_MIN_S)
+    if not stalled:
+        return None
+    total = sum(busy.values())
+    held = sum(busy[f] for f in stalled)
+    return {"frames": stalled, "from_s": round(first[stalled[0]] / 1e9, 3),
+            "span_s": round(sum(last[f] - first[f] for f in stalled) / 1e9, 3),
+            "command_buffers": sum(len(buffers[f]) for f in stalled), "gpu_ms": round(held / 1e6, 3),
+            "share_of_gpu_time": round(held / total, 3) if total else None}
+
+
+def presented(spans, stall):
+    """Returns the spans of presented frames, the GPU's idle time (the unpresented work kept: the GPU ran it, but its
+    frame is not counted per frame) and the intervals between presented frames in ms, none across an unpresented
+    frame. stall is what unpresented() returned."""
+    left_out = set(stall["frames"]) if stall else set()
+    first = {}
+    for frame, start, _, _, _ in spans:
+        if frame not in left_out:
+            first[frame] = min(first.get(frame, start), start)
+    ordered = sorted(first)
+    gaps = [(first[b] - first[a]) / 1e6 for a, b in zip(ordered, ordered[1:])
+            if first[b] > first[a] and not any(a < f < b for f in left_out)]
+    return {"spans": [s for s in spans if s[0] not in left_out], "idle": idle_gaps(spans, left_out), "gaps": gaps}
+
+
 # a frame is a stutter or hitch only when it is also this much longer than the median interval: at 500 FPS a 3 ms frame
 # is scheduler noise, not a stutter
 STUTTER_FLOOR_MS = 8.0
@@ -520,11 +568,19 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             if start is not None:
                 spans.append((frame, start, duration, text(row.get("encoder-id")), text(row.get("cmdbuffer-id"))))
 
+        # work the program never presented is not a frame: it is left out and reported in gpu.unpresented
+        stalled = unpresented(spans)
+        kept = presented(spans, stalled)
+        if stalled:
+            intervals -= len(spans) - len(kept["spans"])
+            for frame in stalled["frames"]:
+                del frames[frame], first_start[frame]
+
         ordered = sorted(frames)
         channels = sorted({c for f in frames.values() for c in f})
         totals = [sum(frames[f].values()) for f in ordered]
         starts = [first_start[f] / 1e6 for f in ordered]
-        gaps = [b - a for a, b in zip(starts, starts[1:]) if b > a]
+        gaps = kept["gaps"]
         summary["gpu"] = {
             "intervals": intervals,
             "frames": len(ordered),
@@ -533,14 +589,16 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             "frame_interval_ms": stats(gaps),
             "fps_estimate": round(1000 / statistics.median(gaps), 1) if gaps else None,
         }
+        if stalled:
+            summary["gpu"]["unpresented"] = stalled
 
         # how the work splits into encoders, and when the GPU waits for it
         labels = {}
         if "metal-application-encoders-list" in tables:
             labels = {text(row.get("encoder-id")): text(row.get("encoder-label-indexed"))
                       for row in rows(tables["metal-application-encoders-list"])}
-        summary["encoders"] = encoder_stats(spans, labels)
-        summary["gpu_idle"] = idle_gaps(spans)
+        summary["encoders"] = encoder_stats(kept["spans"], labels)
+        summary["gpu_idle"] = kept["idle"]
 
         # Metal memory the launched process holds over time
         allocated = []

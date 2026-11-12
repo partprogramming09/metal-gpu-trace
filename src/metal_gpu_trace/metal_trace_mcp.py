@@ -17,7 +17,8 @@ from metal_gpu_trace import analysis, http_transport, paths, protocol, stdio, wo
 
 INSTRUCTIONS = (
     "Records GPU use on Apple silicon with Metal System Trace. One recording runs at a time; keep other GPU work off "
-    "the Mac while it records. Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk "
+    "the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work "
+    "after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk "
     "per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a "
     "recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat "
     "a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short "
@@ -37,7 +38,7 @@ worker.configure(send=stdio.send, answer=protocol.answer, finish=protocol.finish
 def check_cli(args):
     """Runs `check RUN BASELINE [--margin-pct N]` for CI: prints perf_check's verdict, reasons and hints as one JSON
     line and returns 0 when the run is the same or improved, 1 when it regressed, 2 when it could not be judged
-    (no such run or reference), or too short to judge (under 100 frames)."""
+    (no such run or reference), too short to judge (under 100 frames) or its program stopped presenting."""
     run, baseline, margin = (args + [None, None])[:2] + [3.0]
     if "--margin-pct" in args:
         try:
@@ -54,7 +55,7 @@ def check_cli(args):
         print(f"metal-gpu-trace: {error}", file=sys.stderr)
         return 2
     print(json.dumps({k: v for k, v in result.items() if k not in ("comparison", "range")}))
-    if "hint" in result:
+    if "hint" in result or "unpresented" in result:
         return 2
     return 1 if result["verdict"] == "regressed" else 0
 

@@ -8,6 +8,19 @@ import time
 from metal_gpu_trace import config, metrics, paths, perf_report, recording
 
 
+UNPRESENTED_NOTE = ("the program stopped presenting (its window hidden behind another, minimized or off screen, or a "
+                    "load of a second or more that presented nothing) and "
+                    "Instruments stopped numbering frames: the work from from_s for span_s is left out of the frame numbers, "
+                    "which cover only the presented frames; record again with the program's window visible")
+
+
+def unpresented(**summaries):
+    """Returns {"runs": {name: gpu.unpresented}, "note": ...} for the named summaries whose program stopped presenting,
+    or None when every one presented throughout."""
+    runs = {name: s["gpu"]["unpresented"] for name, s in summaries.items() if (s.get("gpu") or {}).get("unpresented")}
+    return {"runs": runs, "note": UNPRESENTED_NOTE} if runs else None
+
+
 def tool_perf_runs(offset=0, limit=50):
     """Lists the saved recordings, newest first, with frames, FPS, GPU ms per frame, memory peaks and the translation
     layer each ran on (fingerprint and Wine, or native)."""
@@ -107,6 +120,9 @@ def compare_summaries(sa, sb, a, b, short_us=25):
             out[name] = change(None, None)
     short = [r for r, s in ((a, sa), (b, sb)) if (s.get("gpu") or {}).get("frames", 0) < 100]
     result = {"a": a, "b": b, "layer": recording.layer_change(sa, sb, a, b), "metrics": out, "too_short": short}
+    stalled = unpresented(**{a: sa, b: sb})
+    if stalled:
+        result["unpresented"] = stalled
     locked = [(s.get("machine") or {}).get("screen_locked") for s in (sa, sb)]
     if None not in locked and locked[0] != locked[1]:
         result["screen"] = {"a": locked[0], "b": locked[1],
@@ -191,8 +207,9 @@ def tool_perf_baseline(name=None, runs=None, skip_s=0):
             raise paths.ToolError(f"no reference {name}; perf_baseline with no arguments lists them")
         b = baselines[name]
         span = ranges(b["summaries"])
+        stalled = unpresented(**dict(zip(b["runs"], b["summaries"])))
         return {"name": name, "runs": b["runs"], "set": b["set"], "range": span, "spread_pct": spreads(span),
-                **({"skip_s": b["skip_s"]} if b.get("skip_s") else {})}
+                **({"skip_s": b["skip_s"]} if b.get("skip_s") else {}), **({"unpresented": stalled} if stalled else {})}
     return {"baselines": [{"name": n, "runs": b["runs"], "set": b["set"]} for n, b in baselines.items()]}
 
 
@@ -259,6 +276,9 @@ def tool_perf_check(run, baseline, margin_pct=3):
               "comparison": compare_summaries(ref["summaries"][0], s, ref["runs"][0], run)}
     if ref.get("skip_s"):
         result["skipped_s"] = ref["skip_s"]
+    stalled = unpresented(**{run: s})
+    if stalled:
+        result["unpresented"] = stalled
     if (s.get("gpu") or {}).get("frames", 0) < 100:
         result["hint"] = "under 100 frames: too short to judge; record 30 s or more"
     if cross:
@@ -360,7 +380,8 @@ def tool_perf_gate(run, fps_min=None, fps_1pct_low_min=None, stutter_rate_pct_ma
                    hitches_max=None, metal_mib_max=None, skip_s=0):
     """Checks a recording against budgets and says pass or fail: a floor for FPS and the 1% low, a ceiling for the
     stutter rate, the p95 GPU ms per frame, the hitch count and the peak Metal MiB. Give at least one. A number the
-    recording lacks fails its budget (value null): a gate must not pass on missing data. Returns each budget with its
+    recording lacks fails its budget (value null): a gate must not pass on missing data, nor on a recording whose
+    program stopped presenting (`unpresented`). Returns each budget with its
     limit, the value and whether it held. Use it as a bar a change must clear, where perf_check judges against equal runs.
     skip_s leaves out the first seconds of the recording (the start-up), as perf_compare does."""
     given = {k: v for k, v in (("fps_min", fps_min), ("fps_1pct_low_min", fps_1pct_low_min),
@@ -375,7 +396,10 @@ def tool_perf_gate(run, fps_min=None, fps_1pct_low_min=None, stutter_rate_pct_ma
         value = dig(s, path)
         ok = value is not None and (value >= limit if kind == "min" else value <= limit)
         checks.append({"budget": budget, "limit": limit, "value": value, "ok": ok})
-    result = {"run": run, "pass": all(c["ok"] for c in checks), "checks": checks}
+    stalled = unpresented(**{run: s})
+    result = {"run": run, "pass": all(c["ok"] for c in checks) and not stalled, "checks": checks}
+    if stalled:
+        result["unpresented"] = stalled
     if s.get("steady"):
         result["skipped_s"] = s["steady"]["skip_s"]
     if (s.get("gpu") or {}).get("frames", 0) < 100:
@@ -440,6 +464,9 @@ def steady_summary(run, skip_s=0):
     if count > len(worst):
         hitches["causes_partial"] = True
     memory = [mib for t, mib in read_memory(run) if t >= cut]
+    stall = gpu.get("unpresented")
+    if stall and (stall["from_s"] + stall["span_s"]) * 1000 <= cut:
+        gpu.pop("unpresented")
     s.update(gpu=gpu, hitches=hitches)
     s.pop("cpu", None)
     s.pop("metal_memory_mib", None)
@@ -562,6 +589,11 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     if (activity.get("split_scenes") or 0) > 0:
         recommendations.append(f"El contador SplitSceneCount del controlador creció en {activity['split_scenes']}: la GPU dividió "
                                f"{activity['split_scenes']} escenas; su causa no se mide aquí, compárelo entre grabaciones.")
+    stalled = unpresented(**{run: s})
+    if stalled:
+        recommendations.insert(0, f"El programa dejó de presentar a los {gpu['unpresented']['from_s']} s (¿ventana tapada o "
+                                  "minimizada, o una carga que no presentó nada): ese trabajo no cuenta como frames y este "
+                                  "diagnóstico solo cubre los frames presentados; grabe de nuevo con la ventana visible.")
     if bottleneck == "UNKNOWN":
         recommendations.append("Sin datos de actividad de GPU en esta grabación: no hay veredicto de cuello de botella.")
     elif not recommendations:
@@ -577,4 +609,4 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
                                  "verdict": stutter_verdict},
             "recommendations": recommendations, "hitches": hitches or None,
             "display_synced_hz": synced, "gpu_idle": s.get("gpu_idle"), "gpu_activity": s.get("gpu_activity"), "by_label": encoders["by_label"],
-            "too_short": frames < 100}
+            "too_short": frames < 100, **({"unpresented": stalled} if stalled else {})}

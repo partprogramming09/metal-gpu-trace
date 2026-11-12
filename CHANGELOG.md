@@ -3,6 +3,25 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- A recording whose program stops presenting (its window hidden behind another) no longer turns the rest of the run
+  into one frame of seconds: Instruments numbers frames by presents and kept every later command buffer in the last
+  frame number (in real runs, 279 frames with a mean of 40 ms where a run that kept presenting had 4 447 at 2.6 ms).
+  That work is left out of the frame numbers and reported in `gpu.unpresented` (when it began, how long, its command
+  buffers and share of GPU time); `perf_compare`, `perf_check`, `perf_baseline` and `perf_diagnose` say so,
+  `perf_gate` fails such a run and `metal-gpu-trace check` exits 2, unless `skip_s` leaves the whole stall out. The
+  GPU's idle time still counts that work as busy, and no frame interval spans it. A load of a second or more that
+  presents nothing is reported the same way. `INSTRUCTIONS` asks to keep the program's window visible.
+- `perf_record` fails when the program did no GPU work (under Wine, a program that ends at start-up), saying how it
+  ended and after how long, instead of returning an empty summary as a success; with `KEEP_TRACE=1` its
+  `.trace` is kept.
+- A recording stopped at its deadline names the likely cause: a hidden window, whose program renders without the
+  display's pace (01-cubes: 57 459 command buffers in 15 s), so Instruments took about 23 minutes to close a 20 s
+  recording; record with the window visible, or for fewer seconds.
+- A CrossOver Wine's version is stored as one line (`CrossOver 26.3.0`) instead of the five lines its `wine --version`
+  prints.
+
 ## 0.23.0 — 2026-11-11
 
 - Tool descriptions in `tools/list` are the same on every Python: before 3.13 they kept each docstring's four-space

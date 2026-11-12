@@ -575,3 +575,47 @@ def test_windows_runs_without_encoders(tmp_path):
     finally:
         config.OUT = saved
     assert verdict["too_many_short_encoders"] is False, verdict
+
+
+def test_unpresented_is_surfaced(tmp_path):
+    """A run whose program stopped presenting carries gpu.unpresented: perf_compare, perf_check, perf_baseline and
+    perf_diagnose say so with a note, and perf_gate fails it, since its frame numbers cover only part of the run."""
+    from metal_gpu_trace import analysis, config
+    stall = {"frames": [252], "from_s": 3.363, "span_s": 17.4, "command_buffers": 4141, "gpu_ms": 10977.0,
+             "share_of_gpu_time": 0.91}
+
+    def summary(unpresented=None):
+        gpu = {"frames": 300, "fps_estimate": 230.0, "frame_gpu_ms": {"mean": 2.6, "p95": 3.4}, "frame_interval_ms": {"p95": 7.0}}
+        if unpresented:
+            gpu["unpresented"] = unpresented
+        return {"gpu": gpu, "encoders": {"per_frame": {"p50": 2}, "command_buffers_per_frame": {"p50": 1},
+                                         "short_share": {"25": 0.01}, "by_label": []},
+                "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 1.6}}}
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        (tmp_path / "good.json").write_text(json.dumps(summary()))
+        (tmp_path / "bad.json").write_text(json.dumps(summary(stall)))
+        compared = analysis.tool_perf_compare("good", "bad")
+        assert compared["unpresented"]["runs"] == {"bad": stall} and "window" in compared["unpresented"]["note"], compared
+        assert "unpresented" not in analysis.tool_perf_compare("good", "good")
+        assert analysis.tool_perf_baseline("ref", ["good", "bad"])["unpresented"]["runs"] == {"bad": stall}
+        assert "unpresented" not in analysis.tool_perf_baseline("clean", ["good"])
+        assert analysis.tool_perf_check("bad", "clean")["unpresented"]["runs"] == {"bad": stall}
+        gate = analysis.tool_perf_gate("bad", fps_min=1)
+        assert not gate["pass"] and gate["unpresented"]["runs"] == {"bad": stall}, gate
+        assert analysis.tool_perf_gate("good", fps_min=1)["pass"]
+        diagnosis = analysis.tool_perf_diagnose("bad")
+        assert diagnosis["unpresented"]["runs"] == {"bad": stall} and "3.363" in diagnosis["recommendations"][0], diagnosis
+        assert "unpresented" not in analysis.tool_perf_diagnose("good")
+        frames = "frame,start_ms,gpu_ms_total\n" + "".join(f"{i},{1000 + i * 10},2.0\n" for i in range(300))
+        early = dict(stall, from_s=0.2, span_s=1.5)
+        (tmp_path / "load.json").write_text(json.dumps(summary(early)))
+        (tmp_path / "load.frames.csv").write_text(frames)
+        assert not analysis.tool_perf_gate("load", fps_min=1)["pass"], "the whole run holds the stall"
+        assert analysis.tool_perf_gate("load", fps_min=1, skip_s=1)["pass"], "skip_s past the stall leaves it out"
+        (tmp_path / "late.json").write_text(json.dumps(summary(stall)))
+        (tmp_path / "late.frames.csv").write_text(frames)
+        assert not analysis.tool_perf_gate("late", fps_min=1, skip_s=1)["pass"], "a stall after the cut stays"
+        assert "presentados" in diagnosis["recommendations"][0], diagnosis["recommendations"][0]
+    finally:
+        config.OUT, config.BASELINES = saved
