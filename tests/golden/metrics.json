@@ -1,0 +1,253 @@
+{
+ "mac": {
+  "encoder_stats": {
+   "by_label": [
+    {
+     "label": "Shadow",
+     "mean_us": 5.5,
+     "per_frame": 1.0,
+     "stdev_us": 4.5,
+     "total_ms": 0.011
+    },
+    {
+     "label": "Main",
+     "mean_us": 8.0,
+     "per_frame": 0.5,
+     "stdev_us": 0.0,
+     "total_ms": 0.008
+    }
+   ],
+   "command_buffers_per_frame": {
+    "count": 2,
+    "max": 1,
+    "mean": 1.0,
+    "p50": 1,
+    "p95": 1
+   },
+   "encoder_us": {
+    "count": 3,
+    "max": 10.0,
+    "mean": 6.333,
+    "p50": 8.0,
+    "p95": 10.0
+   },
+   "per_frame": {
+    "count": 2,
+    "max": 2,
+    "mean": 1.5,
+    "p50": 2,
+    "p95": 2
+   },
+   "short_share": {
+    "10": 0.667,
+    "100": 1.0,
+    "1000": 1.0,
+    "25": 1.0,
+    "250": 1.0,
+    "50": 1.0,
+    "500": 1.0
+   }
+  },
+  "encoder_stats_empty": {
+   "by_label": [],
+   "command_buffers_per_frame": {
+    "count": 0
+   },
+   "encoder_us": {
+    "count": 0
+   },
+   "per_frame": {
+    "count": 0
+   },
+   "short_share": {}
+  },
+  "idle_gaps": {
+   "gaps_over_1ms": 0,
+   "idle_ms_per_frame": {
+    "count": 2,
+    "max": 0.02,
+    "mean": 0.011,
+    "p50": 0.02,
+    "p95": 0.02
+   },
+   "idle_share": 0.537
+  },
+  "idle_gaps_empty": {
+   "idle_ms_per_frame": {
+    "count": 0
+   }
+  },
+  "label_name": "Shadow",
+  "public_arguments": "game.exe -w 1",
+  "public_arguments_windows": "game.exe -w 1",
+  "stats": {
+   "count": 4,
+   "max": 10.0,
+   "mean": 4.0,
+   "p50": 3.0,
+   "p95": 10.0
+  }
+ },
+ "mac_only": {
+  "attribute_hitches": {
+   "causes": {
+    "cpu_or_wait": 1,
+    "gpu_heavy": 1,
+    "memory_growth": 1,
+    "shader_compile": 1,
+    "thermal": 1
+   },
+   "count": 5,
+   "per_minute": 1153.85,
+   "threshold_ms": 15.0,
+   "worst": [
+    {
+     "cause": "memory_growth",
+     "frame": 10,
+     "interval_ms": 50,
+     "window_ms": [
+      200,
+      250
+     ]
+    },
+    {
+     "cause": "thermal",
+     "frame": 5,
+     "interval_ms": 40,
+     "window_ms": [
+      60,
+      100
+     ]
+    },
+    {
+     "cause": "cpu_or_wait",
+     "frame": 7,
+     "interval_ms": 40,
+     "window_ms": [
+      110,
+      150
+     ]
+    },
+    {
+     "cause": "gpu_heavy",
+     "frame": 9,
+     "interval_ms": 40,
+     "window_ms": [
+      160,
+      200
+     ]
+    },
+    {
+     "cause": "shader_compile",
+     "frame": 3,
+     "interval_ms": 30,
+     "window_ms": [
+      20,
+      50
+     ]
+    }
+   ]
+  },
+  "frame_pacing": {
+   "fps_01pct_low": null,
+   "fps_1pct_low": 33.3,
+   "frame_jitter_ms": 1.99,
+   "stutter_rate_pct": 1.0,
+   "throttling_analysis": {
+    "fps_drift_pct": 0.0,
+    "fps_final": 100.0,
+    "fps_initial": 100.0,
+    "thermal_throttling_detected": false
+   }
+  }
+ },
+ "windows": {
+  "encoder_stats": {
+   "by_label": [
+    {
+     "label": "Shadow",
+     "mean_us": 5.5,
+     "per_frame": 1.0,
+     "stdev_us": 4.5,
+     "total_ms": 0.011
+    },
+    {
+     "label": "Main",
+     "mean_us": 8.0,
+     "per_frame": 0.5,
+     "stdev_us": 0.0,
+     "total_ms": 0.008
+    }
+   ],
+   "command_buffers_per_frame": {
+    "count": 2,
+    "max": 1,
+    "mean": 1.0,
+    "p50": 1,
+    "p95": 1
+   },
+   "encoder_us": {
+    "count": 3,
+    "max": 10.0,
+    "mean": 6.333,
+    "p50": 8.0,
+    "p95": 10.0
+   },
+   "per_frame": {
+    "count": 2,
+    "max": 2,
+    "mean": 1.5,
+    "p50": 2,
+    "p95": 2
+   },
+   "short_share": {
+    "10": 0.667,
+    "100": 1.0,
+    "1000": 1.0,
+    "25": 1.0,
+    "250": 1.0,
+    "50": 1.0,
+    "500": 1.0
+   }
+  },
+  "encoder_stats_empty": {
+   "by_label": [],
+   "command_buffers_per_frame": {
+    "count": 0
+   },
+   "encoder_us": {
+    "count": 0
+   },
+   "per_frame": {
+    "count": 0
+   },
+   "short_share": {}
+  },
+  "idle_gaps": {
+   "gaps_over_1ms": 0,
+   "idle_ms_per_frame": {
+    "count": 2,
+    "max": 0.02,
+    "mean": 0.011,
+    "p50": 0.02,
+    "p95": 0.02
+   },
+   "idle_share": 0.537
+  },
+  "idle_gaps_empty": {
+   "idle_ms_per_frame": {
+    "count": 0
+   }
+  },
+  "label_name": "Shadow",
+  "public_arguments": "game.exe -w 1",
+  "public_arguments_windows": "game.exe -w 1",
+  "stats": {
+   "count": 4,
+   "max": 10.0,
+   "mean": 4.0,
+   "p50": 3.0,
+   "p95": 10.0
+  }
+ }
+}

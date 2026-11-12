@@ -3,6 +3,93 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## 0.23.0 — unreleased
+
+- Tool descriptions in `tools/list` are the same on every Python: before 3.13 they kept each docstring's four-space
+  indent, so clients received extra whitespace on 3.9 to 3.12.
+- The self-check runs every `test_*` function it finds (`main()` listed them by hand and had left out two). The pacing
+  test that never ran now passes: its scenario was missing the long interval meant for `memory_growth`, and jitter is
+  the population standard deviation the code has always reported (1.99 ms in the test, not 2.0).
+- Golden files in `tests/golden/` pin the server's replies and the numbers `perf_report` and the Windows recorder compute;
+  a `wheel` CI job installs the built package and checks that it starts.
+- The code lives in the package folder `src/metal_gpu_trace/` and the tests in `tests/`, split by topic. From a clone,
+  the scripts are `src/metal_gpu_trace/perf_record.sh` and its neighbours, the self-check is `python3 -I tests/run.py`,
+  and `python3 -I src/metal_gpu_trace/metal_trace_mcp.py` starts the server. The installed package and
+  `uvx metal-gpu-trace` are unchanged. The CI gate example in the README now passes the seconds `perf_record.sh`
+  requires. `windows/winbridge-run-tests.ps1` now runs `tests\test_perf_record_windows.py`: register its new SHA-256
+  again.
+- The Python 3.9 CI and publish jobs run on ubuntu-24.04: ubuntu-latest moved to 26.04, which has no Python 3.9.
+- The server is split into modules by job (`config`, `recording`, `workloads`, `analysis`, `experiments`, `panel`,
+  `traces`, `registry`, `worker`, `protocol`, `stdio`, `http_transport`); `metal_trace_mcp.py` keeps the version, the
+  instructions and `main`. Tools, replies and options are unchanged: the golden file of the protocol did not move.
+- Windows summaries use the Mac schema for the numbers both share (`metrics.py`). Recordings made with PresentMon or
+  DWM have no encoder spans, so their `short_share` is now `{}` instead of every cut at 0.0, and their `gpu_idle` holds
+  only `idle_ms_per_frame`, without `gaps_over_1ms: 0` and `idle_share: null`; `idle_share` of a zero-length span is
+  `null` instead of 0.0. Drawstress-log recordings are unchanged. `perf_compare`, `perf_check` and `perf_diagnose`
+  accept these summaries, also next to older ones, and give no encoder verdict for them.
+- Shared summaries no longer show the folders of a Wine program's Windows-path arguments: `C:\Games\x\game.exe` becomes
+  `game.exe` on macOS too (it was cut only when recording on Windows).
+
+- MCP 2026-07-28 (stateless): `server/discover`, and every request may carry its version and client capabilities in
+  `_meta`. Modern results carry `resultType: "complete"` and the server info, lists and reads carry `ttlMs` and
+  `cacheScope` (recordings are private, ttl 0), a missing resource is `-32602`, an unsupported version is `-32022` with
+  the supported list, and `ping` is gone. Clients that `initialize` keep the behaviour they had.
+- `initialize` now offers `2025-11-25` (the newest version before 2026-07-28), also for an unknown version.
+- Each tool carries `title` at the top level, and tools without parameters declare `additionalProperties: false`;
+  a test keeps every description and the instructions under the 4096 characters Claude Code reads.
+- A cancelled call gets no reply over stdio, as the spec asks; over HTTP with an `initialize` client the POST still
+  gets its error result. A modern HTTP client cancels by closing the connection, and that call stops, even when another
+  client uses the same request id.
+- HTTP follows Streamable HTTP: `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` (Base64 form included) are
+  checked against the body (400 with `-32020` when they differ, 404 with `-32601` for an unknown method), an
+  unsupported legacy version is 400, `DELETE` is 405 instead of 501, and a notification gets 202 with no body.
+- A `conformance` CI job connects the official MCP Python SDK (`mcp` 2.3.0) to the server in both eras: discover,
+  initialize, list the tools and call one. MCP Inspector 2.15.0 (`--cli`, `tools/list`) connects too, checked once
+  by hand. The same SDK also connects over Streamable HTTP (`--http`, with the bearer token) in the 2026-07-28 era.
+- `tools/call` tells a bad call from a server fault: an unknown or missing argument is `bad arguments: unknown
+  argument x`, `bad arguments: missing argument y` or `bad arguments: arguments must be an object`; a `TypeError`
+  inside a tool (a wrong argument type, too) is `internal error: TypeError`. Arguments a tool used to drop silently
+  are now refused: `label` on `perf_ab`, `perf_cold_warm` and `perf_sweep`, and `env` on `perf_ab`.
+- JSON-RPC messages are classified before dispatch: a request without a string `method` or without `"jsonrpc": "2.0"`
+  gets `-32600` instead of `-32601`, and responses from the client are ignored without a reply.
+- Over HTTP, a body that is not UTF-8 or nests too deeply for the parser is answered `400` with `-32700` instead of an
+  uncaught exception in the handler thread; a client that closes the connection before the reply costs one log line
+  instead of a traceback.
+- Over HTTP, a notification under the `2026-07-28` version header gets `202` even without `_meta` (the spec puts
+  `_meta` on requests only); before it was refused with `400`. A `notifications/cancelled` under that header is
+  accepted and ignored, since a modern client cancels by closing its connection and an id may be shared.
+- `prompts/get` renders the prompt it is asked for, and `prompts/list` no longer exposes the internal `render`
+  function.
+- Requests with params of the wrong type (a `name` or `uri` that is not a string, `prompts/get` arguments that are
+  not an object) get `-32602` with their id instead of `-32603` with id `null`, and so does a `resources/read` without
+  a `uri` (`-32002` before, in the old era); a `_meta` that is not an object is ignored. Over HTTP
+  a `Content-Length` that is not plain ASCII digits (or too long) is refused, and a Base64 `Mcp-Name` is decoded the
+  same strict way on every Python. `tests/test_adversarial.py` keeps the cases an adversarial pass found.
+- On macOS a `.recording` lock left by a process that no longer exists is taken over by the next recording; a lock
+  whose owner is alive (any user's) still refuses with exit 3, and two recordings that find the same dead lock cannot
+  both take it. A recording stopped for overrunning or cancelled removes its lock only when the lock holds its pid.
+- A typo in the server instructions (`browser.trace_tables`), which changes the `instructions` text in `initialize`
+  and `server/discover`.
+- `process.arguments` in summaries no longer keeps folder names from paths with spaces (`C:\Users\Ann Lee\save.dat`,
+  `/Users/Ann Lee/x`); quoted paths, `--option=path` values, UNC paths, Windows paths without a drive, paths after a
+  single-dash flag (`-I/x`, `-isystem/x`), after `name=`, `name:` (`file:///x`), `@`, a comma or a quote glued to a
+  word or never closed, and inside a quoted value (`-exec "load /x/y"`) are cut too.
+- Internal: the experiments share `recording.record_new_summary`, the panel page is read once and cached, the golden
+  file pins the 2026-07-28 replies too, a test checks each tool's schema against its function's arguments, and
+  hand-made mutants of the protocol, header, argument, redaction and lock logic are all caught by the tests. Usage texts name
+  the scripts by their `src/metal_gpu_trace/` path.
+- Documentation for contributors: `docs/architecture.md` (layers and request flow), ADRs 0001 to 0003 (src layout,
+  both MCP eras, the Python 3.9 floor), `docs/guides/run-from-a-clone.md`, `CONTRIBUTING.md`; the Spanish README now
+  has every section of the English one.
+- A `lint` CI job runs ruff 0.14.0 (configured in `pyproject.toml`: Python 3.9, 120-character lines, plus bugbear).
+- CI supply chain: every action is pinned to a commit SHA, workflows default to read-only `permissions`, and the
+  `mcp-publisher` download is pinned to v1.8.9 and checked against its sha256. `SECURITY.md` says how to report a
+  vulnerability; `.gitattributes` keeps every text file in LF, so the PowerShell scripts hash the same on every checkout.
+- A tools/call the server answers with an error before any tool runs (unknown tool, wrong era) no longer leaves its id
+  among the calls in flight, where a later cancel of that id could have swallowed the reply to a call reusing it. The
+  README's CI gate example records into `~/perf-runs` and its check reads the runs and the baseline from there, and
+  the clone guide says where `perf_record.sh` writes without `PERF_OUT`.
+
 ## 0.22.0 — 2026-11-05
 
 - New workload `godot`: a lit 3D scene Godot 4.7.2 builds from code (400 meshes, 8 omni lights, a shadowed sun, Forward+, no

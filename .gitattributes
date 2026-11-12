@@ -1,0 +1,3 @@
+# LF everywhere (the PowerShell scripts too, so their registered hash is the same on every checkout); captures are never diffed or converted
+* text=auto eol=lf
+*.gputrace binary

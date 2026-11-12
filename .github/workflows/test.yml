@@ -2,19 +2,54 @@ name: test
 
 on: [push, pull_request]
 
+# jobs get only read access unless they ask for more
+permissions:
+  contents: read
+
 jobs:
+  # ubuntu-latest (26.04) has no Python 3.9 for setup-python: the 3.9 jobs run on 24.04
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        python: ["3.9", "3.13"]
+        include:
+          - python: "3.9"
+            os: ubuntu-24.04
+          - python: "3.13"
+            os: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - run: sudo apt-get install -y zsh
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: ${{ matrix.python }}
-      - run: python -I test_metal_trace_mcp.py
+      - run: python -I tests/run.py
+
+  # the installed package must start: catches a file the wheel leaves out, which tests from the checkout cannot see
+  wheel:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: "3.9"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+      - run: sh tests/smoke_wheel.sh python
+
+  # the official MCP SDK, as an independent client, talks to the server in both eras (pinned: bump on purpose)
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+      - run: uvx --python 3.13 --with mcp==2.3.0 --with pytest pytest -q -p no:cacheprovider tests/conformance
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+      - run: uvx ruff@0.14.0 check src tests
 
   # the Windows and macOS jobs run only when a file they cover changed: a docs-only change does not wait for them
   changes:
@@ -23,7 +58,7 @@ jobs:
       windows: ${{ steps.diff.outputs.windows }}
       macos: ${{ steps.diff.outputs.macos }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           fetch-depth: 0
       - id: diff
@@ -35,8 +70,8 @@ jobs:
             windows=true macos=true
           else
             files=$(git diff --name-only "$BASE" HEAD)
-            grep -qE '^(perf_record_windows\.py|test_perf_record_windows\.py|metal_trace_mcp\.py|\.github/workflows/test\.yml)$' <<< "$files" && windows=true
-            grep -qE '^(perf_record\.sh|perf_report\.py|metal_trace_mcp\.py|test_metal_trace_mcp\.py|\.github/workflows/test\.yml)$' <<< "$files" && macos=true
+            grep -qE '^(src/metal_gpu_trace/[^/]+\.py|tests/(test_perf_record_windows|conftest)\.py|\.github/workflows/test\.yml)$' <<< "$files" && windows=true
+            grep -qE '^(src/metal_gpu_trace/|tests/|\.github/workflows/test\.yml)' <<< "$files" && macos=true
           fi
           echo "windows=$windows" >> "$GITHUB_OUTPUT"
           echo "macos=$macos" >> "$GITHUB_OUTPUT"
@@ -48,20 +83,20 @@ jobs:
     if: needs.changes.outputs.macos == 'true'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.13"
-      - run: python -I test_metal_trace_mcp.py
+      - run: python -I tests/run.py
 
   windows:
     needs: changes
     if: needs.changes.outputs.windows == 'true'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.13"
       - run: python -m pip install pytest
-      - run: python -m pytest test_perf_record_windows.py -k "cancel or timeout" -v
+      - run: python -m pytest tests/test_perf_record_windows.py -k "cancel or timeout" -v

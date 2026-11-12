@@ -4,20 +4,25 @@ on:
   push:
     tags: ["v*"]
 
+# jobs get only read access unless they ask for more
+permissions:
+  contents: read
+
 jobs:
+  # ubuntu-latest (26.04) has no Python 3.9 for setup-python
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - run: sudo apt-get install -y zsh
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.9"
-      - run: python -I test_metal_trace_mcp.py
+      - run: python -I tests/run.py
       # the tag, the code and server.json must name the same version
       - run: |
           tag=${GITHUB_REF_NAME#v}
-          code=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' metal_trace_mcp.py)
+          code=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/metal_gpu_trace/metal_trace_mcp.py)
           python -I -c "import json, sys; s = json.load(open('server.json')); sys.exit(0 if s['version'] == s['packages'][0]['version'] == '$tag' == '$code' else 'tag $tag, code $code and server.json differ')"
 
   # the GitHub release goes out even when PyPI is not set up yet
@@ -27,8 +32,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
       - run: uv build
       - name: GitHub release with the changelog section
         env:
@@ -46,12 +51,15 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
       - run: uv build
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
       - name: Publish to the MCP Registry
         run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          # a fixed publisher, checked against the SHA-256 in that release's registry_1.8.9_checksums.txt
+          curl -fsSLo mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.9/mcp-publisher_linux_amd64.tar.gz"
+          echo "4d527ca8f1ced0394c962dc925c2a4a4addef441cbefd62501c875e9481823a8  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
           ./mcp-publisher login github-oidc
           ./mcp-publisher publish

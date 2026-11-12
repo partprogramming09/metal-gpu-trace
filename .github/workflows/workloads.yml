@@ -13,6 +13,10 @@ on:
         type: boolean
         default: false
 
+# jobs get only read access unless they ask for more
+permissions:
+  contents: read
+
 jobs:
   godot:
     if: ${{ inputs.only_godot }}
@@ -20,7 +24,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - name: Archive
         run: |
           mkdir -p godot
@@ -45,7 +49,7 @@ jobs:
     env:
       MINGW: ${{ github.workspace }}/llvm-mingw-20260908-ucrt-macos-universal
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - name: Sources at fixed commits
         run: |
           for pair in GENie:f7055e309a5c2bc28d7abd35960e14b9864fc5ea bgfx:71539c41e7e782ccf30f19ae4498d25ddc7bc68c \

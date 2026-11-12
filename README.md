@@ -10,20 +10,22 @@ a translation layer (DXMT, Mullion, MoltenVK) splits the work into too many shor
 `.gputrace` captures read without Xcode; and Apple's published facts on each GPU family to read the numbers against.
 Python 3.9+ standard library, `zsh`, and Xcode (for `xctrace`). MIT license. [Español](es/README.md).
 
+Architecture, decisions and guides: [`docs/README.md`](docs/README.md). Sending a change: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 | File | What it does |
 | --- | --- |
-| `perf_record.sh` | Records a program for N seconds with Metal System Trace and writes `<label>_<date>.json` (GPU ms per frame, frame intervals, FPS, Metal and resident memory) plus per-frame and memory CSVs. Deletes the `.trace` afterwards unless `KEEP_TRACE=1`. |
-| `perf_report.py` | Summarizes an existing `.trace` the same way. |
-| `gputrace_read.py` | Reads a Metal `.gputrace` capture without Xcode: command buffers, encoders, draws, debug groups. Call names marked `probable` are not confirmed. |
-| `data/apple-gpu-families.json` | Apple7 to Apple10: chips, what each family adds, limits that differ, with Apple's sources. |
-| `metal_trace_mcp.py` | An MCP server over all of the above. |
-| `test_metal_trace_mcp.py` | Self-check without Instruments: `python3 -I test_metal_trace_mcp.py` prints `ok`; `pytest` runs the same tests. |
+| `src/metal_gpu_trace/perf_record.sh` | Records a program for N seconds with Metal System Trace and writes `<label>_<date>.json` (GPU ms per frame, frame intervals, FPS, Metal and resident memory) plus per-frame and memory CSVs. Deletes the `.trace` afterwards unless `KEEP_TRACE=1`. |
+| `src/metal_gpu_trace/perf_report.py` | Summarizes an existing `.trace` the same way. |
+| `src/metal_gpu_trace/gputrace_read.py` | Reads a Metal `.gputrace` capture without Xcode: command buffers, encoders, draws, debug groups. Call names marked `probable` are not confirmed. |
+| `src/metal_gpu_trace/data/apple-gpu-families.json` | Apple7 to Apple10: chips, what each family adds, limits that differ, with Apple's sources. |
+| `src/metal_gpu_trace/metal_trace_mcp.py` | An MCP server over all of the above. |
+| `tests/` | Self-check without Instruments: `python3 -I tests/run.py` prints `ok`; `pytest tests` runs the same tests. |
 
 ## Recording
 
 ```sh
-PERF_OUT=~/perf-runs zsh perf_record.sh game-d3d12 30 /path/to/wine ~/.wine /path/to/game game.exe
-PERF_OUT=~/perf-runs zsh perf_record.sh app-metal 30 native - /path/to/app ./app
+PERF_OUT=~/perf-runs zsh src/metal_gpu_trace/perf_record.sh game-d3d12 30 /path/to/wine ~/.wine /path/to/game game.exe
+PERF_OUT=~/perf-runs zsh src/metal_gpu_trace/perf_record.sh app-metal 30 native - /path/to/app ./app
 ```
 
 Arguments: label, seconds, a Wine directory holding `bin/wine` (or `native`), the Wine prefix, the working directory,
@@ -83,7 +85,7 @@ to add it to the current project only.
 
 ### Windows
 
-On Windows the server records native programs (`perf_record_windows.py`); no Wine and no Metal. `METAL_TRACE_WINE` is not needed: `perf_record` and `perf_attach` use `native`. `METAL_TRACE_READ` is separated by `;`.
+On Windows the server records native programs (`src/metal_gpu_trace/perf_record_windows.py`); no Wine and no Metal. `METAL_TRACE_WINE` is not needed: `perf_record` and `perf_attach` use `native`. `METAL_TRACE_READ` is separated by `;`.
 
 Frames come from Intel's [PresentMon](https://github.com/GameTechDev/PresentMon) console application (MIT): one row per `Present()` of the process, with `MsBetweenPresents` and the GPU time `MsGPUTime`. Download `PresentMon-<version>-x64.exe` from its releases, check its SHA-256 against the one GitHub shows, and call the `presentmon_install` tool, or put it in `%LOCALAPPDATA%\metal-gpu-trace` or on `PATH`, or point `PRESENTMON_EXE` at it. The user must be an administrator or in the "Performance Log Users" group. Without PresentMon the summary falls back to DWM composition intervals (`gpu.source` is `dwm-composition`): they cover the whole desktop, miss games in exclusive full screen, and carry no GPU time. With neither a frame log, PresentMon nor DWM samples, a recording fails; it never invents frames.
 
@@ -98,10 +100,10 @@ claude mcp list
 To run from a clone instead of PyPI (needs Python 3.9 or newer):
 
 ```powershell
-claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=%USERPROFILE%\perf-runs -- python C:\path\to\metal-gpu-trace\metal_trace_mcp.py
+claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=%USERPROFILE%\perf-runs -- python C:\path\to\metal-gpu-trace\src\metal_gpu_trace\metal_trace_mcp.py
 ```
 
-In JSON clients use `"command": "uvx"` (or the full path `where uvx` prints) and Windows paths with doubled backslashes. Claude Desktop reads `%APPDATA%\Claude\claude_desktop_config.json`. Run the Windows tests with `python -m pytest test_perf_record_windows.py`.
+In JSON clients use `"command": "uvx"` (or the full path `where uvx` prints) and Windows paths with doubled backslashes. Claude Desktop reads `%APPDATA%\Claude\claude_desktop_config.json`. Run the Windows tests with `python -m pytest tests/test_perf_record_windows.py`.
 
 ### Claude Desktop, Cursor and other JSON clients
 
@@ -223,12 +225,13 @@ benchmark.
 Game Porting Toolkit were tried and both log `Wine was built without Vulkan support`, so the recording holds no GPU
 frames. CrossOver's Wine has Vulkan but runs only inside one of its bottles, which was not tried.
 
-The same facts are MCP resources: `metal-trace://gpu-families` (all) and `metal-trace://gpu-families/apple7` to Each saved run is a resource too: `metal-trace://runs/<run>` reads its summary.
-`apple10`. They restate Apple's [Metal Feature Set Tables](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
+The same facts are MCP resources: `metal-trace://gpu-families` (all) and `metal-trace://gpu-families/apple7` to
+`apple10`. Each saved run is a resource too: `metal-trace://runs/<run>` reads its summary. They restate Apple's [Metal Feature Set Tables](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
 of 21 May 2026, [`MTLGPUFamily`](https://developer.apple.com/documentation/metal/mtlgpufamily) and the
 [M3 tech talk](https://developer.apple.com/videos/play/tech-talks/111375/); check a device with `supportsFamily`.
 
-How it follows the [MCP specification](https://modelcontextprotocol.io/specification/2025-06-18) and
+How it follows the MCP specification ([2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) and
+[2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28)) and
 [Claude Code's limits](https://code.claude.com/docs/en/mcp):
 
 - stdout carries only MCP messages; each tool call logs one line to stderr (`METAL_TRACE_LOG=off` silences it), with
@@ -245,14 +248,19 @@ How it follows the [MCP specification](https://modelcontextprotocol.io/specifica
 `METAL_TRACE_TOKEN=<secret of 16+ characters> metal-gpu-trace --http [--port N]` serves the same tools at
 `POST http://127.0.0.1:8765/mcp` (Streamable HTTP, one JSON reply per request), for a client on the same Mac that cannot
 start a stdio server. Every request needs `Authorization: Bearer <token>`. It listens on 127.0.0.1 only, refuses a
-request whose Host or Origin is not localhost or 127.0.0.1 (DNS rebinding), and does not start without the token. Cancel
-a running call with `notifications/cancelled` from another connection. There is no progress stream over HTTP, and no
-remote access: reach another Mac through an SSH tunnel (`ssh -L 8765:127.0.0.1:8765 mac`), not by opening the port.
+request whose Host or Origin is not localhost or 127.0.0.1 (DNS rebinding), and does not start without the token. It
+speaks both MCP eras: a client that sends `initialize` gets the behaviour it always had; one that sends
+`MCP-Protocol-Version: 2026-07-28` is stateless and must also send `Mcp-Method` (and `Mcp-Name` for `tools/call`,
+`prompts/get` and `resources/read`), which the server checks against the body (400 with `-32020` when they differ). A
+modern client cancels a running call by closing the connection; an `initialize` client sends `notifications/cancelled`
+from another connection. There is no progress stream over HTTP, and no remote access: reach another Mac through an SSH
+tunnel (`ssh -L 8765:127.0.0.1:8765 mac`), not by opening the port. Why two eras:
+[`docs/adr/0002-dual-era-mcp.md`](docs/adr/0002-dual-era-mcp.md).
 
 ## Windows tests on a real machine
 
 GitHub's `windows-latest` has no GPU and no desktop session, so PresentMon and DWM recordings are only tested on a real
-Windows machine. `windows/winbridge-run-tests.ps1` updates a checkout there and runs `test_perf_record_windows.py`; it is
+Windows machine. `windows/winbridge-run-tests.ps1` updates a checkout there and runs `tests/test_perf_record_windows.py`; it is
 written as a [WinBridge](https://github.com/partprogramming09/winbridge) task (fixed name, script pinned by SHA-256, no
 arguments). To register it, copy it to the laptop, set `$repo` to the checkout's path, take its hash there with
 `Get-FileHash <file> -Algorithm SHA256` (Git may have changed the line endings, so the hash of the copy in this repo is
@@ -270,8 +278,8 @@ jobs:
   perf:
     runs-on: [self-hosted, macOS, ARM64]
     steps:
-      - run: zsh perf_record.sh pr native - . ./app
-      - run: metal-gpu-trace check "$(ls -t ~/perf-runs/pr_*.json | head -1 | xargs basename -s .json)" main-ref
+      - run: PERF_OUT=~/perf-runs zsh path/to/metal-gpu-trace/src/metal_gpu_trace/perf_record.sh pr 30 native - . ./app
+      - run: METAL_TRACE_OUT=~/perf-runs metal-gpu-trace check "$(ls -t ~/perf-runs/pr_*.json | head -1 | xargs basename -s .json)" main-ref
 ```
 
 ## Credits

@@ -1,20 +1,15 @@
 """Unit tests for perf_record_windows.py."""
 import csv
 import json
-import os
 import pathlib
 import subprocess
 import sys
-import tempfile
 import time
-
-TOOLS = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(TOOLS))
 
 import pytest
 
-import perf_record_windows as prw
-import metal_trace_mcp as mcp
+from metal_gpu_trace import perf_record_windows as prw
+from metal_gpu_trace import analysis, config, paths, recording, workloads
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="needs Windows (ctypes.windll, DWM)")
 
@@ -215,7 +210,7 @@ def test_recording_and_schema_verification(tmp_path):
     assert summary["layer"].get("none") in ("native Windows, no translation layer", "native Metal, no translation layer")
 
     # 5. Check compatibility with metal_trace_mcp compare_summaries
-    cmp_res = mcp.compare_summaries(summary, summary, "run_a", "run_b")
+    cmp_res = analysis.compare_summaries(summary, summary, "run_a", "run_b")
     assert cmp_res["a"] == "run_a"
     assert cmp_res["b"] == "run_b"
     assert cmp_res["layer"]["same"] is True
@@ -414,7 +409,7 @@ def test_precision_telemetry_calculation(tmp_path):
 
 def test_diagnose_bottlenecks_and_recommendations(tmp_path):
     """Validation of bottleneck classification, stutter analysis, and actionable recommendations."""
-    saved, mcp.OUT = mcp.OUT, tmp_path
+    saved, config.OUT = config.OUT, tmp_path
     try:
         def make_summary(frame_gpu_mean, interval_mean, idle_share, rss_max, stutter_rate, jitter, encoders_p50=2, short_share=0.05, throttling_detected=False):
             return {
@@ -447,21 +442,21 @@ def test_diagnose_bottlenecks_and_recommendations(tmp_path):
 
         # 1. GPU_BOUND
         (tmp_path / "gpu_bound.json").write_text(json.dumps(make_summary(15.5, 16.6, 0.05, 800.0, 1.0, 1.0)))
-        diag_gpu = mcp.tool_perf_diagnose("gpu_bound")
+        diag_gpu = analysis.tool_perf_diagnose("gpu_bound")
         assert diag_gpu["bottleneck"] == "GPU_BOUND"
         assert diag_gpu["stutter_analysis"]["verdict"] == "SMOOTH"
         assert any("FSR" in r for r in diag_gpu["recommendations"])
 
         # 2. CPU_SUBMISSION_BOUND
         (tmp_path / "cpu_bound.json").write_text(json.dumps(make_summary(8.0, 16.6, 0.45, 800.0, 4.0, 2.0)))
-        diag_cpu = mcp.tool_perf_diagnose("cpu_bound")
+        diag_cpu = analysis.tool_perf_diagnose("cpu_bound")
         assert diag_cpu["bottleneck"] == "CPU_SUBMISSION_BOUND"
         assert diag_cpu["stutter_analysis"]["verdict"] == "MICRO_STUTTER"
         assert any("FlipQueueSize=3" in r for r in diag_cpu["recommendations"])
 
         # 3. MEMORY_PRESSURE_SUSPECTED (a hypothesis: bandwidth is not measured)
         (tmp_path / "mem_bound.json").write_text(json.dumps(make_summary(12.0, 16.6, 0.18, 2500.0, 8.5, 5.5)))
-        diag_mem = mcp.tool_perf_diagnose("mem_bound")
+        diag_mem = analysis.tool_perf_diagnose("mem_bound")
         assert diag_mem["bottleneck"] == "MEMORY_PRESSURE_SUSPECTED"
         assert diag_mem["stutter_analysis"]["verdict"] == "SEVERE_STUTTER"
         assert any("sombras de 2048 a 1024" in r for r in diag_mem["recommendations"])
@@ -469,11 +464,11 @@ def test_diagnose_bottlenecks_and_recommendations(tmp_path):
 
         # 4. BALANCED with thermal throttling
         (tmp_path / "balanced.json").write_text(json.dumps(make_summary(10.0, 16.6, 0.18, 900.0, 0.5, 1.0, throttling_detected=True)))
-        diag_bal = mcp.tool_perf_diagnose("balanced")
+        diag_bal = analysis.tool_perf_diagnose("balanced")
         assert diag_bal["bottleneck"] == "BALANCED"
         assert any("Estrangulamiento térmico" in r for r in diag_bal["recommendations"])
     finally:
-        mcp.OUT = saved
+        config.OUT = saved
 
 
 def test_compare_summaries_enriched_metrics(tmp_path):
@@ -516,7 +511,7 @@ def test_compare_summaries_enriched_metrics(tmp_path):
         },
         "gpu_idle": {"idle_share": 0.08, "idle_ms_per_frame": {"p50": 0.8}},
     }
-    cmp_res = mcp.compare_summaries(s1, s2, "run1", "run2")
+    cmp_res = analysis.compare_summaries(s1, s2, "run1", "run2")
     m = cmp_res["metrics"]
     assert m["fps"]["a"] == 60.0 and m["fps"]["b"] == 75.0
     assert m["fps_1pct_low"]["a"] == 50.0 and m["fps_1pct_low"]["b"] == 65.0 and m["fps_1pct_low"]["change"] == 15.0
@@ -552,14 +547,14 @@ def test_presentmon_install_checks_the_pinned_hash(tmp_path, monkeypatch):
     """presentmon_install saves a download only when its SHA-256 is the pinned one, and reuses it afterwards."""
     import hashlib
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    monkeypatch.setattr(mcp, "download", lambda url, path, max_bytes: path.write_bytes(b"x"))
-    with pytest.raises(mcp.ToolError, match="pins"):
-        mcp.tool_presentmon_install()
+    monkeypatch.setattr(workloads, "download", lambda url, path, max_bytes: path.write_bytes(b"x"))
+    with pytest.raises(paths.ToolError, match="pins"):
+        workloads.tool_presentmon_install()
     assert not list((tmp_path / "metal-gpu-trace").glob("*.exe"))
-    monkeypatch.setitem(mcp.PRESENTMON, "sha256", hashlib.sha256(b"x").hexdigest())
-    first = mcp.tool_presentmon_install()
+    monkeypatch.setitem(workloads.PRESENTMON, "sha256", hashlib.sha256(b"x").hexdigest())
+    first = workloads.tool_presentmon_install()
     assert first["installed"] and pathlib.Path(first["path"]).is_file()
-    assert mcp.tool_presentmon_install()["installed"] is False
+    assert workloads.tool_presentmon_install()["installed"] is False
     assert prw.find_presentmon() == first["path"]
 
 
@@ -578,7 +573,7 @@ def test_drawstress_reads_microseconds_and_skips_empty_lines(tmp_path):
 
 def test_split_args_keeps_backslashes_and_drops_quotes():
     """Windows argument strings keep paths intact and lose the quotes around a token."""
-    assert mcp.split_args('--name "a b" C:\\Games\\x --k=1') == ["--name", "a b", "C:\\Games\\x", "--k=1"]
+    assert recording.split_args('--name "a b" C:\\Games\\x --k=1') == ["--name", "a b", "C:\\Games\\x", "--k=1"]
 
 
 def test_overrun_leaves_attached_process_running(tmp_path, monkeypatch):
@@ -715,36 +710,3 @@ def test_dwm_combat_stutter_simulation(tmp_path):
     assert pacing["fps_01pct_low"] <= pacing["fps_1pct_low"]
     assert pacing["stutter_rate_pct"] > 5.0
     assert pacing["frame_jitter_ms"] > 3.0
-
-
-def main():
-    tests = [
-        ("attach nonexistent", test_attach_nonexistent_process),
-        ("attach existing", test_attach_existing_process),
-        ("lock handling", test_lock_handling),
-        ("recording and schema", test_recording_and_schema_verification),
-        ("drawstress workload", test_drawstress_workload_parsing),
-        ("timeout and cleanup", test_timeout_and_cleanup),
-        ("vegaflow telemetry bridge", test_vegaflow_telemetry_bridge),
-        ("precision telemetry calculation", test_precision_telemetry_calculation),
-        ("diagnose bottlenecks and recommendations", test_diagnose_bottlenecks_and_recommendations),
-        ("compare summaries enriched metrics", test_compare_summaries_enriched_metrics),
-        ("dwm timing structures and query", test_dwm_timing_structures_and_query),
-        ("attach zenless zone zero real dwm", test_attach_zenless_zone_zero_real_dwm),
-        ("dwm combat stutter simulation", test_dwm_combat_stutter_simulation),
-    ]
-
-
-    print(f"Running {len(tests)} test suites...")
-    for name, test_fn in tests:
-        print(f"  -> Testing: {name} ...", end=" ", flush=True)
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = pathlib.Path(tmp).resolve()
-            test_fn(tmp_path)
-        print("PASS")
-
-    print("\nAll tests passed successfully!")
-
-
-if __name__ == "__main__":
-    main()
