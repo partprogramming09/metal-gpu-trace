@@ -42,3 +42,17 @@ def test_python39_runner():
         assert with39, (workflow, jobs)
         for job in with39:
             assert "ubuntu-24.04" in job, (workflow, job)
+
+
+def test_ci_supply_chain():
+    """Every workflow starts from read-only permissions, every action is pinned to a 40-character commit (a tag can
+    be moved to other code), and the MCP registry publisher is a fixed version checked against its SHA-256."""
+    workflows = ROOT / ".github" / "workflows"
+    for workflow in sorted([*workflows.glob("*.yml"), *workflows.glob("*.yaml")]):
+        text = workflow.read_text(encoding="utf-8")
+        assert re.search(r"^permissions:\n  contents: read$", text, re.M), workflow.name
+        for ref in re.findall(r"uses: (\S+)", text):
+            assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", ref), (workflow.name, ref)
+    publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    assert "releases/latest" not in publish
+    assert re.search(r"sha256sum -c", publish)

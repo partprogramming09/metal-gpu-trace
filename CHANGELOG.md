@@ -46,6 +46,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - A `conformance` CI job connects the official MCP Python SDK (`mcp` 2.3.0) to the server in both eras: discover,
   initialize, list the tools and call one. MCP Inspector 2.15.0 (`--cli`, `tools/list`) connects too, checked once
   by hand.
+- CI supply chain: every action is pinned to a commit SHA, workflows default to read-only `permissions`, and the
+  `mcp-publisher` download is pinned to v1.8.9 and checked against its sha256. `SECURITY.md` says how to report a
+  vulnerability; `.gitattributes` keeps every text file in LF, so the PowerShell scripts hash the same on every checkout.
 
 ## 0.22.0 — 2026-11-05
 

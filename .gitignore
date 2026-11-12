@@ -3,3 +3,13 @@ perf-runs/
 logs/
 .claude/
 dist/
+.DS_Store
+*.trace
+*.gputrace
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.venv/
+.pytest_cache/
