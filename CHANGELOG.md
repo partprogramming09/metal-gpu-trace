@@ -85,6 +85,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - CI supply chain: every action is pinned to a commit SHA, workflows default to read-only `permissions`, and the
   `mcp-publisher` download is pinned to v1.8.9 and checked against its sha256. `SECURITY.md` says how to report a
   vulnerability; `.gitattributes` keeps every text file in LF, so the PowerShell scripts hash the same on every checkout.
+- A tools/call the server answers with an error before any tool runs (unknown tool, wrong era) no longer leaves its id
+  among the calls in flight, where a later cancel of that id could have swallowed the reply to a call reusing it. The
+  README's CI gate example records into `~/perf-runs`, where its next step looks, and the clone guide says where
+  `perf_record.sh` writes without `PERF_OUT`.
 
 ## 0.22.0 — 2026-11-05
 

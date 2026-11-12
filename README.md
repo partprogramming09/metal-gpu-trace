@@ -278,7 +278,7 @@ jobs:
   perf:
     runs-on: [self-hosted, macOS, ARM64]
     steps:
-      - run: zsh src/metal_gpu_trace/perf_record.sh pr 30 native - . ./app
+      - run: PERF_OUT=~/perf-runs zsh path/to/metal-gpu-trace/src/metal_gpu_trace/perf_record.sh pr 30 native - . ./app
       - run: metal-gpu-trace check "$(ls -t ~/perf-runs/pr_*.json | head -1 | xargs basename -s .json)" main-ref
 ```
 

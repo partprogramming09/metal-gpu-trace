@@ -67,6 +67,7 @@ def work():
         if item is None:
             return
         message, reply, CURRENT.event = item
+        entry = item[2] or CALLS.get(message["id"])  # the transport's entry: a reply sent before call() leaves it
         try:
             reply(_answer(message))
         except Exception as error:  # a client gone mid-write must not end the thread every later call waits on
@@ -74,6 +75,8 @@ def work():
         finally:
             CURRENT.event = None
             with WAKE:  # under the lock cancel_call holds from its check of CALLS to its add: no id is left behind
+                if entry is not None and CALLS.get(message["id"]) is entry:
+                    CALLS.pop(message["id"], None)
                 CANCELLED.discard(message["id"])
 
 

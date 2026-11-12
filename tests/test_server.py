@@ -382,6 +382,58 @@ def test_worker_replies_in_the_era_of_the_request(tmp_path):
         assert ("resultType" in replies[mid]["result"]) is modern_era, (mid, replies[mid])
     assert not worker.CALLS and not worker.CANCELLED, (worker.CALLS, worker.CANCELLED)
 
+def test_rejected_call_leaves_no_entry(tmp_path):
+    """A tools/call the protocol answers with an error before any tool runs (here an unknown tool) leaves nothing in
+    CALLS, so a later cancel of that id marks nothing and a call reusing the id still gets its reply over stdio."""
+    import threading
+    from metal_gpu_trace import stdio, worker
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+    replies = []
+    try:
+        worker.CALLS[7] = threading.Event()
+        worker.submit({"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "no_such_tool"}},
+                      replies.append)
+        wait_until(lambda: replies)
+        wait_until(lambda: not worker.QUEUE)
+        worker.stop_worker()
+        worker.WORKER.clear()
+        assert "error" in replies[0] or replies[0]["result"].get("isError"), replies[0]
+        assert 7 not in worker.CALLS, worker.CALLS
+        worker.cancel_call(7)
+        assert 7 not in worker.CANCELLED, worker.CANCELLED
+        sent = []
+        original, stdio.send = stdio.send, sent.append
+        try:
+            stdio.reply_unless_cancelled({"jsonrpc": "2.0", "id": 7, "result": {}})
+        finally:
+            stdio.send = original
+        assert sent, "a reply to a reused id is not swallowed"
+    finally:
+        worker.stop_worker()
+        worker.WORKER.clear()
+        worker.CALLS.clear()
+        worker.CANCELLED.clear()
+
+def test_rejected_call_spares_another_clients_entry(tmp_path):
+    """An HTTP call the protocol rejects removes only its own entry: another client's call under the same id keeps it."""
+    import threading
+    from metal_gpu_trace import worker
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+    replies, other = [], threading.Event()
+    try:
+        own = worker.CALLS[7] = threading.Event()
+        worker.CALLS[7] = other  # a second client registered the same id after this call was queued
+        worker.submit({"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "no_such_tool"}},
+                      replies.append, own)
+        wait_until(lambda: replies)
+        worker.stop_worker()
+        worker.WORKER.clear()
+        assert worker.CALLS.get(7) is other, worker.CALLS
+    finally:
+        worker.stop_worker()
+        worker.WORKER.clear()
+        worker.CALLS.clear()
+
 def test_http_timeout(tmp_path):
     """A client that stalls in the middle of its request is dropped after HTTP_TIMEOUT instead of holding a thread."""
     import socket

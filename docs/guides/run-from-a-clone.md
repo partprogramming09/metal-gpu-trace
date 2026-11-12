@@ -30,7 +30,8 @@ python3 -I src/metal_gpu_trace/perf_report.py path/to/recording.trace
 python3 -I src/metal_gpu_trace/gputrace_read.py path/to/capture.gputrace
 ```
 
-From a clone, `perf_record.sh` writes its logs to `logs/perf/` at the repository root (ignored by git).
+Without `PERF_OUT`, `perf_record.sh` writes to `logs/perf/` in the folder that holds the clone, when that folder
+exists, and otherwise to `./perf-runs`.
 
 ## The checks
 
