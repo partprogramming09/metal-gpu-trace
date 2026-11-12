@@ -35,3 +35,13 @@ path = "src/metal_gpu_trace/metal_trace_mcp.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/metal_gpu_trace"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+
+[tool.ruff.lint]
+extend-select = ["B"]
+# short lambdas bound to a name and one-letter names inside comprehensions (l for a label row, I for the integer
+# schema) are the house style
+ignore = ["E731", "E741"]

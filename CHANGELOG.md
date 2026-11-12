@@ -70,6 +70,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   `name=` or `name:` (`file:///x`) and inside a quoted value (`-exec "load /x/y"`) are cut too.
 - Internal: the experiments share `recording.record_new_summary`, the panel page is read once and cached, the golden
   file pins the 2026-07-28 replies too, and a test checks each tool's schema against its function's arguments.
+- A `lint` CI job runs ruff 0.14.0 (configured in `pyproject.toml`: Python 3.9, 120-character lines, plus bugbear).
 - CI supply chain: every action is pinned to a commit SHA, workflows default to read-only `permissions`, and the
   `mcp-publisher` download is pinned to v1.8.9 and checked against its sha256. `SECURITY.md` says how to report a
   vulnerability; `.gitattributes` keeps every text file in LF, so the PowerShell scripts hash the same on every checkout.

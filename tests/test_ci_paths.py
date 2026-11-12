@@ -56,3 +56,11 @@ def test_ci_supply_chain():
     publish = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
     assert "releases/latest" not in publish
     assert re.search(r"sha256sum -c", publish)
+
+
+def test_ci_lint():
+    """CI lints with a pinned ruff, configured in pyproject.toml for Python 3.9 and 120-character lines."""
+    workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert re.search(r"uvx ruff@\d+\.\d+\.\d+ check", workflow), "a lint job runs a pinned ruff"
+    assert "[tool.ruff]" in pyproject and 'target-version = "py39"' in pyproject and "line-length = 120" in pyproject

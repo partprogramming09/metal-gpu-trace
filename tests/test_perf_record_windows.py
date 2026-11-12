@@ -1,7 +1,6 @@
 """Unit tests for perf_record_windows.py."""
 import csv
 import json
-import os
 import pathlib
 import subprocess
 import sys

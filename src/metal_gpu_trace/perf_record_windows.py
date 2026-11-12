@@ -593,7 +593,7 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
                 except OSError:
                     pass
                 continue
-            raise RuntimeError(f"another recording is running ({lock_path}); remove it if none is")
+            raise RuntimeError(f"another recording is running ({lock_path}); remove it if none is") from None
 
     name = f"{label}_{time.strftime('%Y%m%d-%H%M%S')}"
     deadline_limit = timeout if timeout is not None else seconds * 10 + 120

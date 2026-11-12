@@ -44,6 +44,13 @@ jobs:
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
       - run: uvx --python 3.13 --with mcp==2.3.0 --with pytest pytest -q -p no:cacheprovider tests/conformance
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+      - run: uvx ruff@0.14.0 check src tests
+
   # the Windows and macOS jobs run only when a file they cover changed: a docs-only change does not wait for them
   changes:
     runs-on: ubuntu-latest
