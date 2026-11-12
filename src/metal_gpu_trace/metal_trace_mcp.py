@@ -1,7 +1,10 @@
 """MCP server (stdio, JSON-RPC 2.0, standard library only) that records Wine or macOS programs with Instruments'
 Metal System Trace and reads the recordings and Metal .gputrace captures.
 
-Environment: METAL_TRACE_OUT is where recordings go (default ./perf-runs); METAL_TRACE_READ lists more directories,
+A metal-gpu-trace.json in the working directory or a folder above it (below the home folder) names the project and
+the folder its recordings go to and are read from; METAL_TRACE_PROJECT names that file (or its folder) instead.
+
+Environment: METAL_TRACE_OUT is where recordings go without a project file (default ./perf-runs); METAL_TRACE_READ lists more directories,
 separated by ':', whose files the tools may read; METAL_TRACE_WINE is the default Wine directory; KEEP_RUNS caps the
 recordings kept; METAL_TRACE_LOCK moves the lock that keeps recordings one at a time (in the cache folder below);
 METAL_TRACE_LOG=off silences the one stderr line per call. Test programs that workload_fetch
@@ -17,7 +20,8 @@ if __package__ in (None, ""):  # run by path: make the package importable
 from metal_gpu_trace import analysis, http_transport, paths, project, protocol, stdio, worker  # noqa: E402
 
 INSTRUCTIONS = (
-    "Records GPU use on Apple silicon with Metal System Trace. One recording runs at a time; keep other GPU work off "
+    "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each "
+    "project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off "
     "the Mac while it records. Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk "
     "per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a "
     "recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat "

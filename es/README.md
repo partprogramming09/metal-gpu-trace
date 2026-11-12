@@ -66,15 +66,42 @@ El servidor lee estas variables de entorno:
 
 | Variable | Qué fija |
 | --- | --- |
-| `METAL_TRACE_OUT` | Dónde van las grabaciones. Usa una ruta absoluta: la de serie, `./perf-runs`, depende del directorio de trabajo del cliente. |
+| `METAL_TRACE_OUT` | Dónde van las grabaciones. Usa una ruta absoluta: la de serie, `./perf-runs`, depende del directorio de trabajo del cliente. Un archivo de proyecto (abajo) manda sobre ella. |
+| `METAL_TRACE_PROJECT` | El archivo de proyecto que se usa (o la carpeta que lo tiene), en vez de buscarlo desde el directorio de trabajo. |
 | `METAL_TRACE_WINE` | El directorio de Wine (con `bin/wine`) que usa `perf_record` si la llamada no indica otro. |
 | `WINEPREFIX` | El prefijo de Wine si la llamada no indica otro; si no, `~/.wine`. |
 | `METAL_TRACE_READ` | Más directorios que las herramientas pueden leer, separados por `:`. |
 | `METAL_TRACE_LOG` | `off` apaga la línea de log por llamada en stderr. |
 | `KEEP_TRACE` | `1` guarda el `.trace` de cada grabación, para `trace_tables`, `trace_query` o Instruments. |
-| `KEEP_RUNS` | Guarda solo las N grabaciones más recientes. |
+| `KEEP_RUNS` | Guarda solo las N grabaciones más recientes; nunca borra `baselines.json` ni `panel.json`. |
+| `METAL_TRACE_LOCK` | El candado que hace que las grabaciones vayan de una en una, vaya cada una a la carpeta que vaya (de serie, `~/Library/Caches/metal-gpu-trace/recording.lock`). `perf_record.sh` lanzado a mano toma el mismo, o el que diga `PERF_LOCK`. |
 | `PERF_ENV` | Pares `NOMBRE=VALOR`, separados por espacios, que recibe el programa grabado. |
 | `PERF_INSTRUMENTS` | Instrumentos que se añaden a la plantilla Metal System Trace, separados por `;` (`xcrun xctrace list instruments` los nombra); sus tablas necesitan el `.trace`, así que va con `KEEP_TRACE=1`. |
+
+### Proyectos
+
+Un repositorio puede tener un `metal-gpu-trace.json` con el nombre de su proyecto y la carpeta de sus grabaciones:
+
+```json
+{"name": "mi-juego", "runs": "perf-runs", "profile": "translation-layer", "baseline": "main-ref"}
+```
+
+El servidor lo busca en su directorio de trabajo y en las carpetas de encima, hasta debajo de la carpeta personal,
+así que un solo archivo en la raíz del repositorio sirve para todas sus carpetas. Si lo encuentra, las grabaciones se
+guardan y se leen en `runs` en vez de en `METAL_TRACE_OUT` (`METAL_TRACE_READ` sigue añadiendo carpetas de lectura), y `baselines.json` también vive allí: los proyectos ya no mezclan sus grabaciones y
+`KEEP_RUNS` limpia la carpeta de cada proyecto por separado. `runs` es relativa al archivo, o empieza por `~/`.
+
+| Clave | Significado |
+| --- | --- |
+| `name` | El nombre del proyecto (letras, dígitos, `.`, `_`, `-`). Obligatoria. |
+| `runs` | La carpeta de las grabaciones. Obligatoria. Tiene que ser nueva, estar vacía o tener ya la marca del servidor (`.metal-gpu-trace-runs`): `KEEP_RUNS` borra allí los `.json` antiguos, así que se rechaza una carpeta con otros archivos. |
+| `profile` | `translation-layer`, `native` o `generic` (la de serie). Por ahora solo lo informa `project_info`. |
+| `baseline` | El nombre de la referencia del proyecto (`perf_baseline`). Por ahora solo la informa `project_info`; `perf_check` sigue usando la referencia que se le pasa. |
+| `format` | `metal-gpu-trace`, el único por ahora. |
+
+Cualquier otra clave, o un valor equivocado, es un error que cada herramienta explica, con el campo, hasta que se
+arregle el archivo. `project_info` dice qué proyecto está activo y de dónde sale su carpeta. Sin archivo de proyecto
+no cambia nada: se usa `METAL_TRACE_OUT`, o `./perf-runs`, como antes.
 
 ### Claude Code
 
@@ -166,7 +193,8 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | --- | --- |
 | `perf_record` | Graba un programa y devuelve su resumen; al terminar cierra todo programa de su prefijo de Wine, o todo proceso con el nombre de un programa nativo. `counters=true` graba además los contadores de GPU de Metal: `gpu_counters` (los limitadores, la utilización, la ocupación y el ancho de banda de memoria de la GPU, con el limitador principal) en el resumen, a unos 40 s de lectura por segundo grabado; no en Windows |
 | `perf_attach` | Graba un programa que ya corre, por pid o nombre, y lo deja corriendo |
-| `perf_runs` | Lista las grabaciones, la más reciente primero, por páginas, si cada una guardó su `.trace`, y la capa de traducción con que corrió (una huella de sus DLL de Direct3D, y su Wine) |
+| `project_info` | Dice qué proyecto está activo (por `metal-gpu-trace.json`), su perfil y su referencia, y su carpeta de grabaciones y de dónde sale |
+| `perf_runs` | Lista las grabaciones, la más reciente primero, por páginas, si cada una guardó su `.trace`, y la capa de traducción con que corrió (una huella de sus DLL de Direct3D, y su Wine); `project` nombra el proyecto activo |
 | `perf_compare` | Compara dos grabaciones: cifras principales, encoders, tiempo ocioso de la GPU y los ms de GPU por cuadro de cada etiqueta de encoder, el mayor cambio primero; marca las de menos de 100 frames. `markdown=true` añade las cifras como tablas Markdown para un comentario de PR; `skip_s` deja fuera los primeros segundos de cada grabación (el arranque) y recalcula sin ellos las cifras de GPU, los hitches y la memoria de Metal. `perf_gate` y `perf_panel` también aceptan `skip_s` |
 | `perf_baseline` | Guarda varias grabaciones iguales como referencia con nombre y devuelve el rango que abarca cada cifra entre ellas y `spread_pct`, cuánto difieren corridas iguales (el ruido que un cambio tiene que superar); sola, lista las referencias. `skip_s` guarda cada corrida sin sus primeros segundos y `perf_check` aplica el mismo corte a la corrida que juzga |
 | `perf_baseline_record` | Graba el mismo programa `count` veces (3 por defecto) con los argumentos de `perf_record` y guarda las corridas como referencia en una sola llamada. `skip_s` como en `perf_baseline` |

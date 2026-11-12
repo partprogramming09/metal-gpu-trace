@@ -10,6 +10,11 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - Recordings take one lock whatever folder they go to (`recording.lock` in the user's cache; `METAL_TRACE_LOCK`
   moves the server's, `PERF_LOCK` the script's), so recordings into different folders still run one at a time.
   Before, the lock was `.recording` beside the recordings.
+- Projects: a `metal-gpu-trace.json` in a repository (found from the working directory upwards, or named by
+  `METAL_TRACE_PROJECT`) names the project and the folder its recordings go to and are read from, ahead of
+  `METAL_TRACE_OUT`. The folder must be new, empty or marked as the server's, so `KEEP_RUNS` never prunes other
+  files; a wrong file is reported by every tool, naming the field. The new tool `project_info` says which project is
+  active and where its folder comes from, and `perf_runs` names it in `project`.
 
 ## 0.23.0 — 2026-11-11
 

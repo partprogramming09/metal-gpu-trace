@@ -62,7 +62,8 @@ The server reads these environment variables:
 
 | Variable | What it sets |
 | --- | --- |
-| `METAL_TRACE_OUT` | Where recordings go. Give an absolute path: the default, `./perf-runs`, depends on the client's working directory. |
+| `METAL_TRACE_OUT` | Where recordings go. Give an absolute path: the default, `./perf-runs`, depends on the client's working directory. A project file (below) takes precedence. |
+| `METAL_TRACE_PROJECT` | The project file to use (or the folder holding it), instead of looking for one from the working directory. |
 | `METAL_TRACE_WINE` | The Wine directory (holding `bin/wine`) that `perf_record` uses when the call names none. |
 | `WINEPREFIX` | The Wine prefix used when the call names none; `~/.wine` otherwise. |
 | `METAL_TRACE_READ` | More directories the tools may read, separated by `:`. |
@@ -72,6 +73,31 @@ The server reads these environment variables:
 | `METAL_TRACE_LOCK` | The lock that keeps recordings one at a time, whatever folder each goes to (default `~/Library/Caches/metal-gpu-trace/recording.lock`). `perf_record.sh` run by hand takes the same one, or the one `PERF_LOCK` names. |
 | `PERF_ENV` | `NAME=VALUE` pairs, separated by spaces, set for the recorded program. |
 | `PERF_INSTRUMENTS` | Instruments added to the Metal System Trace template, separated by `;` (`xcrun xctrace list instruments` names them); their tables need the `.trace`, so pair it with `KEEP_TRACE=1`. |
+
+### Projects
+
+A repository can hold a `metal-gpu-trace.json` that names its project and the folder of its recordings:
+
+```json
+{"name": "my-game", "runs": "perf-runs", "profile": "translation-layer", "baseline": "main-ref"}
+```
+
+The server looks for it in its working directory and the folders above it, stopping below the home folder, so one
+file at a repository's root serves every folder inside it. When it finds one, recordings go to and are read from
+`runs` instead of `METAL_TRACE_OUT` (`METAL_TRACE_READ` still adds folders to read), and `baselines.json` lives there too: projects no longer mix their recordings, and `KEEP_RUNS` prunes
+each project's folder on its own. `runs` is relative to the file, or starts with `~/`.
+
+| Key | Meaning |
+| --- | --- |
+| `name` | The project's name (letters, digits, `.`, `_`, `-`). Required. |
+| `runs` | The recordings folder. Required. It must be new, empty or already marked by the server (`.metal-gpu-trace-runs`): `KEEP_RUNS` removes old `.json` files there, so a folder holding other files is refused. |
+| `profile` | `translation-layer`, `native` or `generic` (the default). For now `project_info` only reports it. |
+| `baseline` | The name of the project's reference (`perf_baseline`). For now `project_info` only reports it; `perf_check` still takes the reference it is given. |
+| `format` | `metal-gpu-trace`, the only one for now. |
+
+Any other key, or a wrong value, is an error that every tool reports, naming the field, until the file is fixed.
+`project_info` says which project is active and where its folder comes from. Without a project file nothing changes:
+`METAL_TRACE_OUT`, or `./perf-runs`, is used as before.
 
 ### Claude Code
 
@@ -148,7 +174,8 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | --- | --- |
 | `perf_record` | Records a program and returns its summary; when it ends it stops every program of its Wine prefix, or every process named like a native program. `counters=true` also records Metal GPU Counters: `gpu_counters` (the limiters, utilization, occupancy and memory bandwidth of the GPU, with the main limiter) in the summary, at about 40 s of read-back per recorded second; not under Windows |
 | `perf_attach` | Records a program that is already running, by pid or name, and leaves it running |
-| `perf_runs` | Lists recordings, newest first, one page at a time, whether each kept its `.trace`, and the translation layer it ran on (a fingerprint of its Direct3D DLLs, and its Wine) |
+| `project_info` | Says which project is active (from `metal-gpu-trace.json`), its profile and baseline, and its recordings folder and where that comes from |
+| `perf_runs` | Lists recordings, newest first, one page at a time, whether each kept its `.trace`, and the translation layer it ran on (a fingerprint of its Direct3D DLLs, and its Wine); `project` names the active project |
 | `perf_compare` | Compares two recordings: headline numbers, encoders, GPU idle time and each encoder label's GPU ms per frame, largest change first; flags those under 100 frames. `markdown=true` adds the numbers as Markdown tables for a PR comment; `skip_s` leaves out the first seconds of each recording (start-up) and recomputes the GPU numbers, hitches and Metal memory without them. `perf_gate` and `perf_panel` take `skip_s` too |
 | `perf_baseline` | Saves several equal recordings as a named reference and returns the range each number spans across them and `spread_pct`, how much equal runs differ (the noise a change must beat); alone, lists the references. `skip_s` saves each run without its first seconds and `perf_check` applies the same cut to the run it judges |
 | `perf_baseline_record` | Records the same program `count` times (default 3) with `perf_record`'s arguments and saves the runs as a reference in one call. `skip_s` as in `perf_baseline` |

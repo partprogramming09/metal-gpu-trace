@@ -10,7 +10,8 @@ from metal_gpu_trace import config, metrics, paths, perf_report, recording
 
 def tool_perf_runs(offset=0, limit=50):
     """Lists the saved recordings, newest first, with frames, FPS, GPU ms per frame, memory peaks and the translation
-    layer each ran on (fingerprint and Wine, or native)."""
+    layer each ran on (fingerprint and Wine, or native); project names the project they belong to (null without a
+    metal-gpu-trace.json, see project_info)."""
     runs = []
     for path in sorted(config.OUT.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         if path.name == config.BASELINES.name:
@@ -26,7 +27,7 @@ def tool_perf_runs(offset=0, limit=50):
                      "metal_mib_peak": (s.get("metal_memory_mib") or {}).get("peak"),
                      "rss_mib_max": (s.get("process_rss_mib") or {}).get("max"),
                      "trace_kept": path.with_suffix(".trace").is_dir(), "layer": recording.layer_label(s.get("layer"))})
-    return paths.page(runs, offset, limit)
+    return {**paths.page(runs, offset, limit), "project": (config.PROJECT or {}).get("name")}
 
 
 def markdown_report(result):

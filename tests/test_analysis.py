@@ -575,3 +575,17 @@ def test_windows_runs_without_encoders(tmp_path):
     finally:
         config.OUT = saved
     assert verdict["too_many_short_encoders"] is False, verdict
+
+
+def test_perf_runs_names_the_project(tmp_path):
+    """perf_runs says which project's recordings it lists, and null without a project file."""
+    from metal_gpu_trace import analysis, config
+    saved = config.OUT, config.BASELINES, config.PROJECT
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        config.PROJECT = None
+        assert analysis.tool_perf_runs()["project"] is None
+        config.PROJECT = {"name": "mullion"}
+        assert analysis.tool_perf_runs()["project"] == "mullion"
+    finally:
+        config.OUT, config.BASELINES, config.PROJECT = saved

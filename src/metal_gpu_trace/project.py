@@ -157,3 +157,33 @@ def check():
     """Raises ToolError with what is wrong in the project file, when it is wrong."""
     if config.PROJECT_ERROR:
         raise paths.ToolError(config.PROJECT_ERROR)
+
+
+def shown(folder, root, home):
+    """Names `folder` without an absolute path: relative to `root` when inside it, as ~/… under `home`, else by its
+    last component."""
+    for base, prefix in ((root, ""), (home, "~/")):
+        try:
+            return prefix + folder.relative_to(base).as_posix()
+        except ValueError:
+            continue
+    return folder.name
+
+
+def tool_project_info():
+    """Says which project is active: its name, profile, baseline and format, the folder its recordings go to and
+    where that folder comes from (the project file, METAL_TRACE_OUT or the default ./perf-runs). Without a project
+    file, project and baseline are null and profile is generic."""
+    return info(os.environ)
+
+
+def info(environ):
+    """tool_project_info's answer, with the environment `environ`."""
+    check()
+    home = (pathlib.Path(environ["HOME"]) if environ.get("HOME") else pathlib.Path.home()).resolve()
+    found = config.PROJECT or {}
+    source = "project file" if found else "METAL_TRACE_OUT" if "METAL_TRACE_OUT" in environ else "default"
+    root = found.get("root") or pathlib.Path.cwd().resolve()
+    return {"project": found.get("name"), "profile": found.get("profile", "generic"), "baseline": found.get("baseline"),
+            "format": found.get("format", "metal-gpu-trace"), "runs": shown(config.OUT, root, home) or ".",
+            "source": source}

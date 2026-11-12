@@ -280,3 +280,90 @@ def test_find_ignores_a_file_at_the_disk_root(tmp_path):
     finally:
         pathlib.Path.is_file = real
     assert calls and pathlib.Path(tmp_path.anchor) / project.FILE_NAME not in calls, calls[-1]
+
+
+def test_project_info_names_the_project_and_its_folder(tmp_path):
+    restore = saved_config()
+    try:
+        write(tmp_path, {"name": "mullion", "runs": "perf-runs", "profile": "translation-layer", "baseline": "ds-d3d12"})
+        env = {"HOME": "/nonexistent"}
+        project.apply(tmp_path, env)
+        got = project.info(env)
+        assert got == {"project": "mullion", "profile": "translation-layer", "baseline": "ds-d3d12",
+                       "format": "metal-gpu-trace", "runs": "perf-runs", "source": "project file"}, got
+    finally:
+        restore()
+
+
+def test_project_info_names_a_folder_under_home_with_a_tilde(tmp_path):
+    restore = saved_config()
+    try:
+        home = tmp_path / "h"
+        write(home / "repo", {"name": "m", "runs": "~/perf-runs/m"})
+        env = {"HOME": str(home)}
+        project.apply(home / "repo", env)
+        assert project.info(env)["runs"] == "~/perf-runs/m"
+    finally:
+        restore()
+
+
+def test_project_info_never_prints_an_absolute_path(tmp_path):
+    restore = saved_config()
+    try:
+        write(tmp_path / "repo", {"name": "m", "runs": "../outside/runs"})
+        env = {"HOME": "/nonexistent"}
+        project.apply(tmp_path / "repo", env)
+        got = project.info(env)
+        assert got["runs"] == "runs" and str(tmp_path) not in json.dumps(got), got
+    finally:
+        restore()
+
+
+def test_project_info_without_a_project(tmp_path):
+    restore = saved_config()
+    try:
+        for env, source in (({"HOME": "/nonexistent"}, "default"),
+                            ({"HOME": "/nonexistent", "METAL_TRACE_OUT": str(tmp_path / "o")}, "METAL_TRACE_OUT")):
+            project.apply(tmp_path, env)
+            got = project.info(env)
+            assert got["project"] is None and got["profile"] == "generic" and got["baseline"] is None, got
+            assert got["source"] == source and str(tmp_path) not in json.dumps(got), got
+    finally:
+        restore()
+
+
+def test_project_info_reports_a_wrong_project_file(tmp_path):
+    restore = saved_config()
+    try:
+        write(tmp_path, {"name": "m"})
+        project.apply(tmp_path, {"HOME": "/nonexistent"})
+        try:
+            project.info({"HOME": "/nonexistent"})
+            raise AssertionError("a wrong project file must be reported")
+        except paths.ToolError as error:
+            assert "runs" in str(error)
+    finally:
+        restore()
+
+
+def test_project_info_tool_reads_the_environment(tmp_path):
+    restore = saved_config()
+    try:
+        project.apply(tmp_path, {"HOME": "/nonexistent"})
+        assert project.tool_project_info()["project"] is None
+    finally:
+        restore()
+
+
+def test_project_info_source_follows_the_folder_in_use(tmp_path):
+    restore = saved_config()
+    try:
+        write(tmp_path / "repo", {"name": "m", "runs": "perf-runs"})
+        env = {"HOME": "/nonexistent", "METAL_TRACE_OUT": str(tmp_path / "o")}
+        project.apply(tmp_path / "repo", env)
+        assert project.info(env)["source"] == "project file", "the project file wins over METAL_TRACE_OUT"
+        env = {"HOME": "/nonexistent", "METAL_TRACE_OUT": ""}
+        project.apply(tmp_path, env)
+        assert project.info(env)["source"] == "METAL_TRACE_OUT", "an empty METAL_TRACE_OUT is still the one in use"
+    finally:
+        restore()
