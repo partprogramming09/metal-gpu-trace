@@ -9,8 +9,10 @@
 :root {
   color-scheme: light;
   --surface: #fcfcfb; --card: #ffffff; --line: #e3e2dd; --grid: #ecebe6;
-  --ink: #0b0b0b; --ink2: #52514e; --ink3: #7a7975;
+  --ink: #0b0b0b; --ink2: #52514e; --ink3: #5f5e5a;
   --s1: #2a78d6; --s2: #eb6834;
+  --good: #1a4f91; --good-bg: #dbe6f3; --bad: #9a3d12; --bad-bg: #fbe3d3;
+  --band: #cfe0f5; --limit-good: #1f63b8; --limit-bad: #b84a1c; --tag-bg: #fbeee6; --tag-ink: #8a3a12;
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
@@ -18,6 +20,8 @@
     --surface: #1a1a19; --card: #222221; --line: #383835; --grid: #2d2d2b;
     --ink: #f0efec; --ink2: #c3c2b7; --ink3: #94938b;
     --s1: #3987e5; --s2: #d95926;
+    --good: #8fbaf0; --good-bg: #1f3350; --bad: #f0a27c; --bad-bg: #4a2a1a;
+    --band: #26405f; --limit-good: #6fa8ee; --limit-bad: #e8895a; --tag-bg: #3d2a1f; --tag-ink: #f0b497;
   }
 }
 :root[data-theme="dark"] {
@@ -25,20 +29,34 @@
   --surface: #1a1a19; --card: #222221; --line: #383835; --grid: #2d2d2b;
   --ink: #f0efec; --ink2: #c3c2b7; --ink3: #94938b;
   --s1: #3987e5; --s2: #d95926;
+  --good: #8fbaf0; --good-bg: #1f3350; --bad: #f0a27c; --bad-bg: #4a2a1a;
+  --band: #26405f; --limit-good: #6fa8ee; --limit-bad: #e8895a; --tag-bg: #3d2a1f; --tag-ink: #f0b497;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--surface); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
 main { max-width: 960px; margin: 0 auto; padding: 16px; }
 h1 { font-size: 18px; margin: 0 0 4px; }
 h2 { font-size: 15px; margin: 0 0 8px; }
+h3 { font-size: 17px; line-height: 1.3; margin: 0 0 6px; }
 .sub { color: var(--ink2); margin: 0 0 12px; }
 .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
 .bar .grow { flex: 1; }
 button { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
-button[aria-selected="true"] { border-color: var(--ink); font-weight: 600; }
+button[aria-pressed="true"] { border-color: var(--ink); font-weight: 600; }
 button[aria-pressed="false"] { color: var(--ink3); }
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; position: relative; }
+.card.dashed { background: transparent; border-style: dashed; }
+.stack { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.stack > .card { margin: 0; }
+.lbl { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink3); font-weight: 600; margin: 0 0 6px; }
+.projbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.projbar .lbl { margin: 0; }
+.pill { padding: 3px 10px; border-radius: 999px; background: var(--grid); color: var(--ink2); font-size: 13px; }
+.pill.ok { background: var(--good-bg); color: var(--good); }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.tag { padding: 5px 12px; border-radius: 999px; background: var(--tag-bg); color: var(--tag-ink); font-size: 13px; }
+.goto { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 12px; }
+.goto .lbl { margin: 0 4px 0 0; }
 .legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--ink2); margin-bottom: 4px; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
@@ -52,46 +70,104 @@ svg text { fill: var(--ink3); font-size: 11px; }
 .hb { display: grid; grid-template-columns: 110px 1fr 70px; gap: 8px; align-items: center; margin: 2px 0; }
 .hb i { display: block; height: 8px; border-radius: 0 4px 4px 0; }
 .note { color: var(--ink2); margin: 6px 0 0; }
-.warn { border-left: 3px solid var(--ink); padding: 4px 10px; margin: 0 0 8px; background: var(--grid); }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
 .cards .card { margin: 0; }
+.cards .card.main { border-color: var(--ink); }
 .big { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .label { color: var(--ink2); }
+small { display: block; color: var(--ink2); font-size: 11px; font-weight: 400; }
 ul { margin: 4px 0; padding-left: 20px; }
+.verdicts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.verdict { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.ring { width: 130px; height: 130px; border-radius: 50%; border: 10px solid var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; flex: none; }
+.ring.improved { border-color: var(--s1); }
+.ring.regressed { border-color: var(--s2); }
+.ring b { font-size: 19px; }
+.vbody { flex: 1 1 200px; min-width: 0; }
+.rrow { display: grid; grid-template-columns: 150px minmax(0, 1fr) 200px; gap: 12px; align-items: center; margin: 6px 0; font-variant-numeric: tabular-nums; }
+.track { position: relative; height: 26px; background: var(--grid); border-radius: 6px; }
+.band { position: absolute; top: 6px; height: 14px; min-width: 4px; background: var(--band); border-radius: 3px; }
+.lim { position: absolute; top: 2px; height: 22px; width: 0; border-left: 2px dashed; }
+.lim.bad { border-color: var(--limit-bad); }
+.lim.good { border-color: var(--limit-good); }
+.dot { position: absolute; top: 6px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--ink); border: 2px solid var(--card); box-sizing: border-box; }
+.dot.a { background: var(--s1); }
+.dot.b { background: var(--s2); }
+.dline { position: absolute; top: 12px; height: 3px; background: var(--ink3); }
+.dtag { position: absolute; top: -13px; font-size: 11px; color: var(--ink2); transform: translateX(-50%); }
+.key { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--ink2); margin: 4px 0 0; }
+.key i { display: inline-block; width: 18px; height: 8px; margin-right: 6px; border-radius: 2px; vertical-align: middle; }
+.key i.l { width: 0; height: 12px; border-left: 2px dashed; border-radius: 0; }
+.scroll { overflow-x: auto; }
+.heat { min-width: 560px; }
+.heat th, .heat td { text-align: center; padding: 6px 8px; }
+.heat th[scope="row"] { text-align: left; }
+.heat th.hhead { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.heat td { border: 2px solid var(--card); border-radius: 6px; background: var(--grid); }
+.heat td.better { background: var(--good-bg); color: var(--good); }
+.heat td.worse { background: var(--bad-bg); color: var(--bad); }
+.heat td small { color: inherit; }
+.sband { fill: var(--band); }
+.sbad { stroke: var(--limit-bad); stroke-dasharray: 6 4; }
+.sgood { stroke: var(--limit-good); stroke-dasharray: 6 4; }
+.sline { stroke: var(--ink3); fill: none; stroke-width: 2; }
+.pt { fill: var(--ink); stroke: var(--card); stroke-width: 1.5; }
+.pt.better { fill: var(--limit-good); }
+.pt.worse { fill: var(--limit-bad); }
+.pt.sel { stroke: var(--ink); stroke-width: 2.5; }
+.tnames { display: grid; gap: 0; font-size: 11px; color: var(--ink2); text-align: center; }
+.tnames span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 2px; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.drow { margin: 14px 0; }
+.drow > div:first-child { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.tray { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
+.tray > div { border: 1px dashed var(--line); border-radius: 8px; padding: 8px 10px; }
 details.help { display: inline-block; position: relative; margin-left: 6px; vertical-align: baseline; }
 details.help > summary { list-style: none; cursor: pointer; width: 16px; height: 16px; border: 1px solid var(--ink3); border-radius: 50%; color: var(--ink2); font-size: 11px; line-height: 14px; text-align: center; }
 details.help > summary::-webkit-details-marker { display: none; }
 details.help > div { position: absolute; z-index: 5; left: 0; top: 22px; width: 280px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; color: var(--ink); font-size: 12px; font-weight: 400; text-align: left; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
 th details.help > div, td:last-child details.help > div { left: auto; right: 0; }
 textarea { width: 100%; height: 90px; font: 12px ui-monospace, monospace; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; }
-@media (max-width: 600px) { .hb { grid-template-columns: 80px 1fr 56px; } }
+@media (max-width: 600px) {
+  .hb { grid-template-columns: 80px 1fr 56px; }
+  .rrow { grid-template-columns: 1fr; gap: 4px; }
+  .verdict { justify-content: center; }
+  .verdicts { grid-template-columns: 1fr; }
+  .cards { grid-template-columns: 1fr; }
+  details.help > div { width: 220px; }
+}
 </style>
 </head>
 <body>
 <main>
-  <div class="bar"><h1 class="grow" id="title"></h1><button id="lang" aria-label="Language"></button><button id="edit" aria-pressed="false"></button></div>
+  <div class="bar"><h1 class="grow" id="title"></h1><button type="button" id="lang" aria-label="Language"></button><button type="button" id="edit" aria-pressed="false"></button></div>
   <p class="sub" id="runs"></p>
+  <div class="projbar" id="project"></div>
   <div id="layout" class="card" hidden>
     <textarea id="layout-json" aria-label="Layout JSON"></textarea>
-    <div class="bar"><button id="layout-apply"></button><button id="layout-reset"></button></div>
+    <div class="bar"><button type="button" id="layout-apply"></button><button type="button" id="layout-reset"></button></div>
   </div>
-  <div class="tabs" id="tabs" role="tablist"></div>
-  <div id="panel" role="tabpanel"></div>
+  <div class="tags" id="tags"></div>
+  <nav class="goto" id="goto" aria-label="Ir a / Go to"></nav>
+  <div id="sections"></div>
+  <section class="card" id="missing" hidden></section>
 </main>
 <script>
 "use strict";
 let DATA = /*PAYLOAD*/null;
 const COLORS = ["var(--s1)", "var(--s2)"];
+const IDS = ["tests", "summary", "ab", "frames", "encoders", "counters", "memory", "data"];
 const PRESETS = {
-  fps: ["summary", "frames", "encoders", "counters", "memory", "data"],
-  compare: ["summary", "ab", "frames", "encoders", "counters", "memory", "data"],
+  fps: ["tests", "summary", "frames", "encoders", "counters", "memory", "data"],
+  compare: ["tests", "summary", "ab", "frames", "encoders", "counters", "memory", "data"],
 };
 const NS = "http://www.w3.org/2000/svg";
-const NOISE_PCT = 3;
 const LOWER = {fps: false, fps_1pct_low: false, fps_01pct_low: false, stutter_rate_pct: true, frame_jitter_ms: true, gpu_ms_mean: true,
-  gpu_ms_p95: true, frame_interval_ms_p95: true, metal_mib_peak: true, rss_mib_max: true};
+  gpu_ms_p95: true, frame_interval_ms_p95: true, metal_mib_peak: true, rss_mib_max: true, encoders_per_frame_p50: true, command_buffers_per_frame_p50: true};
 const VERDICT_KEYS = ["gpu_ms_mean", "fps", "fps_1pct_low", "stutter_rate_pct", "metal_mib_peak"];
 const CARD_KEYS = ["fps", "fps_1pct_low", "hitches", "metal_mib_peak"];
+const MARK = {better: "▲", worse: "▼", same: "="};
+const VMARK = {improved: "▲", regressed: "▼", same: "=", none: "?"};
 
 const T = {
   es: {
@@ -101,16 +177,13 @@ const T = {
       needTwo: "Comparar necesita dos grabaciones.", to: "a", at: "en", hitch: "hitch", change: "cambio", changePct: "cambio %",
       better: "mejor", worse: "peor", same: "igual", unknown: "sin dato", verdict: "Veredicto", cards: "Lo principal",
       single: (r, fps, low, n, top) => `${r}: ${fps} FPS, 1% low ${low}, ${n} hitches${top ? "; causa más común: " + top : ""}.`,
-      pair: (a, b) => `B (${b}) frente a A (${a}); la diferencia cuenta si supera ${NOISE_PCT}%.`,
+      pair: (a, b) => `B (${b}) frente a A (${a}); la diferencia cuenta si supera ${DATA.rules.noise_pct}%.`,
       hitches: "Hitches", time: "Tiempo (s)", interval: "Intervalo (ms)", cause: "Causa", run: "Grabación",
       hitchNote: n => `Se muestran los ${n} más largos. Solo los 20 más largos de cada grabación traen causa y CPU; el resto aparece con "—", que no significa desconocida.`,
       noHitches: "Sin hitches: ningún frame superó el umbral.",
       marks: u => `Los triángulos marcan hitches: frames con un intervalo mayor de ${u} ms. Pasa el ratón para ver la causa.`,
       thermal: "Estado térmico", drift: "FPS al inicio y al final", throttle: "Posible throttling térmico",
       yes: "sí", no: "no",
-      wShort: r => `${r} tiene menos de 100 frames: es demasiado corta para comparar.`,
-      wRepeat: "Cada lado es una sola grabación. Repite la corrida antes de dar el cambio por real.",
-      wLayer: (a, b) => `Las grabaciones usaron capas distintas (${a} y ${b}): se compara una capa con otra, no un solo cambio.`,
       layerNone: "sin capa", scope: "Cómo leer esto", notComparable: "no comparable",
       cTitle: "Contadores de la GPU", cTop: "Limitador principal", cMean: "media", cP95: "p95", cMax: "máx", cName: "Contador", cNone: "Sin contadores: graba con counters=true.",
       cHelp: "Los contadores salen del instrumento Metal GPU Counters y se muestrean durante toda la grabación. Un Limiter es el porcentaje del tiempo en que esa unidad tenía trabajo pendiente y no podía avanzar: el mayor es el cuello de botella de la GPU. Utilization es cuánto se usó la unidad. Occupancy es cuántos hilos de sombreado corrían a la vez. Bandwidth está en GB/s. Una media baja con un máximo alto indica picos aislados.",
@@ -120,10 +193,25 @@ const T = {
       encHelp: "Un encoder es un bloque de trabajo que el programa envía a la GPU (un pase de render, de cómputo o de copia). Muchos encoders muy cortos por frame es típico de capas de traducción como DXMT o MoltenVK.",
       encNote: "Solo se guardan los 20 con más GPU; \"fuera del top 20\" significa que el encoder pudo salir de la lista, no que haya desaparecido.",
       states: {same: "igual", changed: "cambió", new: "nuevo", gone: "ya no está", outside_top_20: "fuera del top 20"},
-      skipped: s => `Se ignoraron los primeros ${s} s de cada grabación (arranque). Las cifras de GPU, los hitches y la memoria Metal se recalcularon sin ese tramo; el estado térmico y la memoria del proceso son de toda la grabación.`,
-      wBottleneck: "Los FPS empeoran aunque los ms de GPU por frame mejoran: el límite no es la GPU. La GPU espera al programa (mira el tiempo ocioso de la GPU en A y B y la CPU de los hitches).",
-      wMeasure: "Una grabación es de Windows y otra de Metal: los ms de GPU y la memoria Metal no miden lo mismo y quedan sin comparar. Usa FPS, 1% low, stutter y jitter."},
+      tests: "Modo pruebas", project: "Proyecto", noProject: "Sin archivo de proyecto", profile: "Perfil", goto: "Ir a", missing: "No recopilado",
+      missingNote: "Lo que no trae cada grabación y qué hacer para tenerlo.", main: "Métrica principal del proyecto",
+      ref: (n, k, m) => `Referencia ${n} · ${k} corridas iguales · margen ${m} %`, noRef: "Sin referencia", noRefTitle: "Este proyecto no tiene referencia",
+      refShort: "ref", higher: "más es mejor", lower: "menos es mejor", notJudged: "no se juzga",
+      v_same: "IGUAL", v_improved: "MEJOR", v_regressed: "PEOR", v_none: "SIN VEREDICTO",
+      hl_same: r => `${r} no empeora ni mejora fuera del ruido.`,
+      hl_improved: (r, list) => `${r} mejora frente a la referencia: ${list}.`,
+      hl_regressed: (r, list) => `${r} empeora frente a la referencia: ${list}.`,
+      noise: (n, list) => `Contra la referencia ${n}. Entre sus corridas iguales ${list}: ese es el ruido que un cambio tiene que superar.`,
+      varies: (name, pct) => `${name} varía ${pct} %`, cantJudge: "no se pudo juzgar", unchecked: list => `Sin juzgar: ${list}.`,
+      where: "Dónde cae la corrida dentro del rango", refBand: "Rango de la referencia",
+      limitBad: m => `Límite de peor (${m} %)`, limitGood: m => `Límite de mejor (${m} %)`,
+      heat: "Mapa de calor · métrica × build", heatNote: (m, n) => `Cambio de cada build contra la media de la referencia; se ven las ${n} más recientes del mismo programa. Menos de ${m} % es ruido y se pinta en gris; ▲ es mejor y ▼ peor.`,
+      trend: "Tendencia por build", noBuilds: "Todavía no hay otras grabaciones de este programa con las que comparar la referencia.",
+      dumb: "A frente a B, número por número", dumbNote: "Cada número tiene su propia escala: lo que cuenta es el largo del tramo entre A y B.",
+      singleGpu: (r, gpu, fps, n, top) => `${r}: ${gpu} ms de GPU por frame, ${fps} FPS, ${n} hitches${top ? "; causa más común: " + top : ""}.`},
     m: {
+      encoders_per_frame_p50: ["Encoders por frame (mediana)", "Cuántos encoders (bloques de trabajo para la GPU) tiene un frame típico. En el veredicto no hay margen: un encoder de más ya es peor."],
+      command_buffers_per_frame_p50: ["Command buffers por frame (mediana)", "Cuántos command buffers (lotes de encoders que se envían a la GPU) tiene un frame típico. En el veredicto no hay margen: uno de más ya es peor."],
       fps: ["FPS", "Frames por segundo según la mediana del intervalo entre frames. Con vsync a 60 Hz el máximo es cerca de 60."],
       fps_1pct_low: ["FPS 1% low", "FPS del 1% de frames más lentos (percentil 99 del intervalo). Mide los tirones, no el promedio. Necesita 100 frames o más; antes aparece \"–\"."],
       fps_01pct_low: ["FPS 0,1% low", "Igual que el 1% low pero con el 0,1% más lento. Necesita 1000 frames o más; antes aparece \"–\"."],
@@ -146,8 +234,37 @@ const T = {
       gpu_heavy: "La GPU estuvo ocupada el 80% o más del intervalo: el frame era caro de dibujar.",
       cpu_or_wait: "Ninguna de las anteriores: el programa esperó (CPU, vsync, disco o red).",
     },
+    w: {
+      skip_applied: () => `Se ignoraron los primeros ${DATA.skip_s} s de cada grabación (arranque). Las cifras de GPU, los hitches y la memoria Metal se recalcularon sin ese tramo; el estado térmico y la memoria del proceso son de toda la grabación.`,
+      few_frames: r => `${r} tiene menos de ${DATA.rules.min_frames} frames: es demasiado corta para comparar.`,
+      short_wine: r => `${r} se grabó bajo Wine y dura menos de ${DATA.rules.min_seconds_wine} s: es demasiado corta para comparar.`,
+      summary_only: r => `${r} no trae el archivo por frame: solo se ven las cifras del resumen, sin curvas.`,
+      single_run_each: () => "Cada lado es una sola grabación. Repite la corrida antes de dar el cambio por real.",
+      layers_differ: () => { const [a, b] = DATA.runs.map(r => r.layer || L().ui.layerNone); return `Las grabaciones usaron capas distintas (${a} y ${b}): se compara una capa con otra, no un solo cambio.`; },
+      windows_vs_metal: () => "Una grabación es de Windows y otra de Metal: los ms de GPU y la memoria Metal no miden lo mismo y quedan sin comparar. Usa FPS, 1% low, stutter y jitter.",
+      gpu_not_limit: () => "Los FPS empeoran aunque los ms de GPU por frame mejoran: el límite no es la GPU. La GPU espera al programa (mira el tiempo ocioso de la GPU en A y B y la CPU de los hitches).",
+      reference_skip: () => `La referencia ignora los primeros ${DATA.tests.skip_s} s de cada grabación y el veredicto aplica ese mismo corte; las cifras del panel usan ${DATA.skip_s} s.`,
+    },
+    r: {
+      no_frames_file: "No tiene archivo por frame: solo hay cifras del resumen, sin curvas. Graba de nuevo para tenerlo.",
+      metal_only: "Solo existe en grabaciones de Metal: Windows no lo mide.",
+      record_with_counters: "Graba con counters=true.",
+      start_skipped: "Se cortó el arranque con skip_s y la CPU no se puede recalcular sin él: quita skip_s para verla.",
+      not_in_recording: "Esta grabación no lo trae.",
+    },
+    s: {frames: "Frames", hitches: "Hitches", lows: "FPS 1% low", encoders: "Encoders", counters: "Contadores GPU", memory: "Memoria Metal", thermal: "Estado térmico", cpu: "CPU"},
+    h: {
+      no_project_baseline: "Este proyecto no tiene referencia. Graba 3 corridas iguales con perf_baseline_record para activar el modo pruebas.",
+      baseline_not_found: "La referencia del proyecto no existe o no se puede leer. Mira cuáles hay con perf_baseline y corrige el nombre en metal-gpu-trace.json.",
+    },
+    "profile_translation-layer": "Perfil translation-layer: se compara por GPU ms por frame, porque con vsync los FPS tocan techo y dejan de distinguir una build de otra.",
+    "profile_native": "Perfil native: se compara por FPS; los GPU ms por frame acompañan.",
+    "profile_generic": "Perfil generic: se compara por FPS. Pon \"profile\" en metal-gpu-trace.json si el proyecto es una capa de traducción.",
     scope: [
       "Hitch: un frame cuyo intervalo supera 1,5 veces la mediana y 8 ms.",
+      "FPS 1% low: el FPS del percentil 99 del intervalo entre frames. Es un percentil, no la media del 1% más lento: otras herramientas lo calculan de otra forma, así que no compares esta cifra con la de ellas.",
+      "GPU ms por frame: la suma del tiempo de los encoders del frame.",
+      "Veredicto: la build se compara con el rango (mínimo y máximo) de las corridas iguales de la referencia. Salir del rango por más del margen es mejor o peor; dentro, igual. Los encoders y command buffers por frame no tienen margen.",
       "Una sola grabación no demuestra un cambio: compara 100 frames o más y repite la corrida.",
       "Los rangos de referencia dependen de la pantalla: 16,7 ms por frame a 60 Hz, 8,3 ms a 120 Hz.",
     ],
@@ -159,16 +276,13 @@ const T = {
       needTwo: "Compare needs two recordings.", to: "to", at: "at", hitch: "hitch", change: "change", changePct: "change %",
       better: "better", worse: "worse", same: "same", unknown: "no data", verdict: "Verdict", cards: "Key numbers",
       single: (r, fps, low, n, top) => `${r}: ${fps} FPS, 1% low ${low}, ${n} hitches${top ? "; most common cause: " + top : ""}.`,
-      pair: (a, b) => `B (${b}) against A (${a}); a difference counts when it exceeds ${NOISE_PCT}%.`,
+      pair: (a, b) => `B (${b}) against A (${a}); a difference counts when it exceeds ${DATA.rules.noise_pct}%.`,
       hitches: "Hitches", time: "Time (s)", interval: "Interval (ms)", cause: "Cause", run: "Recording",
       hitchNote: n => `The ${n} longest are shown. Only each recording's 20 longest carry a cause and CPU; the rest show "—", which does not mean unknown.`,
       noHitches: "No hitches: no frame went over the threshold.",
       marks: u => `Triangles mark hitches: frames with an interval over ${u} ms. Hover for the cause.`,
       thermal: "Thermal state", drift: "FPS at the start and the end", throttle: "Possible thermal throttling",
       yes: "yes", no: "no",
-      wShort: r => `${r} has fewer than 100 frames: too short to compare.`,
-      wRepeat: "Each side is one recording. Repeat the run before calling a change real.",
-      wLayer: (a, b) => `The recordings ran on different layers (${a} and ${b}): it compares layers, not one change.`,
       layerNone: "no layer", scope: "How to read this", notComparable: "not comparable",
       cTitle: "GPU counters", cTop: "Main limiter", cMean: "mean", cP95: "p95", cMax: "max", cName: "Counter", cNone: "No counters: record with counters=true.",
       cHelp: "The counters come from the Metal GPU Counters instrument and are sampled over the whole recording. A Limiter is the share of time that unit had work waiting and could not advance: the highest is the GPU's bottleneck. Utilization is how much the unit was used. Occupancy is how many shader threads ran at once. Bandwidth is in GB/s. A low mean with a high max means isolated spikes.",
@@ -178,10 +292,25 @@ const T = {
       encHelp: "An encoder is a block of work the program sends to the GPU (a render, compute or copy pass). Many very short encoders per frame is typical of translation layers such as DXMT or MoltenVK.",
       encNote: "Only the 20 with the most GPU are kept; \"outside the top 20\" means the encoder may have left the list, not that it disappeared.",
       states: {same: "same", changed: "changed", new: "new", gone: "gone", outside_top_20: "outside the top 20"},
-      skipped: s => `The first ${s} s of each recording (start-up) were left out. The GPU numbers, hitches and Metal memory were recomputed without them; the thermal state and the process memory are for the whole recording.`,
-      wBottleneck: "FPS got worse although GPU ms per frame got better: the limit is not the GPU. The GPU waits for the program (see the GPU idle time of A and B and the CPU of the hitches).",
-      wMeasure: "One recording is from Windows and the other from Metal: GPU ms and Metal memory do not measure the same thing and are left uncompared. Use FPS, 1% low, stutter and jitter."},
+      tests: "Test mode", project: "Project", noProject: "No project file", profile: "Profile", goto: "Go to", missing: "Not collected",
+      missingNote: "What each recording lacks and what to do to have it.", main: "The project's main metric",
+      ref: (n, k, m) => `Reference ${n} · ${k} equal runs · margin ${m} %`, noRef: "No reference", noRefTitle: "This project has no reference",
+      refShort: "ref", higher: "higher is better", lower: "lower is better", notJudged: "not judged",
+      v_same: "SAME", v_improved: "BETTER", v_regressed: "WORSE", v_none: "NO VERDICT",
+      hl_same: r => `${r} is no worse and no better outside the noise.`,
+      hl_improved: (r, list) => `${r} improves on the reference: ${list}.`,
+      hl_regressed: (r, list) => `${r} regresses against the reference: ${list}.`,
+      noise: (n, list) => `Against the reference ${n}. Among its equal runs ${list}: that is the noise a change has to beat.`,
+      varies: (name, pct) => `${name} varies ${pct} %`, cantJudge: "could not be judged", unchecked: list => `Not judged: ${list}.`,
+      where: "Where the run falls within the range", refBand: "Reference range",
+      limitBad: m => `Worse limit (${m} %)`, limitGood: m => `Better limit (${m} %)`,
+      heat: "Heat map · metric × build", heatNote: (m, n) => `Each build's change against the reference's mean; the ${n} most recent of the same program are shown. Under ${m} % is noise and is drawn gray; ▲ is better and ▼ worse.`,
+      trend: "Trend by build", noBuilds: "There are no other recordings of this program yet to set against the reference.",
+      dumb: "A against B, number by number", dumbNote: "Each number has its own scale: what counts is the length of the stretch between A and B.",
+      singleGpu: (r, gpu, fps, n, top) => `${r}: ${gpu} ms of GPU per frame, ${fps} FPS, ${n} hitches${top ? "; most common cause: " + top : ""}.`},
     m: {
+      encoders_per_frame_p50: ["Encoders per frame (median)", "How many encoders (blocks of work for the GPU) a typical frame has. The verdict has no margin here: one encoder more is already worse."],
+      command_buffers_per_frame_p50: ["Command buffers per frame (median)", "How many command buffers (batches of encoders sent to the GPU) a typical frame has. The verdict has no margin here: one more is already worse."],
       fps: ["FPS", "Frames per second from the median interval between frames. With vsync at 60 Hz the maximum is near 60."],
       fps_1pct_low: ["FPS 1% low", "FPS of the slowest 1% of frames (99th percentile interval). It measures hitches, not the average. Needs 100 frames or more; below that it shows \"–\"."],
       fps_01pct_low: ["FPS 0.1% low", "Like the 1% low for the slowest 0.1%. Needs 1000 frames or more; below that it shows \"–\"."],
@@ -204,15 +333,44 @@ const T = {
       gpu_heavy: "The GPU was busy 80% or more of the interval: the frame was expensive to draw.",
       cpu_or_wait: "None of the above: the program waited (CPU, vsync, disk or network).",
     },
+    w: {
+      skip_applied: () => `The first ${DATA.skip_s} s of each recording (start-up) were left out. The GPU numbers, hitches and Metal memory were recomputed without them; the thermal state and the process memory are for the whole recording.`,
+      few_frames: r => `${r} has fewer than ${DATA.rules.min_frames} frames: too short to compare.`,
+      short_wine: r => `${r} was recorded under Wine and lasts under ${DATA.rules.min_seconds_wine} s: too short to compare.`,
+      summary_only: r => `${r} has no per-frame file: only the summary numbers show, with no curves.`,
+      single_run_each: () => "Each side is one recording. Repeat the run before calling a change real.",
+      layers_differ: () => { const [a, b] = DATA.runs.map(r => r.layer || L().ui.layerNone); return `The recordings ran on different layers (${a} and ${b}): it compares layers, not one change.`; },
+      windows_vs_metal: () => "One recording is from Windows and the other from Metal: GPU ms and Metal memory do not measure the same thing and are left uncompared. Use FPS, 1% low, stutter and jitter.",
+      gpu_not_limit: () => "FPS got worse although GPU ms per frame got better: the limit is not the GPU. The GPU waits for the program (see the GPU idle time of A and B and the CPU of the hitches).",
+      reference_skip: () => `The reference leaves out the first ${DATA.tests.skip_s} s of each recording and the verdict applies the same cut; the panel's numbers use ${DATA.skip_s} s.`,
+    },
+    r: {
+      no_frames_file: "It has no per-frame file: only the summary numbers, with no curves. Record again to have it.",
+      metal_only: "It only exists in Metal recordings: Windows does not measure it.",
+      record_with_counters: "Record with counters=true.",
+      start_skipped: "The start-up was cut with skip_s and the CPU cannot be recomputed without it: drop skip_s to see it.",
+      not_in_recording: "This recording does not carry it.",
+    },
+    s: {frames: "Frames", hitches: "Hitches", lows: "FPS 1% low", encoders: "Encoders", counters: "GPU counters", memory: "Metal memory", thermal: "Thermal state", cpu: "CPU"},
+    h: {
+      no_project_baseline: "This project has no reference. Record 3 equal runs with perf_baseline_record to turn on test mode.",
+      baseline_not_found: "The project's reference does not exist or cannot be read. See which ones exist with perf_baseline and fix the name in metal-gpu-trace.json.",
+    },
+    "profile_translation-layer": "Profile translation-layer: compared by GPU ms per frame, because with vsync FPS hits a ceiling and stops telling one build from another.",
+    "profile_native": "Profile native: compared by FPS; GPU ms per frame goes along.",
+    "profile_generic": "Profile generic: compared by FPS. Set \"profile\" in metal-gpu-trace.json if the project is a translation layer.",
     scope: [
       "Hitch: a frame whose interval exceeds 1.5 times the median and 8 ms.",
+      "FPS 1% low: the FPS at the 99th percentile of the interval between frames. It is a percentile, not the mean of the slowest 1%: other tools compute it another way, so do not set this number against theirs.",
+      "GPU ms per frame: the sum of the time of the frame's encoders.",
+      "Verdict: the build is set against the range (minimum and maximum) of the reference's equal runs. Leaving the range by more than the margin is better or worse; inside it, same. Encoders and command buffers per frame have no margin.",
       "One recording does not prove a change: compare 100 frames or more and repeat the run.",
       "Reference ranges depend on the display: 16.7 ms per frame at 60 Hz, 8.3 ms at 120 Hz.",
     ],
   },
 };
 
-let lang = "es", active = "summary", editing = false, KEY, layout, last = "";
+let lang = "es", editing = false, KEY, layout, last = "", trendMetric = null;
 try {
   const saved = localStorage.getItem("metal-panel-lang");
   lang = saved === "en" || saved === "es" ? saved : (navigator.language || "").startsWith("es") ? "es" : "en";
@@ -340,59 +498,242 @@ function metric(r, id) {
 /** Returns "better", "worse", "same" or null for a comparison entry of a metric where lower or higher is better. */
 function direction(id, c) {
   if (!c || c.change === null || c.change === undefined || !(id in LOWER) || DATA.not_comparable.includes(id)) return null;
-  if (c.change === 0 || (c.change_pct !== null && Math.abs(c.change_pct) < NOISE_PCT)) return "same";
+  if (c.change === 0 || (c.change_pct !== null && Math.abs(c.change_pct) < DATA.rules.noise_pct)) return "same";
   return (c.change < 0) === LOWER[id] ? "better" : "worse";
 }
 
-/** Returns the confidence warnings for the runs in the current language. */
-function warnings() {
-  const u = L().ui, out = [];
-  if (DATA.skip_s) out.push(u.skipped(DATA.skip_s));
-  DATA.runs.forEach(r => { if (((r.gpu || {}).frames || 0) < 100) out.push(u.wShort(r.name)); });
-  if (DATA.runs.length === 2) {
-    out.push(u.wRepeat);
-    const [a, b] = DATA.runs.map(r => r.layer || u.layerNone);
-    if (a !== b) out.push(u.wLayer(a, b));
-    if (DATA.not_comparable.length) out.push(u.wMeasure);
-    if (DATA.compare && direction("fps", DATA.compare.fps) === "worse" && direction("gpu_ms_mean", DATA.compare.gpu_ms_mean) === "better") out.push(u.wBottleneck);
-  }
-  return out;
+/** Returns a signed percentage for a cell, or a dash when there is none. */
+function pctText(p) {
+  return p === null || p === undefined ? "–" : (p > 0 ? "+" : p < 0 ? "−" : "") + fmt(Math.abs(p), 1) + " %";
 }
 
-const TABS = {
+/** Returns a metric's short name in the current language. */
+function metricLabel(id) {
+  return (L().m[id] || [id])[0];
+}
+
+/** Returns the text of a run's section reason, or the id itself when a newer server sent one this page does not know. */
+function reasonText(id) {
+  return L().r[id] || id;
+}
+
+/** Returns the limits perf_check draws around a reference range {min, max}: [worse, better]. Counts have no margin. */
+function limits(metric, span) {
+  const margin = metric.endsWith("_p50") ? 0 : DATA.rules.noise_pct / 100;
+  return LOWER[metric] ? [span.max * (1 + margin), span.min * (1 - margin)] : [span.min * (1 - margin), span.max * (1 + margin)];
+}
+
+/** Returns a function that maps a value to a percentage of the track, for the values given plus some room. */
+function scale(values) {
+  const lo0 = Math.min(...values), hi0 = Math.max(...values);
+  const pad = (hi0 - lo0) * 0.12 || Math.abs(hi0) * 0.05 || 1;
+  const lo = lo0 - pad, hi = hi0 + pad;
+  return x => (100 * (x - lo) / (hi - lo)).toFixed(2) + "%";
+}
+
+/** Returns one row of the range view: the reference's band, the build's value as a dot and the limits past which
+ * perf_check says worse or better. The direction comes from the payload's lists. Null when there is no number. */
+function rangeBar(metric, check, ref) {
+  const u = L().ui, span = ref.range[metric], value = (check.values || {})[metric];
+  if (!span || value === null || value === undefined) return null;
+  const [bad, good] = limits(metric, span), at = scale([span.min, span.max, bad, good, value]);
+  const d = (check.regressed || []).some(r => r.metric === metric) ? "worse" : (check.improved || []).some(r => r.metric === metric) ? "better" :
+    (check.unchecked || []).includes(metric) ? null : "same";
+  const track = h("div", {class: "track"}), band = h("div", {class: "band"}), dot = h("div", {class: "dot"});
+  band.style.left = at(span.min); band.style.width = `calc(${at(span.max)} - ${at(span.min)})`;
+  dot.style.left = at(value);
+  const lim = (cls, x) => { const el = h("div", {class: "lim " + cls}); el.style.left = at(x); return el; };
+  track.append(band, lim("bad", bad), lim("good", good), dot);
+  const text = `${metricLabel(metric)} ${fmt(value)}; ${u.refShort} ${fmt(span.min)}–${fmt(span.max)}` + (d ? "; " + u[d] : "");
+  return h("div", {class: "rrow", role: "img", "aria-label": text},
+    h("div", {}, h("strong", {}, metricLabel(metric)), h("small", {}, u[LOWER[metric] ? "lower" : "higher"])), track,
+    h("div", {}, h("strong", {}, fmt(value)), " · " + u.refShort + " " + fmt(span.min) + "–" + fmt(span.max) + (d ? " " + MARK[d] + " " + u[d] : "")));
+}
+
+/** Returns the table of builds against the reference: each cell is the change in % against the reference's mean with its
+ * direction (▲ better, ▼ worse, = same; none where perf_check does not judge). At most the 8 newest builds. */
+function heatmap(changes) {
+  const u = L().ui, runs = changes.runs.slice(-8);
+  const metrics = changes.metrics.filter(m => changes.reference[m] || runs.some(r => r.values[m] && r.values[m].value !== null));
+  const head = h("tr", {}, h("th", {scope: "col"}, ""));
+  runs.forEach(r => head.append(h("th", {scope: "col", class: "hhead", title: r.run}, r.run)));
+  const body = h("tbody");
+  metrics.forEach(m => {
+    const row = h("tr", {}, h("th", {scope: "row"}, metricLabel(m), h("small", {}, u[LOWER[m] ? "lower" : "higher"])));
+    runs.forEach(r => {
+      const c = r.values[m] || {}, d = c.direction;
+      const cell = h("td", {class: d || "none"}, d ? MARK[d] + " " + pctText(c.pct) : pctText(c.pct));
+      if (!d && c.pct !== null && c.pct !== undefined) cell.append(h("small", {}, u.notJudged));
+      row.append(cell);
+    });
+    body.append(row);
+  });
+  return h("div", {class: "scroll"}, h("table", {class: "heat"}, h("thead", {}, head), body));
+}
+
+/** Returns the trend of one metric over the builds in `changes`: the reference's band, the limits at ±margin and one
+ * mark per build (▲ better, ▼ worse, circle same) with the panel's own runs ringed. */
+function trend(changes, metric) {
+  const u = L().ui, span = DATA.tests.range[metric];
+  const pts = changes.runs.filter(r => r.values[metric] && r.values[metric].value !== null);
+  if (!span || !pts.length) return h("p", {class: "note"}, u.noBuilds);
+  const [bad, good] = limits(metric, span), values = pts.map(r => r.values[metric].value);
+  const W = 800, H = 200, Lm = 48, R = 12, T0 = 12, B = 12;
+  const lo0 = Math.min(span.min, bad, good, ...values), hi0 = Math.max(span.max, bad, good, ...values);
+  const pad = (hi0 - lo0) * 0.12 || Math.abs(hi0) * 0.05 || 1, lo = lo0 - pad, hi = hi0 + pad;
+  const X = i => Lm + (i + 0.5) / pts.length * (W - Lm - R), Y = v => T0 + (1 - (v - lo) / (hi - lo)) * (H - T0 - B);
+  const svg = s("svg", {viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": metricLabel(metric) + ": " + values.map(v => fmt(v)).join(", ")});
+  svg.append(s("rect", {x: Lm, y: Y(span.max), width: W - Lm - R, height: Math.max(Y(span.min) - Y(span.max), 3), class: "sband"}));
+  [[bad, "sbad"], [good, "sgood"]].forEach(([v, cls]) => {
+    svg.append(s("line", {x1: Lm, x2: W - R, y1: Y(v), y2: Y(v), class: cls}));
+    svg.append(s("text", {x: Lm - 6, y: Y(v) + 4, "text-anchor": "end"}, fmt(v)));
+  });
+  svg.append(s("polyline", {points: pts.map((r, i) => X(i).toFixed(1) + "," + Y(r.values[metric].value).toFixed(1)).join(" "), class: "sline"}));
+  const mine = new Set(DATA.runs.map(r => r.name));
+  pts.forEach((r, i) => {
+    const c = r.values[metric], x = X(i), y = Y(c.value), d = c.direction || "same";
+    const shape = d === "better" ? s("path", {d: `M${x - 6},${y + 5} L${x + 6},${y + 5} L${x},${y - 7} Z`}) :
+      d === "worse" ? s("path", {d: `M${x - 6},${y - 5} L${x + 6},${y - 5} L${x},${y + 7} Z`}) : s("circle", {cx: x, cy: y, r: 5});
+    shape.setAttribute("class", "pt " + d + (mine.has(r.run) ? " sel" : ""));
+    shape.append(s("title", {}, r.run + ": " + fmt(c.value) + " (" + pctText(c.pct) + ")" + (c.direction ? " " + MARK[c.direction] + " " + u[c.direction] : "")));
+    svg.append(shape);
+  });
+  const names = h("div", {class: "tnames"}, ...pts.map(r => h("span", {title: r.run}, r.run)));
+  names.style.gridTemplateColumns = `repeat(${pts.length}, minmax(0, 1fr))`;
+  names.style.paddingLeft = (100 * Lm / W).toFixed(2) + "%"; names.style.paddingRight = (100 * R / W).toFixed(2) + "%";
+  const key = h("div", {class: "key"}, h("span", {}, h("i", {style: "background:var(--band)"}), u.refBand),
+    h("span", {}, h("i", {class: "l", style: "border-color:var(--limit-bad)"}), u.limitBad(DATA.rules.noise_pct)),
+    h("span", {}, h("i", {class: "l", style: "border-color:var(--limit-good)"}), u.limitGood(DATA.rules.noise_pct)));
+  return h("div", {}, svg, names, key);
+}
+
+/** Returns, for a comparison of A and B, one dumbbell per number that joins its two values on its own axis. */
+function dumbbell(compare) {
+  const u = L().ui, box = h("div", {});
+  VERDICT_KEYS.filter(k => compare[k]).forEach(k => {
+    const c = compare[k], d = direction(k, c);
+    if (DATA.not_comparable.includes(k)) return box.append(h("div", {class: "drow"}, h("strong", {}, metricLabel(k)), " ", h("span", {class: "note"}, u.notComparable)));
+    if (c.a === null || c.a === undefined || c.b === null || c.b === undefined) return;
+    const gap = Math.abs(c.b - c.a), room = Math.max(gap, Math.abs(Math.max(c.a, c.b)) * 0.02) || 1;
+    const at = scale([Math.min(c.a, c.b) - room, Math.max(c.a, c.b) + room]);
+    const track = h("div", {class: "track"}), line = h("div", {class: "dline"});
+    line.style.left = at(Math.min(c.a, c.b)); line.style.width = `calc(${at(Math.max(c.a, c.b))} - ${at(Math.min(c.a, c.b))})`;
+    track.append(line);
+    [["a", c.a, "A"], ["b", c.b, "B"]].forEach(([cls, v, letter]) => {
+      const dot = h("div", {class: "dot " + cls}), tag = h("div", {class: "dtag"}, letter);
+      dot.style.left = tag.style.left = at(v);
+      track.append(dot, tag);
+    });
+    track.style.marginTop = "16px";
+    box.append(h("div", {class: "drow"}, h("div", {}, h("strong", {}, metricLabel(k)),
+      h("span", {class: "note"}, fmt(c.a) + " → " + fmt(c.b) + " · " + pctText(c.change_pct) + (d ? " " + (d === "same" ? MARK.same : MARK[d]) + " " + u[d] : ""))), track));
+  });
+  box.append(h("p", {class: "note"}, u.dumbNote));
+  return box;
+}
+
+/** Returns the verdict of one run against the reference: a ring with the word, the one-line reading and the noise. */
+function verdictCard(i, run, check) {
+  const u = L().ui, t = DATA.tests, v = check.verdict || "none";
+  const ring = h("div", {class: "ring " + v}, h("b", {}, VMARK[v] + " " + u["v_" + v]), h("span", {class: "lbl"}, "perf_check"));
+  const names = list => list.map(x => metricLabel(x.metric)).join(", ");
+  const body = h("div", {class: "vbody"});
+  if (v === "none") body.append(h("h3", {}, runName(i, true), " " + u.cantJudge), h("p", {class: "note"}, check.error || ""));
+  else {
+    body.append(h("h3", {}, u["hl_" + v](run, v === "regressed" ? names(check.regressed || []) : names(check.improved || []))));
+    const spread = Object.entries(t.spread_pct || {}).filter(([, p]) => p !== null).map(([m, p]) => u.varies(metricLabel(m), fmt(p, 1)));
+    body.append(h("p", {class: "note"}, u.noise(t.baseline, spread.join(", "))));
+    if ((check.unchecked || []).length) body.append(h("p", {class: "note"}, u.unchecked(check.unchecked.map(metricLabel).join(", "))));
+  }
+  return h("div", {class: "verdict"}, ring, body);
+}
+
+/** Returns true when some recording has the data a section draws. */
+function hasData(id) {
+  const any = f => DATA.runs.some(r => f(r.has || {}));
+  return {tests: () => true, summary: () => true, data: () => true, ab: () => DATA.runs.length === 2 && !!DATA.compare,
+    frames: () => any(x => x.frames), encoders: () => any(x => x.encoders), counters: () => any(x => x.counters),
+    memory: () => any(x => x.memory || x.thermal)}[id]();
+}
+
+/** Returns true when the section has data and the layout does not switch it off. */
+function sectionShown(id) {
+  const w = layout.find(x => x.id === id);
+  return (!w || w.on) && hasData(id);
+}
+
+/** Returns the trend's metric: the viewer's choice when the reference has it, else the project's main one, else the first. */
+function trendOf() {
+  const have = Object.keys(DATA.tests.range).filter(m => DATA.tests.range[m]);
+  return have.includes(trendMetric) ? trendMetric : have.includes(DATA.primary) ? DATA.primary : have[0];
+}
+
+const SECTIONS = {
+  tests(card) {
+    const u = L().ui, t = DATA.tests;
+    card.append(h("div", {class: "lbl"}, u.tests));
+    if (!t) return card.append(h("div", {class: "card dashed"}, h("strong", {}, u.noRefTitle), h("p", {class: "note"}, L().h[DATA.tests_hint] || "")));
+    const verdicts = h("div", {class: "card verdicts"});
+    DATA.runs.forEach((r, i) => verdicts.append(verdictCard(i, r.name, t.checks[r.name] || {verdict: null, error: ""})));
+    card.append(verdicts);
+    const where = h("div", {class: "card"}, h("h2", {}, u.where));
+    let drawn = 0;
+    DATA.runs.forEach((r, i) => {
+      const rows = Object.keys(t.range).map(m => rangeBar(m, t.checks[r.name] || {}, t)).filter(Boolean);
+      if (DATA.runs.length > 1 && rows.length) where.append(h("p", {class: "note"}, runName(i)));
+      rows.forEach(row => where.append(row));
+      drawn += rows.length;
+    });
+    where.append(h("div", {class: "key"}, h("span", {}, h("i", {style: "background:var(--band)"}), u.refBand),
+      h("span", {}, h("i", {class: "l", style: "border-color:var(--limit-bad)"}), u.limitBad(DATA.rules.noise_pct)),
+      h("span", {}, h("i", {class: "l", style: "border-color:var(--limit-good)"}), u.limitGood(DATA.rules.noise_pct))));
+    if (drawn) card.append(where);
+    if (!DATA.changes || !DATA.changes.runs.length) return card.append(h("div", {class: "card"}, h("p", {class: "note"}, u.noBuilds)));
+    card.append(h("div", {class: "card"}, h("h2", {}, u.heat), heatmap(DATA.changes), h("p", {class: "note"}, u.heatNote(DATA.rules.noise_pct, Math.min(8, DATA.changes.runs.length)))));
+    const seg = h("div", {class: "seg"}), now = trendOf();
+    Object.keys(t.range).filter(m => t.range[m]).forEach(m => {
+      const b = h("button", {type: "button", "aria-pressed": String(m === now), "data-k": "trend-" + m}, metricLabel(m));
+      b.addEventListener("click", () => { trendMetric = m; draw(); });
+      seg.append(b);
+    });
+    card.append(h("div", {class: "card"}, h("h2", {}, u.trend), seg, trend(DATA.changes, now)));
+  },
   summary(card) {
-    const u = L().ui;
-    warnings().forEach(w => card.append(h("p", {class: "warn"}, w)));
+    const u = L().ui, main = DATA.primary, gpuFirst = main === "gpu_ms_mean";
     card.append(h("h2", {}, u.verdict));
     if (DATA.runs.length === 2 && DATA.compare) {
       const [a, b] = DATA.runs;
       card.append(h("p", {class: "note"}, u.pair(a.name, b.name)));
       const list = h("ul");
-      VERDICT_KEYS.filter(k => DATA.compare[k]).forEach(k => {
+      [main, ...VERDICT_KEYS.filter(k => k !== main)].filter(k => DATA.compare[k]).forEach(k => {
         const c = DATA.compare[k], d = direction(k, c);
         list.append(h("li", {}, metricName(k), ": " + fmt(c.a) + " " + u.to + " " + fmt(c.b) +
           (c.change_pct === null || c.change_pct === undefined ? "" : " (" + (c.change_pct > 0 ? "+" : "") + fmt(c.change_pct, 1) + " %)") +
           " — " + (d ? u[d] : DATA.not_comparable.includes(k) ? u.notComparable : u.unknown)));
       });
-      const na = a.hitches ? a.hitches.count : null, nb = b.hitches ? b.hitches.count : null;
+      const na = metric(a, "hitches"), nb = metric(b, "hitches");
       if (na !== null && nb !== null) list.append(h("li", {}, metricName("hitches"), ": " + na + " " + u.to + " " + nb));
       card.append(list);
     } else {
       DATA.runs.forEach(r => {
         const causes = r.hitches && r.hitches.causes ? Object.keys(r.hitches.causes)[0] : "";
-        card.append(h("p", {}, u.single(r.name, fmt(metric(r, "fps"), 1), fmt(metric(r, "fps_1pct_low"), 1), fmt(metric(r, "hitches"), 0), causes)));
+        card.append(h("p", {}, gpuFirst ? u.singleGpu(r.name, fmt(metric(r, "gpu_ms_mean"), 2), fmt(metric(r, "fps"), 1), fmt(metric(r, "hitches"), 0), causes) :
+          u.single(r.name, fmt(metric(r, "fps"), 1), fmt(metric(r, "fps_1pct_low"), 1), fmt(metric(r, "hitches"), 0), causes)));
       });
     }
+    if (gpuFirst) card.append(h("p", {class: "note"}, L()["profile_translation-layer"]));
     card.append(h("h2", {style: "margin-top:12px"}, u.cards));
     const grid = h("div", {class: "cards"});
-    CARD_KEYS.forEach(k => {
-      const box = h("div", {class: "card"}, h("div", {class: "label"}, metricName(k)));
-      DATA.runs.forEach((r, i) => box.append(h("div", {}, runName(i, true), h("div", {class: "big"}, fmt(metric(r, k), k === "hitches" ? 0 : 1)))));
+    [main, ...CARD_KEYS.filter(k => k !== main)].forEach((k, n) => {
+      const box = h("div", {class: n === 0 ? "card main" : "card"}, h("div", {class: "label"}, metricName(k), n === 0 ? h("small", {}, u.main) : ""));
+      DATA.runs.forEach((r, i) => box.append(h("div", {}, runName(i, true), h("div", {class: "big"}, fmt(metric(r, k), k === "hitches" ? 0 : k === "gpu_ms_mean" ? 2 : 1)))));
       grid.append(box);
     });
     card.append(grid);
     const how = h("ul");
     L().scope.forEach(x => how.append(h("li", {}, x)));
+    const rule = L()["profile_" + ((DATA.project || {}).profile || "generic")];
+    if (rule && !gpuFirst) how.append(h("li", {}, rule));
     card.append(h("h2", {style: "margin-top:12px"}, u.scope), how);
   },
   frames(card) {
@@ -474,6 +815,7 @@ const TABS = {
         return [L().m[k] ? metricName(k) : k, fmt(c.a), fmt(c.b), fmt(c.change), c.change_pct === null ? "–" : fmt(c.change_pct, 1) + " %", d ? u[d] : DATA.not_comparable.includes(k) ? u.notComparable : u.unknown];
       })));
     card.append(h("p", {class: "note"}, u.pair(DATA.runs[0].name, DATA.runs[1].name)));
+    card.append(h("h2", {style: "margin-top:12px"}, u.dumb), dumbbell(DATA.compare));
   },
   data(card) {
     const ids = ["fps", "fps_1pct_low", "fps_01pct_low", "gpu_ms_p50", "gpu_ms_p95", "gpu_ms_max", "frame_interval_ms_p95", "frame_jitter_ms",
@@ -491,18 +833,30 @@ const TABS = {
   },
 };
 
-/** Returns the saved layout (tab ids with on/off), or the preset's when nothing valid is saved. */
+
+/** Returns true when `list` is a list of {id, on} with ids the page draws. */
+function validLayout(list) {
+  return Array.isArray(list) && list.every(w => w && IDS.includes(w.id) && typeof w.on === "boolean");
+}
+
+/** Returns `list` with `tests`, the page's lead, added first and on when it does not name it: a layout saved or written
+ * before that section existed keeps its order and gains it. Any other section it leaves out stays hidden. */
+function complete(list) {
+  return list.some(w => w.id === "tests") ? list : [{id: "tests", on: true}, ...list];
+}
+
+/** Returns the saved layout (section ids with on/off), or the preset's when nothing valid is saved. */
 function loadLayout() {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY));
-    if (Array.isArray(saved) && saved.every(w => TABS[w.id] && typeof w.on === "boolean")) return saved;
+    if (validLayout(saved)) return complete(saved);
   } catch (e) { /* storage blocked or empty */ }
   return defaultLayout();
 }
 
-/** Returns the layout the file panel.json gave, or the preset's tabs all on. */
+/** Returns the layout the file panel.json gave, or the preset's sections all on. */
 function defaultLayout() {
-  return DATA.layout || PRESETS[DATA.preset].map(id => ({id, on: true}));
+  return complete(DATA.layout || PRESETS[DATA.preset].map(id => ({id, on: true})));
 }
 
 /** Saves the layout where the browser allows it and draws the panel again. */
@@ -512,9 +866,67 @@ function setLayout(next) {
   draw();
 }
 
-/** Draws the title, tabs and the active tab's content. */
+/** Draws the project's name, profile and reference. */
+function drawProject() {
+  const u = L().ui, p = DATA.project || {}, t = DATA.tests;
+  document.getElementById("project").replaceChildren(h("span", {class: "lbl"}, u.project), h("strong", {}, p.name || u.noProject),
+    h("span", {class: "pill"}, u.profile + " " + (p.profile || "generic")),
+    t ? h("span", {class: "pill ok"}, u.ref(t.baseline, t.runs.length, DATA.rules.noise_pct)) : h("span", {class: "pill"}, u.noRef));
+}
+
+/** Draws the warnings the payload carries as tags; an id this page has no text for shows as itself. */
+function drawTags() {
+  const texts = L().w;
+  document.getElementById("tags").replaceChildren(...DATA.warnings.map(w => h("span", {class: "tag"}, texts[w.id] ? texts[w.id](w.run) : w.id)));
+}
+
+/** Draws the tray of what the recordings did not collect, each with its reason. */
+function drawMissing() {
+  const u = L().ui, box = document.getElementById("missing"), tray = h("div", {class: "tray"});
+  DATA.runs.forEach((r, i) => (r.missing || []).forEach(m => tray.append(h("div", {}, h("strong", {}, L().s[m.id] || m.id),
+    DATA.runs.length > 1 ? h("small", {}, runName(i, true)) : "", h("div", {class: "note"}, reasonText(m.reason))))));
+  box.hidden = !tray.children.length;
+  box.replaceChildren(h("div", {class: "lbl"}, u.missing), h("p", {class: "note"}, u.missingNote), tray);
+}
+
+/** Scrolls to an element of the page. */
+function goTo(id) {
+  const el = document.getElementById(id), calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (el) { el.tabIndex = -1; el.scrollIntoView({behavior: calm ? "auto" : "smooth", block: "start"}); el.focus({preventScroll: true}); }
+}
+
+/** Draws the "go to" index; while editing, the switches and arrows that show, hide and reorder the sections. */
+function drawNav() {
+  const u = L().ui, nav = document.getElementById("goto");
+  nav.replaceChildren();
+  if (editing) {
+    layout.forEach((w, i) => {
+      if (!hasData(w.id)) return;
+      const tab = h("button", {type: "button", "aria-pressed": String(w.on), "data-k": "on-" + w.id}, u[w.id]);
+      tab.addEventListener("click", () => setLayout(layout.map((x, j) => j === i ? {...x, on: !x.on} : x)));
+      nav.append(tab);
+      [[-1, "↑"], [1, "↓"]].forEach(([d, glyph]) => {
+        const b = h("button", {type: "button", "data-k": "move-" + w.id + d, "aria-label": glyph + " " + u[w.id]}, glyph);
+        b.addEventListener("click", () => {
+          let j = i + d;
+          while (j >= 0 && j < layout.length && !hasData(layout[j].id)) j += d;
+          if (j < 0 || j >= layout.length) return;
+          const next = layout.slice(); [next[i], next[j]] = [next[j], next[i]]; setLayout(next);
+        });
+        nav.append(b);
+      });
+    });
+    return;
+  }
+  nav.append(h("span", {class: "lbl"}, u.goto));
+  const go = (id, label) => { const b = h("button", {type: "button"}, label); b.addEventListener("click", () => goTo(id)); nav.append(b); };
+  layout.filter(w => sectionShown(w.id)).forEach(w => go("sec-" + w.id, u[w.id]));
+  if (!document.getElementById("missing").hidden) go("missing", u.missing);
+}
+
+/** Draws the whole page: title, project, warnings, the "go to" index, the sections with data and the tray of what is missing. */
 function draw() {
-  const u = L().ui;
+  const u = L().ui, held = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.k : null;
   document.documentElement.lang = lang;
   document.getElementById("title").textContent = u.title;
   document.getElementById("lang").textContent = lang === "es" ? "EN" : "ES";
@@ -523,37 +935,20 @@ function draw() {
   document.getElementById("layout").hidden = !editing;
   document.getElementById("layout-apply").textContent = u.apply;
   document.getElementById("layout-reset").textContent = u.reset;
-  document.getElementById("runs").textContent = DATA.runs.map(r => r.name + (r.layer ? " (" + r.layer + ")" : "")).join(u.vs);
-  const shows = w => !(w.id === "ab" && DATA.runs.length < 2) && !(w.id === "encoders" && !DATA.runs.some(r => r.encoders.length)) && !(w.id === "counters" && !DATA.runs.some(r => r.counters));
-  const visible = layout.filter(w => w.on && shows(w));
-  if (!visible.some(w => w.id === active)) active = visible.length ? visible[0].id : "";
-  const tabs = document.getElementById("tabs");
-  tabs.replaceChildren();
-  layout.forEach((w, i) => {
-    if (!shows(w) || (!w.on && !editing)) return;
-    const tab = h("button", {role: "tab", "aria-selected": String(w.id === active), "aria-pressed": String(w.on)}, u[w.id]);
-    if (editing) tab.removeAttribute("role");
-    tab.addEventListener("click", () => {
-      if (editing) return setLayout(layout.map((x, j) => j === i ? {...x, on: !x.on} : x));
-      active = w.id; draw();
-    });
-    tabs.append(tab);
-    if (editing) {
-      [[-1, "↑"], [1, "↓"]].forEach(([d, glyph]) => {
-        const b = h("button", {"aria-label": glyph + " " + u[w.id]}, glyph);
-        b.addEventListener("click", () => {
-          const j = i + d;
-          if (j < 0 || j >= layout.length) return;
-          const next = layout.slice(); [next[i], next[j]] = [next[j], next[i]]; setLayout(next);
-        });
-        tabs.append(b);
-      });
-    }
-  });
   if (editing) document.getElementById("layout-json").value = JSON.stringify(layout);
-  const panel = document.getElementById("panel");
-  panel.replaceChildren();
-  if (active) { const card = h("section", {class: "card"}); TABS[active](card); panel.append(card); }
+  document.getElementById("runs").textContent = DATA.runs.map(r => r.name + (r.layer ? " (" + r.layer + ")" : "")).join(u.vs);
+  drawProject();
+  drawTags();
+  drawMissing();
+  drawNav();
+  document.getElementById("sections").replaceChildren(...layout.filter(w => sectionShown(w.id)).map(w => {
+    const card = h("section", {class: w.id === "tests" ? "stack" : "card", id: "sec-" + w.id});
+    if (w.id !== "tests") card.append(h("div", {class: "lbl"}, u[w.id]));
+    SECTIONS[w.id](card);
+    return card;
+  }));
+  const back = held ? document.querySelector(`[data-k="${held}"]`) : null;
+  if (back) back.focus({preventScroll: true});
 }
 
 document.getElementById("lang").addEventListener("click", () => {
@@ -565,7 +960,7 @@ document.getElementById("edit").addEventListener("click", () => { editing = !edi
 document.getElementById("layout-apply").addEventListener("click", () => {
   try {
     const next = JSON.parse(document.getElementById("layout-json").value);
-    if (Array.isArray(next) && next.every(w => TABS[w.id] && typeof w.on === "boolean")) setLayout(next);
+    if (validLayout(next)) setLayout(complete(next));
   } catch (e) { /* invalid JSON is ignored */ }
 });
 document.getElementById("layout-reset").addEventListener("click", () => setLayout(defaultLayout()));

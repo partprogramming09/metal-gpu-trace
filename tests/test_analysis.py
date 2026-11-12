@@ -1,6 +1,7 @@
 """Tests of the analysis tools: compare, baseline, gate, history, panel, diagnose, A/B, sweep and cold/warm."""
 import json
 import os
+import re
 
 import support  # noqa: F401  (puts src/ on sys.path)
 
@@ -361,10 +362,10 @@ def test_panel(tmp_path):
         assert str(tmp_path) not in html and evil not in html, "no path and no raw </script> in the page"
         assert html.count("<script") == 1 and "default-src 'none'" in html
         assert html.count("runName(i, true)") >= 3 and html.count("cTitle:") == 2 and "working set" in html, "short run names in cards and tables; the RSS note"
-        assert html.count("wBottleneck:") == 2 and "direction(\"fps\", DATA.compare.fps)" in html, "the FPS-worse-GPU-better warning"
-        assert html.count("shader_compile:") == 2 and all(f'{tab}(card)' in html for tab in ("summary", "frames", "memory", "ab", "data", "encoders", "counters")), \
-            "both languages explain the causes and every tab exists"
-        payload = json.loads(html.split("let DATA = ", 1)[1].split(";\nconst COLORS", 1)[0].replace("\\u003c", "<"))
+        assert html.count("gpu_not_limit:") == 2 and "function warnings(" not in html, "the FPS-worse-GPU-better warning is the payload's"
+        assert html.count("shader_compile:") == 2 and all(f'{tab}(card)' in html for tab in panel.TAB_IDS), \
+            "both languages explain the causes and every section exists"
+        payload = payload_of(html)
         run = payload["runs"][0]
         assert run["marks"] == [[3260.0, 4.0, 60.0, evil, 120.0]] and [3260.0, 4.0] in run["frames"], run["marks"]
         assert len(run["frames"]) < 60 and run["memory"] == [[0.0, 1.0], [100.0, 2.0]], len(run["frames"])
@@ -381,6 +382,75 @@ def test_panel(tmp_path):
                 pass
     finally:
         config.OUT, config.PANEL_POINTS = saved, saved_points
+
+def payload_of(html):
+    """Returns the payload a saved panel holds."""
+    return json.loads(html.split("let DATA = ", 1)[1].split(";\nconst COLORS", 1)[0].replace("\\u003c", "<"))
+
+def test_panel_page_draws_from_the_payload(tmp_path):
+    """The page has a text in each language for every reason, warning and hint the payload can carry, a place for what
+    was not recorded, and nothing it loads or builds from data as markup."""
+    from metal_gpu_trace import config, panel
+
+    (tmp_path / "a.json").write_text(json.dumps(_warn_summary(60.0, 4.0, 400, 60.0, {"none": "native"})))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        html = (tmp_path / panel.tool_perf_panel("p", ["a"])["file"]).read_text()
+    finally:
+        config.OUT = saved
+    for key in panel.REASONS + ("short_wine", "few_frames", "summary_only", "gpu_not_limit", "skip_applied", "single_run_each",
+                                "layers_differ", "windows_vs_metal", "reference_skip"):
+        assert html.count(f"{key}:") == 2, key                  # one text per language
+    labels = re.findall(r"\n    s: \{([^\n]*)\}", html)
+    assert len(labels) == 2 and all(f"{section}:" in text for text in labels for section in panel.SECTIONS), labels   # a label per section and language
+    assert "named.has" not in html and 'list.some(w => w.id === "tests")' in html and "IDS.includes(w.id)" in html, "only tests is added to a layout; no inherited key is a section"
+    assert "const NOISE_PCT" not in html, "the margin comes from the payload"
+    assert "function sectionShown(" in html and 'id="missing"' in html and 'id="goto"' in html
+    assert not re.search(r'(src|href)\s*=\s*["\']?https?:', html)   # the SVG namespace (http://www.w3.org/2000/svg) may be there
+    assert html.count("<script") == 1 and "default-src 'none'" in html and not any(x in html for x in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function"))
+
+def test_panel_page_tests_mode(tmp_path):
+    """The page draws the verdict, the range bars, the heat map, the trend and the dumbbell from the payload, and says what
+    to do when the project has no reference."""
+    from metal_gpu_trace import analysis, config, panel
+
+    frames = "frame,start_ms,gpu_ms_total\n" + "".join(f"{i + 1},{i * 16.0},4.0\n" for i in range(200))
+    for name, fps in (("r1", 62.4), ("r2", 62.4), ("r3", 62.2), ("new", 63.0)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(_change_summary("g", fps)))
+        (tmp_path / f"{name}.frames.csv").write_text(frames)
+    saved = config.OUT, config.BASELINES, config.PROJECT
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"])
+        config.PROJECT = {"name": "p", "profile": "generic", "baseline": "ref", "format": "metal-gpu-trace", "runs": tmp_path}
+        html = (tmp_path / panel.tool_perf_panel("p", ["new"])["file"]).read_text()
+    finally:
+        config.OUT, config.BASELINES, config.PROJECT = saved
+    payload = payload_of(html)
+    assert payload["tests"]["checks"]["new"]["verdict"] in ("same", "improved", "regressed") and payload["changes"]["runs"]
+    for fn in ("function rangeBar(", "function heatmap(", "function trend(", "function dumbbell(", "function verdictCard("):
+        assert fn in html, fn
+    for key in ("no_project_baseline", "baseline_not_found", "perf_baseline_record"):
+        assert html.count(f"{key}:" if key != "perf_baseline_record" else key) == 2, key
+    for verdict in ("same", "improved", "regressed"):
+        assert html.count(f"v_{verdict}:") == 2, verdict
+
+def test_panel_page_profile(tmp_path):
+    """The page explains each project profile in both languages, and a translation-layer project leads with GPU ms."""
+    from metal_gpu_trace import config, panel, project
+
+    (tmp_path / "a.json").write_text(json.dumps(_warn_summary(60.0, 4.0, 400, 60.0, {"none": "native"})))
+    saved, saved_project, config.OUT = config.OUT, config.PROJECT, tmp_path
+    try:
+        config.PROJECT = {"name": "p", "profile": "translation-layer", "baseline": None, "format": "metal-gpu-trace", "runs": tmp_path}
+        html = (tmp_path / panel.tool_perf_panel("p", ["a"])["file"]).read_text()
+        assert payload_of(html)["primary"] == "gpu_ms_mean" and payload_of(html)["project"]["profile"] == "translation-layer"
+    finally:
+        config.OUT, config.PROJECT = saved, saved_project
+    for name in project.PROFILES:
+        assert html.count(f'"profile_{name}":') == 2, name       # one text per language
+    assert "vsync" in html and "percentil 99" in html and "99th percentile" in html, "the definitions say what a number is here"
+    assert "singleGpu:" in html and html.count("main:") >= 2, "the headline and the first card follow the main metric"
 
 def test_panel_opens_a_run_without_frames(tmp_path):
     """A run with no frames.csv opens with its summary numbers and no curves; trimming the start-up still needs the frames."""
@@ -496,7 +566,8 @@ def test_panel_tests_mode(tmp_path):
         assert t["range"]["fps"] == {"min": 62.2, "max": 62.4} and "fps" in t["spread_pct"]
         for run in ("new", "old"):
             check = analysis.tool_perf_check(run, "ref")
-            assert t["checks"][run] == {k: check[k] for k in ("verdict", "regressed", "improved", "unchecked")}, t["checks"][run]
+            assert {k: v for k, v in t["checks"][run].items() if k != "values"} == {k: check[k] for k in ("verdict", "regressed", "improved", "unchecked")}, t["checks"][run]
+        assert t["checks"]["new"]["values"] == {"fps": 63.0, "gpu_ms_mean": 4.0, "encoders_per_frame_p50": 7, "command_buffers_per_frame_p50": 5}, t["checks"]["new"]
         assert "comparison" not in json.dumps(t) and str(tmp_path) not in json.dumps(got)
         config.PROJECT["baseline"] = "ref2"
         got = panel.panel_data(["new", "old"])
@@ -779,7 +850,10 @@ def test_layout(tmp_path):
         html = (tmp_path / "p.panel.html").read_text()
         payload = json.loads(html.split("let DATA = ", 1)[1].split(";\nconst COLORS", 1)[0])
         assert payload["layout"] == saved_layout and panel.panel_data(["a"])["layout"] == saved_layout
-        assert "defaultLayout()" in html
+        assert "defaultLayout()" in html and panel.TAB_IDS[0] == "tests" and next(w for w in saved_layout if w["id"] == "tests")["on"] is False
+        (tmp_path / "panel.json").write_text(json.dumps([{"id": i, "on": True} for i in panel.TAB_IDS if i != "tests"]))
+        assert "tests" not in [w["id"] for w in panel.panel_data(["a"])["layout"]], "a panel.json from before the tests section is valid"
+        (tmp_path / "panel.json").write_text(json.dumps(saved_layout))
         panel.tool_perf_panel("q", ["a"])  # a panel without layout keeps the saved one
         assert json.loads((tmp_path / "panel.json").read_text()) == saved_layout
         for bad in ("summary", ["nope"]):

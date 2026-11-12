@@ -142,7 +142,7 @@ TOOLS = {
                                                              "is A, the reference"},
          "preset": {**S, "description": "fps (default) or compare (needs two runs)"},
          "skip_s": {"type": "number", "description": SKIP},
-         "layout": {"type": "array", "items": S, "description": "tabs to show, in order: summary, ab, frames, encoders, counters, memory, data; "
+         "layout": {"type": "array", "items": S, "description": "tabs to show, in order: tests, summary, ab, frames, encoders, counters, memory, data; "
                                                                 "saved as panel.json in the runs directory as the default for every panel"}},
         ["name", "runs"]),
         hints("Write an HTML panel", destructive=False, idempotent=True)),

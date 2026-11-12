@@ -120,6 +120,8 @@ def tests_mode(runs, baseline):
         try:
             result = analysis.tool_perf_check(run, baseline, margin_pct=RULES["noise_pct"])
             checks[run] = {k: result[k] for k in ("verdict", "regressed", "improved", "unchecked")}
+            seen = analysis.steady_summary(run, saved.get("skip_s", 0))
+            checks[run]["values"] = {m: metric_value(m, seen) for m in analysis.CHECKED}
             if len(result["unchecked"]) == len(analysis.CHECKED):  # perf_check says same when it checked nothing
                 checks[run] = {"verdict": None, "error": f"{run} has no number perf_check can judge; record it again"}
         except paths.ToolError as error:
@@ -188,12 +190,13 @@ def changes_against(baseline, limit=8):
     return {"metrics": list(CHANGE_METRICS), "reference": reference, "runs": runs}
 
 
-TAB_IDS = ("summary", "ab", "frames", "encoders", "counters", "memory", "data")
+TAB_IDS = ("tests", "summary", "ab", "frames", "encoders", "counters", "memory", "data")
 
 
 def read_layout():
-    """Returns the panel layout saved as panel.json in the runs directory, a list of {id, on} tabs, or None when there is
-    none; a file that is not that list raises ToolError."""
+    """Returns the panel layout saved as panel.json in the runs directory, a list of {id, on} sections, or None when there
+    is none; a file that is not that list raises ToolError. A file from before a section existed is valid: the page
+    shows the sections it does not name."""
     path = config.OUT / "panel.json"
     if not path.exists():
         return None
@@ -247,8 +250,9 @@ def tool_perf_panel(name, runs, preset="fps", skip_s=0, layout=None):
     puts A against B first. skip_s leaves out the first seconds of each recording (the start-up), as perf_compare does.
     layout (tab ids in the order to show) is saved as panel.json in the runs directory and becomes the default tab
     order of every panel, the live one too, until the viewer changes it in the browser; ids left out are hidden but
-    can be switched back on; tabs are summary, ab, frames, encoders, counters, memory and data, and a panel.json
-    you wrote yourself, or copied from the panel's Layout JSON, works the same.
+    can be switched back on; tabs are tests (each run against the project's reference), summary, ab, frames, encoders, counters,
+    memory and data (a panel.json that does not name tests shows it first; one that leaves out any other keeps it hidden),
+    and a panel.json you wrote yourself, or copied from the panel's Layout JSON, works the same.
     Returns the file name, the runs, the frames shown and the file's bytes."""
     if not paths.name_ok(name):
         raise paths.ToolError("a panel name holds only letters, digits, '.', '_' and '-'")

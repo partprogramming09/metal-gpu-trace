@@ -24,6 +24,12 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   reference cut differently); with a project `baseline` it adds `tests` (`perf_check`'s verdict for each run, or why
   one cannot be judged) and `changes` (each recent build of the same program against the reference, judged by the
   same rule, now `analysis.judge`).
+- The panel page is redrawn from that data: the project bar and the reference check come first (the verdict of each run,
+  its place inside the reference's range, a heat map and a trend of the newest builds, and a dumbbell for A against B),
+  then one page with the warnings as tags, a "go to" index, only the sections the recordings have data for, and a tray
+  "Not collected" that says why each missing piece is missing and what to do. A `translation-layer` project leads with GPU ms
+  per frame and says why; the definitions say what a 1% low is here. `tests` is a new section id of `panel.json` (first by
+  default); a `panel.json` without it is still valid and gains it. Each check in `tests` carries the run's own `values`.
 
 ## 0.23.0 — 2026-11-11
 
