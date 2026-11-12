@@ -1,7 +1,12 @@
 """Names and paths the tools accept, and paging: what a caller may read and how it names a run."""
+import json
 import pathlib
 
 from metal_gpu_trace import config
+
+
+MALFORMED = (KeyError, TypeError, AttributeError, ValueError, OverflowError, RecursionError)  # what a file of the wrong shape raises
+LAYOUT_FILE = "panel.json"  # the panel layout: in the runs folder, but not a recording
 
 
 class ToolError(Exception):
@@ -16,9 +21,12 @@ def allowed(path, roots=None):
     return resolved
 
 
-def name_ok(name):
-    """Returns whether `name` holds only letters, digits, '.', '_' and '-'."""
-    return name.replace("-", "").replace("_", "").replace(".", "").isalnum()
+def name_ok(name, limit=120):
+    """Returns whether `name` is a string of at most `limit` bytes of letters, digits, '.', '_' and '-' (the files it
+    names add a suffix, and a file name holds 255 bytes). A recording's label takes a lower limit: the run is named
+    after it with the date and time added."""
+    return (isinstance(name, str) and 0 < len(name.encode(errors="replace")) <= limit
+            and name.replace("-", "").replace("_", "").replace(".", "").isalnum())
 
 
 def run_path(run):
@@ -26,9 +34,23 @@ def run_path(run):
     if not name_ok(run):
         raise ToolError("a run name holds only letters, digits, '.', '_' and '-'; take it from perf_runs")
     path = config.OUT / f"{run}.json"
-    if path == config.BASELINES or not path.exists():
+    if path.name.casefold() in (config.BASELINES.name.casefold(), LAYOUT_FILE) or not path.exists():
         raise ToolError(f"no run {run}; perf_runs lists them")
     return path
+
+
+def read_object(path, what):
+    """Returns the JSON object in a file the recorder or the user left in the runs folder, or raises ToolError naming
+    `what` (never the path) when it cannot be read, is not JSON, is nested too deep or is not an object."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, RecursionError):  # also UnicodeDecodeError
+        raise ToolError(f"{what} is not valid JSON; record it again") from None
+    except OSError:
+        raise ToolError(f"{what} cannot be read") from None
+    if not isinstance(data, dict):
+        raise ToolError(f"{what} is not a JSON object; record it again")
+    return data
 
 
 def trace_path(trace):
@@ -51,7 +73,7 @@ def check_skip(skip_s):
     """Returns `skip_s` as a number of seconds from 0 to 600, or raises ToolError."""
     try:
         skip = float(skip_s or 0)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise ToolError("skip_s is a number of seconds") from None
     if not 0 <= skip <= 600:
         raise ToolError("skip_s is 0 to 600 seconds")

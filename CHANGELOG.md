@@ -30,6 +30,19 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   "Not collected" that says why each missing piece is missing and what to do. A `translation-layer` project leads with GPU ms
   per frame and says why; the definitions say what a 1% low is here. `tests` is a new section id of `panel.json` (first by
   default); a `panel.json` without it is still valid and gains it. Each check in `tests` carries the run's own `values`.
+- Files in the runs folder that are cut short or in the wrong form no longer break the panel, `perf_runs` or
+  `perf_history`: a `.frames.csv` or `.metal_memory.csv` leaves out the lines it cannot read (a last line cut short, a
+  value that is not a finite number), a link to nothing, a summary still being written or one of the wrong type is
+  skipped in the listings, and in the panel a summary or `baselines.json` of the wrong form, too deep or not UTF-8 gives
+  an error that names the file and not its path. `perf_compare`, `perf_check`, `perf_gate` and `perf_diagnose` still
+  answer `internal error` (no path) to a summary whose sections have the wrong type. `perf_runs`, `perf_history` and
+  the run names no longer take `panel.json` for a recording, whatever its case on a volume that ignores it.
+- `perf_panel` checks everything before it writes (a call that fails leaves `panel.json` as it was, and a new `layout`
+  replaces a `panel.json` that cannot be read), will not write over a link, and turns NaN and infinity into null.
+  Its curves now keep at most 5000 points (the step rounds up; before, a recording of fewer than twice the limit kept every point), and with
+  `skip_s` the Metal memory curve starts where the cut does, as the numbers do.
+- Run, prefix and panel names hold up to 120 bytes; a recording's label up to 100, so the run it makes (the label,
+  the date and the time) stays within the limit.
 
 ## 0.23.0 — 2026-11-11
 

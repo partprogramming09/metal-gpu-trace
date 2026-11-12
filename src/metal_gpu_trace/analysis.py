@@ -2,10 +2,25 @@
 import collections
 import csv
 import json
+import math
 import statistics
 import time
 
 from metal_gpu_trace import config, metrics, paths, perf_report, recording
+
+
+def _recordings(pattern="*.json"):
+    """Returns the summaries in the runs folder that match `pattern`, oldest first: not baselines.json or panel.json,
+    which are not recordings, nor a link to nothing."""
+    found = []
+    for path in config.OUT.glob(pattern):
+        if path.name in (config.BASELINES.name, paths.LAYOUT_FILE):
+            continue
+        try:
+            found.append((path.stat().st_mtime, path))
+        except OSError:
+            continue
+    return [path for _, path in sorted(found, key=lambda f: f[0])]
 
 
 def tool_perf_runs(offset=0, limit=50):
@@ -13,20 +28,18 @@ def tool_perf_runs(offset=0, limit=50):
     layer each ran on (fingerprint and Wine, or native); project names the project they belong to (null without a
     metal-gpu-trace.json, see project_info)."""
     runs = []
-    for path in sorted(config.OUT.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        if path.name == config.BASELINES.name:
-            continue
+    for path in reversed(_recordings()):
         try:
-            s = json.loads(path.read_text(encoding="utf-8"))
-        except ValueError:  # a summary still being written
+            s = paths.read_object(path, path.name)
+            gpu = s.get("gpu") or {}
+            runs.append({"run": path.stem, "program": (s.get("process") or {}).get("arguments"),
+                         "frames": gpu.get("frames"), "fps": gpu.get("fps_estimate"),
+                         "gpu_ms_mean": (gpu.get("frame_gpu_ms") or {}).get("mean"),
+                         "metal_mib_peak": (s.get("metal_memory_mib") or {}).get("peak"),
+                         "rss_mib_max": (s.get("process_rss_mib") or {}).get("max"),
+                         "trace_kept": path.with_suffix(".trace").is_dir(), "layer": recording.layer_label(s.get("layer"))})
+        except (paths.ToolError, *paths.MALFORMED):  # a summary still being written, or a file that is not one
             continue
-        gpu = s.get("gpu", {})
-        runs.append({"run": path.stem, "program": (s.get("process") or {}).get("arguments"),
-                     "frames": gpu.get("frames"), "fps": gpu.get("fps_estimate"),
-                     "gpu_ms_mean": (gpu.get("frame_gpu_ms") or {}).get("mean"),
-                     "metal_mib_peak": (s.get("metal_memory_mib") or {}).get("peak"),
-                     "rss_mib_max": (s.get("process_rss_mib") or {}).get("max"),
-                     "trace_kept": path.with_suffix(".trace").is_dir(), "layer": recording.layer_label(s.get("layer"))})
     return {**paths.page(runs, offset, limit), "project": (config.PROJECT or {}).get("name")}
 
 
@@ -342,20 +355,17 @@ def tool_perf_history(prefix, limit=50, skip_s=0):
     memory do not compare. skip_s leaves out the first seconds of each recording (the start-up), as perf_compare does."""
     if not paths.name_ok(prefix):
         raise paths.ToolError("a prefix holds only letters, digits, '.', '_' and '-'")
-    found = []
-    for path in sorted(config.OUT.glob(f"{prefix}*.json"), key=lambda p: p.stat().st_mtime):
-        if path == config.BASELINES:
-            continue
+    rows = []
+    for path in _recordings(f"{prefix}*.json"):
         try:
             s = steady_summary(path.stem, skip_s)
-        except ValueError:  # a summary still being written
+            rows.append({"run": path.stem, "layer": recording.layer_label(s.get("layer")), "source": measurement(s),
+                         **{k: dig(s, where) for k, where in HISTORY.items()}})
+        except (paths.ToolError, *paths.MALFORMED):  # a summary still being written, or in the wrong form
             continue
-        found.append((path.stem, s))
-    if not found:
+    if not rows:
         raise paths.ToolError(f"no run starts with {prefix}; perf_runs lists them")
-    found = found[-max(1, min(int(limit), config.MAX_LIMIT)):]
-    rows = [{"run": run, "layer": recording.layer_label(s.get("layer")), "source": measurement(s),
-             **{k: dig(s, path) for k, path in HISTORY.items()}} for run, s in found]
+    rows = rows[-max(1, min(int(limit), config.MAX_LIMIT)):]
     result = {"prefix": prefix, "runs": rows,
               "change": {k: change(rows[0][k], rows[-1][k]) for k in HISTORY}}
     if len({r["source"] for r in rows}) > 1:
@@ -406,8 +416,7 @@ def read_frames(run):
     source = config.OUT / f"{run}.frames.csv"
     if not source.exists():
         raise paths.ToolError(f"{run} has no per-frame file; record it again")
-    with open(source, newline="", encoding="utf-8") as f:
-        return [(int(r["frame"]), float(r["start_ms"]), float(r["gpu_ms_total"])) for r in csv.DictReader(f)]
+    return _csv_rows(source, lambda r: (int(r["frame"]), float(r["start_ms"]), float(r["gpu_ms_total"])))
 
 
 def read_memory(run):
@@ -415,8 +424,26 @@ def read_memory(run):
     source = config.OUT / f"{run}.metal_memory.csv"
     if not source.exists():
         return []
-    with open(source, newline="", encoding="utf-8") as f:
-        return [(float(r["time_ms"]), int(r["metal_allocated_bytes"]) / 2**20) for r in csv.DictReader(f)]
+    return _csv_rows(source, lambda r: (float(r["time_ms"]), int(r["metal_allocated_bytes"]) / 2**20))
+
+
+def _csv_rows(source, row):
+    """Returns `row(r)` for each line of a recording's CSV, leaving out the lines it cannot read (the last one of a
+    recording cut short, a value that is not a finite number); a file that cannot be read at all raises ToolError."""
+    out = []
+    try:
+        with open(source, newline="", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                try:
+                    values = row(r)
+                    finite = all(math.isfinite(v) for v in values)
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    continue
+                if finite:
+                    out.append(values)
+    except (csv.Error, UnicodeDecodeError, OSError):
+        raise paths.ToolError(f"{source.name} cannot be read; record it again") from None
+    return out
 
 
 def steady_summary(run, skip_s=0):
@@ -425,7 +452,7 @@ def steady_summary(run, skip_s=0):
     first `skip_s` seconds after its first frame: the start-up, where shaders compile and resources load. The CPU use
     is dropped; the thermal state, the process memory, the encoders and the GPU idle time stay those of the whole run,
     as `steady.whole_run` says. Causes are kept only for the hitches the summary lists (the 20 longest)."""
-    s = json.loads(paths.run_path(run).read_text(encoding="utf-8"))
+    s = paths.read_object(paths.run_path(run), f"{run}.json")
     skip = paths.check_skip(skip_s)
     if not skip:
         return s
@@ -484,7 +511,7 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     share of short encoders, the labels with the most GPU time and the GPU's idle time. Read the idle time together
     with the FPS: a program waiting for vsync idles too. Defaults come from bgfx 17-drawstress on an M1 Pro: 7
     encoders per frame and 50% under 25 us under Mullion, 2 and 2% in native Metal."""
-    s = json.loads(paths.run_path(run).read_text(encoding="utf-8"))
+    s = paths.read_object(paths.run_path(run), f"{run}.json")
     encoders = s.get("encoders")
     if not encoders:
         raise paths.ToolError(f"{run} was summarized before version 0.4.0 and has no encoder numbers; record it again")

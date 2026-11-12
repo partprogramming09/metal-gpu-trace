@@ -265,8 +265,8 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
     """Runs perf_record.sh and returns the summary it wrote, stopping the whole recording and deleting its files if
     it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV, `memory` false sets PERF_MEMORY=0, and `layer`
     names the translation layer a native run goes through (MoltenVK) instead of "native Metal"."""
-    if not paths.name_ok(label):
-        raise paths.ToolError("label holds only letters, digits, '.', '_' and '-'")
+    if not paths.name_ok(label, 100):
+        raise paths.ToolError("label holds up to 100 letters, digits, '.', '_' and '-'")
     env = dict(os.environ, PERF_OUT=str(config.OUT), PERF_LOCK=str(config.LOCK), PERF_PARENT_PID=str(os.getpid()),
                PERF_ENV=" ".join(filter(None, [os.environ.get("PERF_ENV", ""), program_env])))
     if not memory:

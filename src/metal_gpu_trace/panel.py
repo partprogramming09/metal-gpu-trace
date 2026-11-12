@@ -1,6 +1,7 @@
 """The HTML panel that shows one or two runs."""
 import functools
 import json
+import math
 
 from metal_gpu_trace import analysis, config, paths, recording
 
@@ -17,7 +18,7 @@ def sections(s, has_frames, has_encoders, has_memory):
     windows = analysis.measurement(s) == "windows"
     has = {"frames": has_frames, "hitches": (s.get("hitches") or {}).get("count") is not None,
            "lows": (s.get("gpu") or {}).get("fps_1pct_low") is not None, "encoders": has_encoders,
-           "counters": s.get("gpu_counters") is not None, "memory": has_memory or (windows and bool(s.get("process_rss_mib"))),
+           "counters": s.get("gpu_counters") is not None, "memory": has_memory or (windows and (s.get("process_rss_mib") or {}).get("max") is not None),
            "thermal": s.get("thermal_state_share") is not None, "cpu": (s.get("cpu") or {}).get("mean") is not None}
     special = {"frames": "no_frames_file", "encoders": "metal_only" if windows else None, "memory": "metal_only" if windows else None,
                "counters": "metal_only" if windows else "record_with_counters", "cpu": "start_skipped" if s.get("steady") else None}
@@ -34,6 +35,11 @@ def panel_html(connect_self):
     return page.replace("default-src 'none'", "default-src 'none'; connect-src 'self'") if connect_self else page
 
 
+def _stride(count):
+    """Returns the step that keeps at most PANEL_POINTS of `count` points."""
+    return max(1, -(-count // config.PANEL_POINTS))
+
+
 def panel_run(run, skip_s=0):
     """Returns what the panel shows for one recording: numbers and labels from its summary, its GPU frames and Metal
     memory cut to PANEL_POINTS points that keep every hitch, and no path. With `skip_s`, as steady_summary. A run
@@ -41,6 +47,7 @@ def panel_run(run, skip_s=0):
     s = analysis.steady_summary(run, skip_s)
     rows = analysis.read_frames(run) if (config.OUT / f"{run}.frames.csv").exists() else []
     has_frames = bool(rows)
+    cut = None
     if s.get("steady") and rows:
         cut = rows[0][1] + s["steady"]["skip_s"] * 1000
         rows = [r for r in rows if r[1] >= cut]
@@ -49,12 +56,12 @@ def panel_run(run, skip_s=0):
     marks = [[b[1], b[2], round(b[1] - a[1], 3), causes.get(b[0], {}).get("cause", ""), causes.get(b[0], {}).get("cpu_pct")]
              for a, b in zip(rows, rows[1:]) if limit and b[1] - a[1] > limit - analysis.CSV_TOL_MS]
     marked = {m[0] for m in marks}
-    stride = max(1, len(rows) // config.PANEL_POINTS)
+    stride = _stride(len(rows))
     frames = [[t, ms] for i, (_, t, ms) in enumerate(rows) if i % stride == 0 or t in marked]
     samples = analysis.read_memory(run)
-    if s.get("steady") and rows:
-        samples = [x for x in samples if x[0] >= rows[0][1]]
-    memory = [[t, round(mib, 2)] for t, mib in samples[::max(1, len(samples) // config.PANEL_POINTS)]]
+    if cut is not None:
+        samples = [x for x in samples if x[0] >= cut]
+    memory = [[t, round(mib, 2)] for t, mib in samples[::_stride(len(samples))]]
     encoders = [] if analysis.measurement(s) == "windows" else (s.get("encoders") or {}).get("by_label", [])[:20]
     has, missing = sections(s, has_frames, bool(encoders), bool(memory))
     return {"has": has, "missing": missing, "name": run, "layer": recording.layer_label(s.get("layer")), "source": analysis.measurement(s), "gpu": s.get("gpu"), "hitches": hitches,
@@ -109,9 +116,15 @@ def tests_mode(runs, baseline):
         return None, "no_project_baseline"
     try:
         saved = analysis.load_baselines().get(baseline)
-        span = analysis.ranges(saved["summaries"]) if saved else None
-        runs_of_reference = list(saved["runs"]) if saved else None
-    except (ValueError, KeyError, TypeError, AttributeError, OSError):  # baselines.json that is not a reference file
+        if not (isinstance(saved, dict) and isinstance(saved.get("summaries"), list) and saved["summaries"]
+                and all(isinstance(x, dict) for x in saved["summaries"]) and isinstance(saved.get("runs"), list)):
+            saved = None
+        else:
+            span = analysis.ranges(saved["summaries"])
+            runs_of_reference = list(saved["runs"])
+            spread = analysis.spreads(span)
+            skip = paths.check_skip(saved.get("skip_s", 0))
+    except (*paths.MALFORMED, OSError, paths.ToolError):  # baselines.json that is not a reference file
         saved = None
     if saved is None:
         return None, "baseline_not_found"
@@ -120,26 +133,27 @@ def tests_mode(runs, baseline):
         try:
             result = analysis.tool_perf_check(run, baseline, margin_pct=RULES["noise_pct"])
             checks[run] = {k: result[k] for k in ("verdict", "regressed", "improved", "unchecked")}
-            seen = analysis.steady_summary(run, saved.get("skip_s", 0))
+            seen = analysis.steady_summary(run, skip)
             checks[run]["values"] = {m: metric_value(m, seen) for m in analysis.CHECKED}
             if len(result["unchecked"]) == len(analysis.CHECKED):  # perf_check says same when it checked nothing
                 checks[run] = {"verdict": None, "error": f"{run} has no number perf_check can judge; record it again"}
         except paths.ToolError as error:
             checks[run] = {"verdict": None, "error": str(error)}
-        except (KeyError, TypeError):  # a summary from before the numbers the verdict reads
+        except paths.MALFORMED:  # a summary from before the numbers the verdict reads, or with the wrong types
             checks[run] = {"verdict": None, "error": f"{run} cannot be judged; record it again"}
-    return {"baseline": baseline, "runs": runs_of_reference, "skip_s": saved.get("skip_s", 0), "range": span,
-            "spread_pct": analysis.spreads(span), "checks": checks}, None
+    return {"baseline": baseline, "runs": runs_of_reference, "skip_s": skip, "range": span,
+            "spread_pct": spread, "checks": checks}, None
 
 
 CHANGE_METRICS = (*analysis.CHECKED, "metal_mib_peak")
 
 
 def metric_value(metric, s):
-    """Returns a summary's value of one of CHANGE_METRICS, or None when it lacks it."""
+    """Returns a summary's value of one of CHANGE_METRICS, or None when it lacks it or it is not a finite number."""
     try:
-        return s.get("metal_memory_mib", {}).get("peak") if metric == "metal_mib_peak" else analysis.CHECKED[metric][0](s)
-    except (KeyError, TypeError, AttributeError):
+        value = s.get("metal_memory_mib", {}).get("peak") if metric == "metal_mib_peak" else analysis.CHECKED[metric][0](s)
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
+    except (KeyError, TypeError, AttributeError, OverflowError):
         return None
 
 
@@ -153,7 +167,7 @@ def changes_against(baseline, limit=8):
     saved = analysis.load_baselines().get(baseline)
     if saved is None:
         raise paths.ToolError(f"no reference {baseline}; perf_baseline with no arguments lists them")
-    first, skip = saved["summaries"][0], saved.get("skip_s", 0)
+    first, skip = saved["summaries"][0], paths.check_skip(saved.get("skip_s", 0))
     span = analysis.ranges(saved["summaries"])
     reference = {}
     for metric in CHANGE_METRICS:
@@ -164,28 +178,28 @@ def changes_against(baseline, limit=8):
     if program is None:  # no program to match: every summary without one would match
         return {"metrics": list(CHANGE_METRICS), "reference": reference, "runs": []}
     for path in config.OUT.glob("*.json"):
-        if path.name in (config.BASELINES.name, "panel.json") or path.stem in saved["runs"]:
+        if path.name in (config.BASELINES.name, paths.LAYOUT_FILE) or path.stem in saved["runs"]:
             continue
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
+            raw = paths.read_object(path, path.name)
+            process = raw.get("process")
+            if isinstance(process, dict) and process.get("arguments") == program:
+                found.append((path.stat().st_mtime, path.stem))
+        except (paths.ToolError, OSError):
             continue
-        process = raw.get("process") if isinstance(raw, dict) else None
-        if isinstance(process, dict) and process.get("arguments") == program:
-            found.append((path.stat().st_mtime, path.stem))
     runs = []
-    for _, name in sorted(found, reverse=True)[:limit][::-1]:
+    for _, name in sorted(found, reverse=True)[:max(limit, 0)][::-1]:
         try:
             s = analysis.steady_summary(name, skip)
-        except paths.ToolError:
+            cross = analysis.measurement(first) != analysis.measurement(s)
+            values = {}
+            for metric in CHANGE_METRICS:
+                value, mean = metric_value(metric, s), (reference[metric] or {}).get("mean")
+                judged = metric in analysis.CHECKED and not (cross and metric != "fps")
+                values[metric] = {"value": value, "pct": round(100 * (value - mean) / mean, 1) if value is not None and mean else None,
+                                  "direction": analysis.judge(metric, value, span[metric], RULES["noise_pct"]) if judged else None}
+        except (paths.ToolError, *paths.MALFORMED):  # a summary the reference cannot be read against
             continue
-        cross = analysis.measurement(first) != analysis.measurement(s)
-        values = {}
-        for metric in CHANGE_METRICS:
-            value, mean = metric_value(metric, s), (reference[metric] or {}).get("mean")
-            judged = metric in analysis.CHECKED and not (cross and metric != "fps")
-            values[metric] = {"value": value, "pct": round(100 * (value - mean) / mean, 1) if value is not None and mean else None,
-                              "direction": analysis.judge(metric, value, span[metric], RULES["noise_pct"]) if judged else None}
         runs.append({"run": name, "values": values})
     return {"metrics": list(CHANGE_METRICS), "reference": reference, "runs": runs}
 
@@ -195,23 +209,52 @@ TAB_IDS = ("tests", "summary", "ab", "frames", "encoders", "counters", "memory",
 
 def read_layout():
     """Returns the panel layout saved as panel.json in the runs directory, a list of {id, on} sections, or None when there
-    is none; a file that is not that list raises ToolError. A file from before a section existed is valid: the page
-    shows the sections it does not name."""
-    path = config.OUT / "panel.json"
+    is none; a file that is not that list, or names a section twice, raises ToolError. A file from before a section
+    existed is valid: the page adds `tests` first and keeps hidden any other section it leaves out."""
+    path = config.OUT / paths.LAYOUT_FILE
     if not path.exists():
         return None
     try:
         layout = json.loads(path.read_text(encoding="utf-8"))
-    except ValueError:
+    except (ValueError, RecursionError):
         raise paths.ToolError("panel.json is not valid JSON") from None
+    except OSError:
+        raise paths.ToolError("panel.json cannot be read") from None
     if not isinstance(layout, list) or not all(isinstance(w, dict) and w.get("id") in TAB_IDS and isinstance(w.get("on"), bool) for w in layout):
         raise paths.ToolError(f"panel.json is a list of {{\"id\": tab, \"on\": true or false}} with tab one of {', '.join(TAB_IDS)}")
+    if len({w["id"] for w in layout}) != len(layout):
+        raise paths.ToolError("panel.json names a tab twice")
     return [{"id": w["id"], "on": w["on"]} for w in layout]
 
 
-def panel_data(runs, preset=None, skip_s=0):
+def _finite(value):
+    """Returns `value` with every float that is not finite (NaN, infinity: JSON cannot hold them) turned into None."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite(v) for v in value]
+    return value
+
+
+def panel_data(runs, preset=None, skip_s=0, layout=None):
     """Returns the payload a panel shows for one or two runs: the preset, each run's panel_run and, for two runs, the
-    headline comparison. `preset` defaults to compare for two runs and fps for one; `skip_s` leaves out the start-up."""
+    headline comparison. `preset` defaults to compare for two runs and fps for one; `skip_s` leaves out the start-up;
+    `layout` stands for panel.json, which is not read then."""
+    try:
+        return _finite(_panel_data(runs, preset, skip_s, layout))
+    except paths.ToolError:
+        raise
+    except (*paths.MALFORMED, IndexError, OSError, ZeroDivisionError) as error:
+        # a file of the runs folder in a form the recorder does not write; the exception's text could carry a path
+        raise paths.ToolError(f"a recording or reference the panel reads is not in the form the recorder writes ({type(error).__name__}); record it again") from None
+
+
+def _panel_data(runs, preset, skip_s, layout):
+    """Returns panel_data's payload; it may raise what a malformed file in the runs folder makes Python raise."""
+    if not isinstance(runs, (list, tuple)) or not all(isinstance(r, str) for r in runs):
+        raise paths.ToolError("runs holds one or two run names from perf_runs; the compare preset needs two")
     preset = preset or ("compare" if len(runs) == 2 else "fps")
     if preset not in PANEL_PRESETS:
         raise paths.ToolError(f"preset is one of {', '.join(PANEL_PRESETS)}")
@@ -234,11 +277,15 @@ def panel_data(runs, preset=None, skip_s=0):
     warnings = warnings_for(runs, summaries, data, skip, compare, not_comparable)
     if tests and tests["skip_s"] != skip:
         warnings.append({"id": "reference_skip", "run": None})
+    try:
+        changes = changes_against(tests["baseline"]) if tests else None
+    except (paths.ToolError, IndexError, *paths.MALFORMED):  # a reference the recent builds cannot be read against
+        changes = None
     return {"preset": preset, "runs": data, "compare": compare, "not_comparable": not_comparable, "labels": labels[:10],
-            "skip_s": skip, "layout": read_layout(), "project": {"name": project.get("name"), "profile": profile},
+            "skip_s": skip, "layout": read_layout() if layout is None else layout, "project": {"name": project.get("name"), "profile": profile},
             "primary": "gpu_ms_mean" if profile == "translation-layer" else "fps", "rules": dict(RULES),
             "warnings": warnings, "tests": tests, "tests_hint": tests_hint,
-            "changes": changes_against(tests["baseline"]) if tests else None}
+            "changes": changes}
 
 
 def tool_perf_panel(name, runs, preset="fps", skip_s=0, layout=None):
@@ -256,17 +303,22 @@ def tool_perf_panel(name, runs, preset="fps", skip_s=0, layout=None):
     Returns the file name, the runs, the frames shown and the file's bytes."""
     if not paths.name_ok(name):
         raise paths.ToolError("a panel name holds only letters, digits, '.', '_' and '-'")
+    new_layout = None
     if layout is not None:
-        if isinstance(layout, str) or not all(i in TAB_IDS for i in layout):
+        if not isinstance(layout, (list, tuple)) or not all(i in TAB_IDS for i in layout):
             raise paths.ToolError(f"layout is a list of tabs, each one of {', '.join(TAB_IDS)}")
+        new_layout = [{"id": i, "on": True} for i in dict.fromkeys(layout)] + [{"id": i, "on": False} for i in TAB_IDS if i not in layout]
+    payload = panel_data(runs, preset, skip_s, new_layout)  # a call that fails changes nothing on disk
+    target = config.OUT / f"{name}.panel.html"
+    for path in (target, config.OUT / paths.LAYOUT_FILE) if new_layout is not None else (target,):
+        if path.is_symlink():
+            raise paths.ToolError(f"{path.name} in the runs folder is a link; remove it so the panel is written there")
+    if new_layout is not None:
         config.OUT.mkdir(parents=True, exist_ok=True)
-        (config.OUT / "panel.json").write_text(json.dumps([{"id": i, "on": True} for i in dict.fromkeys(layout)] +
-                                                   [{"id": i, "on": False} for i in TAB_IDS if i not in layout]) + "\n", encoding="utf-8")
-    payload = panel_data(runs, preset, skip_s)
+        (config.OUT / paths.LAYOUT_FILE).write_text(json.dumps(new_layout) + "\n", encoding="utf-8")
     data = payload["runs"]
     text = json.dumps(payload, separators=(",", ":")).replace("<", "\\u003c")
     page_html = panel_html(False).replace("/*PAYLOAD*/null", text)
-    target = config.OUT / f"{name}.panel.html"
     target.write_text(page_html, encoding="utf-8")
     return {"file": target.name, "runs": list(runs), "frames": sum(len(r["frames"]) for r in data),
             "bytes": target.stat().st_size}
