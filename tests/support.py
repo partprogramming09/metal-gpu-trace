@@ -7,6 +7,7 @@ import os
 import pathlib
 import struct
 import sys
+import tempfile
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -15,6 +16,9 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 # a project file named by the environment would point the servers the tests start at a real recordings folder
 os.environ.pop("METAL_TRACE_PROJECT", None)
+# the servers, recordings and scripts the tests start take a lock of their own, never the user's
+os.environ["METAL_TRACE_LOCK"] = os.environ["PERF_LOCK"] = os.path.join(
+    tempfile.mkdtemp(prefix="metal-gpu-trace-tests-"), "recording.lock")
 
 
 def wait_until(predicate, timeout=10.0, step=0.02):

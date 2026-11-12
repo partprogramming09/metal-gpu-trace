@@ -250,9 +250,9 @@ def record(label, seconds, wine, prefix, workdir, command, *args, memory_free_pc
 
 
 def free_lock(pid):
-    """Removes the .recording lock of a recording that was killed, when it holds `pid` (perf_record.sh's own pid):
-    a lock with another pid, or with none yet, may belong to another recording and stays."""
-    lock = config.OUT / ".recording"
+    """Removes the recording lock (config.LOCK) of a recording that was killed, when it holds `pid` (perf_record.sh's
+    own pid): a lock with another pid, or with none yet, may belong to another recording and stays."""
+    lock = config.LOCK
     try:
         owner = (lock / "pid").read_text().strip()
     except OSError:
@@ -267,7 +267,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
     names the translation layer a native run goes through (MoltenVK) instead of "native Metal"."""
     if not paths.name_ok(label):
         raise paths.ToolError("label holds only letters, digits, '.', '_' and '-'")
-    env = dict(os.environ, PERF_OUT=str(config.OUT), PERF_PARENT_PID=str(os.getpid()),
+    env = dict(os.environ, PERF_OUT=str(config.OUT), PERF_LOCK=str(config.LOCK), PERF_PARENT_PID=str(os.getpid()),
                PERF_ENV=" ".join(filter(None, [os.environ.get("PERF_ENV", ""), program_env])))
     if not memory:
         env["PERF_MEMORY"] = "0"
@@ -280,7 +280,8 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
         try:
             summary, json_path = perf_record_windows.record_windows(
                 label, int(seconds), wine, prefix, workdir, command, env["PERF_ENV"],
-                out_dir=config.OUT, timeout=deadline(seconds), cancelled=cancelled, progress=progress
+                out_dir=config.OUT, timeout=deadline(seconds), cancelled=cancelled, progress=progress,
+                lock_path=config.LOCK
             )
         except (RuntimeError, ValueError) as error:
             raise paths.ToolError(str(error)) from error

@@ -3,7 +3,8 @@ Metal System Trace and reads the recordings and Metal .gputrace captures.
 
 Environment: METAL_TRACE_OUT is where recordings go (default ./perf-runs); METAL_TRACE_READ lists more directories,
 separated by ':', whose files the tools may read; METAL_TRACE_WINE is the default Wine directory; KEEP_RUNS caps the
-recordings kept; METAL_TRACE_LOG=off silences the one stderr line per call. Test programs that workload_fetch
+recordings kept; METAL_TRACE_LOCK moves the lock that keeps recordings one at a time (in the cache folder below);
+METAL_TRACE_LOG=off silences the one stderr line per call. Test programs that workload_fetch
 downloads go to ~/Library/Caches/metal-gpu-trace.
 """
 import json

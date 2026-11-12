@@ -29,6 +29,8 @@ if sys.platform == "win32":
     CACHE = pathlib.Path(os.environ.get("LOCALAPPDATA", "~/.cache")).expanduser() / "metal-gpu-trace"
 else:
     CACHE = pathlib.Path("~/Library/Caches/metal-gpu-trace").expanduser()
+# one recording at a time whatever folder it goes to (each project has its own): the lock every recording takes
+LOCK = pathlib.Path(os.environ.get("METAL_TRACE_LOCK") or CACHE / "recording.lock").expanduser().resolve()
 MAX_LIMIT = 500
 # results stay under Claude Code's 50 000-character limit, above which it saves them to a file
 MAX_TEXT = 40_000

@@ -68,7 +68,8 @@ The server reads these environment variables:
 | `METAL_TRACE_READ` | More directories the tools may read, separated by `:`. |
 | `METAL_TRACE_LOG` | `off` silences the one-line stderr log per call. |
 | `KEEP_TRACE` | `1` keeps each recording's `.trace`, for `trace_tables`, `trace_query` or Instruments. |
-| `KEEP_RUNS` | Keeps only the newest N recordings. |
+| `KEEP_RUNS` | Keeps only the newest N recordings; `baselines.json` and `panel.json` are never removed. |
+| `METAL_TRACE_LOCK` | The lock that keeps recordings one at a time, whatever folder each goes to (default `~/Library/Caches/metal-gpu-trace/recording.lock`). `perf_record.sh` run by hand takes the same one, or the one `PERF_LOCK` names. |
 | `PERF_ENV` | `NAME=VALUE` pairs, separated by spaces, set for the recorded program. |
 | `PERF_INSTRUMENTS` | Instruments added to the Metal System Trace template, separated by `;` (`xcrun xctrace list instruments` names them); their tables need the `.trace`, so pair it with `KEEP_TRACE=1`. |
 

@@ -552,7 +552,7 @@ def kill_process_tree(pid):
 
 
 def record_windows(label, seconds, wine, prefix, workdir, command, program_env="", out_dir=None, timeout=None,
-                   cancelled=None, progress=None):
+                   cancelled=None, progress=None, lock_path=None):
     """Records a native Windows program, drawstress workload, or attached process.
 
     Returns (summary_dict, json_path).
@@ -570,8 +570,9 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
         out_dir = pathlib.Path(out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Concurrency lock
-    lock_path = out_dir / ".recording"
+    # Concurrency lock: the caller's (the MCP server's, shared by every recordings folder), else one beside the runs
+    lock_path = pathlib.Path(lock_path) if lock_path is not None else out_dir / ".recording"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_acquired = False
     for attempt in range(2):
         try:

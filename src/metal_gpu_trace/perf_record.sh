@@ -37,8 +37,10 @@ for dir in $tmp $out; do
   (( free >= need )) || { echo "not enough free disk on $dir: $free GB free, $need GB needed (PERF_MIN_FREE_GB overrides)" >&2; exit 4; }
 done
 
-# one recording at a time: two programs sharing the GPU spoil both measurements
-lock=$out/.recording
+# one recording at a time, whatever folder each goes to: two programs sharing the GPU spoil both measurements. The lock
+# is the user's one (the MCP server's too) unless PERF_LOCK names another; made absolute, since the script cds later
+lock=${${PERF_LOCK:-$HOME/Library/Caches/metal-gpu-trace/recording.lock}:a}
+mkdir -p ${lock:h}
 # the lock holds its owner's pid: a lock whose owner is gone (killed, power loss) is taken over once. The takeover
 # runs under a second mkdir lock, so two recordings that find the same dead lock cannot both take it; ps -p also sees
 # a live owner that belongs to another user, where kill -0 fails

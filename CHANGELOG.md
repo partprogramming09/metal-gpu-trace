@@ -7,6 +7,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - `KEEP_RUNS` no longer removes `baselines.json` (on macOS) or `panel.json` (on macOS and Windows) when it prunes old
   recordings: both are `.json` files but not recordings. The macOS pruning lives in `prune_runs.sh`.
+- Recordings take one lock whatever folder they go to (`recording.lock` in the user's cache; `METAL_TRACE_LOCK`
+  moves the server's, `PERF_LOCK` the script's), so recordings into different folders still run one at a time.
+  Before, the lock was `.recording` beside the recordings.
 
 ## 0.23.0 — 2026-11-11
 
