@@ -373,7 +373,7 @@ def test_panel(tmp_path):
         assert sorted(r["run"] for r in analysis.tool_perf_runs()["rows"]) == ["a", "b"], "the panel is not a run"
         assert panel.tool_perf_panel("one", ["a"])["runs"] == ["a"]
         (tmp_path / "c.json").write_text(json.dumps(summary(40.0)))
-        for args in (("p", ["c"]), ("p", ["a"], "nope"), ("p", ["a"], "compare"), ("p", []), ("../p", ["a"])):
+        for args in (("p", ["a"], "nope"), ("p", ["a"], "compare"), ("p", []), ("../p", ["a"])):
             try:
                 panel.tool_perf_panel(*args)
                 raise AssertionError(f"{args} must fail")
@@ -381,6 +381,24 @@ def test_panel(tmp_path):
                 pass
     finally:
         config.OUT, config.PANEL_POINTS = saved, saved_points
+
+def test_panel_opens_a_run_without_frames(tmp_path):
+    """A run with no frames.csv opens with its summary numbers and no curves; trimming the start-up still needs the frames."""
+    from metal_gpu_trace import config, panel, paths
+
+    (tmp_path / "c.json").write_text(json.dumps({"gpu": {"frames": 400, "fps_estimate": 40.0, "frame_gpu_ms": {"mean": 4.0}},
+                                                 "layer": {"none": "native"}}))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        run = panel.panel_data(["c"])["runs"][0]
+        assert run["frames"] == [] and run["marks"] == [] and run["memory"] == [] and run["gpu"]["fps_estimate"] == 40.0, run
+        try:
+            panel.panel_data(["c"], skip_s=2)
+            raise AssertionError("skip_s needs the frames")
+        except paths.ToolError as error:
+            assert "per-frame file" in str(error), error
+    finally:
+        config.OUT = saved
 
 def test_windows_against_metal(tmp_path):
     """A Windows run against a Metal run says which numbers do not compare and skips the encoders, in perf_compare, its

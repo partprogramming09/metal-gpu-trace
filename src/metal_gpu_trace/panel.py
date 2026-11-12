@@ -19,9 +19,10 @@ def panel_html(connect_self):
 
 def panel_run(run, skip_s=0):
     """Returns what the panel shows for one recording: numbers and labels from its summary, its GPU frames and Metal
-    memory cut to PANEL_POINTS points that keep every hitch, and no path. With `skip_s`, as steady_summary."""
+    memory cut to PANEL_POINTS points that keep every hitch, and no path. With `skip_s`, as steady_summary. A run
+    with no frames.csv has the numbers of its summary and no curves; with `skip_s` it is an error, as in steady_summary."""
     s = analysis.steady_summary(run, skip_s)
-    rows = analysis.read_frames(run)
+    rows = analysis.read_frames(run) if (config.OUT / f"{run}.frames.csv").exists() else []
     if s.get("steady") and rows:
         cut = rows[0][1] + s["steady"]["skip_s"] * 1000
         rows = [r for r in rows if r[1] >= cut]
