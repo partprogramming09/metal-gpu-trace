@@ -755,3 +755,24 @@ def test_prune_refuses_a_keep_that_is_not_a_whole_number(tmp_path):
         proc = subprocess.run(["zsh", str(PKG / "prune_runs.sh"), str(out), keep], capture_output=True, text=True)
         assert proc.returncode == 2 and "keep" in proc.stderr, keep
     assert len(list(out.iterdir())) == 5
+
+
+@macos_only
+def test_keep_runs_after_a_recording_keeps_baselines_and_panel_layout(tmp_path):
+    """perf_record.sh prunes through prune_runs.sh once its summary is written: KEEP_RUNS=1 leaves the new recording,
+    baselines.json and panel.json."""
+    out = prune_folder(tmp_path)
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    (stubs / "xcrun").write_text("#!/bin/zsh\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\n")
+    (stubs / "python3").write_text('#!/bin/zsh\nwhile [[ $1 != --label ]]; do shift; done\necho "{}" > $4/$2.json\n')
+    for stub in stubs.iterdir():
+        stub.chmod(0o755)
+    env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", KEEP_RUNS="1",
+               PATH=f"{stubs}:{os.environ['PATH']}")
+    proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "kept", "1", "native", "-", str(tmp_path), "/bin/sh"],
+                          env=env, capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc
+    left = {p.name for p in out.iterdir()}
+    assert {"baselines.json", "panel.json"} <= left and not any(n.startswith("old.") for n in left), left
+    assert len([n for n in left if n.startswith("kept_") and n.endswith(".json")]) == 1, left
