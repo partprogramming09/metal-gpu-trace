@@ -1,11 +1,16 @@
 # metal-gpu-trace
 
+[![test](https://github.com/partprogramming09/metal-gpu-trace/actions/workflows/test.yml/badge.svg)](https://github.com/partprogramming09/metal-gpu-trace/actions/workflows/test.yml)
+
 Mide cómo usa la GPU un programa de Wine o de macOS en un Mac con Apple silicon, desde la terminal o con un agente
 de programación con IA: tiempo de GPU por frame, ritmo de frames, FPS y memoria, grabados con Metal System Trace de
 Instruments; si una capa de traducción (DXMT, Mullion, MoltenVK) reparte el trabajo en demasiados encoders cortos;
 capturas `.gputrace` de Metal leídas sin Xcode; y los datos que publica Apple de cada familia de GPU
 para interpretar las cifras. Biblioteca estándar de Python 3.9+, `zsh` y Xcode (por `xctrace`). Licencia MIT.
 [English](../README.md).
+
+Arquitectura, decisiones y guías (en inglés): [`docs/README.md`](../docs/README.md). Para enviar un cambio:
+[`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 | Archivo | Qué hace |
 | --- | --- |
@@ -26,7 +31,8 @@ PERF_OUT=~/perf-runs zsh src/metal_gpu_trace/perf_record.sh app-metal 30 native 
 Argumentos: etiqueta, segundos, un directorio de Wine con `bin/wine` (o `native`), el prefijo de Wine, el directorio
 de trabajo, el programa y sus argumentos. Sin `PERF_OUT`, las grabaciones van a `./perf-runs`. Leer la traza después
 tarda cerca de un minuto en un M1 Pro (87 s para una grabación de 10 s); con el servidor MCP la llamada entera se
-corta tras 10 s por segundo grabado más 120 s, y una grabación cortada no deja archivos. Solo corre una grabación a la vez; no uses la GPU para otra cosa mientras graba.
+corta tras 10 s por segundo grabado más 120 s, y una grabación cortada no deja archivos. Solo corre una grabación a la
+vez; no uses la GPU para otra cosa mientras graba.
 
 Con Wine, dale 30 s: el arranque de Wine ocupa parte de la grabación. Una grabación de menos de 100 frames es
 demasiado corta para comparar.
@@ -35,7 +41,9 @@ demasiado corta para comparar.
 
 Cada grabación guarda un resumen JSON y tres CSV, unos 2 MB por 10 s (casi todo, las muestras de memoria de Metal).
 El `.trace` (decenas o cientos de MB) se borra salvo con `KEEP_TRACE=1`. `KEEP_RUNS=N` guarda solo las N grabaciones
-más recientes.
+más recientes. `PERF_MEMORY=0` se salta la tabla de memoria de Metal, la más lenta de leer: el resumen no trae
+`metal_memory_mib` y no hay CSV de memoria (un 41 % más rápido al resumir una traza de 626 MB). Las herramientas MCP
+`perf_record` y `perf_baseline_record` ofrecen lo mismo con `memory=false`.
 
 ## Servidor MCP
 
@@ -51,7 +59,8 @@ uvx metal-gpu-trace
 
 Es el comando que lanza cada cliente de abajo. Las apps de escritorio no ven el `PATH` de Homebrew: dales la ruta
 completa que imprime `which uvx` (`/opt/homebrew/bin/uvx` en Apple silicon). `uvx` se queda con la versión que bajó
-la primera vez; para tener la última, corre el comando una vez con `--refresh` después de `uvx`. `uvx metal-gpu-trace@0.4.0` fija una versión.
+la primera vez; para tener la última, corre el comando una vez con `--refresh` después de `uvx`.
+`uvx metal-gpu-trace@0.4.0` fija una versión.
 
 El servidor lee estas variables de entorno:
 
@@ -77,6 +86,43 @@ claude mcp list
 
 `claude mcp list` muestra `metal-trace` conectado. `--scope user` lo deja disponible en todos los proyectos; sin él,
 solo en el proyecto actual.
+
+### Windows
+
+En Windows el servidor graba programas nativos (`src/metal_gpu_trace/perf_record_windows.py`), sin Wine y sin Metal.
+`METAL_TRACE_WINE` no hace falta: `perf_record` y `perf_attach` usan `native`. `METAL_TRACE_READ` se separa con `;`.
+
+Los frames vienen de la aplicación de consola [PresentMon](https://github.com/GameTechDev/PresentMon) de Intel (MIT):
+una fila por cada `Present()` del proceso, con `MsBetweenPresents` y el tiempo de GPU `MsGPUTime`. Descarga
+`PresentMon-<versión>-x64.exe` de sus releases, comprueba su SHA-256 contra el que muestra GitHub y llama a la
+herramienta `presentmon_install`, o ponlo en `%LOCALAPPDATA%\metal-gpu-trace` o en el `PATH`, o apunta
+`PRESENTMON_EXE` a él. El usuario debe ser administrador o estar en el grupo «Performance Log Users». Sin PresentMon,
+el resumen usa los intervalos de composición de DWM (`gpu.source` es `dwm-composition`): cubren todo el escritorio,
+no ven juegos en pantalla completa exclusiva y no traen tiempo de GPU. Sin log de frames, sin PresentMon y sin
+muestras de DWM, la grabación falla; nunca inventa frames.
+
+Lo que no se puede medir es `null`, no cero: el 1 % bajo necesita 100 frames y el 0,1 % bajo 1000; la tasa de tirones
+y el jitter necesitan dos frames; `thermal_throttling_detected` necesita tiempos de GPU; un log de drawstress tiene una
+media por línea, así que su resumen (`gpu.frame_times`) no trae percentiles por frame, tirones ni jitter. DWM solo
+guarda intervalos entre frames compuestos seguidos y descarta un salto de varios frames. `perf_diagnose` llama
+`MEMORY_PRESSURE_SUSPECTED` a un conjunto de trabajo grande con tiempos de frame irregulares: es una sospecha, porque
+el ancho de banda de memoria no se mide.
+
+```powershell
+winget install --id=astral-sh.uv -e
+claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=%USERPROFILE%\perf-runs -- uvx metal-gpu-trace
+claude mcp list
+```
+
+Para correrlo desde un clon en vez de PyPI (necesita Python 3.9 o más nuevo):
+
+```powershell
+claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=%USERPROFILE%\perf-runs -- python C:\ruta\a\metal-gpu-trace\src\metal_gpu_trace\metal_trace_mcp.py
+```
+
+En los clientes con JSON usa `"command": "uvx"` (o la ruta completa que imprime `where uvx`) y rutas de Windows con las
+barras invertidas dobles. Claude Desktop lee `%APPDATA%\Claude\claude_desktop_config.json`. Las pruebas de Windows se
+corren con `python -m pytest tests/test_perf_record_windows.py`.
 
 ### Claude Desktop, Cursor y otros clientes con JSON
 
@@ -118,12 +164,12 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 
 | Herramienta | Lee o graba |
 | --- | --- |
-| `perf_record` | Graba un programa y devuelve su resumen; al terminar cierra todo programa de su prefijo de Wine, o todo proceso con el nombre de un programa nativo |
+| `perf_record` | Graba un programa y devuelve su resumen; al terminar cierra todo programa de su prefijo de Wine, o todo proceso con el nombre de un programa nativo. `counters=true` graba además los contadores de GPU de Metal: `gpu_counters` (los limitadores, la utilización, la ocupación y el ancho de banda de memoria de la GPU, con el limitador principal) en el resumen, a unos 40 s de lectura por segundo grabado; no en Windows |
 | `perf_attach` | Graba un programa que ya corre, por pid o nombre, y lo deja corriendo |
 | `perf_runs` | Lista las grabaciones, la más reciente primero, por páginas, si cada una guardó su `.trace`, y la capa de traducción con que corrió (una huella de sus DLL de Direct3D, y su Wine) |
-| `perf_compare` | Compara dos grabaciones: cifras principales, encoders, tiempo ocioso de la GPU y los ms de GPU por cuadro de cada etiqueta de encoder, el mayor cambio primero; marca las de menos de 100 frames |
-| `perf_baseline` | Guarda varias grabaciones iguales como referencia con nombre y devuelve el rango que abarca cada cifra entre ellas; sola, lista las referencias |
-| `perf_baseline_record` | Graba el mismo programa `count` veces (3 por defecto) con los argumentos de `perf_record` y guarda las corridas como referencia en una sola llamada |
+| `perf_compare` | Compara dos grabaciones: cifras principales, encoders, tiempo ocioso de la GPU y los ms de GPU por cuadro de cada etiqueta de encoder, el mayor cambio primero; marca las de menos de 100 frames. `markdown=true` añade las cifras como tablas Markdown para un comentario de PR; `skip_s` deja fuera los primeros segundos de cada grabación (el arranque) y recalcula sin ellos las cifras de GPU, los hitches y la memoria de Metal. `perf_gate` y `perf_panel` también aceptan `skip_s` |
+| `perf_baseline` | Guarda varias grabaciones iguales como referencia con nombre y devuelve el rango que abarca cada cifra entre ellas y `spread_pct`, cuánto difieren corridas iguales (el ruido que un cambio tiene que superar); sola, lista las referencias. `skip_s` guarda cada corrida sin sus primeros segundos y `perf_check` aplica el mismo corte a la corrida que juzga |
+| `perf_baseline_record` | Graba el mismo programa `count` veces (3 por defecto) con los argumentos de `perf_record` y guarda las corridas como referencia en una sola llamada. `skip_s` como en `perf_baseline` |
 | `perf_cold_warm` | Graba el mismo programa dos veces seguidas y dice cuántos tirones por compilación de shaders tiene la primera ejecución más que la segunda (`first_seen_hitches`), con los tirones de cada una, los tirones por minuto y el tiempo del compilador gráfico; la caché de shaders de Metal no se vacía entre ellas |
 | `perf_ab` | Graba el mismo programa con dos entornos (`env_a`, `env_b`: pares `NOMBRE=VALOR`) en el orden A B B A y dice por métrica (FPS, 1 % bajo, ms de GPU, tirones) si B es mejor, peor o igual: mejor o peor solo cuando todos los valores de B quedan fuera del rango de A |
 | `perf_sweep` | Graba el mismo programa una vez por cada valor de una variable (`dim`, `size`, `example`, `api` o `env:NAME`), de 2 a 8 valores, `rounds` veces (una de cada dos rondas en orden inverso), y devuelve por valor la mediana de FPS, 1 % bajo, ms de GPU por cuadro y tirones; con 3 o más valores numéricos ajusta los ms de GPU por cuadro sobre el valor (ms fijos y ms por dibujo para `dim`) con su r2 |
@@ -140,7 +186,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | `capture_records` | Una página de los registros de un `.gputrace` |
 | `gpu_family` | Los datos de Apple de una familia o chip (`Apple7`, `M1 Pro`, `M3 Max`) |
 | `presentmon_install` | Solo Windows: descarga PresentMon, comprueba su SHA-256 fijado y lo guarda en `%LOCALAPPDATA%\metal-gpu-trace`, donde `perf_record` y `perf_attach` lo encuentran; Claude Code pregunta antes de cada uso |
-| `workload_list` | Lista los programas de prueba que `workload_fetch` puede descargar |
+| `workload_list` | Lista los programas de prueba que `workload_fetch` puede descargar; para `bgfx-examples`, `example_traits` da la clase de cada ejemplo y sus encoders por cuadro en Metal nativo |
 | `workload_fetch` | Descarga un programa de prueba una vez, comprueba su SHA-256 y lo guarda en `~/Library/Caches/metal-gpu-trace`; Claude Code pregunta antes de cada uso |
 
 `perf_record` acepta `workload`, `api` (`mtl`, `mtl-x64`, `vk`, `d3d11` o `d3d12`), `dim`, `size` y `example` en vez de
@@ -153,13 +199,26 @@ cuadro, con sus shaders dentro del programa. El prompt `compare-layer` (`/metal-
 en Claude Code) lo graba en Metal nativo y bajo el Wine de `METAL_TRACE_WINE`, y después corre `perf_diagnose` y
 `perf_compare`.
 
-El segundo workload, `bgfx-examples` (25 MiB), trae nueve ejemplos de bgfx, cada uno una carga distinta (muchos cubos,
-texturas, cadenas de render targets, un G-buffer, cómputo, mapas de sombras reflectantes, posprocesado, dibujos que decide
-la GPU): `perf_record(workload="bgfx-examples", api="d3d12", example="21-deferred")`. Dos palancas de macOS cambian el
-Mac durante una grabación: `memory_free_pct` (de 20 a 60) mantiene todo el Mac con ese porcentaje de RAM libre
-(`memory_pressure`), y `background` ejecuta el programa bajo `taskpolicy -b`, un estrangulamiento fuerte. Un programa
-pequeño limitado por la GPU no nota la primera (drawstress siguió en 728 FPS y bajó su memoria residente); la segunda lo
-frena varias veces. Repite una corrida que use cualquiera de las dos.
+El segundo workload, `bgfx-examples` (55 MiB), trae treinta ejemplos de bgfx, cada uno una carga distinta (muchos
+cubos, texturas, cadenas de render targets, un G-buffer, cómputo, mapas de sombras reflectantes, posprocesado, dibujos
+que decide la GPU, texto e interfaz, sombras, transparencia, lectura desde la GPU, texturas virtuales, escalado,
+formatos de textura, consultas de oclusión, teselado, varias ventanas, render fuera de pantalla; los últimos veintiuno
+se midieron solo en Metal nativo y en D3D12 bajo Wine, `example_traits` en `workload_list` da la clase de cada uno y sus
+encoders por cuadro en ambos, y 40-svt escribe una caché de teselas de 370 MB en `temp/` dentro de la carpeta del
+workload la primera vez que corre): `perf_record(workload="bgfx-examples", api="d3d12", example="21-deferred")`. Dos
+palancas de macOS cambian el Mac durante una grabación: `memory_free_pct` (de 20 a 60) mantiene todo el Mac con ese
+porcentaje de RAM libre (`memory_pressure`), y `background` ejecuta el programa bajo `taskpolicy -b`, un
+estrangulamiento fuerte. Un programa pequeño limitado por la GPU no nota la primera (drawstress siguió en 728 FPS y
+bajó su memoria residente); la segunda lo frena varias veces. Repite una corrida que use cualquiera de las dos.
+
+El tercer workload, `godot`, es una escena 3D iluminada que un motor real construye desde código (Godot 4.7.2,
+Forward+): 400 mallas, 8 luces, un sol con sombras, `api="mtl"` para el driver Metal de Godot y `api="d3d12"` bajo Wine
+para su driver Direct3D 12, con `args="-- meshes=800 lights=16"` para cambiarla. `workload_fetch("godot")` guarda el
+proyecto de 10 KB de la release de este repositorio y descarga las builds oficiales de Godot para macOS (171 MB) y
+Windows (86 MB) desde godotengine/godot-builds, comprobando el SHA-512 que fija este paquete; necesita unos 257 MB y
+algunos segundos. La escena no tiene assets importados, así que Godot no importa nada. Godot compila sus pipelines en
+cada arranque, lo que lo hace un caso para `perf_cold_warm`: sus tirones por compilación de shaders volvieron igual en
+la segunda corrida.
 
 ### Leer las cifras entre corridas
 
@@ -179,14 +238,28 @@ frena varias veces. Repite una corrida que use cualquiera de las dos.
   anterior (`window_ms`, leído en bins enteros de 10 ms; `null` si ninguna muestra cae en él), que puede diferir del
   limitador principal de toda la grabación.
 
+`api=vk` corre el mismo programa con Vulkan sobre MoltenVK. MoltenVK no viene incluido: apunta `METAL_TRACE_MOLTENVK`
+a un directorio (sin espacios) con una `libMoltenVK.dylib` arm64, como la de un Vulkan SDK o la de
+`brew install molten-vk`. El `layer` de la corrida nombra MoltenVK con el SHA-256 de la biblioteca, así que
+`perf_compare` contra una corrida de Metal nativo dice que compara dos capas. En una medición con `dim=20`, 10 s cada
+una: Metal nativo, 2 encoders por cuadro; MoltenVK, 13, el 91 % cortos, y la GPU ociosa el 89 % del tiempo
+(`perf_diagnose`: `too_many_short_encoders` true). Es un par de corridas, no un benchmark.
+
+`api=vk` es solo nativo. `drawstress.exe --vk` bajo Wine necesita un Wine compilado con Vulkan: se probaron el Wine de
+DXMT y el Game Porting Toolkit de Apple, y los dos registran `Wine was built without Vulkan support`, así que la
+grabación no tiene frames de GPU. El Wine de CrossOver trae Vulkan pero solo corre dentro de una de sus botellas, y eso
+no se probó.
+
 Los mismos datos están como resources de MCP: `metal-trace://gpu-families` (todos) y
-`metal-trace://gpu-families/apple7` a `apple10`. Repiten con otras palabras las
+`metal-trace://gpu-families/apple7` a `apple10`. Cada corrida guardada también es un resource:
+`metal-trace://runs/<corrida>` lee su resumen. Repiten con otras palabras las
 [Metal Feature Set Tables](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf) de Apple del 21 de mayo de
 2026, [`MTLGPUFamily`](https://developer.apple.com/documentation/metal/mtlgpufamily) y la
 [charla sobre el M3](https://developer.apple.com/videos/play/tech-talks/111375/); en un equipo concreto, compruébalo
 con `supportsFamily`.
 
-Cómo sigue la [especificación MCP](https://modelcontextprotocol.io/specification/2025-06-18) y
+Cómo sigue la especificación MCP ([2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) y
+[2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28)) y
 [los límites de Claude Code](https://code.claude.com/docs/en/mcp):
 
 - stdout lleva solo mensajes MCP; cada llamada a una herramienta deja una línea en stderr (`METAL_TRACE_LOG=off` la
@@ -197,6 +270,46 @@ Cómo sigue la [especificación MCP](https://modelcontextprotocol.io/specificati
 - Los fallos vuelven como resultados `isError` que dicen qué hacer, sin trazas de pila ni rutas locales. Los
   resúmenes recortan las rutas absolutas al nombre del archivo, así que se pueden compartir.
 - Cada llamada a `xctrace` tiene tiempo límite.
+
+## HTTP
+
+`METAL_TRACE_TOKEN=<secreto de 16 caracteres o más> metal-gpu-trace --http [--port N]` sirve las mismas herramientas en
+`POST http://127.0.0.1:8765/mcp` (Streamable HTTP, una respuesta JSON por petición), para un cliente del mismo Mac que
+no puede lanzar un servidor stdio. Cada petición necesita `Authorization: Bearer <token>`. Escucha solo en 127.0.0.1,
+rechaza una petición cuyo Host u Origin no sea localhost o 127.0.0.1 (DNS rebinding) y no arranca sin el token. Habla
+las dos épocas de MCP: un cliente que envía `initialize` recibe el comportamiento de siempre; uno que envía
+`MCP-Protocol-Version: 2026-07-28` no tiene estado y debe enviar también `Mcp-Method` (y `Mcp-Name` para `tools/call`,
+`prompts/get` y `resources/read`), que el servidor compara con el cuerpo (400 con `-32020` si no coinciden). Un cliente
+moderno cancela una llamada en curso cerrando la conexión; un cliente `initialize` envía `notifications/cancelled`
+desde otra conexión. Por HTTP no hay flujo de progreso ni acceso remoto: para llegar a otro Mac usa un túnel SSH
+(`ssh -L 8765:127.0.0.1:8765 mac`), no abras el puerto. Por qué dos épocas:
+[`docs/adr/0002-dual-era-mcp.md`](../docs/adr/0002-dual-era-mcp.md).
+
+## Pruebas de Windows en una máquina real
+
+El `windows-latest` de GitHub no tiene GPU ni sesión de escritorio, así que las grabaciones con PresentMon y DWM solo
+se prueban en una máquina Windows real. `windows/winbridge-run-tests.ps1` pone al día un checkout allí y corre
+`tests/test_perf_record_windows.py`; está escrito como una tarea de [WinBridge](https://github.com/partprogramming09/winbridge)
+(nombre fijo, script fijado por SHA-256, sin argumentos). Para registrarlo, cópialo al portátil, pon en `$repo` la ruta
+del checkout, saca allí su hash con `Get-FileHash <archivo> -Algorithm SHA256` (Git puede haber cambiado los finales
+de línea, así que el hash de la copia de este repositorio no es el que sirve) y añade una tabla `[tasks.<nombre>]` con
+`script` y `sha256` al TOML del agente.
+
+## Compuerta de CI
+
+`metal-gpu-trace check CORRIDA REFERENCIA [--margin-pct N]` corre `perf_check` sin cliente e imprime una línea JSON
+(veredicto, razones, pistas). Código de salida 0: igual o mejor; 1: empeoró; 2: no se pudo juzgar (no existe la
+corrida o la referencia, o tiene menos de 100 frames). Las corridas se leen de `METAL_TRACE_OUT`. Grabar necesita
+Instruments, así que el job corre en un runner macOS propio:
+
+```yaml
+jobs:
+  perf:
+    runs-on: [self-hosted, macOS, ARM64]
+    steps:
+      - run: zsh src/metal_gpu_trace/perf_record.sh pr 30 native - . ./app
+      - run: metal-gpu-trace check "$(ls -t ~/perf-runs/pr_*.json | head -1 | xargs basename -s .json)" main-ref
+```
 
 ## Créditos
 

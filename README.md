@@ -10,6 +10,8 @@ a translation layer (DXMT, Mullion, MoltenVK) splits the work into too many shor
 `.gputrace` captures read without Xcode; and Apple's published facts on each GPU family to read the numbers against.
 Python 3.9+ standard library, `zsh`, and Xcode (for `xctrace`). MIT license. [Español](es/README.md).
 
+Architecture, decisions and guides: [`docs/README.md`](docs/README.md). Sending a change: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 | File | What it does |
 | --- | --- |
 | `src/metal_gpu_trace/perf_record.sh` | Records a program for N seconds with Metal System Trace and writes `<label>_<date>.json` (GPU ms per frame, frame intervals, FPS, Metal and resident memory) plus per-frame and memory CSVs. Deletes the `.trace` afterwards unless `KEEP_TRACE=1`. |
@@ -223,12 +225,13 @@ benchmark.
 Game Porting Toolkit were tried and both log `Wine was built without Vulkan support`, so the recording holds no GPU
 frames. CrossOver's Wine has Vulkan but runs only inside one of its bottles, which was not tried.
 
-The same facts are MCP resources: `metal-trace://gpu-families` (all) and `metal-trace://gpu-families/apple7` to Each saved run is a resource too: `metal-trace://runs/<run>` reads its summary.
-`apple10`. They restate Apple's [Metal Feature Set Tables](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
+The same facts are MCP resources: `metal-trace://gpu-families` (all) and `metal-trace://gpu-families/apple7` to
+`apple10`. Each saved run is a resource too: `metal-trace://runs/<run>` reads its summary. They restate Apple's [Metal Feature Set Tables](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf)
 of 21 May 2026, [`MTLGPUFamily`](https://developer.apple.com/documentation/metal/mtlgpufamily) and the
 [M3 tech talk](https://developer.apple.com/videos/play/tech-talks/111375/); check a device with `supportsFamily`.
 
-How it follows the [MCP specification](https://modelcontextprotocol.io/specification/2025-06-18) and
+How it follows the MCP specification ([2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) and
+[2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28)) and
 [Claude Code's limits](https://code.claude.com/docs/en/mcp):
 
 - stdout carries only MCP messages; each tool call logs one line to stderr (`METAL_TRACE_LOG=off` silences it), with
@@ -245,9 +248,14 @@ How it follows the [MCP specification](https://modelcontextprotocol.io/specifica
 `METAL_TRACE_TOKEN=<secret of 16+ characters> metal-gpu-trace --http [--port N]` serves the same tools at
 `POST http://127.0.0.1:8765/mcp` (Streamable HTTP, one JSON reply per request), for a client on the same Mac that cannot
 start a stdio server. Every request needs `Authorization: Bearer <token>`. It listens on 127.0.0.1 only, refuses a
-request whose Host or Origin is not localhost or 127.0.0.1 (DNS rebinding), and does not start without the token. Cancel
-a running call with `notifications/cancelled` from another connection. There is no progress stream over HTTP, and no
-remote access: reach another Mac through an SSH tunnel (`ssh -L 8765:127.0.0.1:8765 mac`), not by opening the port.
+request whose Host or Origin is not localhost or 127.0.0.1 (DNS rebinding), and does not start without the token. It
+speaks both MCP eras: a client that sends `initialize` gets the behaviour it always had; one that sends
+`MCP-Protocol-Version: 2026-07-28` is stateless and must also send `Mcp-Method` (and `Mcp-Name` for `tools/call`,
+`prompts/get` and `resources/read`), which the server checks against the body (400 with `-32020` when they differ). A
+modern client cancels a running call by closing the connection; an `initialize` client sends `notifications/cancelled`
+from another connection. There is no progress stream over HTTP, and no remote access: reach another Mac through an SSH
+tunnel (`ssh -L 8765:127.0.0.1:8765 mac`), not by opening the port. Why two eras:
+[`docs/adr/0002-dual-era-mcp.md`](docs/adr/0002-dual-era-mcp.md).
 
 ## Windows tests on a real machine
 

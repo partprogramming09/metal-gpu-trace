@@ -70,6 +70,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   `name=` or `name:` (`file:///x`) and inside a quoted value (`-exec "load /x/y"`) are cut too.
 - Internal: the experiments share `recording.record_new_summary`, the panel page is read once and cached, the golden
   file pins the 2026-07-28 replies too, and a test checks each tool's schema against its function's arguments.
+- Documentation for contributors: `docs/architecture.md` (layers and request flow), ADRs 0001 to 0003 (src layout,
+  both MCP eras, the Python 3.9 floor), `docs/guides/run-from-a-clone.md`, `CONTRIBUTING.md`; the Spanish README now
+  has every section of the English one.
 - A `lint` CI job runs ruff 0.14.0 (configured in `pyproject.toml`: Python 3.9, 120-character lines, plus bugbear).
 - CI supply chain: every action is pinned to a commit SHA, workflows default to read-only `permissions`, and the
   `mcp-publisher` download is pinned to v1.8.9 and checked against its sha256. `SECURITY.md` says how to report a
