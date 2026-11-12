@@ -474,6 +474,45 @@ def test_panel_warnings(tmp_path):
     finally:
         config.OUT = saved
 
+def test_panel_tests_mode(tmp_path):
+    """With a project reference the panel carries perf_check's verdict for each run, a run that cannot be judged says
+    why without stopping the panel, and with no usable reference it says what to do."""
+    from metal_gpu_trace import analysis, config, panel
+
+    frames = "frame,start_ms,gpu_ms_total\n" + "".join(f"{i + 1},{i * 16.0},4.0\n" for i in range(200))
+    for name, fps in (("r1", 62.4), ("r2", 62.4), ("r3", 62.2), ("new", 63.0), ("old", 70.0)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(_warn_summary(fps, 4.0, 200, 60.0, {"none": "native"})))
+        if name != "old":
+            (tmp_path / f"{name}.frames.csv").write_text(frames)
+    saved = config.OUT, config.BASELINES, config.PROJECT
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"])
+        analysis.tool_perf_baseline("ref2", ["r1", "r2", "r3"], skip_s=2)
+        config.PROJECT = {"name": "p", "profile": "generic", "baseline": "ref", "format": "metal-gpu-trace", "runs": tmp_path}
+        got = panel.panel_data(["new", "old"])
+        t = got["tests"]
+        assert t["baseline"] == "ref" and t["runs"] == ["r1", "r2", "r3"] and t["skip_s"] == 0 and got["tests_hint"] is None, t
+        assert t["range"]["fps"] == {"min": 62.2, "max": 62.4} and "fps" in t["spread_pct"]
+        for run in ("new", "old"):
+            check = analysis.tool_perf_check(run, "ref")
+            assert t["checks"][run] == {k: check[k] for k in ("verdict", "regressed", "improved", "unchecked")}, t["checks"][run]
+        assert "comparison" not in json.dumps(t) and str(tmp_path) not in json.dumps(got)
+        config.PROJECT["baseline"] = "ref2"
+        got = panel.panel_data(["new", "old"])
+        t = got["tests"]
+        assert t["skip_s"] == 2 and t["checks"]["new"]["verdict"] and t["checks"]["old"]["verdict"] is None, t["checks"]
+        assert "per-frame file" in t["checks"]["old"]["error"] and {"id": "reference_skip", "run": None} in got["warnings"]
+        assert {"id": "reference_skip", "run": None} not in panel.panel_data(["new"], skip_s=2)["warnings"]
+        config.PROJECT["baseline"] = "nope"
+        got = panel.panel_data(["new"])
+        assert got["tests"] is None and got["tests_hint"] == "baseline_not_found", got["tests_hint"]
+        config.PROJECT = None
+        got = panel.panel_data(["new"])
+        assert got["tests"] is None and got["tests_hint"] == "no_project_baseline"
+    finally:
+        config.OUT, config.BASELINES, config.PROJECT = saved
+
 def test_windows_against_metal(tmp_path):
     """A Windows run against a Metal run says which numbers do not compare and skips the encoders, in perf_compare, its
     Markdown and the panel; two runs from one side compare as before."""

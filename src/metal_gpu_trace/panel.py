@@ -101,6 +101,29 @@ def warnings_for(runs, summaries, data, skip, compare, not_comparable):
     return out
 
 
+def tests_mode(runs, baseline):
+    """Returns (tests, hint): perf_check's verdict for each run against the project's reference `baseline`, with the
+    reference's runs, skip_s, range and spread, or (None, why) when there is no reference to judge against. A run
+    perf_check cannot judge carries its reason; the others are unaffected."""
+    if baseline is None:
+        return None, "no_project_baseline"
+    saved = analysis.load_baselines().get(baseline)
+    if saved is None:
+        return None, "baseline_not_found"
+    span = analysis.ranges(saved["summaries"])
+    checks = {}
+    for run in runs:
+        try:
+            result = analysis.tool_perf_check(run, baseline)
+            checks[run] = {k: result[k] for k in ("verdict", "regressed", "improved", "unchecked")}
+        except paths.ToolError as error:
+            checks[run] = {"verdict": None, "error": str(error)}
+        except (KeyError, TypeError):  # a summary from before the numbers the verdict reads
+            checks[run] = {"verdict": None, "error": f"{run} cannot be judged; record it again"}
+    return {"baseline": baseline, "runs": list(saved["runs"]), "skip_s": saved.get("skip_s", 0), "range": span,
+            "spread_pct": analysis.spreads(span), "checks": checks}, None
+
+
 TAB_IDS = ("summary", "ab", "frames", "encoders", "counters", "memory", "data")
 
 
@@ -140,10 +163,14 @@ def panel_data(runs, preset=None, skip_s=0):
             pass
     project = config.PROJECT or {}
     profile = project.get("profile", "generic")
+    tests, tests_hint = tests_mode(runs, project.get("baseline"))
+    warnings = warnings_for(runs, summaries, data, skip, compare, not_comparable)
+    if tests and tests["skip_s"] != skip:
+        warnings.append({"id": "reference_skip", "run": None})
     return {"preset": preset, "runs": data, "compare": compare, "not_comparable": not_comparable, "labels": labels[:10],
             "skip_s": skip, "layout": read_layout(), "project": {"name": project.get("name"), "profile": profile},
             "primary": "gpu_ms_mean" if profile == "translation-layer" else "fps", "rules": dict(RULES),
-            "warnings": warnings_for(runs, summaries, data, skip, compare, not_comparable)}
+            "warnings": warnings, "tests": tests, "tests_hint": tests_hint}
 
 
 def tool_perf_panel(name, runs, preset="fps", skip_s=0, layout=None):
