@@ -1042,6 +1042,32 @@ def test_importing_the_server_survives_an_unusable_metal_trace_out(tmp_path):
     assert got.returncode == 0 and got.stdout.strip() == "ok True", got.stderr[-300:]
 
 
+def test_read_frames_parses_a_file_once_and_follows_its_changes(tmp_path):
+    """Reading the same unchanged frames.csv again does not parse it again (the panel reads it several times per
+    request); a file that changed, in size or in time, is read afresh; the caller may change what it gets."""
+    import os
+    from metal_gpu_trace import analysis, config
+
+    csv_path = tmp_path / "r.frames.csv"
+    csv_path.write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n2,16.0,4.0\n")
+    parsed = []
+    real = analysis._csv_rows
+    analysis._csv_rows = lambda *a, **k: (parsed.append(1), real(*a, **k))[1]
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        first = analysis.read_frames("r")
+        assert first == [(1, 0.0, 4.0), (2, 16.0, 4.0)] and len(parsed) == 1
+        first.append("changed by the caller")
+        assert analysis.read_frames("r") == [(1, 0.0, 4.0), (2, 16.0, 4.0)] and len(parsed) == 1, "the cache is not shared"
+        csv_path.write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n2,16.0,4.0\n3,32.0,5.0\n")
+        assert len(analysis.read_frames("r")) == 3 and len(parsed) == 2
+        csv_path.write_text("frame,start_ms,gpu_ms_total\n1,0.0,9.0\n2,16.0,9.0\n3,32.0,9.0\n")  # same size, same second
+        os.utime(csv_path, ns=(csv_path.stat().st_atime_ns, csv_path.stat().st_mtime_ns + 1))
+        assert analysis.read_frames("r")[0] == (1, 0.0, 9.0) and len(parsed) == 3
+    finally:
+        analysis._csv_rows, config.OUT = real, saved
+
+
 def test_layout(tmp_path):
     """perf_panel(layout=...) saves panel.json (the listed tabs on, in order, the rest off), every panel carries it, and a
     panel.json that is not a list of tabs, or a layout with an unknown tab, is refused."""

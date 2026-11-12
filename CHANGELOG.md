@@ -3,6 +3,12 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+- Reading a recording's `.frames.csv` again while it has not changed no longer parses it again (the last four files are kept, keyed by
+  their time and size): `perf_panel` and the live panel read each recording's frames several times per request. With two
+  recordings of 50 000 frames and `skip_s` 5 the panel's data takes a median of 0.45 s, from 1.04 s (3 runs of 5 on one machine).
+
 ## 0.24.0 — 2026-11-12
 
 - `KEEP_RUNS` no longer removes `baselines.json` (on macOS) or `panel.json` (on macOS and Windows) when it prunes old

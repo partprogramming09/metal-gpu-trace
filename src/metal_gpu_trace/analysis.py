@@ -459,7 +459,15 @@ def read_frames(run):
     source = config.OUT / f"{run}.frames.csv"
     if not source.exists():
         raise paths.ToolError(f"{run} has no per-frame file; record it again")
-    return _csv_rows(source, lambda r: (int(r["frame"]), float(r["start_ms"]), float(r["gpu_ms_total"])))
+    stat = source.stat()
+    return list(_frames(source, stat.st_mtime_ns, stat.st_size))
+
+
+@functools.lru_cache(maxsize=4)  # the panel reads a recording's frames several times per request; a few files at most
+def _frames(source, mtime_ns, size):
+    """Returns the rows of a frames.csv as a tuple; the file's time and size are the key, so a changed file is read
+    again (a call that fails is not kept)."""
+    return tuple(_csv_rows(source, lambda r: (int(r["frame"]), float(r["start_ms"]), float(r["gpu_ms_total"]))))
 
 
 def read_memory(run):
