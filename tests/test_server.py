@@ -10,10 +10,10 @@ from support import ROOT, PKG, write_capture, hang_stubs, golden  # also puts sr
 def test_readme_lists_every_tool(tmp_path):
     """Both READMEs hold a table row for every tool the server offers, and name the words the 0.17.0 additions need."""
     import re
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import registry
     for name in ("README.md", "es/README.md"):
         rows = set(re.findall(r"^\| `([a-z_]+)` \|", (ROOT / name).read_text(encoding="utf-8"), re.M))
-        missing = sorted(set(mcp.TOOLS) - rows)
+        missing = sorted(set(registry.TOOLS) - rows)
         assert not missing, f"{name} lacks rows for {missing}"
         text = (ROOT / name).read_text(encoding="utf-8")
         for word in ("mtl-x64", "bgfx-examples", "memory_free_pct", "gpu_state", "screen_locked", "resource_allocations"):
@@ -138,33 +138,34 @@ def test_progress_and_cancel(tmp_path):
     cancels it; ping is answered while it runs."""
     import threading
     import time
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import config, paths, recording, registry, worker
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
     stubs, out, program = hang_stubs(tmp_path)
     seen, cancel = [], threading.Event()
-    saved = mcp.OUT, mcp.PROGRESS_TICKS, os.environ["PATH"]
-    mcp.OUT, mcp.PROGRESS_TICKS = out, 1
+    saved = config.OUT, config.PROGRESS_TICKS, os.environ["PATH"]
+    config.OUT, config.PROGRESS_TICKS = out, 1
     os.environ["PATH"] = f"{stubs}:{saved[2]}"
-    mcp.RUN.cancel, mcp.RUN.progress = cancel, lambda *a: seen.append(a) or (len(seen) == 2 and cancel.set())
+    recording.RUN.cancel, recording.RUN.progress = cancel, lambda *a: seen.append(a) or (len(seen) == 2 and cancel.set())
     try:
-        mcp.tool_perf_record("hang", str(program), seconds=1, wine="native")
+        recording.tool_perf_record("hang", str(program), seconds=1, wine="native")
         raise AssertionError("a cancelled recording must fail")
-    except mcp.ToolError as error:
+    except paths.ToolError as error:
         assert "cancelled" in str(error), error
     finally:
-        mcp.OUT, mcp.PROGRESS_TICKS, os.environ["PATH"] = saved
-        mcp.RUN.cancel = mcp.RUN.progress = None
+        config.OUT, config.PROGRESS_TICKS, os.environ["PATH"] = saved
+        recording.RUN.cancel = recording.RUN.progress = None
     assert (tmp_path / "pkill.log").read_text().split() == ["-x", "hang-4242"], "the launched program must be killed"
-    assert len(seen) == 2 and seen[1][0] > seen[0][0] and seen[0][1] == mcp.deadline(1), seen
+    assert len(seen) == 2 and seen[1][0] > seen[0][0] and seen[0][1] == recording.deadline(1), seen
     assert not list(out.iterdir()), list(out.iterdir())
     import io
     real, sys.stdout = sys.stdout, io.StringIO()
-    mcp.TOOLS["t"] = (lambda: mcp.progress(1, 2, "half") or {}, None, None)
+    registry.TOOLS["t"] = (lambda: recording.progress(1, 2, "half") or {}, None, None)
     try:
-        mcp.call("t", {}, 7, "tok")
+        worker.call("t", {}, 7, "tok")
         line = sys.stdout.getvalue()
     finally:
         sys.stdout = real
-        del mcp.TOOLS["t"]
+        del registry.TOOLS["t"]
     assert json.loads(line) == {"jsonrpc": "2.0", "method": "notifications/progress", "params": {
         "progressToken": "tok", "progress": 1, "total": 2, "message": "half"}}, line
     # over stdio: the cancel notification ends the call while the server still answers ping
@@ -192,7 +193,7 @@ def test_progress_and_cancel(tmp_path):
 def test_check_cli(tmp_path):
     """`metal-gpu-trace check` exits 0 for same or improved, 1 for regressed, 2 for a run that cannot be judged, and
     prints one JSON line without the full comparison."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import analysis, config
 
     def summary(fps, frames=300):
         return {"gpu": {"frames": frames, "fps_estimate": fps, "frame_gpu_ms": {"mean": 4.3, "p95": 8.0},
@@ -203,11 +204,11 @@ def test_check_cli(tmp_path):
     for name, s in {"r1": summary(60.0), "r2": summary(62.0), "ok": summary(61.0), "bad": summary(40.0),
                     "short": summary(61.0, frames=50)}.items():
         (tmp_path / f"{name}.json").write_text(json.dumps(s))
-    saved, (mcp.OUT, mcp.BASELINES) = (mcp.OUT, mcp.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
     try:
-        mcp.tool_perf_baseline("ds", ["r1", "r2"])
+        analysis.tool_perf_baseline("ds", ["r1", "r2"])
     finally:
-        mcp.OUT, mcp.BASELINES = saved
+        config.OUT, config.BASELINES = saved
 
     def check(*args):
         proc = subprocess.run([sys.executable, "-I", str(PKG / "metal_trace_mcp.py"), "check", *args], text=True,
@@ -318,46 +319,48 @@ def test_queue(tmp_path):
     it at once instead of after the call ahead of it."""
     import threading
     import time
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import config, registry, worker
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
     gate, replies, log = threading.Event(), {}, os.environ.get("METAL_TRACE_LOG")
     os.environ["METAL_TRACE_LOG"] = "off"
-    mcp.TOOLS["slow"] = (lambda: gate.wait(20) and {}, {"type": "object"}, {})
+    registry.TOOLS["slow"] = (lambda: gate.wait(20) and {}, {"type": "object"}, {})
 
     def submit(i):
-        mcp.CALLS[i] = threading.Event()
-        mcp.submit({"jsonrpc": "2.0", "id": i, "method": "tools/call", "params": {"name": "slow", "arguments": {}}},
+        worker.CALLS[i] = threading.Event()
+        worker.submit({"jsonrpc": "2.0", "id": i, "method": "tools/call", "params": {"name": "slow", "arguments": {}}},
                    lambda r: replies.__setitem__(i, r))
     try:
         submit(0)
         time.sleep(0.3)  # the worker has taken call 0 and waits on the gate
-        for i in range(1, mcp.MAX_QUEUE + 1):
+        for i in range(1, config.MAX_QUEUE + 1):
             submit(i)
         submit(999)
-        assert "waiting" in replies[999]["result"]["content"][0]["text"] and 999 not in mcp.CALLS, replies.get(999)
-        mcp.cancel_call(5)
+        assert "waiting" in replies[999]["result"]["content"][0]["text"] and 999 not in worker.CALLS, replies.get(999)
+        worker.cancel_call(5)
         assert 5 in replies and "cancelled" in replies[5]["result"]["content"][0]["text"], "a queued cancel answers at once"
-        mcp.cancel_call([1])  # an unhashable id is ignored
-        mcp.cancel_call(123456)
+        worker.cancel_call([1])  # an unhashable id is ignored
+        worker.cancel_call(123456)
     finally:
         gate.set()
-        mcp.stop_worker()
-        mcp.WORKER.clear()
-        del mcp.TOOLS["slow"]
+        worker.stop_worker()
+        worker.WORKER.clear()
+        del registry.TOOLS["slow"]
         os.environ.pop("METAL_TRACE_LOG") if log is None else os.environ.__setitem__("METAL_TRACE_LOG", log)
-    assert sorted(replies) == sorted(set(range(mcp.MAX_QUEUE + 1)) | {999}), sorted(replies)
-    assert not mcp.CALLS, mcp.CALLS
+    assert sorted(replies) == sorted(set(range(config.MAX_QUEUE + 1)) | {999}), sorted(replies)
+    assert not worker.CALLS, worker.CALLS
 
 def test_http_timeout(tmp_path):
     """A client that stalls in the middle of its request is dropped after HTTP_TIMEOUT instead of holding a thread."""
     import socket
     import threading
     from http.server import ThreadingHTTPServer
-    from metal_gpu_trace import metal_trace_mcp as mcp
-    saved, mcp.HTTP_TIMEOUT = mcp.HTTP_TIMEOUT, 1
+    from metal_gpu_trace import config, http_transport
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+    saved, config.HTTP_TIMEOUT = config.HTTP_TIMEOUT, 1
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", 0), mcp.http_handler("t" * 32))
+        server = ThreadingHTTPServer(("127.0.0.1", 0), http_transport.http_handler("t" * 32))
     finally:
-        mcp.HTTP_TIMEOUT = saved
+        config.HTTP_TIMEOUT = saved
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         stalled = socket.create_connection(server.server_address, timeout=3)
@@ -388,13 +391,14 @@ GOLDEN_MESSAGES = [
 
 def test_golden_protocol(tmp_path):
     """The server answers a fixed set of messages exactly as recorded in tests/golden/protocol.json."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
-    saved = mcp.OUT
-    mcp.OUT = tmp_path
+    from metal_gpu_trace import config, protocol
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+    saved = config.OUT
+    config.OUT = tmp_path
     try:
-        replies = [mcp.handle({"jsonrpc": "2.0", "id": i, **m}) for i, m in enumerate(GOLDEN_MESSAGES)]
+        replies = [protocol.handle({"jsonrpc": "2.0", "id": i, **m}) for i, m in enumerate(GOLDEN_MESSAGES)]
     finally:
-        mcp.OUT = saved
+        config.OUT = saved
     for reply in replies:
         info = (reply.get("result") or {}).get("serverInfo")
         if info:
@@ -404,6 +408,7 @@ def test_golden_protocol(tmp_path):
 def test_tool_descriptions_have_no_indent(tmp_path):
     """No line of a tool description starts with whitespace, whatever the Python (before 3.13 docstrings keep their
     indent)."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
-    for tool in mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]:
+    from metal_gpu_trace import protocol
+    from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+    for tool in protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]:
         assert not any(line[:1].isspace() for line in tool["description"].splitlines()), tool["name"]

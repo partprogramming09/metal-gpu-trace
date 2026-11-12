@@ -11,19 +11,19 @@ from support import ROOT, PKG, macos_only, hang_stubs  # also puts src/ on sys.p
 
 def test_memory_param(tmp_path):
     """perf_record passes memory=false on to the recording, which sets PERF_MEMORY=0, and offers it in its schema."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import recording, registry
     seen = []
-    saved = mcp.record
-    mcp.record = lambda *args, **kw: seen.append(args[-1]) or {}
+    saved = recording.record
+    recording.record = lambda *args, **kw: seen.append(args[-1]) or {}
     program = tmp_path / "prog"
     program.write_text("")
     try:
-        mcp.tool_perf_record("m", str(program), wine="native")
-        mcp.tool_perf_record("m", str(program), wine="native", memory=False)
+        recording.tool_perf_record("m", str(program), wine="native")
+        recording.tool_perf_record("m", str(program), wine="native", memory=False)
     finally:
-        mcp.record = saved
+        recording.record = saved
     assert seen == [True, False], seen
-    assert mcp.RECORD_PROPS["memory"]["type"] == "boolean"
+    assert registry.RECORD_PROPS["memory"]["type"] == "boolean"
 
 @macos_only
 def test_disk_guard(tmp_path):
@@ -42,86 +42,86 @@ def test_disk_guard(tmp_path):
 def test_levers(tmp_path):
     """memory_free_pct holds memory_pressure around a recording and stops it even when the recording fails;
     background sets PERF_PREFIX for perf_record.sh; out-of-range or Windows use is refused before anything starts."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import config, paths, recording, registry
     stable = tmp_path / "stable.sh"
     stable.write_text("#!/bin/sh\necho 'Stable at percent free: 40.'\nsleep 300\n")
     never = tmp_path / "never.sh"
     never.write_text("#!/bin/sh\nsleep 300\n")
     for script in (stable, never):
         script.chmod(0o755)
-    assert mcp.BACKGROUND_PREFIX.startswith("/") and mcp.BACKGROUND_PREFIX.endswith(" -b"), mcp.BACKGROUND_PREFIX
+    assert recording.BACKGROUND_PREFIX.startswith("/") and recording.BACKGROUND_PREFIX.endswith(" -b"), recording.BACKGROUND_PREFIX
     if sys.platform == "darwin":
-        assert os.access(mcp.BACKGROUND_PREFIX.split()[0], os.X_OK), "taskpolicy must exist"
-    saved = mcp.MEMORY_PRESSURE, mcp.record_run
+        assert os.access(recording.BACKGROUND_PREFIX.split()[0], os.X_OK), "taskpolicy must exist"
+    saved = config.MEMORY_PRESSURE, recording.record_run
     try:
-        mcp.MEMORY_PRESSURE = [str(stable)]
-        proc = mcp.hold_memory_pressure(40, 60)
+        config.MEMORY_PRESSURE = [str(stable)]
+        proc = recording.hold_memory_pressure(40, 60)
         assert proc.poll() is None
         proc.terminate()
         proc.wait()
-        mcp.MEMORY_PRESSURE = [str(never)]
+        config.MEMORY_PRESSURE = [str(never)]
         try:
-            mcp.hold_memory_pressure(40, 60, wait_s=1)
+            recording.hold_memory_pressure(40, 60, wait_s=1)
             raise AssertionError("a pressure that is never reached must fail")
-        except mcp.ToolError as error:
+        except paths.ToolError as error:
             assert "did not reach" in str(error), error
         started = []
-        mcp.MEMORY_PRESSURE = [str(stable)]
-        original = mcp.hold_memory_pressure
+        config.MEMORY_PRESSURE = [str(stable)]
+        original = recording.hold_memory_pressure
 
         def spy(*args, **kwargs):
             started.append(original(*args, **kwargs))
             return started[-1]
-        mcp.hold_memory_pressure = spy
+        recording.hold_memory_pressure = spy
         seen = {}
 
         def fake_run(*args, **kwargs):
             seen.update(kwargs, held=started[0].poll() is None)
             raise RuntimeError("boom")
-        mcp.record_run = fake_run
+        recording.record_run = fake_run
         try:
-            mcp.record("x", 5, "native", "-", ".", ["p"], memory_free_pct=40, background=True)
+            recording.record("x", 5, "native", "-", ".", ["p"], memory_free_pct=40, background=True)
             raise AssertionError("the failure must come out")
         except RuntimeError:
             pass
         assert seen["held"] and seen["background"] is True, seen
         started[0].wait(timeout=10)
         assert started[0].poll() is not None, "memory_pressure must be stopped after the recording"
-        mcp.hold_memory_pressure = original
+        recording.hold_memory_pressure = original
         for kwargs in ({"memory_free_pct": 10}, {"memory_free_pct": 61}, {"memory_free_pct": "x"}):
             try:
-                mcp.check_levers(**kwargs)
+                recording.check_levers(**kwargs)
                 raise AssertionError(kwargs)
-            except mcp.ToolError as error:
+            except paths.ToolError as error:
                 assert "memory_free_pct" in str(error), error
-        mcp.check_levers(memory_free_pct=20, background=True)
+        recording.check_levers(memory_free_pct=20, background=True)
     finally:
-        mcp.MEMORY_PRESSURE, mcp.record_run = saved
-        mcp.hold_memory_pressure = original
-    assert mcp.RECORD_PROPS["memory_free_pct"]["type"] == "integer" and mcp.RECORD_PROPS["background"]["type"] == "boolean"
+        config.MEMORY_PRESSURE, recording.record_run = saved
+        recording.hold_memory_pressure = original
+    assert registry.RECORD_PROPS["memory_free_pct"]["type"] == "integer" and registry.RECORD_PROPS["background"]["type"] == "boolean"
 
 def test_rosetta_layer(tmp_path):
     """An api marked rosetta in data/workloads.json is named as such in the run's layer, so perf_compare against native
     Metal says it compares two layers."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import config, recording, workloads
     entry = {"title": "t", "about": "a", "license": "l", "url": "https://example.invalid/x.tar.gz", "bytes": 1,
              "sha256": "0" * 64, "dir": "demo", "dim_variable": "DIM",
              "apis": {"mtl": {"program": "demo", "args": "--mtl", "wine": False},
                       "mtl-x64": {"program": "demo-x64", "args": "--mtl", "wine": False, "rosetta": True}}}
-    saved = mcp.WORKLOADS
-    mcp.WORKLOADS = {"demo": entry}
+    saved = config.WORKLOADS
+    config.WORKLOADS = {"demo": entry}
     try:
-        assert mcp.workload_layer("demo", "mtl", 20) is None
-        layer = mcp.workload_layer("demo", "mtl-x64", 20)
+        assert workloads.workload_layer("demo", "mtl", 20) is None
+        layer = workloads.workload_layer("demo", "mtl-x64", 20)
         assert "rosetta" in layer and layer["program_env"] == "DIM=20", layer
-        assert mcp.layer_label(layer) == "rosetta"
+        assert recording.layer_label(layer) == "rosetta"
         native = {"none": "native Metal, no translation layer", "program_env": "DIM=20"}
         ma = {"layer": native, "gpu": {"frames": 300}}
         mb = {"layer": layer, "gpu": {"frames": 300}}
-        got = mcp.layer_change(ma, mb, "a", "b")
+        got = recording.layer_change(ma, mb, "a", "b")
         assert got["same"] is False and got["b"] == "rosetta" and "two layers" in got["note"], got
     finally:
-        mcp.WORKLOADS = saved
+        config.WORKLOADS = saved
     shipped = json.loads((PKG / "data" / "workloads.json").read_text())["workloads"]["drawstress"]
     assert shipped["apis"]["mtl-x64"]["rosetta"] is True and shipped["size_variables"] == ["DRAWSTRESS_WIDTH", "DRAWSTRESS_HEIGHT"]
     assert "workloads-3" in shipped["url"] and len(shipped["sha256"]) == 64
@@ -129,27 +129,27 @@ def test_rosetta_layer(tmp_path):
 def test_size(tmp_path):
     """size ("WxH") becomes the workload's two size variables, is refused for a workload without them or when badly
     written, and perf_sweep can sweep it."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import config, experiments, paths, recording, registry, workloads
     entry = {"title": "t", "about": "a", "license": "l", "url": "https://example.invalid/x.tar.gz", "bytes": 1,
              "sha256": "0" * 64, "dir": "demo", "dim_variable": "DIM", "size_variables": ["DEMO_W", "DEMO_H"],
              "apis": {"mtl": {"program": "demo", "args": "--mtl", "wine": False}}}
     plain = {k: v for k, v in entry.items() if k != "size_variables"}
-    saved, cache = mcp.WORKLOADS, mcp.CACHE
-    mcp.CACHE = tmp_path
+    saved, cache = config.WORKLOADS, config.CACHE
+    config.CACHE = tmp_path
     try:
-        mcp.WORKLOADS = {"demo": entry, "plain": plain}
+        config.WORKLOADS = {"demo": entry, "plain": plain}
         for name in ("demo", "plain"):
             (tmp_path / f"{name}-{'0' * 12}").mkdir()
-        got = mcp.workload_command("demo", "mtl", 20, None, "", size="1280x720")
+        got = workloads.workload_command("demo", "mtl", 20, None, "", size="1280x720")
         assert got[3] == "DIM=20 DEMO_W=1280 DEMO_H=720", got
-        assert mcp.workload_command("demo", "mtl", None, None, "")[3] == ""
+        assert workloads.workload_command("demo", "mtl", None, None, "")[3] == ""
         for name, size, words in (("plain", "1280x720", "size does not apply to plain"),
                                   ("demo", "big", "size is WIDTHxHEIGHT"), ("demo", "100x100", "size is WIDTHxHEIGHT"),
                                   ("demo", "9000x720", "size is WIDTHxHEIGHT")):
             try:
-                mcp.workload_command(name, "mtl", None, None, "", size=size)
+                workloads.workload_command(name, "mtl", None, None, "", size=size)
                 raise AssertionError((name, size))
-            except mcp.ToolError as error:
+            except paths.ToolError as error:
                 assert words in str(error), error
         made = []
 
@@ -157,27 +157,27 @@ def test_size(tmp_path):
             made.append((label, kw.get("size")))
             (tmp_path / f"{label}_20261018-000000.json").write_text(json.dumps(
                 {"gpu": {"frames": 300, "fps_estimate": 100.0, "frame_gpu_ms": {"mean": 4.0}, "stutter_rate_pct": 0.0}}))
-        saved_record, saved_out = mcp.tool_perf_record, mcp.OUT
-        mcp.tool_perf_record, mcp.OUT = fake_record, tmp_path
+        saved_record, saved_out = recording.tool_perf_record, config.OUT
+        recording.tool_perf_record, config.OUT = fake_record, tmp_path
         try:
-            got = mcp.tool_perf_sweep("s", "size", ["640x360", "1280x720"], seconds=8)
+            got = experiments.tool_perf_sweep("s", "size", ["640x360", "1280x720"], seconds=8)
             assert made == [("s-1-r1", "640x360"), ("s-2-r1", "1280x720")] and got["fit"] is None, (made, got)
             try:
-                mcp.tool_perf_sweep("s", "size", ["640x360", "wide"])
+                experiments.tool_perf_sweep("s", "size", ["640x360", "wide"])
                 raise AssertionError("a bad size must fail before recording")
-            except mcp.ToolError as error:
+            except paths.ToolError as error:
                 assert "WIDTHxHEIGHT" in str(error), error
         finally:
-            mcp.tool_perf_record, mcp.OUT = saved_record, saved_out
+            recording.tool_perf_record, config.OUT = saved_record, saved_out
     finally:
-        mcp.WORKLOADS, mcp.CACHE = saved, cache
-    assert mcp.RECORD_PROPS["size"]["type"] == "string"
+        config.WORKLOADS, config.CACHE = saved, cache
+    assert registry.RECORD_PROPS["size"]["type"] == "string"
 
 @macos_only
 def test_layer(tmp_path):
     """A recording's layer fingerprint is stable, changes with any Direct3D DLL, carries the overrides and program
     variables, and perf_compare tells two layers from one."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import recording
     wine, prefix = tmp_path / "mullion-wine", tmp_path / "prefix"
     (wine / "bin").mkdir(parents=True)
     (wine / "bin" / "wine").write_text("#!/bin/sh\necho wine-11.0\n")
@@ -185,7 +185,7 @@ def test_layer(tmp_path):
     builtin, system32 = wine / "lib" / "wine" / "x86_64-windows", prefix / "drive_c" / "windows" / "system32"
     builtin.mkdir(parents=True)
     system32.mkdir(parents=True)
-    for name in mcp.LAYER_DLLS:
+    for name in recording.LAYER_DLLS:
         (builtin / f"{name}.dll").write_bytes(name.encode())
     (system32 / "d3d12.dll").write_bytes(b"d3d12")
     (prefix / "user.reg").write_text('[Software\\\\Wine\\\\DllOverrides] 1\n"*d3d12"="native,builtin"\n"comctl32"="n"\n'
@@ -193,8 +193,8 @@ def test_layer(tmp_path):
     saved = os.environ.get("WINEDLLOVERRIDES")
     os.environ["WINEDLLOVERRIDES"] = "d3d11=n"
     try:
-        one = mcp.layer_of(str(wine), str(prefix), "MULLION_DIAG=profile LOG=/tmp/x/log.txt")
-        assert one == mcp.layer_of(str(wine), str(prefix), "MULLION_DIAG=profile LOG=/tmp/x/log.txt")
+        one = recording.layer_of(str(wine), str(prefix), "MULLION_DIAG=profile LOG=/tmp/x/log.txt")
+        assert one == recording.layer_of(str(wine), str(prefix), "MULLION_DIAG=profile LOG=/tmp/x/log.txt")
     finally:
         os.environ.pop("WINEDLLOVERRIDES") if saved is None else os.environ.update(WINEDLLOVERRIDES=saved)
     assert one["wine"] == "mullion-wine" and one["wine_version"] == "wine-11.0", one
@@ -202,33 +202,33 @@ def test_layer(tmp_path):
     assert one["dlls"]["d3d12"]["prefix"]["bytes"] == 5 and one["dlls"]["dxgi"]["prefix"] is None, one["dlls"]
     assert one["program_env"] == "MULLION_DIAG=profile LOG=log.txt" and str(tmp_path) not in json.dumps(one)
     (builtin / "d3d11.dll").write_bytes(b"other build")
-    two = mcp.layer_of(str(wine), str(prefix))
+    two = recording.layer_of(str(wine), str(prefix))
     assert two["fingerprint"] != one["fingerprint"]
     # Wine's first boot copies its own DLLs into the prefix: the same DLL, so nothing changes
     (system32 / "dxgi.dll").write_bytes(b"dxgi")
-    assert mcp.layer_of(str(wine), str(prefix))["fingerprint"] == two["fingerprint"]
+    assert recording.layer_of(str(wine), str(prefix))["fingerprint"] == two["fingerprint"]
     (system32 / "dxgi.dll").write_bytes(b"other dxgi")
-    three = mcp.layer_of(str(wine), str(prefix))
+    three = recording.layer_of(str(wine), str(prefix))
     assert three["fingerprint"] != two["fingerprint"]
-    assert mcp.layer_change({"layer": two}, {"layer": three}, "a", "b")["differs"] == ["dxgi"]
+    assert recording.layer_change({"layer": two}, {"layer": three}, "a", "b")["differs"] == ["dxgi"]
     (system32 / "dxgi.dll").unlink()
-    assert mcp.layer_of("native", "-") == {"none": "native Metal, no translation layer", "program_env": ""}
-    runs = {"one": one, "one-again": one, "two": two, "native": mcp.layer_of("native", "-"), "old": None}
-    same = mcp.layer_change({"layer": runs["one"]}, {"layer": runs["one-again"]}, "a", "b")
+    assert recording.layer_of("native", "-") == {"none": "native Metal, no translation layer", "program_env": ""}
+    runs = {"one": one, "one-again": one, "two": two, "native": recording.layer_of("native", "-"), "old": None}
+    same = recording.layer_change({"layer": runs["one"]}, {"layer": runs["one-again"]}, "a", "b")
     assert same["same"] and same["differs"] == [] and "program_env" not in same, same
-    other = mcp.layer_change({"layer": runs["one"]}, {"layer": runs["two"]}, "a", "b")
+    other = recording.layer_change({"layer": runs["one"]}, {"layer": runs["two"]}, "a", "b")
     assert not other["same"] and other["differs"] == ["d3d11"] and "two layers" in other["note"], other
     assert other["program_env"] == {"a": "MULLION_DIAG=profile LOG=log.txt", "b": ""}
-    assert not mcp.layer_change({"layer": runs["native"]}, {"layer": runs["one"]}, "a", "b")["same"]
-    assert mcp.layer_change({}, {"layer": runs["one"]}, "old", "b")["missing_in"] == ["old"]
-    assert mcp.layer_label(runs["native"]) == "native" and mcp.layer_label(one).endswith("mullion-wine wine-11.0")
+    assert not recording.layer_change({"layer": runs["native"]}, {"layer": runs["one"]}, "a", "b")["same"]
+    assert recording.layer_change({}, {"layer": runs["one"]}, "old", "b")["missing_in"] == ["old"]
+    assert recording.layer_label(runs["native"]) == "native" and recording.layer_label(one).endswith("mullion-wine wine-11.0")
 
 def test_workloads(tmp_path):
     """workload_fetch keeps an archive whose SHA-256 matches and refuses one that does not or that would extract
     outside its directory; perf_record turns a fetched workload into its program, Wine and arguments."""
     import hashlib
     import tarfile
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import config, paths, workloads
     source = tmp_path / "src" / "demo"
     source.mkdir(parents=True)
     (source / "demo").write_text("#!/bin/sh\n")
@@ -241,41 +241,41 @@ def test_workloads(tmp_path):
     entry = {"title": "t", "about": "a", "license": "l", "url": "https://example.invalid/x.tar.gz", "bytes": 1 << 20,
              "dir": "demo", "dim_variable": "DIM", "apis": {"mtl": {"program": "demo", "args": "--mtl", "wine": False},
                                                          "d3d12": {"program": "demo", "args": "--d3d12", "wine": True}}}
-    saved = mcp.WORKLOADS, mcp.CACHE, mcp.download
+    saved = config.WORKLOADS, config.CACHE, workloads.download
     served = {}
-    mcp.CACHE, mcp.download = tmp_path / "cache", lambda url, path, max_bytes: shutil.copy(served["file"], path)
+    config.CACHE, workloads.download = tmp_path / "cache", lambda url, path, max_bytes: shutil.copy(served["file"], path)
     try:
         for archive, sha, words in ((good, "0" * 64, "does not match"),
                                     (evil, hashlib.sha256(evil.read_bytes()).hexdigest(), "may not be extracted")):
-            mcp.WORKLOADS, served["file"] = {"demo": {**entry, "sha256": sha}}, archive
+            config.WORKLOADS, served["file"] = {"demo": {**entry, "sha256": sha}}, archive
             try:
-                mcp.tool_workload_fetch("demo")
+                workloads.tool_workload_fetch("demo")
                 raise AssertionError(f"{archive.name} must be refused")
-            except mcp.ToolError as error:
+            except paths.ToolError as error:
                 assert words in str(error), error
-            assert not any(p.name.startswith("demo-") for p in mcp.CACHE.iterdir()), list(mcp.CACHE.iterdir())
+            assert not any(p.name.startswith("demo-") for p in config.CACHE.iterdir()), list(config.CACHE.iterdir())
         assert not (tmp_path / "escape").exists()
-        mcp.WORKLOADS, served["file"] = {"demo": {**entry, "sha256": hashlib.sha256(good.read_bytes()).hexdigest()}}, good
-        assert mcp.tool_workload_list()["workloads"][0]["fetched"] is False
+        config.WORKLOADS, served["file"] = {"demo": {**entry, "sha256": hashlib.sha256(good.read_bytes()).hexdigest()}}, good
+        assert workloads.tool_workload_list()["workloads"][0]["fetched"] is False
         try:
-            mcp.workload_command("demo", "mtl", None, None, "")
+            workloads.workload_command("demo", "mtl", None, None, "")
             raise AssertionError("an unfetched workload must fail")
-        except mcp.ToolError as error:
+        except paths.ToolError as error:
             assert "workload_fetch" in str(error), error
-        assert mcp.tool_workload_fetch("demo")["downloaded"] and not mcp.tool_workload_fetch("demo")["downloaded"]
-        program, wine, args, env = mcp.workload_command("demo", "mtl", 20, "/opt/wine", "-x")
+        assert workloads.tool_workload_fetch("demo")["downloaded"] and not workloads.tool_workload_fetch("demo")["downloaded"]
+        program, wine, args, env = workloads.workload_command("demo", "mtl", 20, "/opt/wine", "-x")
         assert program.is_file() and os.access(program, os.X_OK) and wine == "native", program
         assert (args, env) == ("--mtl -x", "DIM=20"), (args, env)
         layer_wine = "native" if sys.platform == "win32" else "/opt/wine"
-        assert mcp.workload_command("demo", "d3d12", None, "/opt/wine", "")[1:] == (layer_wine, "--d3d12", "")
+        assert workloads.workload_command("demo", "d3d12", None, "/opt/wine", "")[1:] == (layer_wine, "--d3d12", "")
         for api in ("vulkan", None):
             try:
-                mcp.workload_command("demo", api, None, None, "")
+                workloads.workload_command("demo", api, None, None, "")
                 raise AssertionError(f"api {api} must fail")
-            except mcp.ToolError as error:
+            except paths.ToolError as error:
                 assert "api is one of mtl, d3d12" in str(error), error
     finally:
-        mcp.WORKLOADS, mcp.CACHE, mcp.download = saved
+        config.WORKLOADS, config.CACHE, workloads.download = saved
     shipped = json.loads((PKG / "data" / "workloads.json").read_text())["workloads"]["drawstress"]
     assert len(shipped["sha256"]) == 64 and shipped["sha256"] != "0" * 64 and shipped["url"].startswith("https://")
     examples = json.loads((PKG / "data" / "workloads.json").read_text())["workloads"]["bgfx-examples"]
@@ -287,7 +287,7 @@ def test_workload_downloads(tmp_path):
     import hashlib
     import tarfile
     import zipfile
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import config, paths, recording, workloads
     project = tmp_path / "src" / "godot" / "project"
     project.mkdir(parents=True)
     (project / "project.godot").write_text("x")
@@ -309,42 +309,42 @@ def test_workload_downloads(tmp_path):
              "sha256": hashlib.sha256(base.read_bytes()).hexdigest(), "bytes": base.stat().st_size, "dir": "godot",
              "downloads": [{"url": "https://example.invalid/g.zip", "sha512": sha512(good), "bytes": good.stat().st_size, "into": "bin"}],
              "apis": {"mtl": {"program": "bin/Godot.app/Contents/MacOS/Godot", "args": "--path {dir}/project", "wine": False}}}
-    saved = mcp.WORKLOADS, mcp.CACHE, mcp.download
+    saved = config.WORKLOADS, config.CACHE, workloads.download
     served = {"https://example.invalid/base.tar.gz": base, "https://example.invalid/g.zip": good}
-    mcp.CACHE, mcp.download = tmp_path / "cache", lambda url, path, max_bytes: shutil.copy(served[url], path)
+    config.CACHE, workloads.download = tmp_path / "cache", lambda url, path, max_bytes: shutil.copy(served[url], path)
     try:
         for archive, words in ((make_zip("link.zip", [("a", 0o777, True)]), "may not be extracted"),
                                (make_zip("up.zip", [("../escape", 0o644, False)]), "may not be extracted"),
                                (good, "does not match the SHA-512")):
             served["https://example.invalid/g.zip"] = archive
-            mcp.WORKLOADS = {"demo": {**entry, "downloads": [{**entry["downloads"][0], "sha512": sha512(good) if words.startswith("may") else "0" * 128}]}}
+            config.WORKLOADS = {"demo": {**entry, "downloads": [{**entry["downloads"][0], "sha512": sha512(good) if words.startswith("may") else "0" * 128}]}}
             if words.startswith("may"):
-                mcp.WORKLOADS["demo"]["downloads"][0]["sha512"] = sha512(archive)
+                config.WORKLOADS["demo"]["downloads"][0]["sha512"] = sha512(archive)
             try:
-                mcp.tool_workload_fetch("demo")
+                workloads.tool_workload_fetch("demo")
                 raise AssertionError(f"{archive.name} must be refused")
-            except mcp.ToolError as error:
+            except paths.ToolError as error:
                 assert words in str(error), error
-            assert not any(p.name.startswith("demo-") for p in mcp.CACHE.iterdir()), list(mcp.CACHE.iterdir())
+            assert not any(p.name.startswith("demo-") for p in config.CACHE.iterdir()), list(config.CACHE.iterdir())
         assert not (tmp_path / "escape").exists()
         served["https://example.invalid/g.zip"] = good
-        mcp.WORKLOADS = {"demo": entry}
-        assert mcp.tool_workload_fetch("demo")["bytes"] == entry["bytes"] + good.stat().st_size
-        assert mcp.tool_workload_list()["workloads"][0]["bytes"] == entry["bytes"] + good.stat().st_size
-        program, wine, args, env = mcp.workload_command("demo", "mtl", None, None, "")
+        config.WORKLOADS = {"demo": entry}
+        assert workloads.tool_workload_fetch("demo")["bytes"] == entry["bytes"] + good.stat().st_size
+        assert workloads.tool_workload_list()["workloads"][0]["bytes"] == entry["bytes"] + good.stat().st_size
+        program, wine, args, env = workloads.workload_command("demo", "mtl", None, None, "")
         assert program.is_file() and os.access(program, os.X_OK), "the zip's file mode must survive"
-        assert mcp.split_args(args) == ["--path", f"{program.parents[4]}/project"], (args, program)
-        mcp.CACHE = tmp_path / "a cache with spaces"
-        assert mcp.tool_workload_fetch("demo")["downloaded"]
-        spaced = mcp.split_args(mcp.workload_command("demo", "mtl", None, None, "")[2])
+        assert recording.split_args(args) == ["--path", f"{program.parents[4]}/project"], (args, program)
+        config.CACHE = tmp_path / "a cache with spaces"
+        assert workloads.tool_workload_fetch("demo")["downloaded"]
+        spaced = recording.split_args(workloads.workload_command("demo", "mtl", None, None, "")[2])
         assert len(spaced) == 2 and "a cache with spaces" in spaced[1], spaced
     finally:
-        mcp.WORKLOADS, mcp.CACHE, mcp.download = saved
+        config.WORKLOADS, config.CACHE, workloads.download = saved
 
 def test_example_traits(tmp_path):
     """Every shipped example has a class and the native encoder count measured for it, and workload_list shows them."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
-    listed = {w["name"]: w for w in mcp.tool_workload_list()["workloads"]}["bgfx-examples"]
+    from metal_gpu_trace import workloads
+    listed = {w["name"]: w for w in workloads.tool_workload_list()["workloads"]}["bgfx-examples"]
     assert set(listed["example_traits"]) == set(listed["examples"]), listed
     for name, traits in listed["example_traits"].items():
         assert traits["class"] in {"cpu_submit", "textured", "postprocess", "gpu_bandwidth", "compute", "gpu_alu",
@@ -356,8 +356,8 @@ def test_example_traits(tmp_path):
 def test_overrun(tmp_path):
     """A recording that overruns its deadline is stopped and leaves no files and no lock behind, and the deadline
     covers a 30 s Wine D3D12 recording (more than 407 s in all on an M1 Pro) and reading back a 60 s one."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
-    assert mcp.deadline(30) > 407 and mcp.deadline(60) > 87 * 6
+    from metal_gpu_trace import config, paths, recording
+    assert recording.deadline(30) > 407 and recording.deadline(60) > 87 * 6
     stubs, out = tmp_path / "stubs", tmp_path / "overrun"
     stubs.mkdir()
     out.mkdir()
@@ -368,16 +368,16 @@ def test_overrun(tmp_path):
     program = tmp_path / "hang-4242"
     program.write_text("#!/bin/sh\n")
     program.chmod(0o755)
-    saved = mcp.OUT, mcp.deadline, os.environ["PATH"]
-    mcp.OUT, mcp.deadline = out, lambda seconds: 3
+    saved = config.OUT, recording.deadline, os.environ["PATH"]
+    config.OUT, recording.deadline = out, lambda seconds: 3
     os.environ["PATH"] = f"{stubs}:{saved[2]}"
     try:
-        mcp.tool_perf_record("hang", str(program), seconds=1, wine="native")
+        recording.tool_perf_record("hang", str(program), seconds=1, wine="native")
         raise AssertionError("an overrunning recording must fail")
-    except mcp.ToolError as error:
+    except paths.ToolError as error:
         assert "stopped" in str(error), error
     finally:
-        mcp.OUT, mcp.deadline, os.environ["PATH"] = saved
+        config.OUT, recording.deadline, os.environ["PATH"] = saved
     assert not list(out.iterdir()), list(out.iterdir())
 
 def test_kill_program_and_watchdog(tmp_path):
@@ -385,14 +385,14 @@ def test_kill_program_and_watchdog(tmp_path):
     its program when the server named in PERF_PARENT_PID dies."""
     import shutil
     import time
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import recording
     stubs, out, program = hang_stubs(tmp_path)
     # a program that ignores SIGTERM, under a name only this test uses
     stubborn = tmp_path / "ignoreterm-4242"
     shutil.copy(shutil.which("sleep"), stubborn)
     proc = subprocess.Popen(["sh", "-c", f"trap '' TERM; exec {stubborn} 60"])
     time.sleep(0.5)
-    mcp.kill_program("ignoreterm-4242")
+    recording.kill_program("ignoreterm-4242")
     assert proc.wait(timeout=15) is not None, "kill_program must escalate to SIGKILL"
     # the recording's parent dies: the script must exit and free its lock
     parent = subprocess.Popen(["sleep", "60"])
@@ -456,7 +456,7 @@ def test_moltenvk(tmp_path):
     """api vk needs METAL_TRACE_MOLTENVK (a directory with libMoltenVK.dylib and no spaces), runs the program with
     DYLD_LIBRARY_PATH set to it, and names MoltenVK as the layer without a local path, so perf_compare tells a
     MoltenVK run from a native Metal run."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import config, paths, recording, workloads
     entry = {"title": "t", "about": "a", "license": "l", "url": "https://example.invalid/x.tar.gz", "bytes": 1,
              "sha256": "0" * 64, "dir": "demo", "dim_variable": "DIM",
              "apis": {"mtl": {"program": "demo", "args": "--mtl", "wine": False},
@@ -469,41 +469,41 @@ def test_moltenvk(tmp_path):
     spaced.mkdir()
     (lib / "libMoltenVK.dylib").write_bytes(b"fake")
     (spaced / "libMoltenVK.dylib").write_bytes(b"fake")
-    saved = mcp.WORKLOADS, mcp.CACHE, mcp.record, os.environ.get("METAL_TRACE_MOLTENVK")
-    mcp.WORKLOADS, mcp.CACHE = {"demo": entry}, cache
+    saved = config.WORKLOADS, config.CACHE, recording.record, os.environ.get("METAL_TRACE_MOLTENVK")
+    config.WORKLOADS, config.CACHE = {"demo": entry}, cache
     seen = {}
-    mcp.record = lambda *args, **kw: seen.update(args=args, kw=kw) or {}
+    recording.record = lambda *args, **kw: seen.update(args=args, kw=kw) or {}
 
     def refused(path, words):
         os.environ.pop("METAL_TRACE_MOLTENVK", None) if path is None else os.environ.__setitem__("METAL_TRACE_MOLTENVK", str(path))
         try:
-            mcp.workload_command("demo", "vk", None, None, "")
+            workloads.workload_command("demo", "vk", None, None, "")
             raise AssertionError(f"{path} must be refused")
-        except mcp.ToolError as error:
+        except paths.ToolError as error:
             assert words in str(error) and str(tmp_path) not in str(error), error
     try:
         refused(None, "set METAL_TRACE_MOLTENVK")
         refused(tmp_path, "holds no libMoltenVK.dylib")
         refused(spaced, "spaces")
         os.environ["METAL_TRACE_MOLTENVK"] = str(lib)
-        program, wine, args, env = mcp.workload_command("demo", "vk", 20, None, "-x")
+        program, wine, args, env = workloads.workload_command("demo", "vk", 20, None, "-x")
         assert wine == "native" and args == "--vk -x" and env == f"DIM=20 DYLD_LIBRARY_PATH={lib.resolve()}", (wine, args, env)
-        layer = mcp.workload_layer("demo", "vk", 20)
+        layer = workloads.workload_layer("demo", "vk", 20)
         assert layer["moltenvk"] and len(layer["dylib"]["sha256"]) == 64 and layer["program_env"] == "DIM=20", layer
         assert str(tmp_path) not in json.dumps(layer), "the layer must not carry a local path"
-        assert mcp.workload_layer("demo", "mtl", 20) is None
-        mcp.tool_perf_record("v", workload="demo", api="vk", seconds=5)
+        assert workloads.workload_layer("demo", "mtl", 20) is None
+        recording.tool_perf_record("v", workload="demo", api="vk", seconds=5)
         assert seen["kw"]["layer"]["moltenvk"] and "DYLD_LIBRARY_PATH=" in seen["args"][6], seen
-        mcp.tool_perf_record("m", workload="demo", api="mtl", seconds=5)
+        recording.tool_perf_record("m", workload="demo", api="mtl", seconds=5)
         assert seen["kw"]["layer"] is None
     finally:
-        mcp.WORKLOADS, mcp.CACHE, mcp.record = saved[:3]
+        config.WORKLOADS, config.CACHE, recording.record = saved[:3]
         os.environ.pop("METAL_TRACE_MOLTENVK", None) if saved[3] is None else os.environ.__setitem__("METAL_TRACE_MOLTENVK", saved[3])
     vk, vk2 = {"layer": layer}, {"layer": {**layer}}
     native = {"layer": {"none": "native Metal, no translation layer", "program_env": "DIM=20"}}
-    assert mcp.layer_label(layer).startswith("moltenvk ") and len(mcp.layer_label(layer)) == 21
-    assert mcp.layer_change(native, vk, "a", "b")["same"] is False
-    assert mcp.layer_change(vk, vk2, "a", "b")["same"] is True
+    assert recording.layer_label(layer).startswith("moltenvk ") and len(recording.layer_label(layer)) == 21
+    assert recording.layer_change(native, vk, "a", "b")["same"] is False
+    assert recording.layer_change(vk, vk2, "a", "b")["same"] is True
     assert "vk" in json.loads((PKG / "data" / "workloads.json").read_text())["workloads"]["drawstress"]["apis"]
 
 def test_pack_examples(tmp_path):
@@ -547,41 +547,41 @@ def test_pack_examples(tmp_path):
 
 def test_workload_example(tmp_path):
     """A workload with `examples` needs one named, and its argument follows the api's arguments."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import config, paths, registry, workloads
     entry = {"title": "t", "about": "a", "license": "l", "url": "https://example.invalid/x.tar.gz", "bytes": 1,
              "sha256": "0" * 64, "dir": "demo", "dim_variable": "DIM",
              "examples": {"21-deferred": "21-", "01-cubes": "01-"},
              "apis": {"mtl": {"program": "demo", "args": "--mtl", "wine": False}}}
     plain = {k: v for k, v in entry.items() if k != "examples"}
-    saved = mcp.WORKLOADS, mcp.CACHE
-    mcp.CACHE = tmp_path
+    saved = config.WORKLOADS, config.CACHE
+    config.CACHE = tmp_path
     try:
-        mcp.WORKLOADS = {"demo": entry, "plain": plain}
+        config.WORKLOADS = {"demo": entry, "plain": plain}
         for name in ("demo", "plain"):
             (tmp_path / f"{name}-{'0' * 12}").mkdir()
-        assert mcp.workload_command("demo", "mtl", None, None, "-x", example="21-deferred")[2] == "--mtl 21- -x"
+        assert workloads.workload_command("demo", "mtl", None, None, "-x", example="21-deferred")[2] == "--mtl 21- -x"
         for name, example, words in (("demo", None, "example is one of 21-deferred, 01-cubes"),
                                      ("demo", "nope", "example is one of 21-deferred, 01-cubes"),
                                      ("plain", "21-deferred", "takes no example")):
             try:
-                mcp.workload_command(name, "mtl", None, None, "", example=example)
+                workloads.workload_command(name, "mtl", None, None, "", example=example)
                 raise AssertionError(f"{name} with example {example} must fail")
-            except mcp.ToolError as error:
+            except paths.ToolError as error:
                 assert words in str(error), error
-        assert mcp.workload_command("plain", "mtl", None, None, "")[2] == "--mtl"
+        assert workloads.workload_command("plain", "mtl", None, None, "")[2] == "--mtl"
         no_dim = {k: v for k, v in entry.items() if k != "dim_variable"}
-        mcp.WORKLOADS = {"demo": no_dim}
+        config.WORKLOADS = {"demo": no_dim}
         try:
-            mcp.workload_command("demo", "mtl", 20, None, "", example="01-cubes")
+            workloads.workload_command("demo", "mtl", 20, None, "", example="01-cubes")
             raise AssertionError("dim on a workload without dim_variable must fail")
-        except mcp.ToolError as error:
+        except paths.ToolError as error:
             assert "dim does not apply to demo" in str(error), error
-        assert mcp.workload_command("demo", "mtl", None, None, "", example="01-cubes")[3] == ""
-        mcp.WORKLOADS = {"demo": entry, "plain": plain}
-        assert mcp.tool_workload_list()["workloads"][0]["examples"] == ["21-deferred", "01-cubes"]
+        assert workloads.workload_command("demo", "mtl", None, None, "", example="01-cubes")[3] == ""
+        config.WORKLOADS = {"demo": entry, "plain": plain}
+        assert workloads.tool_workload_list()["workloads"][0]["examples"] == ["21-deferred", "01-cubes"]
     finally:
-        mcp.WORKLOADS, mcp.CACHE = saved
-    assert mcp.RECORD_PROPS["example"]["type"] == "string"
+        config.WORKLOADS, config.CACHE = saved
+    assert registry.RECORD_PROPS["example"]["type"] == "string"
 
 
 def test_daemon_candidates():

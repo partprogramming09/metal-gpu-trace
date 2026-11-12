@@ -14,10 +14,21 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   a `wheel` CI job installs the built package and checks that it starts.
 - The code lives in the package folder `src/metal_gpu_trace/` and the tests in `tests/`, split by topic. From a clone,
   the scripts are `src/metal_gpu_trace/perf_record.sh` and its neighbours, the self-check is `python3 -I tests/run.py`,
-  and `python3 -I src/metal_gpu_trace/metal_trace_mcp.py` starts the server. The installed package and `uvx metal-gpu-trace` are unchanged.
-  The CI gate example in the README now passes the seconds `perf_record.sh` requires.
-  The Python 3.9 CI and publish jobs run on ubuntu-24.04: ubuntu-latest moved to 26.04, which has no Python 3.9.
-  `windows/winbridge-run-tests.ps1` now runs `tests\test_perf_record_windows.py`: register its new SHA-256 again.
+  and `python3 -I src/metal_gpu_trace/metal_trace_mcp.py` starts the server. The installed package and
+  `uvx metal-gpu-trace` are unchanged. The CI gate example in the README now passes the seconds `perf_record.sh`
+  requires. `windows/winbridge-run-tests.ps1` now runs `tests\test_perf_record_windows.py`: register its new SHA-256
+  again.
+- The Python 3.9 CI and publish jobs run on ubuntu-24.04: ubuntu-latest moved to 26.04, which has no Python 3.9.
+- The server is split into modules by job (`config`, `recording`, `workloads`, `analysis`, `experiments`, `panel`,
+  `traces`, `registry`, `worker`, `protocol`, `stdio`, `http_transport`); `metal_trace_mcp.py` keeps the version, the
+  instructions and `main`. Tools, replies and options are unchanged: the golden file of the protocol did not move.
+- Windows summaries use the Mac schema for the numbers both share (`metrics.py`). Recordings made with PresentMon or
+  DWM have no encoder spans, so their `short_share` is now `{}` instead of every cut at 0.0, and their `gpu_idle` holds
+  only `idle_ms_per_frame`, without `gaps_over_1ms: 0` and `idle_share: null`; `idle_share` of a zero-length span is
+  `null` instead of 0.0. Drawstress-log recordings are unchanged. `perf_compare`, `perf_check` and `perf_diagnose`
+  accept these summaries, also next to older ones, and give no encoder verdict for them.
+- Shared summaries no longer show the folders of a Wine program's Windows-path arguments: `C:\Games\x\game.exe` becomes
+  `game.exe` on macOS too (it was cut only when recording on Windows).
 
 ## 0.22.0 — 2026-11-05
 

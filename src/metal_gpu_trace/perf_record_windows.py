@@ -4,7 +4,6 @@ Records Windows programs, workloads (such as bgfx 17-drawstress with D3D11 / D3D
 and attached processes, producing telemetry CSVs and a summary JSON matching the schema
 expected by perf_report.py and perf_compare.
 """
-import collections
 import csv
 import ctypes
 from ctypes import wintypes
@@ -22,10 +21,12 @@ import time
 
 if __package__ in (None, ""):  # run by path: make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from metal_gpu_trace import perf_report  # noqa: E402
+from metal_gpu_trace import metrics, perf_report  # noqa: E402
 
+# the numbers shared with perf_report live in metrics, so Mac and Windows summaries keep one schema
+SHORT_US, stats, label_name = metrics.SHORT_US, metrics.stats, metrics.label_name
+encoder_stats, idle_gaps, public_arguments = metrics.encoder_stats, metrics.idle_gaps, metrics.public_arguments
 
-SHORT_US = (10, 25, 50, 100, 250, 500, 1000)
 
 TH32CS_SNAPPROCESS = 0x00000002
 PROCESS_QUERY_INFORMATION = 0x0400
@@ -119,7 +120,6 @@ class DWM_TIMING_INFO_LEGACY(ctypes.Structure):
         ("cFramesMissed", ctypes.c_uint64),
         ("cRefreshAdjustment", ctypes.c_uint64),
     ]
-
 
 
 class PROCESSENTRY32(ctypes.Structure):
@@ -412,7 +412,6 @@ def sample_dwm_frame_times(pid, stop_event, frame_samples):
         pass
 
 
-
 def presentmon_dir():
     """Returns the directory presentmon_install saves PresentMon in: %LOCALAPPDATA%\\metal-gpu-trace."""
     return pathlib.Path(os.environ.get("LOCALAPPDATA", "~")).expanduser() / "metal-gpu-trace"
@@ -484,29 +483,6 @@ def find_attached_process(target):
     return matches[-1][0], matches[-1][1]
 
 
-def public_arguments(arguments):
-    """Returns a command line with each absolute path cut to its file name, so summaries can be shared."""
-    def clean(arg):
-        if arg.startswith("/") or re.match(r"^[a-zA-Z]:[\\/]", arg):
-            return pathlib.Path(arg).name
-        return arg
-    return " ".join(clean(a) for a in (arguments or "").split())
-
-
-def stats(values):
-    """Returns count, mean, median, 95th percentile and maximum of `values`, rounded to microseconds when in ms."""
-    if not values:
-        return {"count": 0}
-    ordered = sorted(values)
-    return {
-        "count": len(ordered),
-        "mean": round(statistics.fmean(ordered), 3),
-        "p50": round(ordered[len(ordered) // 2], 3),
-        "p95": round(ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))], 3),
-        "max": round(ordered[-1], 3),
-    }
-
-
 def compute_precision_telemetry(gaps, totals):
     """Returns FPS, 1% and 0.1% lows, stutter rate, jitter and throttling drift from frame intervals (ms, start to
     start) and GPU ms per frame, as perf_report.frame_pacing computes them, with None for what cannot be judged."""
@@ -521,66 +497,6 @@ def compute_precision_telemetry(gaps, totals):
         "frame_jitter_ms": pacing.get("frame_jitter_ms"),
         "throttling_analysis": pacing.get("throttling_analysis") or {
             "thermal_throttling_detected": None, "fps_initial": fps, "fps_final": fps, "fps_drift_pct": None},
-    }
-
-
-def label_name(label):
-    """Returns an encoder label without prefix and trailing index."""
-    return re.sub(r" \d+$", "", re.sub(r"^\[\d+\] ", "", label)) or "?"
-
-
-def encoder_stats(spans, labels):
-    """Returns encoder statistics matching perf_report.py schema."""
-    encoders, buffers, busy = collections.defaultdict(set), collections.defaultdict(set), collections.Counter()
-    for frame, _, duration, encoder, buffer in spans:
-        if encoder:
-            encoders[frame].add(encoder)
-            busy[encoder] += duration
-        if buffer:
-            buffers[frame].add(buffer)
-    us = [ns / 1000 for ns in busy.values()]
-    grouped = collections.defaultdict(list)
-    for encoder, ns in busy.items():
-        grouped[label_name(labels.get(encoder, ""))].append(ns / 1000)
-    frames = len({s[0] for s in spans}) or 1
-    top = sorted(grouped.items(), key=lambda kv: -sum(kv[1]))[:20]
-    return {
-        "per_frame": stats([len(e) for e in encoders.values()]),
-        "command_buffers_per_frame": stats([len(b) for b in buffers.values()]),
-        "encoder_us": stats(us),
-        "short_share": {str(cut): (round(sum(u < cut for u in us) / len(us), 3) if us else 0.0) for cut in SHORT_US},
-        "by_label": [
-            {
-                "label": name,
-                "per_frame": round(len(v) / frames, 2),
-                "total_ms": round(sum(v) / 1000, 3),
-                "mean_us": round(statistics.fmean(v), 1),
-                "stdev_us": round(statistics.pstdev(v) if len(v) > 1 else 0.0, 1),
-            }
-            for name, v in top
-        ],
-    }
-
-
-def idle_gaps(spans):
-    """Returns the time the GPU ran none of the process's work between its first and last interval."""
-    ordered = sorted((start, start + duration, frame) for frame, start, duration, _, _ in spans)
-    if not ordered:
-        return {"idle_ms_per_frame": {"count": 0}, "gaps_over_1ms": 0, "idle_share": None}
-    idle = collections.Counter({frame: 0.0 for _, _, frame in ordered})
-    gaps = []
-    end = ordered[0][1]
-    for start, stop, frame in ordered[1:]:
-        if start > end:
-            gap_ms = (start - end) / 1e6
-            gaps.append(gap_ms)
-            idle[frame] += gap_ms
-        end = max(end, stop)
-    whole = (end - ordered[0][0]) / 1e6
-    return {
-        "idle_ms_per_frame": stats(list(idle.values())),
-        "gaps_over_1ms": sum(g > 1 for g in gaps),
-        "idle_share": round(sum(gaps) / whole, 3) if whole else 0.0,
     }
 
 

@@ -79,6 +79,7 @@
   },
   "label_name": "Shadow",
   "public_arguments": "game.exe -w 1",
+  "public_arguments_windows": "game.exe -w 1",
   "stats": {
    "count": 4,
    "max": 10.0,
@@ -220,15 +221,7 @@
    "per_frame": {
     "count": 0
    },
-   "short_share": {
-    "10": 0.0,
-    "100": 0.0,
-    "1000": 0.0,
-    "25": 0.0,
-    "250": 0.0,
-    "50": 0.0,
-    "500": 0.0
-   }
+   "short_share": {}
   },
   "idle_gaps": {
    "gaps_over_1ms": 0,
@@ -242,14 +235,13 @@
    "idle_share": 0.537
   },
   "idle_gaps_empty": {
-   "gaps_over_1ms": 0,
    "idle_ms_per_frame": {
     "count": 0
-   },
-   "idle_share": null
+   }
   },
   "label_name": "Shadow",
   "public_arguments": "game.exe -w 1",
+  "public_arguments_windows": "game.exe -w 1",
   "stats": {
    "count": 4,
    "max": 10.0,

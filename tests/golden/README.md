@@ -15,4 +15,4 @@ A test fails when the output differs. When the difference is intended:
 2. Read the diff of the JSON file and check that only the intended values moved.
 3. Name the change in `CHANGELOG.md`.
 
-Known difference between the Mac and Windows copies when recorded (2026-11-11): with no encoders, `short_share` is `{}` on Mac and holds every cut at `0.0` on Windows. With no GPU intervals, Windows also returns `gaps_over_1ms: 0` and `idle_share: null`. `public_arguments` in `perf_report` cuts only paths that start with `/`, so a Wine program's `C:\…` argument stays whole; the Windows copy cuts it only when it runs on Windows. That case is left out of the file because it depends on the platform.
+The `mac` and `windows` keys hold the same numbers: since 0.23.0 both come from one copy in `metrics.py`, and `test_metrics_schema_is_shared` checks that. The keys stay apart so a future copy shows up as a diff here.

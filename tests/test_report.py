@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 
 from support import PKG, golden  # also puts src/ on sys.path
@@ -186,7 +187,7 @@ def test_pacing_and_hitches():
 
 def test_trace_count(tmp_path):
     """trace_count counts a table's rows in all and per process, names tables the trace lacks, and refuses odd names."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import config, paths, traces
     table = ('<trace-query-result><node><schema><col><mnemonic>process</mnemonic></col><col><mnemonic>n</mnemonic></col>'
              '</schema><row><process id="1" fmt="wine (42)"><pid>42</pid></process><n>1</n></row>'
              '<row><process ref="1"/><n>2</n></row><row><process id="2" fmt="WindowServer (7)"><pid>7</pid></process>'
@@ -198,20 +199,20 @@ def test_trace_count(tmp_path):
         path = tmp_path / f"t{len(calls)}.xml"
         path.write_text(table)
         return str(path)
-    saved = mcp.perf_report.export, mcp.tool_trace_tables, mcp.OUT
-    mcp.perf_report.export, mcp.tool_trace_tables, mcp.OUT = export, lambda t: {"tables": ["spill-events"]}, tmp_path
+    saved = perf_report.export, traces.tool_trace_tables, config.OUT
+    perf_report.export, traces.tool_trace_tables, config.OUT = export, lambda t: {"tables": ["spill-events"]}, tmp_path
     try:
         (tmp_path / "r1.trace").mkdir()
-        got = mcp.tool_trace_count("r1", ["spill-events", "time-profile"])
+        got = traces.tool_trace_count("r1", ["spill-events", "time-profile"])
         assert got["tables"]["spill-events"] == {"rows": 3, "by_process": {"wine (42)": 2, "WindowServer (7)": 1}}, got
         assert got["tables"]["time-profile"]["rows"] is None and len(calls) == 1, got
         try:
-            mcp.tool_trace_count("r1", ["x;y"])
+            traces.tool_trace_count("r1", ["x;y"])
             raise AssertionError("an odd table name must fail")
-        except mcp.ToolError:
+        except paths.ToolError:
             pass
     finally:
-        mcp.perf_report.export, mcp.tool_trace_tables, mcp.OUT = saved
+        perf_report.export, traces.tool_trace_tables, config.OUT = saved
 
 def test_counter_windows(tmp_path):
     """counter_stats keeps each Limiter's mean per 10 ms bin, and limiter_in names the Limiter with the highest mean over a
@@ -363,7 +364,7 @@ def test_validation(tmp_path):
 def test_skip_start_up(tmp_path):
     """skip_s recomputes FPS, lows, hitches and Metal memory from the per-frame files without the first seconds, keeps
     the whole-run numbers it cannot recompute, reaches perf_compare, perf_gate and the panel, and refuses a bad value."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import analysis, config, experiments, panel, paths, recording
 
     starts, t = [], 0.0
     for i in range(400):  # 10 ms frames; three 40 ms hitches in the first second and one at frame 300
@@ -382,10 +383,10 @@ def test_skip_start_up(tmp_path):
         (tmp_path / f"{run}.json").write_text(json.dumps(summary))
         (tmp_path / f"{run}.frames.csv").write_text(frames)
         (tmp_path / f"{run}.metal_memory.csv").write_text(memory)
-    saved, (mcp.OUT, mcp.BASELINES) = (mcp.OUT, mcp.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
     try:
-        assert mcp.steady_summary("s1") == summary, "no skip, the summary as saved"
-        s = mcp.steady_summary("s1", 1.5)  # the first frame is at 10 ms: frames from 1510 ms on
+        assert analysis.steady_summary("s1") == summary, "no skip, the summary as saved"
+        s = analysis.steady_summary("s1", 1.5)  # the first frame is at 10 ms: frames from 1510 ms on
         assert s["gpu"]["frames"] < 400 and s["hitches"]["count"] == 1, s["hitches"]
         assert [h["frame"] for h in s["hitches"]["worst"]] == [301] and s["hitches"]["causes"] == {"shader_compile": 1}
         assert "cpu" not in s and s["metal_memory_mib"]["peak"] == 60.0 and "per_channel_ms" not in s["gpu"]
@@ -394,63 +395,63 @@ def test_skip_start_up(tmp_path):
         win.pop("metal_memory_mib"), win.pop("cpu")
         (tmp_path / "w1.json").write_text(json.dumps(win))
         (tmp_path / "w1.frames.csv").write_text(frames)  # a Windows run has no Metal memory: skip_s must still compare
-        mixed = mcp.tool_perf_compare("s1", "w1", skip_s=1.5)
+        mixed = analysis.tool_perf_compare("s1", "w1", skip_s=1.5)
         assert mixed["measure"]["b"] == "windows" and mixed["metrics"]["metal_mib_peak"]["b"] is None, mixed["metrics"]["metal_mib_peak"]
-        assert mcp.panel_data(["s1", "w1"], skip_s=1.5)["not_comparable"], "the panel too"
-        both = mcp.tool_perf_compare("s1", "s2", skip_s=1.5)
+        assert panel.panel_data(["s1", "w1"], skip_s=1.5)["not_comparable"], "the panel too"
+        both = analysis.tool_perf_compare("s1", "s2", skip_s=1.5)
         assert both["skipped_s"] == 1.5 and both["metrics"]["fps"]["a"] == 100.0, both["metrics"]["fps"]
-        assert "skipped_s" not in mcp.tool_perf_compare("s1", "s2")
-        gate = mcp.tool_perf_gate("s1", hitches_max=1, metal_mib_max=70, skip_s=1.5)
+        assert "skipped_s" not in analysis.tool_perf_compare("s1", "s2")
+        gate = analysis.tool_perf_gate("s1", hitches_max=1, metal_mib_max=70, skip_s=1.5)
         assert gate["pass"] and gate["skipped_s"] == 1.5, gate
-        assert not mcp.tool_perf_gate("s1", hitches_max=1, metal_mib_max=70)["pass"], "the whole run has 4 hitches and 90 MiB"
-        data = mcp.panel_data(["s1", "s2"], skip_s=1.5)
+        assert not analysis.tool_perf_gate("s1", hitches_max=1, metal_mib_max=70)["pass"], "the whole run has 4 hitches and 90 MiB"
+        data = panel.panel_data(["s1", "s2"], skip_s=1.5)
         run = data["runs"][0]
         assert data["skip_s"] == 1.5 and len(run["marks"]) == 1 and run["frames"][0][0] >= 1510 and run["memory"][0][0] >= 1510, run["marks"]
-        assert mcp.panel_data(["s1", "s2"])["skip_s"] == 0
-        ref = mcp.tool_perf_baseline("bs", ["s1", "s2"], skip_s=1.5)
+        assert panel.panel_data(["s1", "s2"])["skip_s"] == 0
+        ref = analysis.tool_perf_baseline("bs", ["s1", "s2"], skip_s=1.5)
         assert ref["skip_s"] == 1.5 and ref["range"]["fps"] == {"min": 100.0, "max": 100.0}, ref
-        check = mcp.tool_perf_check("s1", "bs")  # the whole run reads 90 FPS: judged without its start-up it is 100, the reference
+        check = analysis.tool_perf_check("s1", "bs")  # the whole run reads 90 FPS: judged without its start-up it is 100, the reference
         assert check["verdict"] == "same" and check["skipped_s"] == 1.5, check
-        whole = mcp.tool_perf_baseline("bw", ["s1", "s2"])
-        assert "skip_s" not in whole and whole["range"]["fps"]["min"] == 90.0 and "skipped_s" not in mcp.tool_perf_check("s1", "bw")
+        whole = analysis.tool_perf_baseline("bw", ["s1", "s2"])
+        assert "skip_s" not in whole and whole["range"]["fps"]["min"] == 90.0 and "skipped_s" not in analysis.tool_perf_check("s1", "bw")
         seen = []
-        saved_baseline, saved_record = mcp.tool_perf_baseline, mcp.tool_perf_record
-        mcp.tool_perf_baseline = lambda name, runs, skip_s=0: seen.append((name, skip_s)) or {}
-        mcp.tool_perf_record = lambda label, **kw: (tmp_path / f"{label}_x.json").write_text("{}")
+        saved_baseline, saved_record = analysis.tool_perf_baseline, recording.tool_perf_record
+        analysis.tool_perf_baseline = lambda name, runs, skip_s=0: seen.append((name, skip_s)) or {}
+        recording.tool_perf_record = lambda label, **kw: (tmp_path / f"{label}_x.json").write_text("{}")
         try:
-            mcp.tool_perf_baseline_record("rec", count=1, skip_s=2)
+            experiments.tool_perf_baseline_record("rec", count=1, skip_s=2)
         finally:
-            mcp.tool_perf_baseline, mcp.tool_perf_record = saved_baseline, saved_record
+            analysis.tool_perf_baseline, recording.tool_perf_record = saved_baseline, saved_record
         assert seen == [("rec", 2)], seen
-        hist = mcp.tool_perf_history("s", skip_s=1.5)
-        assert [r["hitches"] for r in hist["runs"]] == [1, 1] and mcp.tool_perf_history("s")["runs"][0]["hitches"] == 4, hist
-        ab = mcp.ab_report("x", "", "A=1", {"a": ["s1"], "b": ["s2"]}, skip_s=1.5)
+        hist = analysis.tool_perf_history("s", skip_s=1.5)
+        assert [r["hitches"] for r in hist["runs"]] == [1, 1] and analysis.tool_perf_history("s")["runs"][0]["hitches"] == 4, hist
+        ab = experiments.ab_report("x", "", "A=1", {"a": ["s1"], "b": ["s2"]}, skip_s=1.5)
         assert ab["skipped_s"] == 1.5 and ab["metrics"]["fps_estimate"]["a"] == [100.0], ab
-        assert "skipped_s" not in mcp.ab_report("x", "", "A=1", {"a": ["s1"], "b": ["s2"]})
+        assert "skipped_s" not in experiments.ab_report("x", "", "A=1", {"a": ["s1"], "b": ["s2"]})
         try:
-            mcp.tool_perf_ab("x", "", "A=1", skip_s=-1)
+            experiments.tool_perf_ab("x", "", "A=1", skip_s=-1)
             raise AssertionError("a bad skip_s must fail before recording")
-        except mcp.ToolError:
+        except paths.ToolError:
             pass
         for bad in (-1, 601, "x"):
             try:
-                mcp.steady_summary("s1", bad)
+                analysis.steady_summary("s1", bad)
                 raise AssertionError(f"{bad} must fail")
-            except mcp.ToolError:
+            except paths.ToolError:
                 pass
         try:
-            mcp.steady_summary("s1", 500)
+            analysis.steady_summary("s1", 500)
             raise AssertionError("a skip past the last frame must fail")
-        except mcp.ToolError as error:
+        except paths.ToolError as error:
             assert "under 2 frames" in str(error)
     finally:
-        mcp.OUT, mcp.BASELINES = saved
+        config.OUT, config.BASELINES = saved
 
 def test_gpu_counters(tmp_path):
     """counter_stats reads the line-per-row GPU counter table whose cells are refs to earlier ids (the first row shares a
     line with the schema, and a counter id may be a ref to an id first written as a sample index), summarizes each counter
     and names the top limiter; summarize asks for the counter tables only when told; perf_record passes counters on."""
-    from metal_gpu_trace import metal_trace_mcp as mcp
+    from metal_gpu_trace import recording, registry
 
     info = tmp_path / "info.xml"
     info.write_text("<trace-query-result><node xpath='x'><schema name=\"gpu-counter-info\"><col><mnemonic>counter-id</mnemonic></col>"
@@ -500,17 +501,17 @@ def test_gpu_counters(tmp_path):
     assert wants == [False, True, True], wants
 
     seen = []
-    saved_record = mcp.record
-    mcp.record = lambda *args, **kw: seen.append(kw.get("counters")) or {}
+    saved_record = recording.record
+    recording.record = lambda *args, **kw: seen.append(kw.get("counters")) or {}
     program = tmp_path / "prog"
     program.write_text("")
     try:
-        mcp.tool_perf_record("m", str(program), wine="native")
-        mcp.tool_perf_record("m", str(program), wine="native", counters=True)
+        recording.tool_perf_record("m", str(program), wine="native")
+        recording.tool_perf_record("m", str(program), wine="native", counters=True)
     finally:
-        mcp.record = saved_record
-    assert seen == [False, True] and mcp.RECORD_PROPS["counters"]["type"] == "boolean", seen
-    assert mcp.deadline(10, True) > mcp.deadline(10) and mcp.deadline(10) == 330
+        recording.record = saved_record
+    assert seen == [False, True] and registry.RECORD_PROPS["counters"]["type"] == "boolean", seen
+    assert recording.deadline(10, True) > recording.deadline(10) and recording.deadline(10) == 330
 
 def test_machine(tmp_path):
     """machine_info() names the chip, cores, RAM and macOS without host name or UUID, and gives None when the machine
@@ -553,6 +554,7 @@ def test_golden_metrics(tmp_path):
             "idle_gaps": module.idle_gaps(spans),
             "label_name": module.label_name("[3] Shadow 12"),
             "public_arguments": module.public_arguments("/opt/x/game.exe -w 1"),
+            "public_arguments_windows": module.public_arguments(r"C:\Games\x\game.exe -w 1"),
         }
     gaps = [10.0] * 98 + [30.0, 10.0]
     starts = [0, 10, 20, 50, 60, 100, 110, 150, 160, 200, 250, 260]
@@ -564,3 +566,19 @@ def test_golden_metrics(tmp_path):
                                                            [(70, 80)], [(0, 0), (200, 0), (250, 20 * 2**20)]),
     }
     golden("metrics", shared)
+
+
+def test_metrics_schema_is_shared():
+    """Mac and Windows summaries come from one copy of the shared numbers, so their schema cannot drift apart again,
+    and public_arguments cuts Windows paths (a Wine program's C:\\ arguments) on every platform."""
+    from metal_gpu_trace import metrics, perf_record_windows
+    for name in ("SHORT_US", "stats", "encoder_stats", "idle_gaps", "label_name", "public_arguments"):
+        assert getattr(perf_report, name) is getattr(metrics, name), name
+        assert getattr(perf_record_windows, name) is getattr(metrics, name), name
+    assert metrics.public_arguments(r"C:\Games\x\game.exe -w D:/saves/s1.dat /opt/a/b") == "game.exe -w s1.dat b"
+
+
+def test_perf_report_runs_by_path():
+    """perf_record.sh runs perf_report.py by its path with -I: it must find the package (metrics) on its own."""
+    proc = subprocess.run([sys.executable, "-I", str(PKG / "perf_report.py"), "--help"], text=True, capture_output=True)
+    assert proc.returncode == 0 and "usage: perf_report.py" in proc.stdout, proc.stderr
