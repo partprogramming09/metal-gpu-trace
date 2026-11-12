@@ -1,5 +1,6 @@
 """Tests of project.py: the metal-gpu-trace.json project file, which names a project and the folder of its recordings."""
 import json
+import pathlib
 
 from support import ROOT  # noqa: F401  (puts src/ on sys.path)
 from metal_gpu_trace import paths, project
@@ -129,3 +130,153 @@ def test_load_refuses_odd_json(tmp_path):
     assert "runs" in refused(write(tmp_path, '{"name": "m", "runs": "a", "runs": "b"}'))
     text = refused(write(tmp_path, {"name": "m", "runs": "r", "x" * 500: 1}))
     assert len(text) < 300, text
+
+
+def saved_config():
+    """Returns a function that puts config's project settings back as they are now."""
+    from metal_gpu_trace import config
+    saved = config.OUT, list(config.READ), config.BASELINES, config.PROJECT, config.PROJECT_ERROR
+
+    def restore():
+        config.OUT, config.READ, config.BASELINES, config.PROJECT, config.PROJECT_ERROR = saved
+    return restore
+
+
+def test_find_takes_the_nearest_file(tmp_path):
+    env = {"HOME": str(tmp_path / "h")}
+    (tmp_path / ".git").mkdir()
+    path = write(tmp_path, {"name": "m", "runs": "r"})
+    (tmp_path / "mullion" / ".git").mkdir(parents=True)
+    worktree = tmp_path / "comparacion" / "mullion-main"
+    worktree.mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: elsewhere\n")
+    for start in (tmp_path, tmp_path / "mullion", worktree):
+        assert project.find(start, env) == path, start
+
+
+def test_find_prefers_a_closer_file(tmp_path):
+    write(tmp_path, {"name": "m", "runs": "r"})
+    closer = write(tmp_path / "dxmt", {"name": "d", "runs": "r"})
+    (tmp_path / "dxmt" / "src").mkdir()
+    assert project.find(tmp_path / "dxmt" / "src", {"HOME": str(tmp_path / "h")}) == closer
+
+
+def test_find_stops_at_home(tmp_path):
+    home = tmp_path / "h"
+    (home / "x").mkdir(parents=True)
+    write(tmp_path, {"name": "m", "runs": "r"})
+    write(home, {"name": "home", "runs": "r"})
+    assert project.find(home / "x", {"HOME": str(home)}) is None, "a file in the home folder or above it is no project"
+
+
+def test_find_prefers_metal_trace_project(tmp_path):
+    write(tmp_path, {"name": "m", "runs": "r"})
+    other = write(tmp_path / "other", {"name": "o", "runs": "r"})
+    for given in (other, other.parent):
+        assert project.find(tmp_path, {"HOME": "/nonexistent", "METAL_TRACE_PROJECT": str(given)}) == other
+
+
+def test_apply_points_out_at_the_project(tmp_path):
+    from metal_gpu_trace import config
+    restore = saved_config()
+    try:
+        write(tmp_path, {"name": "m", "runs": "perf-runs", "baseline": "b"})
+        project.apply(tmp_path, {"HOME": "/nonexistent", "METAL_TRACE_READ": str(tmp_path / "more")})
+        runs = (tmp_path / "perf-runs").resolve()
+        assert config.OUT == runs and config.BASELINES == runs / "baselines.json", config.OUT
+        assert config.READ == [runs, (tmp_path / "more").resolve()], config.READ
+        assert (runs / project.RUNS_MARK).exists() and config.PROJECT["name"] == "m" and config.PROJECT_ERROR is None
+        project.check()
+        project.apply(tmp_path, {"HOME": "/nonexistent"})
+        assert config.OUT == runs, "applying again accepts the folder it marked"
+    finally:
+        restore()
+
+
+def test_apply_beats_metal_trace_out(tmp_path):
+    from metal_gpu_trace import config
+    restore = saved_config()
+    try:
+        write(tmp_path, {"name": "m", "runs": "perf-runs"})
+        project.apply(tmp_path, {"HOME": "/nonexistent", "METAL_TRACE_OUT": str(tmp_path / "elsewhere")})
+        assert config.OUT == (tmp_path / "perf-runs").resolve(), config.OUT
+    finally:
+        restore()
+
+
+def test_apply_without_a_project_changes_nothing(tmp_path):
+    from metal_gpu_trace import config
+    restore = saved_config()
+    try:
+        for env in ({"HOME": "/nonexistent"}, {"HOME": "/nonexistent", "METAL_TRACE_OUT": str(tmp_path / "o")}):
+            config.reload(env)
+            expected = config.OUT, list(config.READ), config.BASELINES
+            project.apply(tmp_path, env)
+            assert (config.OUT, config.READ, config.BASELINES) == expected and config.PROJECT is None, env
+            assert config.PROJECT_ERROR is None
+        assert config.OUT == (tmp_path / "o").resolve()
+    finally:
+        restore()
+
+
+def test_apply_keeps_a_bad_file_as_an_error(tmp_path):
+    from metal_gpu_trace import config
+    restore = saved_config()
+    try:
+        write(tmp_path, {"name": "m", "runs": "r", "folder": "x"})
+        project.apply(tmp_path, {"HOME": "/nonexistent"})
+        assert "folder" in config.PROJECT_ERROR and config.PROJECT is None, config.PROJECT_ERROR
+        try:
+            project.check()
+            raise AssertionError("check must raise")
+        except paths.ToolError as error:
+            assert "folder" in str(error)
+    finally:
+        restore()
+
+
+def test_check_cli_exits_2_on_a_bad_project_file(tmp_path):
+    import contextlib
+    import io
+    from metal_gpu_trace import config, metal_trace_mcp
+    restore = saved_config()
+    try:
+        config.PROJECT_ERROR = f"{project.FILE_NAME}: unknown key 'folder'"
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert metal_trace_mcp.check_cli(["a", "b"]) == 2
+        assert "folder" in err.getvalue(), err.getvalue()
+    finally:
+        restore()
+
+
+def test_apply_reports_a_missing_or_unusable_project(tmp_path):
+    from metal_gpu_trace import config
+    restore = saved_config()
+    try:
+        for given in (tmp_path / "nowhere.json", tmp_path / "empty-folder"):
+            (tmp_path / "empty-folder").mkdir(exist_ok=True)
+            project.apply(tmp_path, {"HOME": "/nonexistent", "METAL_TRACE_PROJECT": str(given)})
+            assert config.PROJECT_ERROR and project.FILE_NAME in config.PROJECT_ERROR, (given, config.PROJECT_ERROR)
+            assert str(tmp_path) not in config.PROJECT_ERROR
+        (tmp_path / "f").write_text("x")
+        write(tmp_path, {"name": "m", "runs": "f/sub"})
+        project.apply(tmp_path, {"HOME": "/nonexistent"})
+        assert "cannot be created" in config.PROJECT_ERROR, config.PROJECT_ERROR
+    finally:
+        restore()
+
+
+def test_find_ignores_a_file_at_the_disk_root(tmp_path):
+    calls = []
+    real = pathlib.Path.is_file
+
+    def spy(self):
+        calls.append(self)
+        return real(self)
+    pathlib.Path.is_file = spy
+    try:
+        project.find(tmp_path, {"HOME": "/nonexistent"})
+    finally:
+        pathlib.Path.is_file = real
+    assert calls and pathlib.Path(tmp_path.anchor) / project.FILE_NAME not in calls, calls[-1]

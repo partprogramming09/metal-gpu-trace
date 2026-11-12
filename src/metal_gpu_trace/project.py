@@ -3,9 +3,10 @@
 The folder is checked before use, because KEEP_RUNS removes the older .json files in it: only a folder that does not
 exist, is empty or carries RUNS_MARK (left there when the server adopts it) is accepted."""
 import json
+import os
 import pathlib
 
-from metal_gpu_trace import paths
+from metal_gpu_trace import config, paths
 
 FILE_NAME = "metal-gpu-trace.json"
 RUNS_MARK = ".metal-gpu-trace-runs"
@@ -96,3 +97,63 @@ def checked(runs, root, home):
         raise paths.ToolError(f"{FILE_NAME}: \"runs\" names a folder that already holds other files; use a new or empty "
                         f"folder, or put an empty {RUNS_MARK} file in it if it holds only recordings")
     return folder
+
+
+def find(start, environ):
+    """Returns the project file that applies in `start`: the one METAL_TRACE_PROJECT names (a file, or a folder holding
+    one), else the nearest one in `start` or a folder above it, below the home folder and the disk's root; None when
+    there is none."""
+    given = environ.get("METAL_TRACE_PROJECT")
+    if given:
+        given = pathlib.Path(given).expanduser()
+        return given / FILE_NAME if given.is_dir() else given
+    home = (pathlib.Path(environ["HOME"]) if environ.get("HOME") else pathlib.Path.home()).resolve()
+    start = pathlib.Path(start).resolve()
+    for folder in (start, *start.parents):
+        # a file in the home folder, above it or at the disk's root would apply to every program
+        if folder == home or folder == pathlib.Path(folder.anchor):
+            return None
+        if (folder / FILE_NAME).is_file():
+            return folder / FILE_NAME
+    return None
+
+
+def apply(start=None, environ=None):
+    """Points config.OUT, config.READ[0] and config.BASELINES at the folder of the project file that applies in
+    `start` (the working directory by default), and adopts that folder (creates it and leaves RUNS_MARK in it).
+    Without a project file the settings stay as METAL_TRACE_OUT gives them; a wrong file is kept in
+    config.PROJECT_ERROR for check() to report, so the server still starts and says what to fix."""
+    environ = os.environ if environ is None else environ
+    config.reload(environ)
+    config.PROJECT, config.PROJECT_ERROR = None, None
+    try:
+        path = find(pathlib.Path.cwd() if start is None else start, environ)
+        if path is None:
+            return
+        found = load(path, home=environ.get("HOME"))
+        adopt(found["runs"])
+    except OSError as error:  # METAL_TRACE_PROJECT names a place that cannot be looked at
+        config.PROJECT_ERROR = f"{FILE_NAME} cannot be looked for ({type(error).__name__}); check METAL_TRACE_PROJECT"
+        return
+    except paths.ToolError as error:
+        config.PROJECT_ERROR = str(error)
+        return
+    runs = found["runs"]
+    config.OUT, config.READ, config.BASELINES = runs, [runs] + config.READ[1:], runs / "baselines.json"
+    config.PROJECT = found
+
+
+def adopt(runs):
+    """Creates the recordings folder `runs` when it is missing and marks it as the project's own."""
+    try:
+        runs.mkdir(parents=True, exist_ok=True)
+        (runs / RUNS_MARK).touch()
+    except OSError as error:
+        raise paths.ToolError(f"{FILE_NAME}: the \"runs\" folder cannot be created or marked "
+                              f"({type(error).__name__})") from None
+
+
+def check():
+    """Raises ToolError with what is wrong in the project file, when it is wrong."""
+    if config.PROJECT_ERROR:
+        raise paths.ToolError(config.PROJECT_ERROR)

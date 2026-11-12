@@ -5,7 +5,7 @@ import subprocess
 import threading
 import time
 
-from metal_gpu_trace import config, logs, paths, recording, registry
+from metal_gpu_trace import config, logs, paths, project, recording, registry
 
 
 def _not_configured(message):
@@ -152,6 +152,7 @@ def call(name, arguments, request_id=None, token=None):
     try:
         if recording.cancelled():
             raise paths.ToolError("the call was cancelled before it started")
+        project.check()
         if (problem := check_arguments(registry.TOOLS[name][1], arguments)) is not None:
             raise paths.ToolError(f"bad arguments: {problem}")
         value = registry.TOOLS[name][0](**arguments)

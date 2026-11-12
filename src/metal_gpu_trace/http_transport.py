@@ -8,7 +8,7 @@ import socket
 import sys
 import threading
 
-from metal_gpu_trace import analysis, config, logs, panel, paths, protocol, worker
+from metal_gpu_trace import analysis, config, logs, panel, paths, project, protocol, worker
 
 POLL_S = 0.5  # how often a modern POST that waits for its result looks for a client that closed the connection
 NAMED = {"tools/call": "name", "prompts/get": "name", "resources/read": "uri"}  # methods whose Mcp-Name mirrors a param
@@ -187,6 +187,7 @@ def http_handler(token):
             runs = [r for r in (query.get("runs") or [""])[0].split(",") if r]
             skip = (query.get("skip_s") or [0])[0]
             try:
+                project.check()
                 if not runs:
                     runs = [analysis.tool_perf_runs(0, 1)["rows"][0]["run"]]
                 self.reply(200, panel.panel_data(runs, (query.get("preset") or [None])[0], skip))

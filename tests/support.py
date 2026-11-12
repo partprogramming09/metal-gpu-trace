@@ -13,6 +13,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 PKG = ROOT / "src" / "metal_gpu_trace"
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
+# a project file named by the environment would point the servers the tests start at a real recordings folder
+os.environ.pop("METAL_TRACE_PROJECT", None)
 
 
 def wait_until(predicate, timeout=10.0, step=0.02):

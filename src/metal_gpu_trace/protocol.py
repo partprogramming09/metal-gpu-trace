@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 
-from metal_gpu_trace import logs, paths, registry, worker
+from metal_gpu_trace import logs, paths, project, registry, worker
 
 
 _instructions = None  # set by configure(): the text clients read about how to use the server
@@ -127,6 +127,10 @@ def handle(message):
         if not isinstance(uri, str):
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "uri must be a string"}}
         if uri.startswith(RUNS_URI):
+            try:
+                project.check()
+            except paths.ToolError as error:  # a wrong project file: say so rather than read ./perf-runs
+                return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": str(error)}}
             try:
                 text = paths.run_path(uri[len(RUNS_URI):]).read_text(encoding="utf-8")
             except paths.ToolError:

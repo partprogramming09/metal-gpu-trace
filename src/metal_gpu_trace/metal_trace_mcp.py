@@ -13,7 +13,7 @@ import sys
 __version__ = "0.23.0"
 if __package__ in (None, ""):  # run by path: make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from metal_gpu_trace import analysis, http_transport, paths, protocol, stdio, worker  # noqa: E402
+from metal_gpu_trace import analysis, http_transport, paths, project, protocol, stdio, worker  # noqa: E402
 
 INSTRUCTIONS = (
     "Records GPU use on Apple silicon with Metal System Trace. One recording runs at a time; keep other GPU work off "
@@ -49,6 +49,7 @@ def check_cli(args):
         print("usage: metal-gpu-trace check RUN BASELINE [--margin-pct N]", file=sys.stderr)
         return 2
     try:
+        project.check()
         result = analysis.tool_perf_check(run, baseline, margin)
     except (paths.ToolError, FileNotFoundError, ValueError) as error:
         print(f"metal-gpu-trace: {error}", file=sys.stderr)
@@ -65,6 +66,7 @@ def main():
     if sys.argv[1:] == ["--version"]:
         print(f"metal-gpu-trace {__version__}")
         return
+    project.apply()
     if sys.argv[1:2] == ["check"]:
         sys.exit(check_cli(sys.argv[2:]))
     if sys.argv[1:2] == ["--http"]:
