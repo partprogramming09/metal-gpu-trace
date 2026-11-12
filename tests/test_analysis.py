@@ -551,9 +551,10 @@ def test_windows_runs_without_encoders(tmp_path):
     empty = {"device": {"platform": "Windows"}, "gpu": {"frames": 200},
              "encoders": metrics.encoder_stats([], {}), "gpu_idle": metrics.idle_gaps([])}
     old = {**empty, "encoders": {**empty["encoders"], "short_share": {str(c): 0.0 for c in metrics.SHORT_US}}}
-    for sa, sb in ((empty, empty), (old, empty)):
-        result = analysis.compare_summaries(sa, sb, "a", "b")
-        assert result["encoders"]["short_encoder_share"]["a"] in (None, 0.0), result["encoders"]
+    for sa, expected in ((empty, None), (old, 0.0)):
+        result = analysis.compare_summaries(sa, empty, "a", "b")
+        assert result["encoders"]["short_encoder_share"]["a"] == expected, result["encoders"]
+        assert result["encoders"]["short_encoder_share"]["b"] is None, result["encoders"]
     try:
         analysis.compare_summaries(empty, empty, "a", "b", short_us=33)
     except paths.ToolError as error:
@@ -565,6 +566,12 @@ def test_windows_runs_without_encoders(tmp_path):
     try:
         (tmp_path / "w.json").write_text(json.dumps(empty), encoding="utf-8")
         verdict = analysis.tool_perf_diagnose("w")
+        try:
+            analysis.tool_perf_diagnose("w", short_us=33)
+        except paths.ToolError as error:
+            assert "short_us is one of" in str(error)
+        else:
+            raise AssertionError("diagnose must refuse an unknown short_us")
     finally:
         config.OUT = saved
     assert verdict["too_many_short_encoders"] is False, verdict
