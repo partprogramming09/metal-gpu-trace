@@ -400,6 +400,33 @@ def test_panel_opens_a_run_without_frames(tmp_path):
     finally:
         config.OUT = saved
 
+def test_panel_says_what_each_run_has(tmp_path):
+    """Each run says which sections it has data for and, for the others, a reason from a closed list."""
+    from metal_gpu_trace import config, panel
+
+    mac = {"gpu": {"frames": 400, "fps_estimate": 60.0, "fps_1pct_low": 50.0}, "hitches": {"count": 0, "threshold_ms": 30.0},
+           "encoders": {"by_label": [{"label": "x", "per_frame": 1.0, "total_ms": 5.0}]}, "cpu": {"mean": 20.0}, "layer": {"none": "native"}}
+    win = {"device": {"platform": "Windows"}, "gpu": {"frames": 400, "fps_estimate": 60.0}, "process_rss_mib": {"max": 500.0},
+           "layer": {"none": "native"}}
+    for name, s in (("mac", mac), ("win", win)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(s))
+    (tmp_path / "mac.frames.csv").write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n2,16.0,4.0\n")
+    (tmp_path / "mac.metal_memory.csv").write_text("time_ms,metal_allocated_bytes\n0,1048576\n")
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        m, w = panel.panel_data(["mac", "win"])["runs"]
+    finally:
+        config.OUT = saved
+    assert m["has"] == {"frames": True, "hitches": True, "lows": True, "encoders": True, "counters": False, "memory": True,
+                        "thermal": False, "cpu": True}, m["has"]
+    assert m["missing"] == [{"id": "counters", "reason": "record_with_counters"}, {"id": "thermal", "reason": "not_in_recording"}]
+    assert [x["id"] for x in m["missing"]] == [s for s in panel.SECTIONS if not m["has"][s]]
+    assert w["has"]["memory"] and not w["has"]["frames"] and not w["has"]["encoders"]
+    assert {"id": "frames", "reason": "no_frames_file"} in w["missing"]
+    assert {"id": "encoders", "reason": "metal_only"} in w["missing"] and {"id": "counters", "reason": "metal_only"} in w["missing"]
+    assert {"id": "cpu", "reason": "not_in_recording"} in w["missing"]
+    assert {x["reason"] for r in (m, w) for x in r["missing"]} <= set(panel.REASONS)
+
 def test_windows_against_metal(tmp_path):
     """A Windows run against a Metal run says which numbers do not compare and skips the encoders, in perf_compare, its
     Markdown and the panel; two runs from one side compare as before."""

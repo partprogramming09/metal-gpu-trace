@@ -6,6 +6,23 @@ from metal_gpu_trace import analysis, config, paths, recording
 
 
 PANEL_PRESETS = ("fps", "compare")
+SECTIONS = ("frames", "hitches", "lows", "encoders", "counters", "memory", "thermal", "cpu")
+REASONS = ("no_frames_file", "metal_only", "record_with_counters", "not_in_recording")
+
+
+def sections(s, has_frames, has_encoders, has_memory):
+    """Returns which of SECTIONS a recording has data for and why the others are missing, as (has, missing): the
+    reason is no_frames_file, metal_only (Windows has no encoders, Metal memory or counters), record_with_counters
+    (a Metal run recorded without them) or not_in_recording."""
+    windows = analysis.measurement(s) == "windows"
+    has = {"frames": has_frames, "hitches": (s.get("hitches") or {}).get("count") is not None,
+           "lows": (s.get("gpu") or {}).get("fps_1pct_low") is not None, "encoders": has_encoders,
+           "counters": s.get("gpu_counters") is not None, "memory": has_memory or (windows and bool(s.get("process_rss_mib"))),
+           "thermal": s.get("thermal_state_share") is not None, "cpu": (s.get("cpu") or {}).get("mean") is not None}
+    special = {"frames": "no_frames_file", "encoders": "metal_only" if windows else None, "memory": "metal_only" if windows else None,
+               "counters": "metal_only" if windows else "record_with_counters"}
+    missing = [{"id": i, "reason": special.get(i) or "not_in_recording"} for i in SECTIONS if not has[i]]
+    return has, missing
 
 
 @functools.lru_cache(maxsize=None)
@@ -22,7 +39,8 @@ def panel_run(run, skip_s=0):
     memory cut to PANEL_POINTS points that keep every hitch, and no path. With `skip_s`, as steady_summary. A run
     with no frames.csv has the numbers of its summary and no curves; with `skip_s` it is an error, as in steady_summary."""
     s = analysis.steady_summary(run, skip_s)
-    rows = analysis.read_frames(run) if (config.OUT / f"{run}.frames.csv").exists() else []
+    has_frames = (config.OUT / f"{run}.frames.csv").exists()
+    rows = analysis.read_frames(run) if has_frames else []
     if s.get("steady") and rows:
         cut = rows[0][1] + s["steady"]["skip_s"] * 1000
         rows = [r for r in rows if r[1] >= cut]
@@ -37,10 +55,12 @@ def panel_run(run, skip_s=0):
     if s.get("steady") and rows:
         samples = [x for x in samples if x[0] >= rows[0][1]]
     memory = [[t, round(mib, 2)] for t, mib in samples[::max(1, len(samples) // config.PANEL_POINTS)]]
-    return {"name": run, "layer": recording.layer_label(s.get("layer")), "source": analysis.measurement(s), "gpu": s.get("gpu"), "hitches": hitches,
+    encoders = [] if analysis.measurement(s) == "windows" else (s.get("encoders") or {}).get("by_label", [])[:20]
+    has, missing = sections(s, has_frames, bool(encoders), bool(memory))
+    return {"has": has, "missing": missing, "name": run, "layer": recording.layer_label(s.get("layer")), "source": analysis.measurement(s), "gpu": s.get("gpu"), "hitches": hitches,
             "thermal_state_share": s.get("thermal_state_share"), "metal_memory_mib": s.get("metal_memory_mib"),
             "process_rss_mib": s.get("process_rss_mib"), "cpu": s.get("cpu"), "counters": s.get("gpu_counters"), "frames": frames, "marks": marks, "memory": memory,
-            "encoders": [] if analysis.measurement(s) == "windows" else (s.get("encoders") or {}).get("by_label", [])[:20]}
+            "encoders": encoders}
 
 
 TAB_IDS = ("summary", "ab", "frames", "encoders", "counters", "memory", "data")
