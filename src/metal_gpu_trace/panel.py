@@ -311,14 +311,13 @@ def tool_perf_panel(name, runs, preset="fps", skip_s=0, layout=None):
     payload = panel_data(runs, preset, skip_s, new_layout)  # a call that fails changes nothing on disk
     target = config.OUT / f"{name}.panel.html"
     for path in (target, config.OUT / paths.LAYOUT_FILE) if new_layout is not None else (target,):
-        if path.is_symlink():
-            raise paths.ToolError(f"{path.name} in the runs folder is a link; remove it so the panel is written there")
-    if new_layout is not None:
-        config.OUT.mkdir(parents=True, exist_ok=True)
-        (config.OUT / paths.LAYOUT_FILE).write_text(json.dumps(new_layout) + "\n", encoding="utf-8")
+        if path.is_symlink() or path.is_dir():
+            raise paths.ToolError(f"{path.name} in the runs folder is a link or a folder; remove it so the panel is written there")
+    config.OUT.mkdir(parents=True, exist_ok=True)
     data = payload["runs"]
     text = json.dumps(payload, separators=(",", ":")).replace("<", "\\u003c")
-    page_html = panel_html(False).replace("/*PAYLOAD*/null", text)
-    target.write_text(page_html, encoding="utf-8")
+    paths.write_file(target, panel_html(False).replace("/*PAYLOAD*/null", text))
+    if new_layout is not None:
+        paths.write_file(config.OUT / paths.LAYOUT_FILE, json.dumps(new_layout) + "\n")
     return {"file": target.name, "runs": list(runs), "frames": sum(len(r["frames"]) for r in data),
             "bytes": target.stat().st_size}

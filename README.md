@@ -90,7 +90,7 @@ each project's folder on its own. `runs` is relative to the file, starts with `~
 | Key | Meaning |
 | --- | --- |
 | `name` | The project's name (letters, digits, `.`, `_`, `-`). Required. |
-| `runs` | The recordings folder. Required. It must be new, empty or already marked by the server (a plain `.metal-gpu-trace-runs` file, not a folder or a link): `KEEP_RUNS` removes old `.json` files there, so a folder holding other files is refused. |
+| `runs` | The recordings folder. Required. It must be new, empty or already marked by the server (a plain `.metal-gpu-trace-runs` file, not a folder or a link): `KEEP_RUNS` removes old `.json` files there, so a folder holding other files is refused. The mark the server leaves holds the project's `name`, and another project's file that names a folder marked with a different name is refused; an empty mark, written by hand, takes the name of the first project that uses the folder. To hand a folder to another project, edit or remove its mark. |
 | `profile` | `translation-layer`, `native` or `generic` (the default). `perf_panel` leads with GPU ms per frame for `translation-layer` (with vsync, FPS stops telling builds apart) and with FPS for the others, and words its definitions to match; `project_info` reports it. |
 | `baseline` | The name of the project's reference (`perf_baseline`). `perf_panel` judges each run against it, as `perf_check` would, and `project_info` reports it; `perf_check` itself still takes the reference it is given. |
 | `format` | `metal-gpu-trace`, the only one for now. |

@@ -13,7 +13,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - Projects: a `metal-gpu-trace.json` in a repository (found from the working directory upwards, or named by
   `METAL_TRACE_PROJECT`) names the project and the folder its recordings go to and are read from, ahead of
   `METAL_TRACE_OUT`. The folder must be new, empty or marked as the server's (a plain file, not a folder or a
-  link), and may not be the project's folder, one above it, the home folder or the disk's root under any spelling
+  link) by a project of the same name (the mark the server leaves holds the name; an empty mark, written by hand or left
+  by an earlier build, takes the name of the first project that uses the folder), and may not be the project's folder, one above it, the home folder or the disk's root under any spelling
   (APFS ignores case) or through a broken link, so `KEEP_RUNS` never prunes other files; a wrong file is reported by every tool, naming the field. The new tool `project_info` says which project is
   active and where its folder comes from, and `perf_runs` names it in `project`.
 - The panel's data now carries every decision, so the page only draws it: `perf_panel` opens a recording that has no
@@ -34,13 +35,18 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   `perf_history`: a `.frames.csv` or `.metal_memory.csv` leaves out the lines it cannot read (a last line cut short, a
   value that is not a finite number), a link to nothing, a summary still being written or one of the wrong type is
   skipped in the listings, and in the panel a summary or `baselines.json` of the wrong form, too deep or not UTF-8 gives
-  an error that names the file and not its path. `perf_compare`, `perf_check`, `perf_gate` and `perf_diagnose` still
-  answer `internal error` (no path) to a summary whose sections have the wrong type. `perf_runs`, `perf_history` and
+  an error that names the file and not its path. `perf_compare`, `perf_check`, `perf_gate`, `perf_diagnose` and
+  `perf_baseline` answer a summary or reference whose sections have the wrong type with an error too, not `internal
+  error`. `perf_runs`, `perf_history` and
   the run names no longer take `panel.json` for a recording, whatever its case on a volume that ignores it.
 - `perf_panel` checks everything before it writes (a call that fails leaves `panel.json` as it was, and a new `layout`
-  replaces a `panel.json` that cannot be read), will not write over a link, and turns NaN and infinity into null.
+  replaces a `panel.json` that cannot be read), and turns NaN and infinity into null. `perf_panel`, `perf_baseline` and
+  `perf_export_trace` open the file they write without following a link, and refuse a link or a folder there. A
+  `baselines.json` that is not a JSON object is an error that names it.
   Its curves now keep at most 5000 points (the step rounds up; before, a recording of fewer than twice the limit kept every point), and with
   `skip_s` the Metal memory curve starts where the cut does, as the numbers do.
+- The server starts when `METAL_TRACE_OUT` is a link loop (before Python 3.13 that raised while importing): every tool
+  then says the folder cannot be used.
 - Run, prefix and panel names hold up to 120 bytes; a recording's label up to 100, so the run it makes (the label,
   the date and the time) stays within the limit.
 

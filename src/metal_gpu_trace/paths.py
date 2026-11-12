@@ -1,5 +1,6 @@
 """Names and paths the tools accept, and paging: what a caller may read and how it names a run."""
 import json
+import os
 import pathlib
 
 from metal_gpu_trace import config
@@ -51,6 +52,18 @@ def read_object(path, what):
     if not isinstance(data, dict):
         raise ToolError(f"{what} is not a JSON object; record it again")
     return data
+
+
+def write_file(path, text):
+    """Writes `text` to `path` (UTF-8), replacing the file, and refuses a link instead of writing through it: a runs
+    folder may come from a clone or a download. Where the system cannot refuse a link the caller checks it first."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(path, flags, 0o666)
+    except OSError:
+        raise ToolError(f"{path.name} cannot be written in the runs folder (is it a link?)") from None
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
 
 
 def trace_path(trace):

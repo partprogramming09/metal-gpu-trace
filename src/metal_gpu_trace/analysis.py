@@ -1,12 +1,27 @@
 """Reading recordings back: runs, compare, baselines, checks, gates, history and diagnosis."""
 import collections
 import csv
+import functools
 import json
 import math
 import statistics
 import time
 
 from metal_gpu_trace import config, metrics, paths, perf_report, recording
+
+
+def reads_recordings(tool):
+    """Makes a tool that reads recordings or references answer a summary whose sections have the wrong type with a
+    ToolError (naming the kind of error, never a path), as the panel does, instead of an internal error."""
+    @functools.wraps(tool)
+    def guarded(*args, **kwargs):
+        try:
+            return tool(*args, **kwargs)
+        except (KeyError, IndexError, TypeError, AttributeError, OverflowError, RecursionError, ZeroDivisionError) as error:
+            raise paths.ToolError(f"{tool.__name__.removeprefix('tool_')} found a recording or reference not in the form the "
+                                  f"recorder writes, or an argument it cannot use ({type(error).__name__}); record it "
+                                  "again or check the arguments") from None
+    return guarded
 
 
 def _recordings(pattern="*.json"):
@@ -63,6 +78,7 @@ def markdown_report(result):
     return "\n".join(lines)
 
 
+@reads_recordings
 def tool_perf_compare(a, b, short_us=25, markdown=False, skip_s=0):
     """Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the
     headline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and
@@ -174,9 +190,10 @@ CHECKED = {
 
 def load_baselines():
     """Returns the saved references, by name."""
-    return json.loads(config.BASELINES.read_text(encoding="utf-8")) if config.BASELINES.exists() else {}
+    return paths.read_object(config.BASELINES, config.BASELINES.name) if config.BASELINES.exists() else {}
 
 
+@reads_recordings
 def tool_perf_baseline(name=None, runs=None, skip_s=0):
     """Names a reference for perf_check, or lists them. With name and runs (names from perf_runs, several runs of the
     same program recorded with no change between them), it saves copies of their summaries as the reference `name`,
@@ -199,7 +216,7 @@ def tool_perf_baseline(name=None, runs=None, skip_s=0):
         baselines[name] = {"runs": list(runs), "set": time.strftime("%Y-%m-%d"), "summaries": summaries,
                            **({"skip_s": skip} if skip else {})}
         config.OUT.mkdir(parents=True, exist_ok=True)
-        config.BASELINES.write_text(json.dumps(baselines), encoding="utf-8")
+        paths.write_file(config.BASELINES, json.dumps(baselines))
     if name is not None:
         if name not in baselines:
             raise paths.ToolError(f"no reference {name}; perf_baseline with no arguments lists them")
@@ -247,6 +264,7 @@ def judge(metric, value, span, margin_pct):
     return "same"
 
 
+@reads_recordings
 def tool_perf_check(run, baseline, margin_pct=3):
     """Judges a recording against a reference saved with perf_baseline: regressed when FPS falls under the
     reference's lowest FPS by more than margin_pct, GPU ms per frame rises over its highest by more than margin_pct,
@@ -381,6 +399,7 @@ GATES = {"fps_min": (("gpu", "fps_estimate"), "min"), "fps_1pct_low_min": (("gpu
          "hitches_max": (("hitches", "count"), "max"), "metal_mib_max": (("metal_memory_mib", "peak"), "max")}
 
 
+@reads_recordings
 def tool_perf_gate(run, fps_min=None, fps_1pct_low_min=None, stutter_rate_pct_max=None, gpu_ms_p95_max=None,
                    hitches_max=None, metal_mib_max=None, skip_s=0):
     """Checks a recording against budgets and says pass or fail: a floor for FPS and the 1% low, a ceiling for the
@@ -505,6 +524,7 @@ def display_synced_hz(gpu):
     return next((hz for hz in REFRESH_RATES if abs(fps - hz) <= hz * 0.01), None)
 
 
+@reads_recordings
 def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     """Says whether a saved recording splits its GPU work into too many short encoders, the pattern of translation
     layers such as DXMT, Mullion or MoltenVK, with the numbers behind it: encoders and command buffers per frame, the

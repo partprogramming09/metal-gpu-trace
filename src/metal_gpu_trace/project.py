@@ -1,7 +1,8 @@
 """The project file: a metal-gpu-trace.json in a repository names the project and the folder its recordings go to.
 
 The folder is checked before use, because KEEP_RUNS removes the older .json files in it: only a folder that does not
-exist, is empty or carries RUNS_MARK (left there when the server adopts it) is accepted."""
+exist, is empty or carries RUNS_MARK (left there when the server adopts it, holding the project's name) is accepted,
+and a mark with another project's name refuses it."""
 import json
 import os
 import pathlib
@@ -59,22 +60,22 @@ def load(path, home=None):
         raise paths.ToolError(f"{FILE_NAME}: \"format\" is one of {', '.join(FORMATS)}; other formats come with their reader")
     root = path.resolve().parent
     return {"name": name, "profile": profile, "baseline": baseline, "format": fmt,
-            "runs": runs_folder(data["runs"], root, pathlib.Path(home) if home else pathlib.Path.home()),
+            "runs": runs_folder(data["runs"], root, pathlib.Path(home) if home else pathlib.Path.home(), name),
             "root": root}
 
 
-def runs_folder(runs, root, home):
+def runs_folder(runs, root, home, name):
     """Returns the recordings folder `runs` (relative to `root`, or under `home` with ~) resolved, or raises
-    ToolError when it is not a folder of its own."""
+    ToolError when it is not a folder of the project called `name`."""
     if not isinstance(runs, str) or not runs.strip():
         raise paths.ToolError(f"{FILE_NAME}: \"runs\" is the folder of the project's recordings, such as \"perf-runs\"")
     try:
-        return checked(runs, root, home)
+        return checked(runs, root, home, name)
     except (OSError, RuntimeError, ValueError):  # a link loop (RuntimeError before 3.13), a NUL byte, no permission
         raise paths.ToolError(f"{FILE_NAME}: \"runs\" cannot be used as a folder; name a plain folder") from None
 
 
-def checked(runs, root, home):
+def checked(runs, root, home, name):
     """runs_folder's checks; the filesystem errors they may raise are runs_folder's to translate."""
     if runs.startswith("~") and runs != "~" and runs[1] not in "/\\":
         raise paths.ToolError(f"{FILE_NAME}: \"runs\" may start with ~/ (the home folder) but not with ~name")
@@ -97,7 +98,32 @@ def checked(runs, root, home):
     if entries and not (marked and RUNS_MARK in entries):
         raise paths.ToolError(f"{FILE_NAME}: \"runs\" names a folder that already holds other files; use a new or empty "
                         f"folder, or put an empty {RUNS_MARK} file in it if it holds only recordings")
+    owner = mark_owner(folder) if marked else ""
+    if owner is None:
+        raise paths.ToolError(f"{FILE_NAME}: the {RUNS_MARK} file in \"runs\" cannot be read; fix or remove it")
+    if owner and owner != name:
+        whose = repr(owner) if paths.name_ok(owner) else "another project"
+        raise paths.ToolError(f"{FILE_NAME}: \"runs\" belongs to {whose}; give this project a folder of its own, or edit "
+                              f"or remove {RUNS_MARK} in it to hand the folder over")
     return folder
+
+
+def mark_owner(folder):
+    """Returns the project name the mark in `folder` holds, "" when there is no mark or it is empty (one written by
+    hand) and None when it cannot be read. At most 200 bytes are read, and a link or a pipe is not followed."""
+    try:
+        fd = os.open(folder / RUNS_MARK, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    except FileNotFoundError:
+        return ""
+    except OSError:
+        return None
+    try:
+        raw = os.read(fd, 201)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+    return raw.decode("utf-8-sig", errors="replace").strip() if len(raw) <= 200 else raw[:200].decode("utf-8", errors="replace") + "…"
 
 
 def same(a, b):
@@ -152,7 +178,7 @@ def apply(start=None, environ=None):
         if path is None:
             return
         found = load(path, home=environ.get("HOME"))
-        adopt(found["runs"])
+        adopt(found["runs"], found["name"])
     except (OSError, ValueError, RuntimeError) as error:  # METAL_TRACE_PROJECT or HOME that cannot be looked at
         config.PROJECT_ERROR = (f"{FILE_NAME} cannot be looked for ({type(error).__name__}); check METAL_TRACE_PROJECT "
                                 "and HOME")
@@ -165,11 +191,13 @@ def apply(start=None, environ=None):
     config.PROJECT = found
 
 
-def adopt(runs):
-    """Creates the recordings folder `runs` when it is missing and marks it as the project's own."""
+def adopt(runs, name):
+    """Creates the recordings folder `runs` when it is missing and marks it as the project `name`'s own; a mark that
+    is empty (written by hand) takes the name."""
     try:
         runs.mkdir(parents=True, exist_ok=True)
-        (runs / RUNS_MARK).touch()
+        if mark_owner(runs) == "":
+            (runs / RUNS_MARK).write_text(name + "\n", encoding="utf-8")
     except OSError as error:
         raise paths.ToolError(f"{FILE_NAME}: the \"runs\" folder cannot be created or marked "
                               f"({type(error).__name__})") from None

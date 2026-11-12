@@ -19,7 +19,9 @@ its `profile`, `baseline` and `format`. At start-up the server looks for the fil
 folders above it, stopping below the home folder; `METAL_TRACE_PROJECT` names it instead. When found, `runs` replaces
 `METAL_TRACE_OUT` for recording and reading, and `baselines.json` moves with it. The recording lock stays global (one
 recording at a time on the Mac). The `runs` folder must be new, empty or carry the server's mark
-(`.metal-gpu-trace-runs`), because `KEEP_RUNS` removes old `.json` files in it. A wrong file does not stop the server:
+(`.metal-gpu-trace-runs`), because `KEEP_RUNS` removes old `.json` files in it. The mark holds the name of the project
+that adopted the folder, so a project file from a cloned repository cannot point the server at another project's
+folder and have `KEEP_RUNS` prune it (a file that copies the name can: the name is not a secret). A wrong file does not stop the server:
 every tool answers with what is wrong. `project_info` says which project is active; the panel uses `profile` (which metric
 leads) and `baseline` (the reference every run is judged against).
 

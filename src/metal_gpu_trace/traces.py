@@ -23,7 +23,7 @@ def tool_perf_export_trace(run):
                            "args": {"frame": int(row["frame"]), **{k[7:]: float(v) for k, v in row.items()
                                                                   if k.startswith("gpu_ms_") and k != "gpu_ms_total"}}})
     target = config.OUT / f"{run}.chrome-trace"
-    target.write_text(json.dumps({"traceEvents": events, "displayTimeUnit": "ms"}), encoding="utf-8")
+    paths.write_file(target, json.dumps({"traceEvents": events, "displayTimeUnit": "ms"}))
     return {"file": target.name, "frames": len(events)}
 
 

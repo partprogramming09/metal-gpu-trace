@@ -19,7 +19,11 @@ def reload(environ=None):
     BASELINES = OUT / "baselines.json"
 
 
-reload()
+try:
+    reload()
+except (OSError, ValueError, RuntimeError):  # a METAL_TRACE_OUT that cannot be resolved: project.apply reports it
+    OUT = pathlib.Path("perf-runs").resolve()
+    READ, BASELINES = [OUT], OUT / "baselines.json"
 # the metal-gpu-trace.json in use (project.load's dict) and, when that file is wrong, what is wrong with it
 PROJECT = None
 PROJECT_ERROR = None

@@ -491,8 +491,8 @@ def test_spec_changes_against_with_a_negative_limit_returns_nothing_or_refuses(t
 
 
 def test_changes_against_with_many_recordings_of_one_program_stays_bounded(tmp_path):
-    """1 500 other recordings of the same program: only the newest `limit` are read in full, the answer holds `limit`
-    runs oldest first, and it does not take seconds (it took 0.2 s for 3 000 files when this was written)."""
+    """1 500 other recordings of the same program: each is opened once to match its program, the answer holds the newest
+    `limit` runs oldest first, and it stays far from the 10 s this allows (0.2 s for 3 000 files when this was written)."""
     import time
     files = {"r1.json": GOOD, "r1.frames.csv": FRAMES, **{f"x{i:04d}.json": GOOD for i in range(1500)}}
     with workspace(tmp_path, files, baseline="ref") as folder:
@@ -545,11 +545,12 @@ def test_bug_a_panel_json_that_is_a_directory_or_unreadable_crashes_read_layout(
     assert not found, "\n".join(found)
 
 
-def test_bug_deeply_nested_json_in_panel_json_raises_recursionerror(tmp_path):
-    """read_layout catches ValueError to say "not valid JSON", but json.loads raises RecursionError on deep nesting."""
+def test_deeply_nested_json_in_panel_json_is_refused_as_not_valid(tmp_path):
+    """json.loads raises RecursionError on deep nesting; read_layout answers it like any other bad panel.json."""
     with workspace(tmp_path, {"panel.json": DEEP}):
         try:
             panel.read_layout()
+            raise AssertionError("a layout nested a million levels deep must be refused")
         except paths.ToolError as error:
             assert "panel.json" in str(error)
 

@@ -94,7 +94,7 @@ guardan y se leen en `runs` en vez de en `METAL_TRACE_OUT` (`METAL_TRACE_READ` s
 | Clave | Significado |
 | --- | --- |
 | `name` | El nombre del proyecto (letras, dígitos, `.`, `_`, `-`). Obligatoria. |
-| `runs` | La carpeta de las grabaciones. Obligatoria. Tiene que ser nueva, estar vacía o tener ya la marca del servidor (un archivo `.metal-gpu-trace-runs` normal, no una carpeta ni un enlace): `KEEP_RUNS` borra allí los `.json` antiguos, así que se rechaza una carpeta con otros archivos. |
+| `runs` | La carpeta de las grabaciones. Obligatoria. Tiene que ser nueva, estar vacía o tener ya la marca del servidor (un archivo `.metal-gpu-trace-runs` normal, no una carpeta ni un enlace): `KEEP_RUNS` borra allí los `.json` antiguos, así que se rechaza una carpeta con otros archivos. La marca que deja el servidor lleva el `name` del proyecto, y el archivo de otro proyecto que nombre una carpeta marcada con otro nombre se rechaza; una marca vacía, puesta a mano, toma el nombre del primer proyecto que use la carpeta. Para pasar una carpeta a otro proyecto, edita o borra su marca. |
 | `profile` | `translation-layer`, `native` o `generic` (la de serie). `perf_panel` abre con los ms de GPU por cuadro en `translation-layer` (con vsync, los FPS dejan de distinguir builds) y con los FPS en los demás, y redacta sus definiciones en consecuencia; `project_info` lo informa. |
 | `baseline` | El nombre de la referencia del proyecto (`perf_baseline`). `perf_panel` juzga cada corrida contra ella, como lo haría `perf_check`, y `project_info` la informa; `perf_check` sigue usando la referencia que se le pasa. |
 | `format` | `metal-gpu-trace`, el único por ahora. |

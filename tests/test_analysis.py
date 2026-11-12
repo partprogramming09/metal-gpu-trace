@@ -1,6 +1,7 @@
 """Tests of the analysis tools: compare, baseline, gate, history, panel, diagnose, A/B, sweep and cold/warm."""
 import json
 import os
+import pathlib
 import re
 
 import support  # noqa: F401  (puts src/ on sys.path)
@@ -922,6 +923,124 @@ def test_a_new_layout_repairs_a_broken_panel_json(tmp_path):
         assert panel.read_layout()[0]["id"] == "summary"
     finally:
         config.OUT, config.BASELINES = saved
+
+def test_tools_answer_a_summary_of_the_wrong_type_with_a_tool_error(tmp_path):
+    """perf_compare, perf_check, perf_gate, perf_diagnose and perf_baseline say a recording or a reference is not in the
+    form the recorder writes with a ToolError, never with a stray exception, whichever section has the wrong type."""
+    from metal_gpu_trace import analysis, config, paths
+
+    def write(name, summary):
+        (tmp_path / f"{name}.json").write_text(json.dumps(summary))
+    for name in ("r1", "r2", "r3", "good"):
+        write(name, _change_summary("g", 60.0))
+    hostile = {"s1": {"gpu": "x"}, "s2": {"gpu": {"fps_estimate": "fast", "frame_gpu_ms": "x", "frames": "many"}},
+               "s3": {"encoders": "x", "gpu": {"fps_estimate": 60.0}}, "s4": {"encoders": {"per_frame": "x", "short_share": 3}},
+               "s5": {"hitches": 5, "metal_memory_mib": [1], "gpu": {"fps_estimate": [60]}}, "s6": {"encoders": {"per_frame": {"p50": "x"}, "short_share": {"25": "x"}}}}
+    for name, summary in hostile.items():
+        write(name, summary)
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"])
+        evil = {"summaries": [{"gpu": "x"}, {"gpu": {"fps_estimate": "x"}}], "runs": ["r1", "r2"], "skip_s": 0}
+        (tmp_path / "baselines.json").write_text(json.dumps({"ref": json.loads((tmp_path / "baselines.json").read_text())["ref"], "evil": evil}))
+        calls = []
+        for bad in hostile:
+            calls += [(f"compare {bad}", lambda bad=bad: analysis.tool_perf_compare("good", bad)),
+                      (f"compare {bad} first", lambda bad=bad: analysis.tool_perf_compare(bad, "good")),
+                      (f"check {bad}", lambda bad=bad: analysis.tool_perf_check(bad, "ref")),
+                      (f"gate {bad}", lambda bad=bad: analysis.tool_perf_gate(bad, fps_min=30.0, hitches_max=3, metal_mib_max=100.0)),
+                      (f"diagnose {bad}", lambda bad=bad: analysis.tool_perf_diagnose(bad)),
+                      (f"baseline {bad}", lambda bad=bad: analysis.tool_perf_baseline("n_" + bad, [bad, "r1", "r2"]))]
+        calls += [("check against evil", lambda: analysis.tool_perf_check("good", "evil")),
+                  ("list references", lambda: analysis.tool_perf_baseline())]
+        refused = 0
+        for label, call in calls:
+            try:
+                call()
+            except paths.ToolError as error:
+                refused += 1
+                assert str(tmp_path) not in str(error), (label, error)
+            except Exception as error:  # noqa: BLE001 (the point of the test)
+                raise AssertionError(f"{label}: {type(error).__name__} escaped: {error}") from None
+        assert refused >= len(hostile), f"only {refused} of {len(calls)} calls were refused"
+    finally:
+        config.OUT, config.BASELINES = saved
+
+def test_write_file_does_not_follow_a_link(tmp_path):
+    """paths.write_file writes a file, replacing one, and refuses a link instead of writing through it."""
+    from metal_gpu_trace import paths
+
+    target = tmp_path / "page.html"
+    paths.write_file(target, "one")
+    paths.write_file(target, "two")
+    assert target.read_text() == "two"
+    victim = tmp_path / "precious.txt"
+    victim.write_text("PRECIOUS")
+    link = tmp_path / "link.html"
+    os.symlink(victim, link)
+    try:
+        paths.write_file(link, "overwritten")
+        raise AssertionError("a link must be refused")
+    except paths.ToolError as error:
+        assert "link" in str(error) and str(tmp_path) not in str(error), error
+    assert victim.read_text() == "PRECIOUS"
+    (tmp_path / "folder").mkdir()
+    try:
+        paths.write_file(tmp_path / "folder", "x")
+        raise AssertionError("a folder is not a file")
+    except paths.ToolError:
+        pass
+
+
+def test_the_tools_that_write_into_the_runs_folder_do_not_follow_a_link(tmp_path):
+    """perf_baseline and trace_chrome (the files they write) refuse a link planted in the runs folder."""
+    from metal_gpu_trace import analysis, config, paths, traces
+
+    victim = tmp_path / "precious.txt"
+    victim.write_text("{}")
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    for name in ("r1", "r2", "r3"):
+        (runs / f"{name}.json").write_text(json.dumps(_change_summary("g", 60.0)))
+    (runs / "r1.frames.csv").write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n")
+    os.symlink(victim, runs / "baselines.json")
+    os.symlink(victim, runs / "r1.chrome-trace")
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (runs, runs / "baselines.json")
+    try:
+        for call in (lambda: analysis.tool_perf_baseline("ref", ["r1", "r2", "r3"]),
+                     lambda: traces.tool_perf_export_trace("r1")):
+            try:
+                call()
+                raise AssertionError("a link must be refused")
+            except paths.ToolError:
+                pass
+        (runs / "baselines.json").unlink()
+        (runs / "baselines.json").write_text("not json")
+        try:
+            analysis.tool_perf_baseline()
+            raise AssertionError("a baselines.json that is not JSON must be refused")
+        except paths.ToolError as error:
+            assert "baselines.json" in str(error) and str(tmp_path) not in str(error), error
+    finally:
+        config.OUT, config.BASELINES = saved
+    assert victim.read_text() == "{}"
+
+
+def test_importing_the_server_survives_an_unusable_metal_trace_out(tmp_path):
+    """A METAL_TRACE_OUT that cannot be resolved (a link loop raises on Python before 3.13) does not stop the import:
+    project.apply reports it in every tool call instead."""
+    import subprocess
+    import sys
+
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop)
+    src = pathlib.Path(__file__).resolve().parent.parent / "src"
+    code = (f"import sys; sys.path.insert(0, {str(src)!r}); from metal_gpu_trace import config, project; "
+            "project.apply(None, {'METAL_TRACE_OUT': " + repr(str(loop)) + "}); print('ok', bool(config.PROJECT_ERROR) or sys.version_info >= (3, 13))")
+    got = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, cwd=tmp_path,
+                         env={"HOME": str(tmp_path), "PATH": os.environ.get("PATH", ""), "METAL_TRACE_OUT": str(loop)})
+    assert got.returncode == 0 and got.stdout.strip() == "ok True", got.stderr[-300:]
+
 
 def test_layout(tmp_path):
     """perf_panel(layout=...) saves panel.json (the listed tabs on, in order, the rest off), every panel carries it, and a
