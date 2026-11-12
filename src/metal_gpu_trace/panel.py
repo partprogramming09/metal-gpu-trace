@@ -7,20 +7,20 @@ from metal_gpu_trace import analysis, config, paths, recording
 
 PANEL_PRESETS = ("fps", "compare")
 SECTIONS = ("frames", "hitches", "lows", "encoders", "counters", "memory", "thermal", "cpu")
-REASONS = ("no_frames_file", "metal_only", "record_with_counters", "not_in_recording")
+REASONS = ("no_frames_file", "metal_only", "record_with_counters", "start_skipped", "not_in_recording")
 
 
 def sections(s, has_frames, has_encoders, has_memory):
     """Returns which of SECTIONS a recording has data for and why the others are missing, as (has, missing): the
     reason is no_frames_file, metal_only (Windows has no encoders, Metal memory or counters), record_with_counters
-    (a Metal run recorded without them) or not_in_recording."""
+    (a Metal run recorded without them), start_skipped (a skip_s cut drops the CPU use) or not_in_recording."""
     windows = analysis.measurement(s) == "windows"
     has = {"frames": has_frames, "hitches": (s.get("hitches") or {}).get("count") is not None,
            "lows": (s.get("gpu") or {}).get("fps_1pct_low") is not None, "encoders": has_encoders,
            "counters": s.get("gpu_counters") is not None, "memory": has_memory or (windows and bool(s.get("process_rss_mib"))),
            "thermal": s.get("thermal_state_share") is not None, "cpu": (s.get("cpu") or {}).get("mean") is not None}
     special = {"frames": "no_frames_file", "encoders": "metal_only" if windows else None, "memory": "metal_only" if windows else None,
-               "counters": "metal_only" if windows else "record_with_counters"}
+               "counters": "metal_only" if windows else "record_with_counters", "cpu": "start_skipped" if s.get("steady") else None}
     missing = [{"id": i, "reason": special.get(i) or "not_in_recording"} for i in SECTIONS if not has[i]]
     return has, missing
 
@@ -39,8 +39,8 @@ def panel_run(run, skip_s=0):
     memory cut to PANEL_POINTS points that keep every hitch, and no path. With `skip_s`, as steady_summary. A run
     with no frames.csv has the numbers of its summary and no curves; with `skip_s` it is an error, as in steady_summary."""
     s = analysis.steady_summary(run, skip_s)
-    has_frames = (config.OUT / f"{run}.frames.csv").exists()
-    rows = analysis.read_frames(run) if has_frames else []
+    rows = analysis.read_frames(run) if (config.OUT / f"{run}.frames.csv").exists() else []
+    has_frames = bool(rows)
     if s.get("steady") and rows:
         cut = rows[0][1] + s["steady"]["skip_s"] * 1000
         rows = [r for r in rows if r[1] >= cut]
@@ -120,6 +120,8 @@ def tests_mode(runs, baseline):
         try:
             result = analysis.tool_perf_check(run, baseline, margin_pct=RULES["noise_pct"])
             checks[run] = {k: result[k] for k in ("verdict", "regressed", "improved", "unchecked")}
+            if len(result["unchecked"]) == len(analysis.CHECKED):  # perf_check says same when it checked nothing
+                checks[run] = {"verdict": None, "error": f"{run} has no number perf_check can judge; record it again"}
         except paths.ToolError as error:
             checks[run] = {"verdict": None, "error": str(error)}
         except (KeyError, TypeError):  # a summary from before the numbers the verdict reads

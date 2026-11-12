@@ -610,6 +610,34 @@ def test_panel_review_findings(tmp_path):
     finally:
         config.OUT, config.BASELINES, config.PROJECT = saved
 
+def test_panel_pending_review_points(tmp_path):
+    """A skip_s cut says why the CPU is missing, a frames file with no rows is no frames file, and a run whose metrics
+    could not be checked is not called the same as the reference."""
+    from metal_gpu_trace import analysis, config, panel
+
+    full = _change_summary("g", 62.0)
+    full["cpu"] = {"mean": 20.0}
+    (tmp_path / "a.json").write_text(json.dumps(full))
+    (tmp_path / "a.frames.csv").write_text("frame,start_ms,gpu_ms_total\n" + "".join(f"{i + 1},{i * 16.0},4.0\n" for i in range(200)))
+    (tmp_path / "hdr.json").write_text(json.dumps(full))
+    (tmp_path / "hdr.frames.csv").write_text("frame,start_ms,gpu_ms_total\n")
+    (tmp_path / "bare.json").write_text(json.dumps({"gpu": {"frames": 400}}))
+    saved = config.OUT, config.BASELINES, config.PROJECT
+    config.OUT, config.BASELINES = tmp_path, tmp_path / "baselines.json"
+    try:
+        assert panel.panel_data(["a"])["runs"][0]["has"]["cpu"]
+        cut = panel.panel_data(["a"], skip_s=1)["runs"][0]
+        assert not cut["has"]["cpu"] and {"id": "cpu", "reason": "start_skipped"} in cut["missing"], cut["missing"]
+        hdr = panel.panel_data(["hdr"])["runs"][0]
+        assert not hdr["has"]["frames"] and {"id": "frames", "reason": "no_frames_file"} in hdr["missing"]
+        analysis.tool_perf_baseline("ref", ["a"])
+        config.PROJECT = {"name": "p", "profile": "generic", "baseline": "ref", "format": "metal-gpu-trace", "runs": tmp_path}
+        check = panel.panel_data(["bare"])["tests"]["checks"]["bare"]
+        assert check["verdict"] is None and "no number" in check["error"], check
+        assert set(panel.REASONS) >= {"start_skipped"}
+    finally:
+        config.OUT, config.BASELINES, config.PROJECT = saved
+
 def test_windows_against_metal(tmp_path):
     """A Windows run against a Metal run says which numbers do not compare and skips the encoders, in perf_compare, its
     Markdown and the panel; two runs from one side compare as before."""

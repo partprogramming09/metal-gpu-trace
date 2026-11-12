@@ -18,7 +18,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   active and where its folder comes from, and `perf_runs` names it in `project`.
 - The panel's data now carries every decision, so the page only draws it: `perf_panel` opens a recording that has no
   `.frames.csv` (its numbers, no curves); each run says which sections it has (`has`) and why the others are missing
-  (`missing`); the payload names the project, its profile and the main metric (`gpu_ms_mean` for a
+  (`missing`: only in Metal, record with counters, cut by `skip_s`, or not in the recording); the payload names the project, its profile and the main metric (`gpu_ms_mean` for a
   `translation-layer` project, `fps` otherwise) and lists the warnings (`warnings`: few frames, under 30 s under
   Wine, a single run each, different layers, Windows against Metal, FPS worse with GPU ms better, summary only,
   reference cut differently); with a project `baseline` it adds `tests` (`perf_check`'s verdict for each run, or why
