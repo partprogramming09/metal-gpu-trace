@@ -152,3 +152,57 @@ def test_worker_needs_configure():
             "    try:\n        f({})\n    except RuntimeError as e:\n        print(e)\n")
     out = subprocess.run([sys.executable, "-I", "-c", code, str(ROOT / "src")], text=True, capture_output=True)
     assert out.stdout.count("worker.configure() was not called") == 2, (out.stdout, out.stderr)
+
+
+def imported_modules(tree):
+    """Returns the package modules a module's tree imports, by the name it binds them to."""
+    bound = {}
+    for module, imported, node in imports_of(tree):
+        if not module:
+            bound[next(a.asname or a.name for a in node.names if a.name == imported)] = imported
+    return bound
+
+
+def test_no_local_hides_a_module():
+    """No parameter, local, loop, comprehension or lambda variable is named like a package module its file imports:
+    `metrics = {}` inside a function hid the metrics module there, and only the branch that ran it would fail."""
+    bad = []
+    for name in module_names():
+        tree = ast.parse((PKG / f"{name}.py").read_text(encoding="utf-8"))
+        modules = imported_modules(tree)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                args = node.args
+                names = [a.arg for a in args.posonlyargs + args.args + args.kwonlyargs]
+                names += [a.arg for a in (args.vararg, args.kwarg) if a]
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+                names = [node.id]
+            else:
+                continue
+            bad += [f"{name}.py:{node.lineno} binds {n}" for n in names if n in modules]
+    assert not bad, bad
+
+
+def test_module_attributes_exist():
+    """Every `<module>.<name>` a package module reads from another package module exists there, Windows-only branches
+    included, so a name left behind by the split fails here and not on a user's machine."""
+    bad = []
+    for name in module_names():
+        tree = ast.parse((PKG / f"{name}.py").read_text(encoding="utf-8"))
+        modules = imported_modules(tree)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in modules:
+                owner = importlib.import_module(f"{PACKAGE}.{modules[node.value.id]}")
+                if not hasattr(owner, node.attr):
+                    bad.append(f"{name}.py:{node.lineno} reads {modules[node.value.id]}.{node.attr}")
+    assert not bad, bad
+
+
+def test_protocol_needs_configure():
+    """protocol used without metal_trace_mcp (which calls protocol.configure) refuses to answer initialize with an
+    empty version and instructions, and names the fix."""
+    code = ("import sys; sys.path.insert(0, sys.argv[1]); from metal_gpu_trace import protocol\n"
+            "try:\n    protocol.handle({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})\n"
+            "except RuntimeError as e:\n    print(e)\n")
+    out = subprocess.run([sys.executable, "-I", "-c", code, str(ROOT / "src")], text=True, capture_output=True)
+    assert "protocol.configure() was not called" in out.stdout, (out.stdout, out.stderr)

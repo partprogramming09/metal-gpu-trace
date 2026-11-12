@@ -5,8 +5,8 @@ import json
 from metal_gpu_trace import logs, paths, registry, worker
 
 
-_instructions = ""  # set by configure(): the text clients read about how to use the server
-_version = ""  # set by configure(): the server version
+_instructions = None  # set by configure(): the text clients read about how to use the server
+_version = None  # set by configure(): the server version
 
 
 def configure(instructions, version):
@@ -30,6 +30,8 @@ def handle(message):
     if not isinstance(params, dict):
         return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32600, "message": "params must be an object"}}
     if method == "initialize":
+        if _version is None:
+            raise RuntimeError("protocol.configure() was not called: import metal_gpu_trace.metal_trace_mcp first")
         asked = params.get("protocolVersion")
         result = {"protocolVersion": asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
                   "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
