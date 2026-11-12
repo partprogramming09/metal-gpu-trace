@@ -85,12 +85,12 @@ A repository can hold a `metal-gpu-trace.json` that names its project and the fo
 The server looks for it in its working directory and the folders above it, stopping below the home folder, so one
 file at a repository's root serves every folder inside it. When it finds one, recordings go to and are read from
 `runs` instead of `METAL_TRACE_OUT` (`METAL_TRACE_READ` still adds folders to read), and `baselines.json` lives there too: projects no longer mix their recordings, and `KEEP_RUNS` prunes
-each project's folder on its own. `runs` is relative to the file, or starts with `~/`.
+each project's folder on its own. `runs` is relative to the file, starts with `~/`, or is absolute.
 
 | Key | Meaning |
 | --- | --- |
 | `name` | The project's name (letters, digits, `.`, `_`, `-`). Required. |
-| `runs` | The recordings folder. Required. It must be new, empty or already marked by the server (`.metal-gpu-trace-runs`): `KEEP_RUNS` removes old `.json` files there, so a folder holding other files is refused. |
+| `runs` | The recordings folder. Required. It must be new, empty or already marked by the server (a plain `.metal-gpu-trace-runs` file, not a folder or a link): `KEEP_RUNS` removes old `.json` files there, so a folder holding other files is refused. |
 | `profile` | `translation-layer`, `native` or `generic` (the default). For now `project_info` only reports it. |
 | `baseline` | The name of the project's reference (`perf_baseline`). For now `project_info` only reports it; `perf_check` still takes the reference it is given. |
 | `format` | `metal-gpu-trace`, the only one for now. |

@@ -12,8 +12,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   Before, the lock was `.recording` beside the recordings.
 - Projects: a `metal-gpu-trace.json` in a repository (found from the working directory upwards, or named by
   `METAL_TRACE_PROJECT`) names the project and the folder its recordings go to and are read from, ahead of
-  `METAL_TRACE_OUT`. The folder must be new, empty or marked as the server's, so `KEEP_RUNS` never prunes other
-  files; a wrong file is reported by every tool, naming the field. The new tool `project_info` says which project is
+  `METAL_TRACE_OUT`. The folder must be new, empty or marked as the server's (a plain file, not a folder or a
+  link), and may not be the project's folder, one above it, the home folder or the disk's root under any spelling
+  (APFS ignores case) or through a broken link, so `KEEP_RUNS` never prunes other files; a wrong file is reported by every tool, naming the field. The new tool `project_info` says which project is
   active and where its folder comes from, and `perf_runs` names it in `project`.
 
 ## 0.23.0 — 2026-11-11

@@ -89,12 +89,12 @@ Un repositorio puede tener un `metal-gpu-trace.json` con el nombre de su proyect
 El servidor lo busca en su directorio de trabajo y en las carpetas de encima, hasta debajo de la carpeta personal,
 así que un solo archivo en la raíz del repositorio sirve para todas sus carpetas. Si lo encuentra, las grabaciones se
 guardan y se leen en `runs` en vez de en `METAL_TRACE_OUT` (`METAL_TRACE_READ` sigue añadiendo carpetas de lectura), y `baselines.json` también vive allí: los proyectos ya no mezclan sus grabaciones y
-`KEEP_RUNS` limpia la carpeta de cada proyecto por separado. `runs` es relativa al archivo, o empieza por `~/`.
+`KEEP_RUNS` limpia la carpeta de cada proyecto por separado. `runs` es relativa al archivo, empieza por `~/` o es absoluta.
 
 | Clave | Significado |
 | --- | --- |
 | `name` | El nombre del proyecto (letras, dígitos, `.`, `_`, `-`). Obligatoria. |
-| `runs` | La carpeta de las grabaciones. Obligatoria. Tiene que ser nueva, estar vacía o tener ya la marca del servidor (`.metal-gpu-trace-runs`): `KEEP_RUNS` borra allí los `.json` antiguos, así que se rechaza una carpeta con otros archivos. |
+| `runs` | La carpeta de las grabaciones. Obligatoria. Tiene que ser nueva, estar vacía o tener ya la marca del servidor (un archivo `.metal-gpu-trace-runs` normal, no una carpeta ni un enlace): `KEEP_RUNS` borra allí los `.json` antiguos, así que se rechaza una carpeta con otros archivos. |
 | `profile` | `translation-layer`, `native` o `generic` (la de serie). Por ahora solo lo informa `project_info`. |
 | `baseline` | El nombre de la referencia del proyecto (`perf_baseline`). Por ahora solo la informa `project_info`; `perf_check` sigue usando la referencia que se le pasa. |
 | `format` | `metal-gpu-trace`, el único por ahora. |

@@ -36,7 +36,7 @@ def load(path, home=None):
     except json.JSONDecodeError as error:
         raise paths.ToolError(f"{FILE_NAME} is not valid JSON: {error.msg} at line {error.lineno}, column "
                               f"{error.colno}") from None
-    except (OSError, UnicodeDecodeError, RecursionError) as error:
+    except (OSError, ValueError, RecursionError) as error:  # UnicodeDecodeError, a NUL byte, a 5000-digit number
         raise paths.ToolError(f"{FILE_NAME} cannot be read as JSON ({type(error).__name__}); fix it or remove it") from None
     if not isinstance(data, dict):
         raise paths.ToolError(f"{FILE_NAME} must hold one JSON object with \"name\" and \"runs\"")
@@ -78,11 +78,11 @@ def checked(runs, root, home):
     """runs_folder's checks; the filesystem errors they may raise are runs_folder's to translate."""
     if runs.startswith("~") and runs != "~" and runs[1] not in "/\\":
         raise paths.ToolError(f"{FILE_NAME}: \"runs\" may start with ~/ (the home folder) but not with ~name")
-    folder = (home / runs[2:] if runs.startswith("~") else root / runs).resolve()
-    home = home.resolve()
-    if folder.is_symlink():
+    written = home / runs[2:].lstrip("/\\") if runs.startswith("~") else root / runs
+    folder, home = written.resolve(), home.resolve()
+    if folder.is_symlink() or (not folder.exists() and broken_link(written)):
         raise paths.ToolError(f"{FILE_NAME}: \"runs\" is a broken or looping link; name a plain folder")
-    if folder in (root, home, pathlib.Path(folder.anchor)) or folder in root.parents:
+    if any(same(folder, other) for other in (root, home, pathlib.Path(folder.anchor), *root.parents)):
         raise paths.ToolError(f"{FILE_NAME}: \"runs\" must be a folder of its own, not the project's folder, one above it, "
                         "the home folder or the disk's root")
     if not folder.exists():
@@ -93,10 +93,27 @@ def checked(runs, root, home):
         if (folder / inside).exists():
             raise paths.ToolError(f"{FILE_NAME}: \"runs\" holds {inside}; give the recordings a folder of their own")
     entries = {p.name for p in folder.iterdir()} - LITTER
-    if entries and RUNS_MARK not in entries:
+    marked = (folder / RUNS_MARK).is_file() and not (folder / RUNS_MARK).is_symlink()
+    if entries and not (marked and RUNS_MARK in entries):
         raise paths.ToolError(f"{FILE_NAME}: \"runs\" names a folder that already holds other files; use a new or empty "
                         f"folder, or put an empty {RUNS_MARK} file in it if it holds only recordings")
     return folder
+
+
+def same(a, b):
+    """Whether paths `a` and `b` are the same folder, also on a disk that ignores case (APFS by default)."""
+    try:
+        return a == b or (a.exists() and b.exists() and os.path.samefile(a, b))
+    except OSError:
+        return False
+
+
+def broken_link(path):
+    """Whether `path`, or a folder on the way to it, is a link whose target does not exist."""
+    for part in (path, *path.parents):
+        if part.is_symlink() and not part.exists():
+            return True
+    return False
 
 
 def find(start, environ):
@@ -111,7 +128,7 @@ def find(start, environ):
     start = pathlib.Path(start).resolve()
     for folder in (start, *start.parents):
         # a file in the home folder, above it or at the disk's root would apply to every program
-        if folder == home or folder == pathlib.Path(folder.anchor):
+        if same(folder, home) or folder == pathlib.Path(folder.anchor):
             return None
         if (folder / FILE_NAME).is_file():
             return folder / FILE_NAME
@@ -124,16 +141,21 @@ def apply(start=None, environ=None):
     Without a project file the settings stay as METAL_TRACE_OUT gives them; a wrong file is kept in
     config.PROJECT_ERROR for check() to report, so the server still starts and says what to fix."""
     environ = os.environ if environ is None else environ
-    config.reload(environ)
     config.PROJECT, config.PROJECT_ERROR = None, None
+    try:
+        config.reload(environ)
+    except (OSError, ValueError, RuntimeError) as error:
+        config.PROJECT_ERROR = f"METAL_TRACE_OUT or METAL_TRACE_READ cannot be used as a folder ({type(error).__name__})"
+        return
     try:
         path = find(pathlib.Path.cwd() if start is None else start, environ)
         if path is None:
             return
         found = load(path, home=environ.get("HOME"))
         adopt(found["runs"])
-    except OSError as error:  # METAL_TRACE_PROJECT names a place that cannot be looked at
-        config.PROJECT_ERROR = f"{FILE_NAME} cannot be looked for ({type(error).__name__}); check METAL_TRACE_PROJECT"
+    except (OSError, ValueError, RuntimeError) as error:  # METAL_TRACE_PROJECT or HOME that cannot be looked at
+        config.PROJECT_ERROR = (f"{FILE_NAME} cannot be looked for ({type(error).__name__}); check METAL_TRACE_PROJECT "
+                                "and HOME")
         return
     except paths.ToolError as error:
         config.PROJECT_ERROR = str(error)
@@ -163,6 +185,8 @@ def shown(folder, root, home):
     """Names `folder` without an absolute path: relative to `root` when inside it, as ~/… under `home`, else by its
     last component."""
     for base, prefix in ((root, ""), (home, "~/")):
+        if base == pathlib.Path(base.anchor):  # relative to the disk's root is the whole path
+            continue
         try:
             return prefix + folder.relative_to(base).as_posix()
         except ValueError:
@@ -180,6 +204,15 @@ def tool_project_info():
 def info(environ):
     """tool_project_info's answer, with the environment `environ`."""
     check()
+    try:
+        return answer(environ)
+    except (OSError, ValueError, RuntimeError) as error:  # the working directory or HOME vanished or is unusable
+        raise paths.ToolError(f"the recordings folder cannot be named ({type(error).__name__}); check the working "
+                              "directory and HOME") from None
+
+
+def answer(environ):
+    """info's answer, which may raise what the filesystem raises."""
     home = (pathlib.Path(environ["HOME"]) if environ.get("HOME") else pathlib.Path.home()).resolve()
     found = config.PROJECT or {}
     source = "project file" if found else "METAL_TRACE_OUT" if "METAL_TRACE_OUT" in environ else "default"

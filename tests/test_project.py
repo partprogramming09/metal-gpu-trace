@@ -367,3 +367,41 @@ def test_project_info_source_follows_the_folder_in_use(tmp_path):
         assert project.info(env)["source"] == "METAL_TRACE_OUT", "an empty METAL_TRACE_OUT is still the one in use"
     finally:
         restore()
+
+
+def test_runs_that_is_a_parent_by_another_spelling_is_refused(tmp_path):
+    """Where the disk says two spellings are one folder (APFS ignores case), runs may not name a parent that way;
+    the disk is played by samefile, so this runs on any filesystem."""
+    import os
+    (tmp_path / "a" / project.RUNS_MARK).parent.mkdir()
+    (tmp_path / "a" / project.RUNS_MARK).touch()
+    (tmp_path / "b").mkdir()  # another folder here; the stand-in samefile says it is "a", as "A" would be on APFS
+    real = os.path.samefile
+    os.path.samefile = lambda x, y: {pathlib.Path(x).name, pathlib.Path(y).name} == {"a", "b"} or real(x, y)
+    try:
+        refused(write(tmp_path / "a" / "repo", {"name": "m", "runs": "../../b"}))
+    finally:
+        os.path.samefile = real
+
+
+def test_project_info_reports_a_vanished_working_directory(tmp_path):
+    restore = saved_config()
+    try:
+        project.apply(tmp_path, {"HOME": "/nonexistent"})
+        cwd, gone = pathlib.Path.cwd(), tmp_path / "gone"
+        gone.mkdir()
+        os_chdir(gone)
+        gone.rmdir()
+        try:
+            project.info({"HOME": "/nonexistent"})
+        except paths.ToolError:
+            pass
+        finally:
+            os_chdir(cwd)
+    finally:
+        restore()
+
+
+def os_chdir(path):
+    import os
+    os.chdir(path)
