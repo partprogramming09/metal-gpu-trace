@@ -2,6 +2,7 @@
 import base64
 import json
 import os
+import re
 import select
 import socket
 import sys
@@ -31,8 +32,12 @@ def header_text(value):
     """Returns a header value as text, decoding the =?base64?...?= form the 2026-07-28 spec uses for values that are not
     plain ASCII; None for no header or for Base64 that is not UTF-8."""
     if value is not None and value.startswith("=?base64?") and value.endswith("?=") and len(value) >= 11:
+        encoded = value[len("=?base64?"):-2]
+        # strict Base64 on every Python: before 3.13 b64decode accepts excess padding such as "Zm9v="
+        if len(encoded) % 4 or not re.fullmatch(r"[A-Za-z0-9+/]*={0,2}", encoded):
+            return None
         try:
-            return base64.b64decode(value[len("=?base64?"):-2], validate=True).decode("utf-8")
+            return base64.b64decode(encoded, validate=True).decode("utf-8")
         except ValueError:  # binascii.Error and UnicodeDecodeError are both ValueErrors
             return None
     return value
@@ -118,7 +123,9 @@ def http_handler(token):
                 return self.reply(403)
             if self.unauthorized():
                 return self.reply(401)
-            length = int(self.headers.get("Content-Length") or 0) if (self.headers.get("Content-Length") or "0").isdigit() else -1
+            text = self.headers.get("Content-Length") or "0"
+            # ASCII digits only and a bounded count: "²".isdigit() is true and int() refuses it, as it refuses 5000 digits
+            length = int(text) if text.isascii() and text.isdigit() and len(text) <= 12 else -1
             if not 0 <= length <= config.MAX_BODY:
                 return self.reply(413)
             try:

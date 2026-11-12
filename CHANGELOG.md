@@ -60,14 +60,20 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   accepted and ignored, since a modern client cancels by closing its connection and an id may be shared.
 - `prompts/get` renders the prompt it is asked for, and `prompts/list` no longer exposes the internal `render`
   function.
+- Requests with params of the wrong type (a `name` or `uri` that is not a string, `prompts/get` arguments that are
+  not an object) get `-32602` with their id instead of `-32603` with id `null`, and so does a `resources/read` without
+  a `uri` (`-32002` before, in the old era); a `_meta` that is not an object is ignored. Over HTTP
+  a `Content-Length` that is not plain ASCII digits (or too long) is refused, and a Base64 `Mcp-Name` is decoded the
+  same strict way on every Python. `tests/test_adversarial.py` keeps the cases an adversarial pass found.
 - On macOS a `.recording` lock left by a process that no longer exists is taken over by the next recording; a lock
   whose owner is alive (any user's) still refuses with exit 3, and two recordings that find the same dead lock cannot
   both take it. A recording stopped for overrunning or cancelled removes its lock only when the lock holds its pid.
 - A typo in the server instructions (`browser.trace_tables`), which changes the `instructions` text in `initialize`
   and `server/discover`.
 - `process.arguments` in summaries no longer keeps folder names from paths with spaces (`C:\Users\Ann Lee\save.dat`,
-  `/Users/Ann Lee/x`); quoted paths, `--option=path` values, UNC paths, paths after a short flag (`-I/x`), after
-  `name=` or `name:` (`file:///x`) and inside a quoted value (`-exec "load /x/y"`) are cut too.
+  `/Users/Ann Lee/x`); quoted paths, `--option=path` values, UNC paths, Windows paths without a drive, paths after a
+  single-dash flag (`-I/x`, `-isystem/x`), after `name=`, `name:` (`file:///x`), `@`, a comma or a quote glued to a
+  word or never closed, and inside a quoted value (`-exec "load /x/y"`) are cut too.
 - Internal: the experiments share `recording.record_new_summary`, the panel page is read once and cached, the golden
   file pins the 2026-07-28 replies too, and a test checks each tool's schema against its function's arguments.
 - Documentation for contributors: `docs/architecture.md` (layers and request flow), ADRs 0001 to 0003 (src layout,

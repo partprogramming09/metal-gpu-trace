@@ -76,9 +76,11 @@ def idle_gaps(spans):
 
 # one argument: an optional `--name=` prefix, then a "quoted", 'quoted' or bare value
 _ARGUMENT = re.compile(r"""(?=\S)(?P<option>-[^\s=]*=)?(?:"(?P<double>[^"]*)"|'(?P<single>[^']*)'|(?P<bare>\S*))""")
-_WINDOWS_PATH = re.compile(r"^(?:[a-zA-Z]:[\\/]|\\\\)")  # C:\ or C:/ (a Wine program's paths), or a UNC path
-# where a path starts inside a word: after a short flag (-I/x), after `name=` or `name:`; `://host` is a URL, not a path
-_INNER_PATH = re.compile(r"(?:^-[A-Za-z]|[=:])(?=/(?!/[^/])|[a-zA-Z]:[\\/])")
+# C:\ or C:/ (a Wine program's paths), a UNC path, or a Windows path rooted without a drive (\users\name\x)
+_WINDOWS_PATH = re.compile(r"^(?:[a-zA-Z]:[\\/]|\\\\|\\[^\\\s]+\\)")  # a lone \n or \d+ is not a path
+# where a path starts inside a word: after a single-dash flag (-I/x, -isystem/x), after `name=`, `name:`, `@` (a
+# response file), a comma (-Wl,-rpath,/x) or a quote glued to a word (-I"/x"); `://host` is a URL, not a path
+_INNER_PATH = re.compile(r"""(?:^-[A-Za-z]+(?=/(?!/[^/])|\\\\)|^-[A-Za-z](?=[a-zA-Z]:[\\/])|[=:@,"'](?=/(?!/[^/])|[a-zA-Z]:[\\/]|\\\\))""")
 
 
 def public_arguments(arguments):
@@ -92,9 +94,9 @@ def public_arguments(arguments):
     Consequences: a plain word that follows a path with no flag between them is read as part of the path, and its
     file name keeps it (`/opt/a/game.exe level1` gives `game.exe level1`, as it always did); a file name with spaces
     stays whole; a path that ends in a separator names a folder and leaves nothing; and a space followed by `/` or
-    `C:\\` always starts a new path. A path inside a word is cut the same way: after a short flag (`-I/x`), after
-    `name=` or `name:` (`file:///x`), and inside a quoted value (`-exec "load /x/y"`). Relative paths and URLs with a
-    host are not cut: they hold no user's folder."""
+    `C:\\` always starts a new path. A path inside a word is cut the same way: after a single-dash flag (`-I/x`),
+    after `name=`, `name:` (`file:///x`), `@` or a comma, after a quote glued to a word or never closed, and inside a
+    quoted value (`-exec "load /x/y"`). Relative paths and URLs with a host are not cut: they hold no user's folder."""
     def is_path(text):
         return text.startswith("/") or bool(_WINDOWS_PATH.match(text))
 

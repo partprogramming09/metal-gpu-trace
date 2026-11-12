@@ -121,7 +121,9 @@ def handle(message):
                                 for uri, (name, about, _) in registry.RESOURCES.items()]}
     elif method == "resources/read":
         uri = params.get("uri")
-        if isinstance(uri, str) and uri.startswith(RUNS_URI):
+        if not isinstance(uri, str):
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "uri must be a string"}}
+        if uri.startswith(RUNS_URI):
             try:
                 text = paths.run_path(uri[len(RUNS_URI):]).read_text(encoding="utf-8")
             except paths.ToolError:
@@ -145,8 +147,10 @@ def handle(message):
         result = {"prompts": [{"name": name, **{k: v for k, v in p.items() if k != "render"}}
                                for name, p in registry.PROMPTS.items()]}
     elif method == "prompts/get":
-        if params.get("name") not in registry.PROMPTS:
+        if not isinstance(params.get("name"), str) or params["name"] not in registry.PROMPTS:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "unknown prompt"}}
+        if not isinstance(params.get("arguments") or {}, dict):
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "arguments must be an object"}}
         arguments = {k: v for k, v in (params.get("arguments") or {}).items() if v and paths.name_ok(str(v))}
         try:
             text = registry.PROMPTS[params["name"]]["render"](**arguments)
@@ -156,10 +160,10 @@ def handle(message):
                   "messages": [{"role": "user", "content": {"type": "text", "text": text}}]}
     elif method == "tools/call":
         name = params.get("name")
-        if name not in registry.TOOLS:
+        if not isinstance(name, str) or name not in registry.TOOLS:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": f"unknown tool {name}"}}
         result = worker.call(name, params.get("arguments") or {}, mid if isinstance(mid, (str, int)) else None,
-                      (params.get("_meta") or {}).get("progressToken"))
+                      meta.get("progressToken") if isinstance(meta := params.get("_meta"), dict) else None)
     else:
         return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"unknown method {method}"}}
     return {"jsonrpc": "2.0", "id": mid, "result": decorate(result, method, kind, params.get("uri"))}
