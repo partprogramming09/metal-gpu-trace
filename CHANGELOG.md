@@ -23,12 +23,14 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - 🧪 Prompt `bisect-regression` (`good_rev`, `bad_rev`, `workload`): the agent runs `git bisect` with its own permissions and, at each step, `perf_record` and `perf_check` against a baseline, repeating a step before marking it. It records a workload, so a commit must change what the workload runs (its arguments or environment). The server runs no command; a revision that is not a plain name, or starts with `-`, is refused. [proof](docs/evidence/v0.26.0.md#the-bisect-regression-prompt)
 
+- 🧪 `capture_diff` compares two `.gputrace` captures by their confirmed Metal calls: totals per call (`a`, `b`, `delta`) and the debug groups whose calls differ, matched by label so their order does not matter (the 100 largest changes, out of `groups_total`). A capture without debug groups is compared as a whole. Only calls matched one by one against Xcode's command list count. Debug markers are not counted, and calls outside every group are only in the totals. `capture_summary`, `capture_records` and `capture_diff` errors no longer include the capture's folder. [proof](docs/evidence/v0.26.0.md#capture_diff-compares-two-captures)
+
 ### Documentation
 
 - Release proof: `docs/evidence/` says how each release proves its improvements, and `tests/test_docs.py` fails when a
   release from 0.26.0 on does not list 5 to 10 improvements, each linking to its proof. `tests/golden/protocol.json`
-  changed on purpose: the `project_info` description no longer names `profile`, `prompts/list` has two more prompts and the
-  instructions mention them.
+  changed on purpose: the `project_info` description no longer names `profile`, `prompts/list` has two more prompts, the
+  instructions mention them and `tools/list` has `capture_diff`.
 
 ## 0.25.0 — 2026-11-15
 

@@ -257,7 +257,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 
 ### Herramientas
 
-24 herramientas en cuatro grupos. Tu agente las elige; rara vez llamas a una tú. Cada fila empieza por para qué sirve y sigue con el detalle.
+25 herramientas en cuatro grupos. Tu agente las elige; rara vez llamas a una tú. Cada fila empieza por para qué sirve y sigue con el detalle.
 
 #### Grabar
 
@@ -290,6 +290,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | `trace_count` | Cuenta las filas de varias tablas de un `.trace` conservado. — Cuenta las filas de varias tablas de un `.trace` guardado, en total y por proceso; por defecto las que importan para una capa de traducción (intervalos de GPU, encoders, derrames del compilador, shaders compilados, asignaciones, contadores, Time Profiler), para ver una vacía antes de leerla |
 | `trace_query` | Devuelve filas de una tabla de un `.trace` conservado. — Una página de filas de una tabla, opcionalmente de un proceso; con `window_ms`, una página de ventanas de tiempo (`count` y duración sumada) en `rows` en vez de filas |
 | `capture_summary` | Resume una captura `.gputrace`. — Resume un `.gputrace`; lista sus 100 llamadas más frecuentes de `calls_total` |
+| `capture_diff` | Compara dos capturas `.gputrace`. — Cuántas veces hace cada llamada confirmada de Metal cada una (sin contar los marcadores de depuración), su diferencia y los grupos de depuración que cambian |
 | `capture_records` | Devuelve los registros de una captura `.gputrace`, por páginas. — Una página de los registros de un `.gputrace` |
 
 #### Preparación y programas de prueba

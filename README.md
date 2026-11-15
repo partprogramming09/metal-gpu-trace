@@ -236,7 +236,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 
 ### Tools
 
-24 tools in four groups. Your agent picks them; you rarely call one yourself. Each row starts with what the tool is for, then the detail.
+25 tools in four groups. Your agent picks them; you rarely call one yourself. Each row starts with what the tool is for, then the detail.
 
 #### Record
 
@@ -269,6 +269,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `trace_count` | Counts the rows of several tables of a kept `.trace`. — Counts the rows of several tables of a kept `.trace`, in all and per process; by default the tables that matter for a translation layer (GPU intervals, encoders, compiler spills, compiled shaders, allocations, counters, Time Profiler), so an empty one shows before reading it |
 | `trace_query` | Returns rows of one table of a kept `.trace`. — One page of rows of one table, optionally one process; with `window_ms`, one page of time windows (`count` and summed duration) in `rows` instead |
 | `capture_summary` | Summarizes a `.gputrace` capture. — Summarizes a `.gputrace`; lists its 100 most frequent calls out of `calls_total` |
+| `capture_diff` | Compares two `.gputrace` captures. — Counts of each confirmed Metal call in both (debug markers not counted), their difference, and the debug groups whose calls differ |
 | `capture_records` | Returns the records of a `.gputrace` capture, one page at a time. — One page of a `.gputrace`'s records |
 
 #### Setup and test programs

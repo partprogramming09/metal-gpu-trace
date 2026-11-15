@@ -158,6 +158,10 @@ TOOLS = {
          **PAGE}, ["trace", "schema"]),
                     hints("Read a trace table")),
     "capture_summary": (traces.tool_capture_summary, schema({"capture": CAPTURE}, ["capture"]), hints("Summarize a capture")),
+    "capture_diff": (traces.tool_capture_diff, schema(
+        {"a": {**CAPTURE, "description": "the first .gputrace (usually the one before a change)"},
+         "b": {**CAPTURE, "description": "the second .gputrace"}}, ["a", "b"]),
+                     hints("Compare two captures")),
     "capture_records": (traces.tool_capture_records, schema({"capture": CAPTURE, **PAGE}, ["capture"]),
                         hints("Read a capture's records")),
     "gpu_family": (traces.tool_gpu_family, schema(

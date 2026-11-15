@@ -1061,6 +1061,36 @@
      "annotations": {
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Compare two captures"
+     },
+     "description": "Compares two .gputrace captures by their confirmed Metal calls: totals per call (a, b, delta) and the debug groups\nwhose calls differ, the 100 with the largest change out of groups_total. Needs no Xcode.",
+     "inputSchema": {
+      "properties": {
+       "a": {
+        "description": "the first .gputrace (usually the one before a change)",
+        "type": "string"
+       },
+       "b": {
+        "description": "the second .gputrace",
+        "type": "string"
+       }
+      },
+      "required": [
+       "a",
+       "b"
+      ],
+      "type": "object"
+     },
+     "name": "capture_diff",
+     "outputSchema": {
+      "type": "object"
+     },
+     "title": "Compare two captures"
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Read a capture's records"
      },
      "description": "Returns one page of the records of a .gputrace command stream, with their Metal call names when known.",
@@ -2482,6 +2512,36 @@
       "type": "object"
      },
      "title": "Summarize a capture"
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Compare two captures"
+     },
+     "description": "Compares two .gputrace captures by their confirmed Metal calls: totals per call (a, b, delta) and the debug groups\nwhose calls differ, the 100 with the largest change out of groups_total. Needs no Xcode.",
+     "inputSchema": {
+      "properties": {
+       "a": {
+        "description": "the first .gputrace (usually the one before a change)",
+        "type": "string"
+       },
+       "b": {
+        "description": "the second .gputrace",
+        "type": "string"
+       }
+      },
+      "required": [
+       "a",
+       "b"
+      ],
+      "type": "object"
+     },
+     "name": "capture_diff",
+     "outputSchema": {
+      "type": "object"
+     },
+     "title": "Compare two captures"
     },
     {
      "annotations": {

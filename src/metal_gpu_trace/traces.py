@@ -154,6 +154,15 @@ def tool_capture_summary(capture):
     return summary
 
 
+def tool_capture_diff(a, b):
+    """Compares two .gputrace captures by their confirmed Metal calls: totals per call (a, b, delta) and the debug groups
+    whose calls differ, the 100 with the largest change out of groups_total. Needs no Xcode."""
+    result = gputrace_read.diff(paths.allowed(a), paths.allowed(b))
+    result["groups_total"] = len(result["groups"])
+    result["groups"] = result["groups"][:100]
+    return result
+
+
 def tool_capture_records(capture, offset=0, limit=100):
     """Returns one page of the records of a .gputrace command stream, with their Metal call names when known."""
     out = [{"offset": off, "size": size, "id": call, "signature": signature,
