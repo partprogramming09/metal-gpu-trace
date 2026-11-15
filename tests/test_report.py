@@ -669,7 +669,11 @@ def test_summary_leaves_out_unpresented(tmp_path):
                    f'<id>{c}</id><id>{e}</id></row>' for f, s, d, e, c in stalled_spans())
     paths = {"metal-gpu-intervals": table(("start", "duration", "channel-name", "frame-number", "process",
                                            "cmdbuffer-id", "encoder-id"), body),
-             "gpu-performance-state-intervals": table(("start",), "")}
+             "gpu-performance-state-intervals": table(("start",), ""),
+             perf_report.MEMORY: table(("start", "current-allocated-size", "process"),
+                                       "".join(f"<row><start>{t * 1_000_000}</start><current-allocated-size>{2**20 * (t + 1)}"
+                                               "</current-allocated-size><process><pid>7</pid></process></row>"
+                                               for t in range(3)))}
     toc = ET.fromstring('<trace-toc><run><info><target><process type="launched" pid="7" name="x"/></target>'
                         '</info><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
 
@@ -684,13 +688,21 @@ def test_summary_leaves_out_unpresented(tmp_path):
     perf_report.toc_and_tables = fake
     try:
         s = perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=False)
+        assert not list(tmp_path.glob("x.metal_memory*")), "memory=False writes no memory table"
+        with_memory = perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=True)
     finally:
         perf_report.toc_and_tables = saved
+    assert with_memory["metal_memory_mib"]["samples"] == 3 and with_memory["metal_memory_mib"]["peak"] == 3.0, with_memory
+    assert [p.name for p in tmp_path.glob("x.metal_memory*")] == ["x.metal_memory.csv.gz"], list(tmp_path.iterdir())
+    assert list(s)[0] == "schema_version" and s["schema_version"] == 2, list(s)[:2]
     gpu = s["gpu"]
     assert gpu["frames"] == 199 and gpu["frame_gpu_ms"]["max"] == 2.0, gpu
     assert gpu["unpresented"]["frames"] == [200] and gpu["unpresented"]["command_buffers"] == 1001, gpu["unpresented"]
     assert s["encoders"]["command_buffers_per_frame"]["max"] == 1, s["encoders"]
-    csv_rows = (tmp_path / "x.frames.csv").read_text().splitlines()
+    from metal_gpu_trace import tables
+    assert not (tmp_path / "x.frames.csv").exists(), "a new recording writes the table compressed only"
+    with tables.open_text(tmp_path / "x.frames.csv.gz") as f:
+        csv_rows = f.read().splitlines()
     assert len(csv_rows) == 200 and not csv_rows[-1].startswith("200,"), csv_rows[-1]
 
 
@@ -818,3 +830,71 @@ def test_rows_without_a_node_still_reads_every_row(tmp_path):
     path = tmp_path / "t.xml"
     path.write_text("<r><schema><col><mnemonic>a</mnemonic></col></schema><row><a>1</a></row><row><a>2</a></row></r>")
     assert [row["a"].text for row in perf_report.rows(path)] == ["1", "2"]
+
+
+def test_noisy_flag_above_threshold():
+    """The GPU's total use minus the program's own share of its busy window, in points: 20 or more is noisy."""
+    noisy = perf_report.noisy_environment({"samples": 5, "device_pct": {"mean": 80.0}}, {"idle_share": 0.5})
+    assert noisy == {"flag": True, "gpu_device_pct_mean": 80.0, "process_busy_pct": 50.0, "external_pct": 30.0}, noisy
+    assert perf_report.NOISY_EXTERNAL_PCT == 20.0
+
+
+def test_noisy_flag_below():
+    quiet = perf_report.noisy_environment({"device_pct": {"mean": 55.0}}, {"idle_share": 0.5})
+    assert quiet["flag"] is False and quiet["external_pct"] == 5.0, quiet
+    below_zero = perf_report.noisy_environment({"device_pct": {"mean": 30.0}}, {"idle_share": 0.1})
+    assert below_zero["flag"] is False and below_zero["external_pct"] == -60.0, below_zero
+
+
+def test_noisy_boundary_is_inclusive():
+    assert perf_report.noisy_environment({"device_pct": {"mean": 70.0}}, {"idle_share": 0.5})["flag"] is True  # exactly 20.0
+    assert perf_report.noisy_environment({"device_pct": {"mean": 69.9}}, {"idle_share": 0.5})["flag"] is False
+
+
+def test_noisy_missing_inputs_return_none():
+    good_activity, good_idle = {"device_pct": {"mean": 80.0}}, {"idle_share": 0.5}
+    for activity in (None, {"samples": 0}, {"device_pct": None}, {"device_pct": {}}, {"device_pct": {"mean": "x"}},
+                     {"device_pct": {"mean": float("nan")}}, {"device_pct": "x"}, "x", [], {"device_pct": {"mean": True}}):
+        assert perf_report.noisy_environment(activity, good_idle) is None, activity
+    for idle in (None, {}, {"idle_share": None}, {"idle_share": "x"}, {"idle_ms_per_frame": {"count": 0}}, "x",
+                 {"idle_share": float("inf")}, {"idle_share": True}):
+        assert perf_report.noisy_environment(good_activity, idle) is None, idle
+
+
+def test_summary_has_flag_and_basis_only_when_true(tmp_path):
+    def table(columns, body):
+        cols = "".join(f"<col><mnemonic>{c}</mnemonic></col>" for c in columns)
+        return f"<trace-query-result><node><schema>{cols}</schema>{body}</node></trace-query-result>"
+    body = "".join(f"<row><start>{i * 10_000_000}</start><duration>4000000</duration><channel-name>Vertex</channel-name>"
+                   f"<frame-number>{i + 1}</frame-number><process><pid>7</pid></process><cmdbuffer-id>c{i}</cmdbuffer-id>"
+                   f"<encoder-id>e{i}</encoder-id></row>" for i in range(60))
+    xml = {"metal-gpu-intervals": table(("start", "duration", "channel-name", "frame-number", "process", "cmdbuffer-id",
+                                         "encoder-id"), body),
+           "gpu-performance-state-intervals": table(("start",), "")}
+    toc = ET.fromstring('<trace-toc><run><info><target><process type="launched" pid="7" name="x"/></target>'
+                        '</info><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
+
+    def fake(trace, schemas, optional=()):
+        files = {}
+        for name, text in xml.items():
+            files[name] = str(tmp_path / f"{name}.xml")
+            pathlib.Path(files[name]).write_text(text)
+        return toc, files
+    saved = perf_report.toc_and_tables
+    perf_report.toc_and_tables = fake
+    try:
+        plain = perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=False)
+        assert "noisy_environment" not in plain and "noisy_basis" not in plain, "no sampler file: no flag"
+        idle = plain["gpu_idle"]["idle_share"]
+        process_busy = round(100 * (1 - idle), 1)
+        for device, flag in ((process_busy + 40, True), (process_busy + 5, False)):
+            (tmp_path / "x.agx.csv").write_text("device_pct,renderer_pct,tiler_pct\n" + f"{device},1,1\n" * 3)
+            s = perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=False)
+            assert s["noisy_environment"] is flag, (device, s.get("noisy_environment"))
+            if flag:
+                assert s["noisy_basis"] == {"gpu_device_pct_mean": device, "process_busy_pct": process_busy,
+                                            "external_pct": round(device - process_busy, 1)}, s["noisy_basis"]
+            else:
+                assert "noisy_basis" not in s
+    finally:
+        perf_report.toc_and_tables = saved

@@ -19,6 +19,8 @@ os.environ.pop("METAL_TRACE_PROJECT", None)
 # the servers, recordings and scripts the tests start take a lock of their own, never the user's
 os.environ["METAL_TRACE_LOCK"] = os.environ["PERF_LOCK"] = os.path.join(
     tempfile.mkdtemp(prefix="metal-gpu-trace-tests-"), "recording.lock")
+# the recording tests must not depend on whether the developer's screen is locked (preflight refuses a locked one)
+os.environ["METAL_TRACE_ALLOW_LOCKED"] = "1"
 
 
 def wait_until(predicate, timeout=10.0, step=0.02):

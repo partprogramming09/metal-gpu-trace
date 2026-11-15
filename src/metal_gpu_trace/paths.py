@@ -82,6 +82,22 @@ def page(items, offset, limit):
     return {"total": len(items), "offset": offset, "rows": rows, "next_offset": offset + len(rows) if more else None}
 
 
+def check_cooldown(value):
+    """Returns `value` (the seconds to rest between two recordings) as a number from 0 to 600, 0 when None, or raises
+    ToolError."""
+    if value is None:
+        return 0.0
+    try:
+        if isinstance(value, bool):
+            raise TypeError
+        seconds = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ToolError("cooldown_s is 0 to 600 seconds") from None
+    if not 0 <= seconds <= 600:  # a NaN is false here too
+        raise ToolError("cooldown_s is 0 to 600 seconds")
+    return seconds
+
+
 def check_skip(skip_s):
     """Returns `skip_s` as a number of seconds from 0 to 600, or raises ToolError."""
     try:

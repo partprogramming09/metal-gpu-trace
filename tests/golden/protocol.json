@@ -8,7 +8,7 @@
     "resources": {},
     "tools": {}
    },
-   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
+   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either. Use tier light to iterate, standard to decide, deep for GPU counters and a kept .trace (METAL_TRACE_MAX_DISK_MB may drop it); compare recordings of the same tier. perf_diagnose and perf_compare return suggested_actions: when it is not empty, run the first one that fits. On a laptop set cooldown_s on perf_baseline_record, perf_ab and perf_sweep so the Mac cools between recordings; a run whose summary has noisy_environment (another process was loading the GPU) is repeated before it is trusted. A recording is refused before it starts when its program, xcrun, the disk or the lock is not ready, or when the screen is locked (METAL_TRACE_ALLOW_LOCKED=1 allows that).",
    "protocolVersion": "2025-06-18",
    "serverInfo": {
     "name": "metal-trace",
@@ -25,7 +25,7 @@
     "resources": {},
     "tools": {}
    },
-   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
+   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either. Use tier light to iterate, standard to decide, deep for GPU counters and a kept .trace (METAL_TRACE_MAX_DISK_MB may drop it); compare recordings of the same tier. perf_diagnose and perf_compare return suggested_actions: when it is not empty, run the first one that fits. On a laptop set cooldown_s on perf_baseline_record, perf_ab and perf_sweep so the Mac cools between recordings; a run whose summary has noisy_environment (another process was loading the GPU) is repeated before it is trusted. A recording is refused before it starts when its program, xcrun, the disk or the lock is not ready, or when the screen is locked (METAL_TRACE_ALLOW_LOCKED=1 allows that).",
    "protocolVersion": "2025-11-25",
    "serverInfo": {
     "name": "metal-trace",
@@ -46,7 +46,7 @@
       "readOnlyHint": false,
       "title": "Record a program"
      },
-     "description": "Records `program` (an .exe under Wine, or a macOS binary with wine=\"native\"), or a test program fetched with\nworkload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per\nframe, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest\nto read). When it ends it stops every program of that Wine prefix (wineserver -k), or every process named like\nthe program with native. counters=true also records Metal GPU Counters (`gpu_counters` in the summary: the units the\nGPU waited on, its utilization, occupancy and memory bandwidth); it adds about 40 s of read-back per recorded second.",
+     "description": "Records `program` (an .exe under Wine, or a macOS binary with wine=\"native\"), or a test program fetched with\nworkload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per\nframe, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest\nto read). When it ends it stops every program of that Wine prefix (wineserver -k), or every process named like\nthe program with native. counters=true also records Metal GPU Counters (`gpu_counters` in the summary: the units the\nGPU waited on, its utilization, occupancy and memory bandwidth); it adds about 40 s of read-back per recorded second.\ntier sets both at once: light (no Metal memory, no counters: seconds of read-back, to iterate), standard (the default:\nMetal memory) and deep (also counters, and the .trace is kept unless METAL_TRACE_MAX_DISK_MB drops it); memory and\ncounters given on their own replace that part of the tier. Compare recordings of the same tier.",
      "inputSchema": {
       "properties": {
        "api": {
@@ -105,6 +105,15 @@
         "description": "with a workload that has size_variables (drawstress): the window size, WIDTHxHEIGHT such as 1920x1080",
         "type": "string"
        },
+       "tier": {
+        "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace (subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own replace that part. Compare recordings of the same tier",
+        "enum": [
+         "light",
+         "standard",
+         "deep"
+        ],
+        "type": "string"
+       },
        "wine": {
         "description": "Wine directory holding bin/wine, or native",
         "type": "string"
@@ -137,7 +146,7 @@
       "readOnlyHint": false,
       "title": "Record a reference"
      },
-     "description": "Records the same program `count` times in a row with perf_record's arguments and saves the runs as the\nreference `name` for perf_check, returning the range each number spans across them. Runs are named\n`name`-1, `name`-2, ... Each recording takes its seconds plus about a minute to read back. skip_s as in\nperf_baseline: the reference leaves out each run's start-up.",
+     "description": "Records the same program `count` times in a row with perf_record's arguments and saves the runs as the\nreference `name` for perf_check, returning the range each number spans across them. Runs are named\n`name`-1, `name`-2, ... Each recording takes its seconds plus about a minute to read back. skip_s as in\nperf_baseline: the reference leaves out each run's start-up. cooldown_s rests that many seconds between two\nrecordings (never before the first or after the last), so a laptop does not throttle.",
      "inputSchema": {
       "properties": {
        "api": {
@@ -151,6 +160,10 @@
        "background": {
         "description": "macOS only, default false; true runs the program under taskpolicy -b, which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run",
         "type": "boolean"
+       },
+       "cooldown_s": {
+        "description": "seconds to rest between two consecutive recordings (never before the first or after the last), 0 to 600, default 0; on a laptop 60 is a starting value, not a measurement: the summaries' thermal_state_share says whether it throttled",
+        "type": "number"
        },
        "count": {
         "description": "equal recordings to make, default 3",
@@ -204,6 +217,15 @@
         "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them; perf_check applies the same cut to the run it judges",
         "type": "number"
        },
+       "tier": {
+        "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace (subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own replace that part. Compare recordings of the same tier",
+        "enum": [
+         "light",
+         "standard",
+         "deep"
+        ],
+        "type": "string"
+       },
        "wine": {
         "description": "Wine directory holding bin/wine, or native",
         "type": "string"
@@ -236,7 +258,7 @@
       "readOnlyHint": false,
       "title": "Record one run per value of a variable"
      },
-     "description": "Records the same program once per value of one variable (dim, example, api, size, or env:NAME for an environment\nvariable) and returns, per value, the median of FPS, 1 % low, GPU ms per frame and stutter, and with 3 or more\nnumeric values the straight line GPU ms per frame follows (fixed ms plus ms per draw for dim, per unit otherwise)\nwith its r2. With rounds above 1 the values run in opposite order every other round, so drift hits all alike.\nRuns are named `name`-<value number>-r<round>; each takes its seconds plus about a minute to read back.",
+     "description": "Records the same program once per value of one variable (dim, example, api, size, or env:NAME for an environment\nvariable) and returns, per value, the median of FPS, 1 % low, GPU ms per frame and stutter, and with 3 or more\nnumeric values the straight line GPU ms per frame follows (fixed ms plus ms per draw for dim, per unit otherwise)\nwith its r2. With rounds above 1 the values run in opposite order every other round, so drift hits all alike.\nRuns are named `name`-<value number>-r<round>; each takes its seconds plus about a minute to read back. cooldown_s\nrests that many seconds between any two consecutive recordings (never before the first or after the last).",
      "inputSchema": {
       "properties": {
        "api": {
@@ -250,6 +272,10 @@
        "background": {
         "description": "macOS only, default false; true runs the program under taskpolicy -b, which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run",
         "type": "boolean"
+       },
+       "cooldown_s": {
+        "description": "seconds to rest between two consecutive recordings (never before the first or after the last), 0 to 600, default 0; on a laptop 60 is a starting value, not a measurement: the summaries' thermal_state_share says whether it throttled",
+        "type": "number"
        },
        "counters": {
         "description": "default false; true also records Metal GPU Counters (gpu_counters in the summary); not under Windows; adds about 40 s of read-back per recorded second",
@@ -303,6 +329,15 @@
         "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them",
         "type": "number"
        },
+       "tier": {
+        "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace (subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own replace that part. Compare recordings of the same tier",
+        "enum": [
+         "light",
+         "standard",
+         "deep"
+        ],
+        "type": "string"
+       },
        "values": {
         "description": "2 to 8 values of the variable, such as [10, 20, 30] for dim",
         "items": {
@@ -351,7 +386,7 @@
       "readOnlyHint": false,
       "title": "Record two settings in A B B A order"
      },
-     "description": "Records the same program with two environments in the order A B B A (repeated `rounds` times, so drift hits both\nsides equally) and says per metric whether B is better, worse or the same as A, with every value behind it.\nenv_a and env_b are NAME=VALUE pairs separated by spaces; empty means none. Runs are named `name`-a1, `name`-b1, ...\nEach recording takes its seconds plus about a minute to read back. skip_s leaves out the first seconds of every\nrecording (the start-up) when the verdicts are drawn, as perf_compare does; the recordings are whole.",
+     "description": "Records the same program with two environments in the order A B B A (repeated `rounds` times, so drift hits both\nsides equally) and says per metric whether B is better, worse or the same as A, with every value behind it.\nenv_a and env_b are NAME=VALUE pairs separated by spaces; empty means none. Runs are named `name`-a1, `name`-b1, ...\nEach recording takes its seconds plus about a minute to read back. skip_s leaves out the first seconds of every\nrecording (the start-up) when the verdicts are drawn, as perf_compare does; the recordings are whole. cooldown_s rests\nthat many seconds between any two consecutive recordings (never before the first or after the last).",
      "inputSchema": {
       "properties": {
        "api": {
@@ -365,6 +400,10 @@
        "background": {
         "description": "macOS only, default false; true runs the program under taskpolicy -b, which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run",
         "type": "boolean"
+       },
+       "cooldown_s": {
+        "description": "seconds to rest between two consecutive recordings (never before the first or after the last), 0 to 600, default 0; on a laptop 60 is a starting value, not a measurement: the summaries' thermal_state_share says whether it throttled",
+        "type": "number"
        },
        "counters": {
         "description": "default false; true also records Metal GPU Counters (gpu_counters in the summary); not under Windows; adds about 40 s of read-back per recorded second",
@@ -421,6 +460,15 @@
        "skip_s": {
         "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them",
         "type": "number"
+       },
+       "tier": {
+        "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace (subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own replace that part. Compare recordings of the same tier",
+        "enum": [
+         "light",
+         "standard",
+         "deep"
+        ],
+        "type": "string"
        },
        "wine": {
         "description": "Wine directory holding bin/wine, or native",
@@ -513,6 +561,15 @@
        },
        "size": {
         "description": "with a workload that has size_variables (drawstress): the window size, WIDTHxHEIGHT such as 1920x1080",
+        "type": "string"
+       },
+       "tier": {
+        "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace (subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own replace that part. Compare recordings of the same tier",
+        "enum": [
+         "light",
+         "standard",
+         "deep"
+        ],
         "type": "string"
        },
        "wine": {
@@ -650,7 +707,7 @@
       "readOnlyHint": true,
       "title": "Compare two recordings"
      },
-     "description": "Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the\nheadline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and\ncommand buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's\ncount and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:\nwith different layers it compares layers, not one change. A Windows run against a Metal run has `measure`: the\nGPU ms and Metal memory differ in kind and the encoders exist only in Metal, so use FPS, its lows, stutter and\njitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has\n`markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,\nwhere shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the\nper-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.\n`screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable.",
+     "description": "Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the\nheadline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and\ncommand buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's\ncount and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:\nwith different layers it compares layers, not one change. A Windows run against a Metal run has `measure`: the\nGPU ms and Metal memory differ in kind and the encoders exist only in Metal, so use FPS, its lows, stutter and\njitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has\n`markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,\nwhere shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the\nper-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.\n`screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable.\n`noisy_environment` names the runs recorded while another process loaded the GPU. `suggested_actions` lists, as\n{tool, arguments, reason}, what to call next for each run.",
      "inputSchema": {
       "properties": {
        "a": {
@@ -875,7 +932,7 @@
       "readOnlyHint": true,
       "title": "Diagnose encoder use"
      },
-     "description": "Says whether a saved recording splits its GPU work into too many short encoders, the pattern of translation\nlayers such as DXMT, Mullion or MoltenVK, with the numbers behind it: encoders and command buffers per frame, the\nshare of short encoders, the labels with the most GPU time and the GPU's idle time. Read the idle time together\nwith the FPS: a program waiting for vsync idles too. Defaults come from bgfx 17-drawstress on an M1 Pro: 7\nencoders per frame and 50% under 25 us under Mullion, 2 and 2% in native Metal.",
+     "description": "Says whether a saved recording splits its GPU work into too many short encoders, the pattern of translation\nlayers such as DXMT, Mullion or MoltenVK, with the numbers behind it: encoders and command buffers per frame, the\nshare of short encoders, the labels with the most GPU time and the GPU's idle time. Read the idle time together\nwith the FPS: a program waiting for vsync idles too. Defaults come from bgfx 17-drawstress on an M1 Pro: 7\nencoders per frame and 50% under 25 us under Mullion, 2 and 2% in native Metal. `suggested_actions` lists, as\n{tool, arguments, reason}, what to call next (a cold/warm run, a skip_s, a longer recording, a cooldown_s).",
      "inputSchema": {
       "properties": {
        "min_encoders": {
@@ -1411,7 +1468,7 @@
     "resources": {},
     "tools": {}
    },
-   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
+   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either. Use tier light to iterate, standard to decide, deep for GPU counters and a kept .trace (METAL_TRACE_MAX_DISK_MB may drop it); compare recordings of the same tier. perf_diagnose and perf_compare return suggested_actions: when it is not empty, run the first one that fits. On a laptop set cooldown_s on perf_baseline_record, perf_ab and perf_sweep so the Mac cools between recordings; a run whose summary has noisy_environment (another process was loading the GPU) is repeated before it is trusted. A recording is refused before it starts when its program, xcrun, the disk or the lock is not ready, or when the screen is locked (METAL_TRACE_ALLOW_LOCKED=1 allows that).",
    "resultType": "complete",
    "supportedVersions": [
     "2026-07-28"
@@ -1440,7 +1497,7 @@
       "readOnlyHint": false,
       "title": "Record a program"
      },
-     "description": "Records `program` (an .exe under Wine, or a macOS binary with wine=\"native\"), or a test program fetched with\nworkload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per\nframe, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest\nto read). When it ends it stops every program of that Wine prefix (wineserver -k), or every process named like\nthe program with native. counters=true also records Metal GPU Counters (`gpu_counters` in the summary: the units the\nGPU waited on, its utilization, occupancy and memory bandwidth); it adds about 40 s of read-back per recorded second.",
+     "description": "Records `program` (an .exe under Wine, or a macOS binary with wine=\"native\"), or a test program fetched with\nworkload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per\nframe, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest\nto read). When it ends it stops every program of that Wine prefix (wineserver -k), or every process named like\nthe program with native. counters=true also records Metal GPU Counters (`gpu_counters` in the summary: the units the\nGPU waited on, its utilization, occupancy and memory bandwidth); it adds about 40 s of read-back per recorded second.\ntier sets both at once: light (no Metal memory, no counters: seconds of read-back, to iterate), standard (the default:\nMetal memory) and deep (also counters, and the .trace is kept unless METAL_TRACE_MAX_DISK_MB drops it); memory and\ncounters given on their own replace that part of the tier. Compare recordings of the same tier.",
      "inputSchema": {
       "properties": {
        "api": {
@@ -1499,6 +1556,15 @@
         "description": "with a workload that has size_variables (drawstress): the window size, WIDTHxHEIGHT such as 1920x1080",
         "type": "string"
        },
+       "tier": {
+        "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace (subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own replace that part. Compare recordings of the same tier",
+        "enum": [
+         "light",
+         "standard",
+         "deep"
+        ],
+        "type": "string"
+       },
        "wine": {
         "description": "Wine directory holding bin/wine, or native",
         "type": "string"
@@ -1531,7 +1597,7 @@
       "readOnlyHint": false,
       "title": "Record a reference"
      },
-     "description": "Records the same program `count` times in a row with perf_record's arguments and saves the runs as the\nreference `name` for perf_check, returning the range each number spans across them. Runs are named\n`name`-1, `name`-2, ... Each recording takes its seconds plus about a minute to read back. skip_s as in\nperf_baseline: the reference leaves out each run's start-up.",
+     "description": "Records the same program `count` times in a row with perf_record's arguments and saves the runs as the\nreference `name` for perf_check, returning the range each number spans across them. Runs are named\n`name`-1, `name`-2, ... Each recording takes its seconds plus about a minute to read back. skip_s as in\nperf_baseline: the reference leaves out each run's start-up. cooldown_s rests that many seconds between two\nrecordings (never before the first or after the last), so a laptop does not throttle.",
      "inputSchema": {
       "properties": {
        "api": {
@@ -1545,6 +1611,10 @@
        "background": {
         "description": "macOS only, default false; true runs the program under taskpolicy -b, which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run",
         "type": "boolean"
+       },
+       "cooldown_s": {
+        "description": "seconds to rest between two consecutive recordings (never before the first or after the last), 0 to 600, default 0; on a laptop 60 is a starting value, not a measurement: the summaries' thermal_state_share says whether it throttled",
+        "type": "number"
        },
        "count": {
         "description": "equal recordings to make, default 3",
@@ -1598,6 +1668,15 @@
         "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them; perf_check applies the same cut to the run it judges",
         "type": "number"
        },
+       "tier": {
+        "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace (subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own replace that part. Compare recordings of the same tier",
+        "enum": [
+         "light",
+         "standard",
+         "deep"
+        ],
+        "type": "string"
+       },
        "wine": {
         "description": "Wine directory holding bin/wine, or native",
         "type": "string"
@@ -1630,7 +1709,7 @@
       "readOnlyHint": false,
       "title": "Record one run per value of a variable"
      },
-     "description": "Records the same program once per value of one variable (dim, example, api, size, or env:NAME for an environment\nvariable) and returns, per value, the median of FPS, 1 % low, GPU ms per frame and stutter, and with 3 or more\nnumeric values the straight line GPU ms per frame follows (fixed ms plus ms per draw for dim, per unit otherwise)\nwith its r2. With rounds above 1 the values run in opposite order every other round, so drift hits all alike.\nRuns are named `name`-<value number>-r<round>; each takes its seconds plus about a minute to read back.",
+     "description": "Records the same program once per value of one variable (dim, example, api, size, or env:NAME for an environment\nvariable) and returns, per value, the median of FPS, 1 % low, GPU ms per frame and stutter, and with 3 or more\nnumeric values the straight line GPU ms per frame follows (fixed ms plus ms per draw for dim, per unit otherwise)\nwith its r2. With rounds above 1 the values run in opposite order every other round, so drift hits all alike.\nRuns are named `name`-<value number>-r<round>; each takes its seconds plus about a minute to read back. cooldown_s\nrests that many seconds between any two consecutive recordings (never before the first or after the last).",
      "inputSchema": {
       "properties": {
        "api": {
@@ -1644,6 +1723,10 @@
        "background": {
         "description": "macOS only, default false; true runs the program under taskpolicy -b, which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run",
         "type": "boolean"
+       },
+       "cooldown_s": {
+        "description": "seconds to rest between two consecutive recordings (never before the first or after the last), 0 to 600, default 0; on a laptop 60 is a starting value, not a measurement: the summaries' thermal_state_share says whether it throttled",
+        "type": "number"
        },
        "counters": {
         "description": "default false; true also records Metal GPU Counters (gpu_counters in the summary); not under Windows; adds about 40 s of read-back per recorded second",
@@ -1697,6 +1780,15 @@
         "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them",
         "type": "number"
        },
+       "tier": {
+        "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace (subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own replace that part. Compare recordings of the same tier",
+        "enum": [
+         "light",
+         "standard",
+         "deep"
+        ],
+        "type": "string"
+       },
        "values": {
         "description": "2 to 8 values of the variable, such as [10, 20, 30] for dim",
         "items": {
@@ -1745,7 +1837,7 @@
       "readOnlyHint": false,
       "title": "Record two settings in A B B A order"
      },
-     "description": "Records the same program with two environments in the order A B B A (repeated `rounds` times, so drift hits both\nsides equally) and says per metric whether B is better, worse or the same as A, with every value behind it.\nenv_a and env_b are NAME=VALUE pairs separated by spaces; empty means none. Runs are named `name`-a1, `name`-b1, ...\nEach recording takes its seconds plus about a minute to read back. skip_s leaves out the first seconds of every\nrecording (the start-up) when the verdicts are drawn, as perf_compare does; the recordings are whole.",
+     "description": "Records the same program with two environments in the order A B B A (repeated `rounds` times, so drift hits both\nsides equally) and says per metric whether B is better, worse or the same as A, with every value behind it.\nenv_a and env_b are NAME=VALUE pairs separated by spaces; empty means none. Runs are named `name`-a1, `name`-b1, ...\nEach recording takes its seconds plus about a minute to read back. skip_s leaves out the first seconds of every\nrecording (the start-up) when the verdicts are drawn, as perf_compare does; the recordings are whole. cooldown_s rests\nthat many seconds between any two consecutive recordings (never before the first or after the last).",
      "inputSchema": {
       "properties": {
        "api": {
@@ -1759,6 +1851,10 @@
        "background": {
         "description": "macOS only, default false; true runs the program under taskpolicy -b, which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run",
         "type": "boolean"
+       },
+       "cooldown_s": {
+        "description": "seconds to rest between two consecutive recordings (never before the first or after the last), 0 to 600, default 0; on a laptop 60 is a starting value, not a measurement: the summaries' thermal_state_share says whether it throttled",
+        "type": "number"
        },
        "counters": {
         "description": "default false; true also records Metal GPU Counters (gpu_counters in the summary); not under Windows; adds about 40 s of read-back per recorded second",
@@ -1815,6 +1911,15 @@
        "skip_s": {
         "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them",
         "type": "number"
+       },
+       "tier": {
+        "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace (subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own replace that part. Compare recordings of the same tier",
+        "enum": [
+         "light",
+         "standard",
+         "deep"
+        ],
+        "type": "string"
        },
        "wine": {
         "description": "Wine directory holding bin/wine, or native",
@@ -1907,6 +2012,15 @@
        },
        "size": {
         "description": "with a workload that has size_variables (drawstress): the window size, WIDTHxHEIGHT such as 1920x1080",
+        "type": "string"
+       },
+       "tier": {
+        "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace (subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own replace that part. Compare recordings of the same tier",
+        "enum": [
+         "light",
+         "standard",
+         "deep"
+        ],
         "type": "string"
        },
        "wine": {
@@ -2044,7 +2158,7 @@
       "readOnlyHint": true,
       "title": "Compare two recordings"
      },
-     "description": "Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the\nheadline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and\ncommand buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's\ncount and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:\nwith different layers it compares layers, not one change. A Windows run against a Metal run has `measure`: the\nGPU ms and Metal memory differ in kind and the encoders exist only in Metal, so use FPS, its lows, stutter and\njitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has\n`markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,\nwhere shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the\nper-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.\n`screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable.",
+     "description": "Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the\nheadline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and\ncommand buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's\ncount and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:\nwith different layers it compares layers, not one change. A Windows run against a Metal run has `measure`: the\nGPU ms and Metal memory differ in kind and the encoders exist only in Metal, so use FPS, its lows, stutter and\njitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has\n`markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,\nwhere shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the\nper-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.\n`screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable.\n`noisy_environment` names the runs recorded while another process loaded the GPU. `suggested_actions` lists, as\n{tool, arguments, reason}, what to call next for each run.",
      "inputSchema": {
       "properties": {
        "a": {
@@ -2269,7 +2383,7 @@
       "readOnlyHint": true,
       "title": "Diagnose encoder use"
      },
-     "description": "Says whether a saved recording splits its GPU work into too many short encoders, the pattern of translation\nlayers such as DXMT, Mullion or MoltenVK, with the numbers behind it: encoders and command buffers per frame, the\nshare of short encoders, the labels with the most GPU time and the GPU's idle time. Read the idle time together\nwith the FPS: a program waiting for vsync idles too. Defaults come from bgfx 17-drawstress on an M1 Pro: 7\nencoders per frame and 50% under 25 us under Mullion, 2 and 2% in native Metal.",
+     "description": "Says whether a saved recording splits its GPU work into too many short encoders, the pattern of translation\nlayers such as DXMT, Mullion or MoltenVK, with the numbers behind it: encoders and command buffers per frame, the\nshare of short encoders, the labels with the most GPU time and the GPU's idle time. Read the idle time together\nwith the FPS: a program waiting for vsync idles too. Defaults come from bgfx 17-drawstress on an M1 Pro: 7\nencoders per frame and 50% under 25 us under Mullion, 2 and 2% in native Metal. `suggested_actions` lists, as\n{tool, arguments, reason}, what to call next (a cold/warm run, a skip_s, a longer recording, a cooldown_s).",
      "inputSchema": {
       "properties": {
        "min_encoders": {

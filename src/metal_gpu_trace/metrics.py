@@ -5,6 +5,17 @@ import pathlib
 import re
 import statistics
 
+# the generation of the summary files both engines write (2: tables compressed, `tier`, `retention`); a summary
+# without `schema_version` is generation 1
+SCHEMA_VERSION = 2
+
+
+def schema_of(summary):
+    """Returns a summary's generation: its `schema_version` when that is a whole number of 1 or more, else 1."""
+    value = summary.get("schema_version") if isinstance(summary, dict) else None
+    return value if type(value) is int and value >= 1 else 1
+
+
 # encoder GPU times, in µs, whose share of all encoders each summary keeps
 SHORT_US = (10, 25, 50, 100, 250, 500, 1000)
 

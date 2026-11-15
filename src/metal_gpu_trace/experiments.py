@@ -6,19 +6,23 @@ import sys
 from metal_gpu_trace import analysis, paths, recording, workloads
 
 
-def tool_perf_baseline_record(name, count=3, skip_s=0, **record):
+def tool_perf_baseline_record(name, count=3, skip_s=0, cooldown_s=0, **record):
     """Records the same program `count` times in a row with perf_record's arguments and saves the runs as the
     reference `name` for perf_check, returning the range each number spans across them. Runs are named
     `name`-1, `name`-2, ... Each recording takes its seconds plus about a minute to read back. skip_s as in
-    perf_baseline: the reference leaves out each run's start-up."""
+    perf_baseline: the reference leaves out each run's start-up. cooldown_s rests that many seconds between two
+    recordings (never before the first or after the last), so a laptop does not throttle."""
     if not paths.name_ok(name):
         raise paths.ToolError("a reference name holds only letters, digits, '.', '_' and '-'")
     paths.check_skip(skip_s)
+    cooldown_s = paths.check_cooldown(cooldown_s)
     count = int(count)
     if not 1 <= count <= 10:
         raise paths.ToolError("count is 1 to 10")
     runs = []
     for i in range(1, count + 1):
+        if runs and cooldown_s:
+            recording.cooldown(cooldown_s)
         runs.append(recording.record_new_summary(f"{name}-{i}", **record)[0])
     return analysis.tool_perf_baseline(name, runs, skip_s)
 
@@ -41,21 +45,25 @@ def ab_verdict(a, b, higher_better):
     return "same"
 
 
-def tool_perf_ab(name, env_a, env_b, rounds=1, skip_s=0, **record):
+def tool_perf_ab(name, env_a, env_b, rounds=1, skip_s=0, cooldown_s=0, **record):
     """Records the same program with two environments in the order A B B A (repeated `rounds` times, so drift hits both
     sides equally) and says per metric whether B is better, worse or the same as A, with every value behind it.
     env_a and env_b are NAME=VALUE pairs separated by spaces; empty means none. Runs are named `name`-a1, `name`-b1, ...
     Each recording takes its seconds plus about a minute to read back. skip_s leaves out the first seconds of every
-    recording (the start-up) when the verdicts are drawn, as perf_compare does; the recordings are whole."""
+    recording (the start-up) when the verdicts are drawn, as perf_compare does; the recordings are whole. cooldown_s rests
+    that many seconds between any two consecutive recordings (never before the first or after the last)."""
     if not paths.name_ok(name):
         raise paths.ToolError("a name holds only letters, digits, '.', '_' and '-'")
     paths.check_skip(skip_s)
+    cooldown_s = paths.check_cooldown(cooldown_s)
     rounds = int(rounds)
     if not 1 <= rounds <= 5:
         raise paths.ToolError("rounds is 1 to 5")
     recording.check_env(env_a), recording.check_env(env_b)
     runs = {"a": [], "b": []}
     for side in "abba" * rounds:
+        if cooldown_s and (runs["a"] or runs["b"]):
+            recording.cooldown(cooldown_s)
         label = f"{name}-{side}{len(runs[side]) + 1}"
         runs[side].append(recording.record_new_summary(label, env=env_a if side == "a" else env_b, **record)[0])
     return ab_report(name, env_a, env_b, runs, skip_s)
@@ -130,15 +138,17 @@ def sweep_values(variable, values):
     return values if variable == "dim" else [str(v) for v in values]
 
 
-def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, **record):
+def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, cooldown_s=0, **record):
     """Records the same program once per value of one variable (dim, example, api, size, or env:NAME for an environment
     variable) and returns, per value, the median of FPS, 1 % low, GPU ms per frame and stutter, and with 3 or more
     numeric values the straight line GPU ms per frame follows (fixed ms plus ms per draw for dim, per unit otherwise)
     with its r2. With rounds above 1 the values run in opposite order every other round, so drift hits all alike.
-    Runs are named `name`-<value number>-r<round>; each takes its seconds plus about a minute to read back."""
+    Runs are named `name`-<value number>-r<round>; each takes its seconds plus about a minute to read back. cooldown_s
+    rests that many seconds between any two consecutive recordings (never before the first or after the last)."""
     if not paths.name_ok(name):
         raise paths.ToolError("a name holds only letters, digits, '.', '_' and '-'")
     paths.check_skip(skip_s)
+    cooldown_s = paths.check_cooldown(cooldown_s)
     rounds = int(rounds)
     if not 1 <= rounds <= 5:
         raise paths.ToolError("rounds is 1 to 5")
@@ -157,6 +167,8 @@ def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, **record):
                 if base_env:
                     kwargs["env"] = base_env
             label = f"{name}-{i + 1}-r{rnd + 1}"
+            if cooldown_s and any(runs):
+                recording.cooldown(cooldown_s)
             runs[i].append(recording.record_new_summary(label, **kwargs)[0])
     rows, frames = [], []
     for value, names in zip(values, runs):

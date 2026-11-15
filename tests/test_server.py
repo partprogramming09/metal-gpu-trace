@@ -211,16 +211,21 @@ def test_progress_and_cancel(tmp_path):
     def say(message):
         proc.stdin.write(json.dumps(message) + "\n")
         proc.stdin.flush()
+    def reply():  # the next answer: progress notifications (the first one comes at once) are skipped
+        while True:
+            message = json.loads(proc.stdout.readline())
+            if "id" in message:
+                return message
     try:
         say({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
             "name": "perf_record", "_meta": {"progressToken": "t"},
             "arguments": {"label": "hang", "program": str(program), "seconds": 1, "wine": "native"}}})
         wait_until(lambda: list(out.glob("*.trace")), timeout=30)  # the recording is under way: xctrace has started
         say({"jsonrpc": "2.0", "id": 2, "method": "ping"})
-        assert json.loads(proc.stdout.readline())["id"] == 2, "ping must be answered during a recording"
+        assert reply()["id"] == 2, "ping must be answered during a recording"
         say({"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 1}})
         say({"jsonrpc": "2.0", "id": 3, "method": "ping"})
-        assert json.loads(proc.stdout.readline())["id"] == 3, "a cancelled call is not answered (test_cancel_sends_nothing)"
+        assert reply()["id"] == 3, "a cancelled call is not answered (test_cancel_sends_nothing)"
         wait_until(lambda: not list(out.iterdir()))  # the recording stopped and left no files
     finally:
         proc.kill()

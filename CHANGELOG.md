@@ -5,7 +5,42 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## 0.26.0 — unreleased
 
+### Added
+
+- A check before every recording starts (`preflight`): a missing Wine directory or program, no `xcrun`, too little free
+  disk (the runs folder and `TMPDIR`; under Windows only the runs folder), a locked screen and a recording already
+  running are refused at once with what to do, before `memory_pressure` or any process starts. Under Windows it never
+  signals the process that owns the lock.
+- `suggested_actions` in `perf_diagnose` and `perf_compare`: a list of `{tool, arguments, reason}` so an agent knows what
+  to call next (`perf_cold_warm` for shader-compile hitches, `perf_compare` with a `skip_s` when they all fall in the first
+  quarter of the run, a longer `perf_record`, `perf_ab` with `cooldown_s` after throttling). `recommendations` is unchanged.
+- `cooldown_s` (0 to 600 seconds, default 0) on `perf_baseline_record`, `perf_ab` and `perf_sweep`: a rest between any two
+  consecutive recordings, never before the first or after the last; a cancel ends it. 60 is a starting value, not a
+  measurement.
+- `noisy_environment` in the summary (and `noisy_basis` with the numbers when true): the GPU's total use exceeded the
+  program's own share by 20 points or more, so another process was loading it. `perf_compare` and `perf_baseline` name the
+  runs. The 20-point threshold is provisional, not measured on real recordings.
+- The first progress notification of a recording says its worst case: `recording: up to N s including read-back`.
+- `tier` on `perf_record` and on the tools that record (`perf_baseline_record`, `perf_sweep`, `perf_ab`,
+  `perf_cold_warm`): `light` (no Metal memory, no counters: seconds of read-back, to iterate), `standard` (the default,
+  what a recording was before) and `deep` (also GPU counters, and the `.trace` is kept unless the disk limit drops it;
+  macOS only). `memory` and `counters` given on their own replace that part of the tier. The summary records its `tier`,
+  and `perf_compare` says so when the two recordings were made at different tiers.
+- `METAL_TRACE_MAX_DISK_MB`: a size limit for the runs folder, in MiB. After each recording the oldest `.trace`, then
+  `.chrome-trace`, then per-frame and Metal memory tables are removed until it fits; summaries (`.json`), `baselines.json`
+  and the run just recorded keep what they need (its `.trace` goes last of all). When files were removed the summary has
+  `retention` with what went. Unset, or anything but a whole number of 1 or more, means no limit. `KEEP_RUNS` still counts
+  runs.
+- `schema_version: 2` in every new summary (first key) and in each `perf_runs` row; a summary without it is version 1 and
+  every tool still reads it.
+
 ### Changed
+
+- A locked screen now refuses a recording (it was only a warning in `perf_compare` afterwards). `METAL_TRACE_ALLOW_LOCKED=1`
+  records anyway.
+- The per-frame and Metal memory tables of a new recording are written compressed, as `<run>.frames.csv.gz` and
+  `<run>.metal_memory.csv.gz` (both engines). Recordings made before still have plain `.csv` files and every tool reads
+  both; a `.csv.gz` that is cut short or damaged is a `ToolError` that says to record again.
 
 - Reading a table of a trace no longer holds every row in memory: each row is freed after it is read and only the values
   that a later row refers to are kept (found by a first pass over the exported file, so the file is read twice).

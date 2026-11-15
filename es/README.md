@@ -142,6 +142,8 @@ El servidor lee estas variables de entorno:
 | `METAL_TRACE_READ` | Más directorios que las herramientas pueden leer, separados por `:`. |
 | `METAL_TRACE_LOG` | `off` apaga la línea de log por llamada en stderr. |
 | `KEEP_TRACE` | `1` guarda el `.trace` de cada grabación, para `trace_tables`, `trace_query` o Instruments. |
+| `METAL_TRACE_ALLOW_LOCKED` | `1` graba con la pantalla bloqueada; sin él se rechaza la grabación, porque una sesión bloqueada deja los frames del programa sin el ritmo de la pantalla. |
+| `METAL_TRACE_MAX_DISK_MB` | Límite de tamaño de la carpeta de grabaciones, en MiB (un número entero de 1 o más): tras cada grabación se borran el `.trace` más antiguo, luego el `.chrome-trace` y luego las tablas por frame y de memoria hasta que quepa; nunca los resúmenes ni `baselines.json`. El `.trace` de la grabación nueva se borra el último, y su resumen dice qué se quitó (`retention`). |
 | `KEEP_RUNS` | Guarda solo las N grabaciones más recientes; nunca borra `baselines.json` (ni el `panel.json` que dejaron 0.24.0 y anteriores). |
 | `METAL_TRACE_LOCK` | El candado que hace que las grabaciones vayan de una en una, vaya cada una a la carpeta que vaya (de serie, `~/Library/Caches/metal-gpu-trace/recording.lock`). `perf_record.sh` lanzado a mano toma el mismo, o el que diga `PERF_LOCK`. |
 | `PERF_ENV` | Pares `NOMBRE=VALOR`, separados por espacios, que recibe el programa grabado. |
@@ -264,7 +266,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 
 | Herramienta | Lee o graba |
 | --- | --- |
-| `perf_record` | Graba una corrida de un programa y devuelve su resumen. — Graba un programa y devuelve su resumen; al terminar cierra todo programa de su prefijo de Wine, o todo proceso con el nombre de un programa nativo. `counters=true` graba además los contadores de GPU de Metal: `gpu_counters` (los limitadores, la utilización, la ocupación y el ancho de banda de memoria de la GPU, con el limitador principal) en el resumen, a unos 40 s de lectura por segundo grabado; no en Windows |
+| `perf_record` | Graba una corrida de un programa y devuelve su resumen. — Graba un programa y devuelve su resumen; al terminar cierra todo programa de su prefijo de Wine, o todo proceso con el nombre de un programa nativo. `counters=true` graba además los contadores de GPU de Metal: `gpu_counters` (los limitadores, la utilización, la ocupación y el ancho de banda de memoria de la GPU, con el limitador principal) en el resumen, a unos 40 s de lectura por segundo grabado; no en Windows. `tier` fija de una vez qué se graba: `light` (sin memoria de Metal ni contadores: para iterar), `standard` (por defecto) o `deep` (también contadores, y se guarda el `.trace`; solo macOS); compara grabaciones del mismo tier |
 | `perf_attach` | Graba un programa que ya está en marcha, sin reiniciarlo. — Graba un programa que ya corre, por pid o nombre, y lo deja corriendo |
 | `perf_baseline_record` | Graba el mismo programa varias veces y guarda las corridas como referencia. — Graba el mismo programa `count` veces (3 por defecto) con los argumentos de `perf_record` y guarda las corridas como referencia en una sola llamada. `skip_s` como en `perf_baseline` |
 | `perf_ab` | Prueba dos ajustes del mismo programa y dice cuál sale mejor. — Graba el mismo programa con dos entornos (`env_a`, `env_b`: pares `NOMBRE=VALOR`) en el orden A B B A y dice por métrica (FPS, 1 % bajo, ms de GPU, tirones) si B es mejor, peor o igual: mejor o peor solo cuando todos los valores de B quedan fuera del rango de A |

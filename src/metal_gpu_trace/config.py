@@ -11,12 +11,16 @@ PACKAGE_DIR = pathlib.Path(__file__).resolve().parent
 def reload(environ=None):
     """Reads METAL_TRACE_OUT and METAL_TRACE_READ again (from `environ`, os.environ by default) and recomputes OUT,
     READ and BASELINES. project.apply then points them at the project's folder, when there is a project file."""
-    global OUT, READ, BASELINES
+    global OUT, READ, BASELINES, MAX_DISK_MB
     environ = os.environ if environ is None else environ
     OUT = pathlib.Path(environ.get("METAL_TRACE_OUT", "perf-runs")).resolve()
     READ = [OUT] + [pathlib.Path(p).resolve() for p in environ.get("METAL_TRACE_READ", "").split(os.pathsep) if p]
     # named references for perf_check: copies of their runs' summaries, so KEEP_RUNS deleting a run does not break them
     BASELINES = OUT / "baselines.json"
+    # the most the runs folder may take, in MiB (METAL_TRACE_MAX_DISK_MB): a whole number of 1 or more, else no limit,
+    # the rule KEEP_RUNS follows in prune_runs.sh
+    limit = environ.get("METAL_TRACE_MAX_DISK_MB", "").strip()
+    MAX_DISK_MB = int(limit) if limit.isascii() and limit.isdigit() and int(limit) >= 1 else None
 
 
 try:
@@ -24,6 +28,7 @@ try:
 except (OSError, ValueError, RuntimeError):  # a METAL_TRACE_OUT that cannot be resolved: project.apply reports it
     OUT = pathlib.Path("perf-runs").resolve()
     READ, BASELINES = [OUT], OUT / "baselines.json"
+    MAX_DISK_MB = None
 # the metal-gpu-trace.json in use (project.load's dict) and, when that file is wrong, what is wrong with it
 PROJECT = None
 PROJECT_ERROR = None

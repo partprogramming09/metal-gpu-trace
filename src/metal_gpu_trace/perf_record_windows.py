@@ -21,7 +21,7 @@ import time
 
 if __package__ in (None, ""):  # run by path: make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from metal_gpu_trace import metrics, perf_report  # noqa: E402
+from metal_gpu_trace import metrics, perf_report, tables  # noqa: E402
 
 # the numbers shared with perf_report live in metrics, so Mac and Windows summaries keep one schema
 SHORT_US, stats, label_name = metrics.SHORT_US, metrics.stats, metrics.label_name
@@ -843,15 +843,11 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
                 "(DwmGetCompositionTimingInfo needs the interactive desktop session, not SSH or a service)"
             )
 
-        # Write frames.csv
-        frames_csv_path = out_dir / f"{name}.frames.csv"
-        with open(frames_csv_path, "w", newline="", encoding="utf-8") as f_frames:
-            writer = csv.writer(f_frames)
-            writer.writerow(["frame", "start_ms", "gpu_ms_draw", "gpu_ms_total"])
-            for row in frames_data:
-                writer.writerow([row["frame"], round(row["start_ms"], 3),
-                                 "" if row["gpu_ms_draw"] is None else round(row["gpu_ms_draw"], 4),
-                                 "" if row["gpu_ms_total"] is None else round(row["gpu_ms_total"], 4)])
+        # Write the frames table (frames.csv.gz)
+        tables.write(out_dir, f"{name}.frames", ["frame", "start_ms", "gpu_ms_draw", "gpu_ms_total"],
+                     ([row["frame"], round(row["start_ms"], 3),
+                       "" if row["gpu_ms_draw"] is None else round(row["gpu_ms_draw"], 4),
+                       "" if row["gpu_ms_total"] is None else round(row["gpu_ms_total"], 4)] for row in frames_data))
 
         # Statistics computation
         totals = [f["gpu_ms_total"] for f in frames_data if f["gpu_ms_total"] is not None]
@@ -889,6 +885,7 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
         process_rss_mib = stats(rss_mib) if rss_mib else {"count": 0}
 
         summary = {
+            "schema_version": metrics.SCHEMA_VERSION,
             "label": label,
             "trace": f"{name}.trace",
             "process": {
