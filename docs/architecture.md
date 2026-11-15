@@ -26,12 +26,12 @@ From the top (the entry point) to the bottom (what everything else rests on):
 | 6 | `http_transport` | `POST /mcp` on 127.0.0.1 with a bearer token |
 | 5 | `protocol` | One JSON-RPC request in, one reply out; picks the era, checks `_meta`, decorates results |
 | 4 | `worker` | One tool call at a time, cancel, progress |
-| 3 | `registry` | Tool list and schemas, resources, prompts |
-| 2 | `recording` | Records a run (`perf_record`, `perf_attach`) |
+| 3 | `registry` | Tool list and schemas, resources, prompts (`compare-layer`, `diagnose-stutter`, `bisect-regression`: text for the agent; the server runs no command) |
+| 2 | `recording` | Records a run (`perf_record`, `perf_attach`) and writes its `context` |
 | 2 | `analysis` | Runs, compare, baselines, checks, gates, diagnose |
 | 2 | `experiments` | A/B, cold/warm, sweeps |
 | 2 | `workloads` | Test programs, downloads, PresentMon |
-| 2 | `traces` | `.trace` and `.gputrace` files, GPU families |
+| 2 | `traces` | `.trace` and `.gputrace` files (`trace_query` with `window_ms`, `capture_diff`), GPU families |
 | 1 | `paths` | Names and paths a caller may use, paging, reading a file of the runs folder |
 | 1 | `project` | The `metal-gpu-trace.json` project file: finds it, checks it, points the recordings folder at it |
 | 0 | `config` | Settings, read as `config.NAME` at use time |
@@ -78,6 +78,14 @@ Think of the runs folder as one drawer per project: everything about a project (
 - **How a file is read.** Summaries go through `paths.read_object` and the per-frame and memory CSVs through
   `analysis._csv_rows`. A truncated or malformed file becomes a `ToolError` that names the file (such as `<run>.json`) and never a path;
   a CSV line that cannot be read, or that holds a value that is not finite, is left out instead of failing the whole read.
+- **Where a run came from.** `recording.run_context` adds `context` to each new summary: the 12-character commit and the
+  dirty flag of the repository that holds the project file (`null` without a project file or a git repository) and
+  Instruments' version. It drops the `GIT_*` variables before running git, so they cannot point at another repository,
+  and leaves out the branch. `perf_compare` returns `context` (`same`, different, unknown, or missing for a run from
+  before 0.26.0).
+- **Long tables and captures.** `trace_query` with `window_ms` sums a table by time window (`traces.windows_of`) instead
+  of returning rows; `capture_diff` counts the confirmed Metal calls of two `.gputrace` captures with
+  `gputrace_read.diff`, matching debug groups by label.
 - **One recording at a time, everywhere.** The lock is not per project: `config.LOCK` (`recording.lock` in the user's
   cache folder, moved by `METAL_TRACE_LOCK`; `PERF_LOCK` for `perf_record.sh` run by hand) is taken by every recording,
   because two programs sharing the GPU spoil both measurements whatever folder they write to.

@@ -69,6 +69,30 @@ Se lee así: 2 034 frames en 20,8 s. `fps_estimate` vale 104,5: sale de la media
 mediana, `p50`) y la GPU estuvo ociosa el 42 % del tiempo. Una grabación sola dice poco: compara dos, y repite una
 corrida antes de dar una diferencia por real.
 
+## Novedades
+
+Versión 0.26.0. Cada punto enlaza al comando que se ejecutó y a su salida real. 🧪 quiere decir experimental: funciona
+en lo que se probó, pero una parte no se comprobó de principio a fin, y la prueba dice cuál.
+
+- 🔍 **Ventanas de tiempo en `trace_query`.** Añade `window_ms` y una tabla larga (decenas de miles de filas) vuelve como
+  una línea por ventana de tiempo, con su cuenta y la duración sumada, en vez de filas cortadas por la mitad. En una
+  grabación real, 19 710 filas pasaron a 31 ventanas de 1 s. [Prueba](../docs/evidence/v0.26.0.md#trace_query-with-window_ms)
+- ✨ **De dónde sale una corrida.** Cada resumen nuevo dice qué commit de tu código midió, si ese código tenía cambios
+  sin commitear y qué versión de Instruments grabó. `perf_compare` dice si dos corridas lo comparten. Sin nombre de
+  rama, ruta ni nombre de máquina. [Prueba](../docs/evidence/v0.26.0.md#run-context-commit-and-instruments-version)
+- 🧪 **Prompt `diagnose-stutter`.** Una petición lista para tu agente: graba un programa dos veces, distingue el tirón
+  que solo ocurre la primera vez (shaders compilando) del que sigue ocurriendo, y cita solo cifras que devuelven las
+  herramientas. [Prueba](../docs/evidence/v0.26.0.md#the-diagnose-stutter-prompt)
+- 🧪 **Prompt `bisect-regression`.** Una petición lista para tu agente: encuentra con `git bisect` el commit que dejó un
+  programa más lento, grabando y comprobando contra una baseline en cada paso. El servidor no ejecuta ningún comando; lo
+  hace tu agente, con sus propios permisos. [Prueba](../docs/evidence/v0.26.0.md#the-bisect-regression-prompt)
+- 🧪 **`capture_diff`.** Compara dos capturas `.gputrace` y dice qué llamadas de Metal añadió o quitó un cambio, en total
+  y por grupo de depuración, sin Xcode. Probado solo con capturas sintéticas. [Prueba](../docs/evidence/v0.26.0.md#capture_diff-compares-two-captures)
+
+Cambio incompatible: la clave `profile` de `metal-gpu-trace.json` ya no existe (no hacía nada desde que se quitó el
+panel en 0.25.0), así que un archivo que aún la tenga se rechaza y el error nombra la clave. Borra esa línea. Detalles en
+el [changelog](../CHANGELOG.md).
+
 ## Para quien desarrolla
 
 Mide cómo usa la GPU un programa de Wine o de macOS en un Mac con Apple silicon, desde la terminal o con un agente

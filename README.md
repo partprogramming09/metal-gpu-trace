@@ -69,6 +69,31 @@ for 95 % of them (`p95`). The longest wait between two frames was 22.2 ms. The p
 median, `p50`), and the GPU sat idle 42 % of the time. One recording says little by itself: compare two, and repeat a
 run before calling a difference real.
 
+## What's new
+
+Version 0.26.0. Each item links to the command that was run and its real output. 🧪 means experimental: it works on
+what was tried, but one part was not checked end to end, and the proof says which.
+
+- 🔍 **Time windows in `trace_query`.** Add `window_ms` and a long table (tens of thousands of rows) comes back as one
+  line per time window, with a count and the summed duration, instead of rows cut off in the middle. In a real run,
+  19 710 rows became 31 windows of 1 s. [Proof](docs/evidence/v0.26.0.md#trace_query-with-window_ms)
+- ✨ **Where a run came from.** Each new summary now says which commit of your code it measured, whether that code had
+  uncommitted changes, and which Instruments version recorded it. `perf_compare` says whether two runs share it. No
+  branch name, path or machine name. [Proof](docs/evidence/v0.26.0.md#run-context-commit-and-instruments-version)
+- 🧪 **`diagnose-stutter` prompt.** A ready-made request for your agent: record a program twice, tell stutter that only
+  happens the first time (shaders compiling) from stutter that keeps happening, and quote only numbers the tools
+  return. [Proof](docs/evidence/v0.26.0.md#the-diagnose-stutter-prompt)
+- 🧪 **`bisect-regression` prompt.** A ready-made request for your agent: find the commit that made a program slower
+  with `git bisect`, recording and checking against a baseline at each step. The server runs no command; your agent
+  does, with its own permissions. [Proof](docs/evidence/v0.26.0.md#the-bisect-regression-prompt)
+- 🧪 **`capture_diff`.** Compares two `.gputrace` captures and says which Metal calls a change added or removed, in
+  total and per debug group, without Xcode. Proven on synthetic captures only.
+  [Proof](docs/evidence/v0.26.0.md#capture_diff-compares-two-captures)
+
+Incompatible change: the `profile` key of `metal-gpu-trace.json` is gone (it did nothing since the panel was removed in
+0.25.0), so a file that still has it is refused and the error names the key. Delete the line. Details in the
+[changelog](CHANGELOG.md).
+
 ## For developers
 
 Measure how a Wine or macOS program uses the GPU on an Apple silicon Mac, from the command line or through an AI
