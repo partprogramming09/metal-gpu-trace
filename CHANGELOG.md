@@ -57,7 +57,7 @@ applies when it ships; its proof is [docs/evidence/v0.27.0.md](docs/evidence/v0.
   (also GPU counters, and the `.trace` is kept unless the disk limit drops it; macOS only). `memory` and `counters` given
   on their own replace that part of the tier. The summary records its `tier`, and `perf_compare` says when the two
   recordings differ in it. [proof](docs/evidence/v0.27.0.md#tier-light-standard-and-deep)
-- 🧪 Next actions and thermal care: `suggested_actions` in `perf_diagnose` and `perf_compare` (a list of `{tool, arguments,
+- 🩺 Next actions and thermal care: `suggested_actions` in `perf_diagnose` and `perf_compare` (a list of `{tool, arguments,
   reason}` so an agent knows what to call next); `cooldown_s` (0 to 600 seconds) on `perf_baseline_record`, `perf_ab`
   and `perf_sweep`, a rest between any two consecutive recordings, never before the first or after the last; and
   `noisy_environment` in the summary (the GPU's total use exceeded the program's own share by 20 points or more; the
