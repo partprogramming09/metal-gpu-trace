@@ -3,11 +3,32 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.25.0 — 2026-11-15
 
-- Reading a recording's `.frames.csv` again while it has not changed no longer parses it again (the last four files are kept, keyed by
-  their time and size): `perf_panel` and the live panel read each recording's frames several times per request. With two
-  recordings of 50 000 frames and `skip_s` 5 the panel's data takes a median of 0.45 s, from 1.04 s (3 runs of 5 on one machine).
+### Removed (incompatible)
+
+- The HTML panel: the `perf_panel` tool, the `panel.html` page and the `panel.json` layout are gone, and `GET /panel` and
+  `GET /panel/data` on the HTTP endpoint now answer 405 like any other GET. The server lists 24 tools, not 25. A
+  `panel.json` that 0.24.0 left in a runs folder is still not a recording and `KEEP_RUNS` still keeps it. Why:
+  [ADR-0005](docs/adr/0005-remove-the-panel.md).
+
+### Deprecated
+
+- The `profile` key of `metal-gpu-trace.json` has no effect (only the panel read it). It is still accepted; a later
+  version will drop it.
+
+### Changed
+
+- Reading a recording's `.frames.csv` again while it has not changed no longer parses it again (the last four files are
+  kept, keyed by their time and size).
+
+### Documentation
+
+- Both READMEs (English and Spanish) now open for readers who do not program: a plain-words summary, a diagram of how
+  it works, four start-up steps, a glossary of the 15 terms the tools use, and a real, trimmed example result. The
+  tools table is grouped in four parts (record, judge and compare, dig deeper, setup and test programs), each row
+  starting with a plain sentence. Nothing was removed from them; `tests/test_server.py` checks the order and the
+  glossary.
 
 ## 0.24.0 — 2026-11-12
 

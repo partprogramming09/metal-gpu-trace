@@ -363,8 +363,8 @@ def test_validation(tmp_path):
 
 def test_skip_start_up(tmp_path):
     """skip_s recomputes FPS, lows, hitches and Metal memory from the per-frame files without the first seconds, keeps
-    the whole-run numbers it cannot recompute, reaches perf_compare, perf_gate and the panel, and refuses a bad value."""
-    from metal_gpu_trace import analysis, config, experiments, panel, paths, recording
+    the whole-run numbers it cannot recompute, reaches perf_compare and perf_gate, and refuses a bad value."""
+    from metal_gpu_trace import analysis, config, experiments, paths, recording
 
     starts, t = [], 0.0
     for i in range(400):  # 10 ms frames; three 40 ms hitches in the first second and one at frame 300
@@ -397,17 +397,12 @@ def test_skip_start_up(tmp_path):
         (tmp_path / "w1.frames.csv").write_text(frames)  # a Windows run has no Metal memory: skip_s must still compare
         mixed = analysis.tool_perf_compare("s1", "w1", skip_s=1.5)
         assert mixed["measure"]["b"] == "windows" and mixed["metrics"]["metal_mib_peak"]["b"] is None, mixed["metrics"]["metal_mib_peak"]
-        assert panel.panel_data(["s1", "w1"], skip_s=1.5)["not_comparable"], "the panel too"
         both = analysis.tool_perf_compare("s1", "s2", skip_s=1.5)
         assert both["skipped_s"] == 1.5 and both["metrics"]["fps"]["a"] == 100.0, both["metrics"]["fps"]
         assert "skipped_s" not in analysis.tool_perf_compare("s1", "s2")
         gate = analysis.tool_perf_gate("s1", hitches_max=1, metal_mib_max=70, skip_s=1.5)
         assert gate["pass"] and gate["skipped_s"] == 1.5, gate
         assert not analysis.tool_perf_gate("s1", hitches_max=1, metal_mib_max=70)["pass"], "the whole run has 4 hitches and 90 MiB"
-        data = panel.panel_data(["s1", "s2"], skip_s=1.5)
-        run = data["runs"][0]
-        assert data["skip_s"] == 1.5 and len(run["marks"]) == 1 and run["frames"][0][0] >= 1510 and run["memory"][0][0] >= 1510, run["marks"]
-        assert panel.panel_data(["s1", "s2"])["skip_s"] == 0
         ref = analysis.tool_perf_baseline("bs", ["s1", "s2"], skip_s=1.5)
         assert ref["skip_s"] == 1.5 and ref["range"]["fps"] == {"min": 100.0, "max": 100.0}, ref
         check = analysis.tool_perf_check("s1", "bs")  # the whole run reads 90 FPS: judged without its start-up it is 100, the reference

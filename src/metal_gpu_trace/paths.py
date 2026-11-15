@@ -7,7 +7,7 @@ from metal_gpu_trace import config
 
 
 MALFORMED = (KeyError, TypeError, AttributeError, ValueError, OverflowError, RecursionError)  # what a file of the wrong shape raises
-LAYOUT_FILE = "panel.json"  # the panel layout: in the runs folder, but not a recording
+LAYOUT_FILE = "panel.json"  # left by 0.24.0 and older (the removed panel): not a recording; drop this in a later version
 
 
 class ToolError(Exception):

@@ -44,7 +44,6 @@ PROGRESS_TICKS = 5  # seconds between progress notifications while a recording r
 
 
 MEMORY_PRESSURE = ["memory_pressure"]
-PANEL_POINTS = 5000
 MAX_QUEUE = 64
 
 

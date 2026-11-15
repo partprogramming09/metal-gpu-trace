@@ -8,17 +8,53 @@ import sys
 from support import ROOT, PKG, write_capture, hang_stubs, golden, wait_until  # also puts src/ on sys.path
 
 
+def test_perf_panel_is_gone():
+    """The panel was removed in 0.25.0: no tool, and no word about it in what clients read first."""
+    from metal_gpu_trace import metal_trace_mcp, registry
+    assert "perf_panel" not in registry.TOOLS and len(registry.TOOLS) == 24
+    assert "panel" not in metal_trace_mcp.INSTRUCTIONS.lower()
+
+
 def test_readme_lists_every_tool(tmp_path):
     """Both READMEs hold a table row for every tool the server offers, and name the words the 0.17.0 additions need."""
     import re
     from metal_gpu_trace import registry
     for name in ("README.md", "es/README.md"):
-        rows = set(re.findall(r"^\| `([a-z_]+)` \|", (ROOT / name).read_text(encoding="utf-8"), re.M))
+        listed = re.findall(r"^\| `([a-z_]+)` \|", (ROOT / name).read_text(encoding="utf-8"), re.M)
+        rows = set(listed)
+        assert len(listed) == len(rows), f"{name} lists a tool twice"
         missing = sorted(set(registry.TOOLS) - rows)
         assert not missing, f"{name} lacks rows for {missing}"
         text = (ROOT / name).read_text(encoding="utf-8")
         for word in ("mtl-x64", "bgfx-examples", "memory_free_pct", "gpu_state", "screen_locked", "resource_allocations"):
             assert word in text, f"{name} does not mention {word}"
+
+def section(text, heading):
+    """The text under a `## ` heading, up to the next one."""
+    start = text.index(heading) + len(heading)
+    end = text.find("\n## ", start)
+    return text[start:end if end != -1 else len(text)]
+
+
+def test_readme_has_plain_words_first():
+    """Both READMEs open with what the tool is in plain words (at most 150), before any recording command, explain the 15
+    words a newcomer meets, and name a diagram that exists."""
+    english = ("frame", "GPU ms per frame", "FPS", "1 % low", "hitch", "frame pacing", "encoder", "command buffer",
+               "translation layer", "Wine", "Metal System Trace", ".trace", ".gputrace", "baseline", "regression")
+    spanish = tuple("GPU ms por frame" if term == "GPU ms per frame" else term for term in english)
+    for name, plain, recording, words, terms, image in (
+            ("README.md", "## In plain words", "## Recording", "## Words used here", english, "docs/diagrams/how-it-works.png"),
+            ("es/README.md", "## En palabras sencillas", "## Grabar", "## Palabras que se usan", spanish,
+             "../docs/diagrams/how-it-works.png")):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert text.count(plain) == 1 and text.index(plain) < text.index(recording), f"{name}: plain words come first"
+
+        assert len(section(text, plain).split()) <= 150, f"{name}: plain words are at most 150 words"
+        glossary = section(text, words)
+        missing = [term for term in terms if f"**{term}**" not in glossary]
+        assert not missing, f"{name}: the glossary lacks {missing}"
+        assert image in text and (ROOT / "docs" / "diagrams" / "how-it-works.png").is_file(), f"{name}: the diagram"
+
 
 def test_server(tmp_path):
     """The server answers on stdout with JSON only, pages lists, refuses paths outside its directories and turns
@@ -95,7 +131,7 @@ def test_server(tmp_path):
     assert [x["uriTemplate"] for x in replies[17]["result"]["resourceTemplates"]] == ["metal-trace://runs/{run}"]
     assert json.loads(replies[26]["result"]["contents"][0]["text"]) == {"gpu": {"frames": 100}}
     assert replies[27]["error"]["code"] == replies[28]["error"]["code"] == -32002, "a bad run name is not found"
-    assert len(replies[2]["result"]["tools"]) == 25
+    assert len(replies[2]["result"]["tools"]) == 24
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -276,7 +312,7 @@ def test_http(tmp_path):
         assert post(ping, path="/other")[0] == 404
         assert post({"jsonrpc": "2.0", "method": "notifications/initialized"}) == (202, None)
         code, tools = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        assert code == 200 and len(tools["result"]["tools"]) == 25
+        assert code == 200 and len(tools["result"]["tools"]) == 24 and "perf_panel" not in json.dumps(tools)
         code, runs = post({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                            "params": {"name": "perf_runs", "arguments": {}, "_meta": {"progressToken": "x"}}})
         assert code == 200 and runs["result"]["structuredContent"]["total"] == 0, runs
@@ -289,20 +325,7 @@ def test_http(tmp_path):
             conn.close()
             return r.status, r.getheader("Content-Type"), body
         auth = {"Authorization": f"Bearer {token}"}
-        status, kind, page_html = get("/panel")
-        assert status == 200 and kind.startswith("text/html") and "connect-src 'self'" in page_html, (status, kind)
-        assert token not in page_html and get("/panel", {"Host": "evil.example"})[0] == 403
-        assert get("/panel/data")[0] == 401 and get("/panel/data", {**auth, "Origin": "http://evil.example"})[0] == 403
-        status, _, body = get("/panel/data", auth)
-        assert status == 400 and "no recordings" in body, (status, body)
-        (out / "a.json").write_text(json.dumps({"gpu": {"frames": 2, "fps_estimate": 60.0}, "hitches": {}}))
-        (out / "a.frames.csv").write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n2,16.0,4.0\n")
-        status, kind, body = get("/panel/data", auth)
-        assert status == 200 and json.loads(body)["runs"][0]["name"] == "a" and json.loads(body)["preset"] == "fps", body
-        assert get("/panel/data?runs=a,a&preset=compare", auth)[0] == 200
-        assert get("/panel/data?runs=../x", auth)[0] == 400 and get("/panel/data?preset=nope", auth)[0] == 400
-        (out / "a.json").unlink()
-        (out / "a.frames.csv").unlink()
+        assert get("/panel", auth)[0] == 405 and get("/panel/data", auth)[0] == 405, "the panel is gone: any GET is refused"
         result = []
         call = {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {
             "name": "perf_record", "arguments": {"label": "hang", "program": str(program), "seconds": 1, "wine": "native"}}}
@@ -630,7 +653,7 @@ def test_tool_shape(tmp_path):
     from metal_gpu_trace import protocol
     from metal_gpu_trace import metal_trace_mcp
     tools = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-    assert len(tools) == 25
+    assert len(tools) == 24
     info = next(t for t in tools if t["name"] == "project_info")
     assert info["annotations"]["readOnlyHint"] is True and not info["inputSchema"].get("properties"), info
     for tool in tools:
@@ -1061,16 +1084,6 @@ def test_instructions_spacing():
     assert not re.search(r"[a-z]\.(trace|perf|capture|gpu|workload)_", metal_trace_mcp.INSTRUCTIONS)
 
 
-def test_panel_html_is_cached_and_patched_once():
-    """panel_html(connect_self) returns the page, with the CSP that lets the live panel fetch its own data when
-    connect_self is true, and reads the file once per variant."""
-    from metal_gpu_trace import panel
-    plain, live = panel.panel_html(False), panel.panel_html(True)
-    assert "default-src 'none'" in plain and "connect-src" not in plain, "the saved panel loads nothing"
-    assert live == plain.replace("default-src 'none'", "default-src 'none'; connect-src 'self'") != plain
-    assert panel.panel_html(True) is live and panel.panel_html.cache_info().hits >= 1
-
-
 def test_http_modern_notification_without_meta(tmp_path):
     """A notification under the 2026-07-28 header but without _meta gets 202: the spec puts _meta on requests only and
     defines no header rules for notifications. A request without _meta under that header is still refused (400)."""
@@ -1181,7 +1194,7 @@ def test_capabilities_alone_make_a_modern_request(tmp_path):
 
 def test_broken_project_file_is_explained_not_ignored(tmp_path):
     """With a broken metal-gpu-trace.json the server still starts and lists its tools, and every tool call, every run
-    resource and /panel/data answer with what is wrong in the file instead of reading ./perf-runs."""
+    resource and the HTTP endpoint answer with what is wrong in the file instead of reading ./perf-runs."""
     import http.client
     import socket
     import time
@@ -1210,7 +1223,9 @@ def test_broken_project_file_is_explained_not_ignored(tmp_path):
         for _ in range(100):
             try:
                 conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-                conn.request("GET", "/panel/data", headers={"Authorization": f"Bearer {token}"})
+                conn.request("POST", "/mcp", json.dumps({"jsonrpc": "2.0", "id": 9, "method": "tools/call",
+                                                         "params": {"name": "perf_runs", "arguments": {}}}),
+                             {"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
                 reply = conn.getresponse()
                 break
             except OSError:
@@ -1218,7 +1233,7 @@ def test_broken_project_file_is_explained_not_ignored(tmp_path):
         else:
             raise AssertionError("the HTTP server did not start")
         body = json.loads(reply.read())
-        assert reply.status == 400 and "folder" in body["error"], (reply.status, body)
+        assert reply.status == 200 and body["result"]["isError"] and "folder" in body["result"]["content"][0]["text"], (reply.status, body)
     finally:
         server.kill()
         server.wait()

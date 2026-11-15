@@ -8,7 +8,7 @@
     "resources": {},
     "tools": {}
    },
-   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare, perf_gate and perf_panel leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling); perf_panel writes an HTML page to look at one or two runs in a browser. trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
+   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
    "protocolVersion": "2025-06-18",
    "serverInfo": {
     "name": "metal-trace",
@@ -25,7 +25,7 @@
     "resources": {},
     "tools": {}
    },
-   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare, perf_gate and perf_panel leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling); perf_panel writes an HTML page to look at one or two runs in a browser. trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
+   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
    "protocolVersion": "2025-11-25",
    "serverInfo": {
     "name": "metal-trace",
@@ -871,56 +871,6 @@
     },
     {
      "annotations": {
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false,
-      "readOnlyHint": false,
-      "title": "Write an HTML panel"
-     },
-     "description": "Writes one HTML file, `<name>.panel.html` in the runs directory, that shows one or two recordings in a\nbrowser without a server: GPU time per frame with the hitches marked, the numbers (FPS and its lows, frame\ntime, jitter, stutter, memory, thermal state), Metal memory over time and, for two runs, A against B. The file\nholds the data itself, no path, and loads nothing from the network; the viewer can hide and reorder the\nwidgets and export the layout as JSON. preset `fps` is the timeline, numbers and memory; `compare` (two runs)\nputs A against B first. skip_s leaves out the first seconds of each recording (the start-up), as perf_compare does.\nlayout (tab ids in the order to show) is saved as panel.json in the runs directory and becomes the default tab\norder of every panel, the live one too, until the viewer changes it in the browser; ids left out are hidden but\ncan be switched back on; tabs are tests (each run against the project's reference), summary, ab, frames, encoders, counters,\nmemory and data (a panel.json that does not name tests shows it first; one that leaves out any other keeps it hidden),\nand a panel.json you wrote yourself, or copied from the panel's Layout JSON, works the same.\nReturns the file name, the runs, the frames shown and the file's bytes.",
-     "inputSchema": {
-      "properties": {
-       "layout": {
-        "description": "tabs to show, in order: tests, summary, ab, frames, encoders, counters, memory, data; saved as panel.json in the runs directory as the default for every panel",
-        "items": {
-         "type": "string"
-        },
-        "type": "array"
-       },
-       "name": {
-        "description": "name for the panel file: letters, digits, '.', '_', '-'",
-        "type": "string"
-       },
-       "preset": {
-        "description": "fps (default) or compare (needs two runs)",
-        "type": "string"
-       },
-       "runs": {
-        "description": "one or two run names from perf_runs; with two, the first is A, the reference",
-        "items": {
-         "type": "string"
-        },
-        "type": "array"
-       },
-       "skip_s": {
-        "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them",
-        "type": "number"
-       }
-      },
-      "required": [
-       "name",
-       "runs"
-      ],
-      "type": "object"
-     },
-     "name": "perf_panel",
-     "outputSchema": {
-      "type": "object"
-     },
-     "title": "Write an HTML panel"
-    },
-    {
-     "annotations": {
       "openWorldHint": false,
       "readOnlyHint": true,
       "title": "Diagnose encoder use"
@@ -1461,7 +1411,7 @@
     "resources": {},
     "tools": {}
    },
-   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare, perf_gate and perf_panel leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling); perf_panel writes an HTML page to look at one or two runs in a browser. trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
+   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
    "resultType": "complete",
    "supportedVersions": [
     "2026-07-28"
@@ -2312,56 +2262,6 @@
       "type": "object"
      },
      "title": "Follow a number across runs"
-    },
-    {
-     "annotations": {
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false,
-      "readOnlyHint": false,
-      "title": "Write an HTML panel"
-     },
-     "description": "Writes one HTML file, `<name>.panel.html` in the runs directory, that shows one or two recordings in a\nbrowser without a server: GPU time per frame with the hitches marked, the numbers (FPS and its lows, frame\ntime, jitter, stutter, memory, thermal state), Metal memory over time and, for two runs, A against B. The file\nholds the data itself, no path, and loads nothing from the network; the viewer can hide and reorder the\nwidgets and export the layout as JSON. preset `fps` is the timeline, numbers and memory; `compare` (two runs)\nputs A against B first. skip_s leaves out the first seconds of each recording (the start-up), as perf_compare does.\nlayout (tab ids in the order to show) is saved as panel.json in the runs directory and becomes the default tab\norder of every panel, the live one too, until the viewer changes it in the browser; ids left out are hidden but\ncan be switched back on; tabs are tests (each run against the project's reference), summary, ab, frames, encoders, counters,\nmemory and data (a panel.json that does not name tests shows it first; one that leaves out any other keeps it hidden),\nand a panel.json you wrote yourself, or copied from the panel's Layout JSON, works the same.\nReturns the file name, the runs, the frames shown and the file's bytes.",
-     "inputSchema": {
-      "properties": {
-       "layout": {
-        "description": "tabs to show, in order: tests, summary, ab, frames, encoders, counters, memory, data; saved as panel.json in the runs directory as the default for every panel",
-        "items": {
-         "type": "string"
-        },
-        "type": "array"
-       },
-       "name": {
-        "description": "name for the panel file: letters, digits, '.', '_', '-'",
-        "type": "string"
-       },
-       "preset": {
-        "description": "fps (default) or compare (needs two runs)",
-        "type": "string"
-       },
-       "runs": {
-        "description": "one or two run names from perf_runs; with two, the first is A, the reference",
-        "items": {
-         "type": "string"
-        },
-        "type": "array"
-       },
-       "skip_s": {
-        "description": "seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) keeps all. The GPU numbers, hitches and Metal memory are recomputed without them",
-        "type": "number"
-       }
-      },
-      "required": [
-       "name",
-       "runs"
-      ],
-      "type": "object"
-     },
-     "name": "perf_panel",
-     "outputSchema": {
-      "type": "object"
-     },
-     "title": "Write an HTML panel"
     },
     {
      "annotations": {
