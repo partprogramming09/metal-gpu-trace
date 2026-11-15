@@ -19,11 +19,16 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - 🧪 Every new run's summary carries `context`: the short commit and dirty flag of the project file's repository (null without a project file or a git repository; `dirty` looks at the tracked files of the whole repository, not at new untracked files) and Instruments' version, and drops the `GIT_*` variables so they cannot point at another repository. `perf_compare` returns `context` saying whether two runs share it (runs from before 0.26.0 are named in `missing_in`). No branch, path, user or machine name. Experimental until a full recording is checked: the function ran for real, a whole `perf_record` did not. [proof](docs/evidence/v0.26.0.md#run-context-commit-and-instruments-version)
 
+- 🧪 Prompt `diagnose-stutter`: it records the program twice with `perf_cold_warm` and tells first-seen shader stutter (`first_seen_hitches`) from steady stutter (`perf_diagnose`), using only fields those tools return. [proof](docs/evidence/v0.26.0.md#the-diagnose-stutter-prompt)
+
+- 🧪 Prompt `bisect-regression` (`good_rev`, `bad_rev`, `workload`): the agent runs `git bisect` with its own permissions and, at each step, `perf_record` and `perf_check` against a baseline, repeating a step before marking it. It records a workload, so a commit must change what the workload runs (its arguments or environment). The server runs no command; a revision that is not a plain name, or starts with `-`, is refused. [proof](docs/evidence/v0.26.0.md#the-bisect-regression-prompt)
+
 ### Documentation
 
 - Release proof: `docs/evidence/` says how each release proves its improvements, and `tests/test_docs.py` fails when a
   release from 0.26.0 on does not list 5 to 10 improvements, each linking to its proof. `tests/golden/protocol.json`
-  changed on purpose: the `project_info` description no longer names `profile`.
+  changed on purpose: the `project_info` description no longer names `profile`, `prompts/list` has two more prompts and the
+  instructions mention them.
 
 ## 0.25.0 — 2026-11-15
 

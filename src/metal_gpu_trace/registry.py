@@ -181,6 +181,18 @@ PROMPTS = {
         "arguments": [{"name": "workload", "description": "a workload from workload_list, default drawstress"},
                       {"name": "api", "description": "the API run under Wine: d3d12 (default) or d3d11"}],
     },
+    "diagnose-stutter": {
+        "description": "Records a program twice to tell first-seen shader stutter from steady stutter, then diagnoses it",
+        "arguments": [{"name": "workload", "description": "a workload from workload_list, default drawstress"}],
+    },
+    "bisect-regression": {
+        "description": "Finds the commit that made a workload slower: git bisect, with a recording and a check at each step. "
+                       "The recordings use a workload, so a commit must change what the workload runs (its arguments or "
+                       "environment)",
+        "arguments": [{"name": "good_rev", "description": "a commit, tag or branch name that was fast (letters, digits, . _ -)"},
+                      {"name": "bad_rev", "description": "a commit, tag or branch name that is slow (letters, digits, . _ -)"},
+                      {"name": "workload", "description": "the workload to record, default drawstress"}],
+    },
 }  # each prompt also holds "render", the function that builds its text from the arguments; prompts/list leaves it out
 
 
@@ -200,3 +212,44 @@ def prompt_compare_layer(workload="drawstress", api="d3d12"):
 
 
 PROMPTS["compare-layer"]["render"] = prompt_compare_layer
+
+
+def prompt_diagnose_stutter(workload="drawstress"):
+    """Returns the steps of the diagnose-stutter prompt for `workload`."""
+    return (
+        f"Find out whether {workload} stutters because pipelines are built while it runs, with the metal-trace tools:\n"
+        f"1. perf_cold_warm name={workload}-stutter workload={workload} seconds=30. It records the program twice.\n"
+        "2. Read first_seen_hitches (shader_compile hitches only the first run had), extra_hitches_in_first (hitches of "
+        "any cause the first run had more) and compiler_busy_ms of both runs.\n"
+        "3. perf_diagnose run=<the first run's name> and perf_diagnose run=<the second run's name>: its stutter_analysis "
+        "is the steady state.\n"
+        "Say which case it is: first_seen_hitches above 0 means the first frames compile shaders (cache them or build "
+        "the pipelines at load); hitches in both runs with causes other than shader_compile mean steady stutter, and "
+        "the stutter_analysis of perf_diagnose says where to look. Name the cause counts you read. A run with `unpresented` in "
+        "perf_diagnose had its window hidden: record it again with the window visible before concluding. A run under 100 frames is "
+        "too_short to trust, and one pair of runs is not enough to call a cause real: repeat before concluding."
+    )
+
+
+def prompt_bisect_regression(good_rev, bad_rev, workload="drawstress"):
+    """Returns the steps of the bisect-regression prompt. A revision that starts with '-' would be read by git as an
+    option, so it is refused (the protocol answers with an invalid-params error)."""
+    good_rev, bad_rev = str(good_rev), str(bad_rev)  # the protocol passes a number as it came
+    if good_rev.startswith("-") or bad_rev.startswith("-"):
+        raise TypeError("a revision does not start with '-'")
+    return (
+        f"Find the commit that made {workload} slower, between {good_rev} (fast) and {bad_rev} (slow). You run git with "
+        "your own permissions: this server runs no commands. Work in the program's repository, with a clean tree.\n"
+        f"1. git checkout {good_rev}, then perf_baseline_record name=bisect-good workload={workload} seconds=30.\n"
+        f"2. git bisect start {bad_rev} {good_rev}\n"
+        f"3. At each step perf_record label=bisect-<short commit> workload={workload} seconds=30, then perf_check "
+        "run=<that run> baseline=bisect-good. It is good when perf_check does not report a regression.\n"
+        "4. Repeat step 3 once before you mark the commit: one run is not enough to call it slow. If the two "
+        "disagree, record a third and take the majority; a run under 100 frames is too_short, record it again longer.\n"
+        "5. git bisect good or git bisect bad, and go on until git names the first bad commit. Then git bisect reset.\n"
+        "Report that commit, and the perf_check numbers of the last good and the first bad step."
+    )
+
+
+PROMPTS["diagnose-stutter"]["render"] = prompt_diagnose_stutter
+PROMPTS["bisect-regression"]["render"] = prompt_bisect_regression

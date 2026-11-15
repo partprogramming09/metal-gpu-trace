@@ -118,7 +118,7 @@ def test_server(tmp_path):
     assert all("outputSchema" in t for t in tools.values()), "every tool declares its output"
     paged = replies[3]["result"]["structuredContent"]
     assert set(tools["perf_runs"]["outputSchema"]["required"]) <= set(paged), paged
-    assert [p["name"] for p in replies[22]["result"]["prompts"]] == ["compare-layer"]
+    assert [p["name"] for p in replies[22]["result"]["prompts"]] == ["compare-layer", "diagnose-stutter", "bisect-regression"]
     steps = replies[23]["result"]["messages"][0]["content"]["text"]
     assert all(w in steps for w in ("api=d3d11", "workload=drawstress", "perf_compare a=", "labels")), steps
     # an argument that is not a plain name is dropped, so the default api stays
@@ -1046,7 +1046,7 @@ def test_prompt_dispatch():
         got = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "prompts/get", "params": {"name": "t"}})["result"]
         assert got["description"] == "t" and got["messages"][0]["content"]["text"] == "T", got
         listed = protocol.handle({"jsonrpc": "2.0", "id": 2, "method": "prompts/list"})["result"]["prompts"]
-        assert {p["name"] for p in listed} == {"compare-layer", "t"} and all("render" not in p for p in listed), listed
+        assert {p["name"] for p in listed} == {"compare-layer", "diagnose-stutter", "bisect-regression", "t"} and all("render" not in p for p in listed), listed
         assert "Compare drawstress" in protocol.handle(
             {"jsonrpc": "2.0", "id": 3, "method": "prompts/get", "params": {"name": "compare-layer"}}
         )["result"]["messages"][0]["content"]["text"]
