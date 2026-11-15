@@ -669,7 +669,11 @@ def test_summary_leaves_out_unpresented(tmp_path):
                    f'<id>{c}</id><id>{e}</id></row>' for f, s, d, e, c in stalled_spans())
     paths = {"metal-gpu-intervals": table(("start", "duration", "channel-name", "frame-number", "process",
                                            "cmdbuffer-id", "encoder-id"), body),
-             "gpu-performance-state-intervals": table(("start",), "")}
+             "gpu-performance-state-intervals": table(("start",), ""),
+             perf_report.MEMORY: table(("start", "current-allocated-size", "process"),
+                                       "".join(f"<row><start>{t * 1_000_000}</start><current-allocated-size>{2**20 * (t + 1)}"
+                                               "</current-allocated-size><process><pid>7</pid></process></row>"
+                                               for t in range(3)))}
     toc = ET.fromstring('<trace-toc><run><info><target><process type="launched" pid="7" name="x"/></target>'
                         '</info><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
 
@@ -684,13 +688,21 @@ def test_summary_leaves_out_unpresented(tmp_path):
     perf_report.toc_and_tables = fake
     try:
         s = perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=False)
+        assert not list(tmp_path.glob("x.metal_memory*")), "memory=False writes no memory table"
+        with_memory = perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=True)
     finally:
         perf_report.toc_and_tables = saved
+    assert with_memory["metal_memory_mib"]["samples"] == 3 and with_memory["metal_memory_mib"]["peak"] == 3.0, with_memory
+    assert [p.name for p in tmp_path.glob("x.metal_memory*")] == ["x.metal_memory.csv.gz"], list(tmp_path.iterdir())
+    assert list(s)[0] == "schema_version" and s["schema_version"] == 2, list(s)[:2]
     gpu = s["gpu"]
     assert gpu["frames"] == 199 and gpu["frame_gpu_ms"]["max"] == 2.0, gpu
     assert gpu["unpresented"]["frames"] == [200] and gpu["unpresented"]["command_buffers"] == 1001, gpu["unpresented"]
     assert s["encoders"]["command_buffers_per_frame"]["max"] == 1, s["encoders"]
-    csv_rows = (tmp_path / "x.frames.csv").read_text().splitlines()
+    from metal_gpu_trace import tables
+    assert not (tmp_path / "x.frames.csv").exists(), "a new recording writes the table compressed only"
+    with tables.open_text(tmp_path / "x.frames.csv.gz") as f:
+        csv_rows = f.read().splitlines()
     assert len(csv_rows) == 200 and not csv_rows[-1].startswith("200,"), csv_rows[-1]
 
 
@@ -708,3 +720,181 @@ def test_unpresented_mid_run():
     assert kept["idle"]["idle_share"] == perf_report.idle_gaps(spans)["idle_share"], kept["idle"]
     assert kept["idle"]["idle_ms_per_frame"]["count"] == 399, "the unpresented frame is not a frame of idle time"
     assert max(kept["gaps"]) < 5.0, "the stall is not a frame interval"
+
+
+def write_table(path, n, ids_on_every_cell):
+    """Writes an exported table of n + 1 rows: the first defines id 2 (a process whose <pid> has id 3), the rest refer to it.
+    With ids_on_every_cell the other cells carry a unique id too, the shape xctrace gives a table whose values are all new."""
+    uid = iter(range(10, 10**9))
+    with open(path, "w") as f:
+        f.write('<trace-query-result><node xpath="x"><schema name="s">'
+                + "".join(f"<col><mnemonic>{m}</mnemonic></col>" for m in ("start", "process", "frame-number", "duration"))
+                + "</schema>")
+        for i in range(n + 1):
+            def cell(tag, value):
+                return f'<{tag} id="{next(uid)}">{value}</{tag}>' if ids_on_every_cell else f"<{tag}>{value}</{tag}>"
+            process = '<process id="2" fmt="p"><pid id="3">42</pid></process>' if i == 0 else '<process ref="2"/>'
+            f.write(f"<row>{cell('start', i)}{process}{cell('frame-number', i)}{cell('duration', 100)}</row>")
+        f.write("</node></trace-query-result>")
+
+
+def peak_mib(path):
+    """Returns (rows read, peak MiB allocated while reading them)."""
+    import tracemalloc
+    tracemalloc.start()
+    try:
+        count = sum(1 for _ in perf_report.rows(path))
+        return count, tracemalloc.get_traced_memory()[1] / 2**20
+    finally:
+        tracemalloc.stop()
+
+
+def test_rows_constant_memory(tmp_path):
+    """The peak does not grow with the rows, even when every cell carries an id: 80 000 rows stay under 50 MiB
+    (142 MiB before rows were freed, measured with this table) and near the peak of 20 000."""
+    write_table(tmp_path / "s.xml", 20_000, ids_on_every_cell=True)
+    write_table(tmp_path / "l.xml", 80_000, ids_on_every_cell=True)
+    _, peak_small = peak_mib(tmp_path / "s.xml")
+    count, peak_large = peak_mib(tmp_path / "l.xml")
+    assert count == 80_001
+    assert peak_large < 50, peak_large
+    assert peak_large < 1.5 * peak_small + 1, (peak_small, peak_large)
+
+
+def test_rows_resolve_refs_after_freeing(tmp_path):
+    """A ref still gets the cell it names after the row that defined it was freed."""
+    write_table(tmp_path / "t.xml", 3, ids_on_every_cell=True)
+    got = [perf_report.pid_of(row["process"]) for row in perf_report.rows(tmp_path / "t.xml")]
+    assert got == [42, 42, 42, 42], got
+
+
+def test_referenced_ids_across_chunk_boundaries(tmp_path):
+    """referenced_ids finds every ref value, also one that a chunk boundary cuts, and ignores ids and `xref`."""
+    path = tmp_path / "t.xml"
+    path.write_text('<a><b ref="alpha"/><c id="x"/><b ref="12"/><d xref="no"/><e ref="a&amp;b"/></a>')
+    saved = perf_report.REF_CHUNK
+    perf_report.REF_CHUNK = 7
+    try:
+        assert perf_report.referenced_ids(path) == {"alpha", "12", "a&b"}
+    finally:
+        perf_report.REF_CHUNK = saved
+
+
+def test_rows_deletes_file_on_early_close_and_on_failure(tmp_path):
+    """The exported file goes when the consumer stops early and when the first pass over it fails."""
+    write_table(tmp_path / "a.xml", 10, ids_on_every_cell=False)
+    gen = perf_report.rows(tmp_path / "a.xml")
+    next(gen)
+    gen.close()
+    assert not (tmp_path / "a.xml").exists()
+    write_table(tmp_path / "b.xml", 10, ids_on_every_cell=False)
+    saved = perf_report.referenced_ids
+
+    def broken(path):
+        raise OSError("disk read failed")
+
+    perf_report.referenced_ids = broken
+    try:
+        try:
+            next(perf_report.rows(tmp_path / "b.xml"))
+        except OSError:
+            pass
+        else:
+            raise AssertionError("the failure was swallowed")
+    finally:
+        perf_report.referenced_ids = saved
+    assert not (tmp_path / "b.xml").exists()
+
+
+def test_rows_ref_to_unknown_id_yields_the_ref_element(tmp_path):
+    """Pins today's behaviour (not blessing it): a ref to an id no cell defines yields the <ref> element itself."""
+    path = tmp_path / "t.xml"
+    path.write_text('<trace-query-result><node><schema><col><mnemonic>process</mnemonic></col></schema>'
+                    '<row><process ref="99"/></row></node></trace-query-result>')
+    (row,) = list(perf_report.rows(path))
+    assert row["process"].attrib == {"ref": "99"}, row["process"].attrib
+
+
+def test_rows_truncated_table_keeps_rows_that_use_refs(tmp_path):
+    """A file cut at a row boundary still yields every row, including those that refer to an id of the first one."""
+    path = tmp_path / "t.xml"
+    write_table(path, 3, ids_on_every_cell=True)
+    text = path.read_text()
+    path.write_text(text[:text.rindex("</row>") + len("</row>")])  # no closing </node></trace-query-result>
+    got = [perf_report.pid_of(row["process"]) for row in perf_report.rows(path)]
+    assert got == [42, 42, 42, 42], got
+
+
+def test_rows_without_a_node_still_reads_every_row(tmp_path):
+    """A table whose rows are not inside a <node> reads correctly (its rows are only not released)."""
+    path = tmp_path / "t.xml"
+    path.write_text("<r><schema><col><mnemonic>a</mnemonic></col></schema><row><a>1</a></row><row><a>2</a></row></r>")
+    assert [row["a"].text for row in perf_report.rows(path)] == ["1", "2"]
+
+
+def test_noisy_flag_above_threshold():
+    """The GPU's total use minus the program's own share of its busy window, in points: 20 or more is noisy."""
+    noisy = perf_report.noisy_environment({"samples": 5, "device_pct": {"mean": 80.0}}, {"idle_share": 0.5})
+    assert noisy == {"flag": True, "gpu_device_pct_mean": 80.0, "process_busy_pct": 50.0, "external_pct": 30.0}, noisy
+    assert perf_report.NOISY_EXTERNAL_PCT == 20.0
+
+
+def test_noisy_flag_below():
+    quiet = perf_report.noisy_environment({"device_pct": {"mean": 55.0}}, {"idle_share": 0.5})
+    assert quiet["flag"] is False and quiet["external_pct"] == 5.0, quiet
+    below_zero = perf_report.noisy_environment({"device_pct": {"mean": 30.0}}, {"idle_share": 0.1})
+    assert below_zero["flag"] is False and below_zero["external_pct"] == -60.0, below_zero
+
+
+def test_noisy_boundary_is_inclusive():
+    assert perf_report.noisy_environment({"device_pct": {"mean": 70.0}}, {"idle_share": 0.5})["flag"] is True  # exactly 20.0
+    assert perf_report.noisy_environment({"device_pct": {"mean": 69.9}}, {"idle_share": 0.5})["flag"] is False
+
+
+def test_noisy_missing_inputs_return_none():
+    good_activity, good_idle = {"device_pct": {"mean": 80.0}}, {"idle_share": 0.5}
+    for activity in (None, {"samples": 0}, {"device_pct": None}, {"device_pct": {}}, {"device_pct": {"mean": "x"}},
+                     {"device_pct": {"mean": float("nan")}}, {"device_pct": "x"}, "x", [], {"device_pct": {"mean": True}}):
+        assert perf_report.noisy_environment(activity, good_idle) is None, activity
+    for idle in (None, {}, {"idle_share": None}, {"idle_share": "x"}, {"idle_ms_per_frame": {"count": 0}}, "x",
+                 {"idle_share": float("inf")}, {"idle_share": True}):
+        assert perf_report.noisy_environment(good_activity, idle) is None, idle
+
+
+def test_summary_has_flag_and_basis_only_when_true(tmp_path):
+    def table(columns, body):
+        cols = "".join(f"<col><mnemonic>{c}</mnemonic></col>" for c in columns)
+        return f"<trace-query-result><node><schema>{cols}</schema>{body}</node></trace-query-result>"
+    body = "".join(f"<row><start>{i * 10_000_000}</start><duration>4000000</duration><channel-name>Vertex</channel-name>"
+                   f"<frame-number>{i + 1}</frame-number><process><pid>7</pid></process><cmdbuffer-id>c{i}</cmdbuffer-id>"
+                   f"<encoder-id>e{i}</encoder-id></row>" for i in range(60))
+    xml = {"metal-gpu-intervals": table(("start", "duration", "channel-name", "frame-number", "process", "cmdbuffer-id",
+                                         "encoder-id"), body),
+           "gpu-performance-state-intervals": table(("start",), "")}
+    toc = ET.fromstring('<trace-toc><run><info><target><process type="launched" pid="7" name="x"/></target>'
+                        '</info><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
+
+    def fake(trace, schemas, optional=()):
+        files = {}
+        for name, text in xml.items():
+            files[name] = str(tmp_path / f"{name}.xml")
+            pathlib.Path(files[name]).write_text(text)
+        return toc, files
+    saved = perf_report.toc_and_tables
+    perf_report.toc_and_tables = fake
+    try:
+        plain = perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=False)
+        assert "noisy_environment" not in plain and "noisy_basis" not in plain, "no sampler file: no flag"
+        idle = plain["gpu_idle"]["idle_share"]
+        process_busy = round(100 * (1 - idle), 1)
+        for device, flag in ((process_busy + 40, True), (process_busy + 5, False)):
+            (tmp_path / "x.agx.csv").write_text("device_pct,renderer_pct,tiler_pct\n" + f"{device},1,1\n" * 3)
+            s = perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=False)
+            assert s["noisy_environment"] is flag, (device, s.get("noisy_environment"))
+            if flag:
+                assert s["noisy_basis"] == {"gpu_device_pct_mean": device, "process_busy_pct": process_busy,
+                                            "external_pct": round(device - process_busy, 1)}, s["noisy_basis"]
+            else:
+                assert "noisy_basis" not in s
+    finally:
+        perf_report.toc_and_tables = saved

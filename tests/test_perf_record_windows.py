@@ -9,7 +9,7 @@ import time
 import pytest
 
 from metal_gpu_trace import perf_record_windows as prw
-from metal_gpu_trace import analysis, config, paths, recording, workloads
+from metal_gpu_trace import analysis, config, paths, recording, tables, workloads
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="needs Windows (ctypes.windll, DWM)")
 
@@ -117,15 +117,17 @@ def test_recording_and_schema_verification(tmp_path):
 
     # 1. Check generated files
     stem = json_path.stem
-    frames_csv = tmp_path / f"{stem}.frames.csv"
+    frames_csv = tables.find(tmp_path, f"{stem}.frames")
     rss_csv = tmp_path / f"{stem}.rss.csv"
 
     assert json_path.exists(), f"Missing {json_path}"
-    assert frames_csv.exists(), f"Missing {frames_csv}"
+    assert list(summary)[0] == "schema_version" and summary["schema_version"] == 2
+    assert frames_csv is not None and frames_csv.name.endswith(".frames.csv.gz"), "Missing the compressed frames table"
+    assert not (tmp_path / f"{stem}.frames.csv").exists(), "a new recording writes no plain frames.csv"
     assert rss_csv.exists(), f"Missing {rss_csv}"
 
     # 2. Check frames.csv format
-    with open(frames_csv, encoding="utf-8") as f:
+    with tables.open_text(frames_csv) as f:
         reader = list(csv.reader(f))
         assert reader[0] == ["frame", "start_ms", "gpu_ms_draw", "gpu_ms_total"], f"Invalid frames header: {reader[0]}"
         assert len(reader) > 1, "frames.csv should contain data rows"
@@ -251,8 +253,8 @@ time.sleep(1)
     assert summary["gpu"]["frame_gpu_ms"]["count"] == 120
 
     # Verify frames.csv has 120 data rows
-    frames_csv = tmp_path / f"{json_path.stem}.frames.csv"
-    with open(frames_csv, encoding="utf-8") as f:
+    frames_csv = tables.find(tmp_path, f"{json_path.stem}.frames")
+    with tables.open_text(frames_csv) as f:
         rows = list(csv.reader(f))[1:]
         assert len(rows) == 120
         assert int(rows[0][0]) == 1

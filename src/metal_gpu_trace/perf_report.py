@@ -1,7 +1,7 @@
 """Summarizes an Instruments "Metal System Trace" recording of one launched program: GPU time per frame and memory.
 
 Usage: python3 -I src/metal_gpu_trace/perf_report.py <recording.trace> [--label NAME] [--out DIR] [--no-memory]
-Writes <out>/<label>.json (summary), <label>.frames.csv (one row per GPU frame) and <label>.metal_memory.csv (Metal
+Writes <out>/<label>.json (summary), <label>.frames.csv.gz (one row per GPU frame) and <label>.metal_memory.csv.gz (Metal
 memory over time). A <recording>.rss.csv beside the trace adds the process's resident memory.
 """
 import argparse
@@ -9,7 +9,9 @@ import array
 import collections
 import concurrent.futures
 import csv
+import html
 import json
+import math
 import os
 import pathlib
 import re
@@ -21,7 +23,7 @@ import xml.etree.ElementTree as ET
 
 if __package__ in (None, ""):  # run by path (perf_record.sh does): make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from metal_gpu_trace import metrics  # noqa: E402
+from metal_gpu_trace import metrics, tables as table_files  # noqa: E402  (summarize has a local named tables)
 
 # the numbers shared with the Windows recorder live in metrics; these names keep perf_report's interface
 SHORT_US, stats, label_name = metrics.SHORT_US, metrics.stats, metrics.label_name
@@ -120,19 +122,46 @@ def toc_and_tables(trace, schemas, optional=()):
         raise
 
 
+REF_CHUNK = 1 << 20  # bytes read at a time by referenced_ids; a test shrinks it
+REF_TAIL = 64  # bytes kept between chunks so a ref="..." cut by a boundary is found; far more than an id is long
+REF_ATTRIBUTE = re.compile(rb'\bref="([^"]*)"')
+
+
+def referenced_ids(path):
+    """Returns every value that a ref="..." in the file names, found by reading it in chunks. A false positive (the text
+    ref="x" inside a cell) only keeps one more id."""
+    found, tail = set(), b""
+    with open(path, "rb") as f:
+        while chunk := f.read(REF_CHUNK):
+            data = tail + chunk
+            found.update(html.unescape(m.decode("utf-8", "replace")) for m in REF_ATTRIBUTE.findall(data))
+            tail = data[-REF_TAIL:]
+    return found
+
+
 def rows(path):
     """Yields each row of an exported table as {column mnemonic: element}, with xctrace's id/ref values resolved,
-    and deletes the file when done or closed early."""
-    ids, columns = {}, []
+    and deletes the file when done or closed early. Memory follows the values that rows share, not the rows: each row is
+    freed after its turn (its elements are valid until the next one) and only the cells that a later ref names are kept,
+    found by a first pass over the file."""
+    ids, columns, node = {}, [], None
     try:
-        for _, el in ET.iterparse(path, events=("end",)):
-            if "id" in el.attrib:
+        referenced = referenced_ids(path)
+        for event, el in ET.iterparse(path, events=("start", "end")):
+            if event == "start":
+                if node is None and el.tag == "node":
+                    node = el  # the parent of the rows
+                continue
+            if "id" in el.attrib and el.attrib["id"] in referenced:
                 ids[el.attrib["id"]] = el
             if el.tag == "col":
                 columns.append(el.findtext("mnemonic"))
             elif el.tag == "row":
                 values = [ids.get(c.attrib["ref"], c) if "ref" in c.attrib else c for c in el]
                 yield dict(zip(columns, values))
+                el.clear()  # the row only: a cell in ids stays whole, because later rows refer to it
+                if node is not None:  # xctrace always wraps the rows in a <node>
+                    del node[:]
     except ET.ParseError:
         if not complete_xml(path):  # a file cut at a row boundary by xctrace's crash has every row already
             raise
@@ -483,9 +512,42 @@ def agx_summary(path):
             "gpu_recovered": None if recoveries is None else recoveries > 0}
 
 
+# points of GPU use beyond the program's own at which a recording counts as made in a noisy environment; provisional, not
+# a measurement: re-fit it on at least 3 quiet runs of the same Mac
+NOISY_EXTERNAL_PCT = 20.0
+
+
+def noisy_environment(activity, idle):
+    """Returns whether something else was loading the GPU while the program recorded, with the numbers behind it:
+    `activity` is the AGX counters' summary (`device_pct` covers the whole GPU), `idle` the program's own gpu_idle
+    (`idle_share` is the share of its busy window in which its work was absent). The program's share is 100 * (1 -
+    idle_share); what the GPU used above that is external, and NOISY_EXTERNAL_PCT points or more is a flag. Returns
+    {"flag", "gpu_device_pct_mean", "process_busy_pct", "external_pct"}, or None when an input is missing (no sampler
+    file, a Windows run)."""
+    try:
+        device, share = activity["device_pct"]["mean"], idle["idle_share"]
+    except (KeyError, TypeError):
+        return None
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (device, share)):
+        return None
+    device, busy = round(device, 1), round(100 * (1 - share), 1)
+    external = round(device - busy, 1)
+    return {"flag": external >= NOISY_EXTERNAL_PCT, "gpu_device_pct_mean": device, "process_busy_pct": busy,
+            "external_pct": external}
+
+
 def read_command(argv, env=None):
     """Returns the standard output of one short system command, run with `env` (default: this process's)."""
     return subprocess.run(argv, capture_output=True, text=True, check=True, timeout=10, env=env).stdout
+
+
+def screen_locked(read=read_command):
+    """Returns True when the login session's screen is locked (a locked session may leave windows unpaced by the display),
+    False when it is not, None when the state cannot be read (no `ioreg`)."""
+    try:
+        return "CGSSessionScreenIsLocked" in read(("ioreg", "-n", "Root", "-d1", "-a"))
+    except (KeyError, OSError, subprocess.SubprocessError):
+        return None
 
 
 def machine_info(device, read=read_command):
@@ -496,10 +558,7 @@ def machine_info(device, read=read_command):
         sysctl = lambda key: read(("sysctl", "-n", key)).strip()
         gpu = read(("ioreg", "-c", "AGXAccelerator", "-r", "-d", "1"))
         ram, macos = int(sysctl("hw.memsize")), read(("sw_vers", "-productVersion")).strip()
-        try:
-            locked = "CGSSessionScreenIsLocked" in read(("ioreg", "-n", "Root", "-d1", "-a"))
-        except (KeyError, OSError, subprocess.SubprocessError):
-            locked = None
+        locked = screen_locked(read)
         if str(ram) != device.get("memory-size") or macos != (device.get("os-version") or "").split(" ")[0]:
             return None
         return {"chip": sysctl("machdep.cpu.brand_string"), "cpu_cores_p": int(sysctl("hw.perflevel0.logicalcpu")),
@@ -532,6 +591,7 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             raise ValueError("the trace has no launched or attached process; record it with xctrace --launch or --attach")
         pid = int(launched.attrib["pid"])
         summary = {
+            "schema_version": metrics.SCHEMA_VERSION,
             "label": label,
             "trace": trace.name,
             "process": {k: launched.attrib.get(k) for k in ("name", "pid", "termination-reason")}
@@ -614,10 +674,8 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
                  "trend_mib_per_min": memory_trend(allocated)}
                 if mib else {"samples": 0}
             )
-            with open(out / f"{label}.metal_memory.csv", "w", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow(["time_ms", "metal_allocated_bytes"])
-                writer.writerows((round(t, 3), size) for t, size in allocated)
+            table_files.write(out, f"{label}.metal_memory", ["time_ms", "metal_allocated_bytes"],
+                              ((round(t, 3), size) for t, size in allocated))
 
         # the process's resident memory, sampled by perf_record.sh beside the trace
         rss_csv = trace.with_suffix(".rss.csv")
@@ -628,6 +686,11 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
         activity = agx_summary(trace.with_suffix(".agx.csv"))
         if activity:
             summary["gpu_activity"] = activity
+        noisy = noisy_environment(activity, summary.get("gpu_idle"))
+        if noisy:
+            summary["noisy_environment"] = noisy["flag"]
+            if noisy["flag"]:
+                summary["noisy_basis"] = {k: noisy[k] for k in ("gpu_device_pct_mean", "process_busy_pct", "external_pct")}
 
         # the GPU's clock states over the recording, as a share of time
         states = collections.Counter()
@@ -694,11 +757,10 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             if os.path.exists(path):
                 os.unlink(path)
 
-    with open(out / f"{label}.frames.csv", "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["frame", "start_ms"] + [f"gpu_ms_{c.lower()}" for c in channels] + ["gpu_ms_total"])
-        for frame, start, total in zip(ordered, starts, totals):
-            writer.writerow([frame, round(start, 3)] + [round(frames[frame].get(c, 0.0), 4) for c in channels] + [round(total, 4)])
+    table_files.write(
+        out, f"{label}.frames", ["frame", "start_ms"] + [f"gpu_ms_{c.lower()}" for c in channels] + ["gpu_ms_total"],
+        ([frame, round(start, 3)] + [round(frames[frame].get(c, 0.0), 4) for c in channels] + [round(total, 4)]
+         for frame, start, total in zip(ordered, starts, totals)))
     (out / f"{label}.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
     return summary
 

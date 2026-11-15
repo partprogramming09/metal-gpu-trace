@@ -3,7 +3,7 @@ import csv
 import json
 import subprocess
 
-from metal_gpu_trace import config, gputrace_read, paths, perf_report
+from metal_gpu_trace import config, gputrace_read, paths, perf_report, tables as table_files  # tool_trace_count has a `tables` argument
 
 
 def tool_perf_export_trace(run):
@@ -12,16 +12,19 @@ def tool_perf_export_trace(run):
     its encoders' time, so a frame with parallel encoders can show shorter than it took), with the compute, fragment
     and vertex split as arguments. Returns the file name and the number of frames."""
     paths.run_path(run)
-    source = config.OUT / f"{run}.frames.csv"
-    if not source.exists():
+    source = table_files.find(config.OUT, f"{run}.frames")
+    if source is None:
         raise paths.ToolError(f"{run} has no per-frame file; record it again")
     events = []
-    with open(source, newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            events.append({"name": "GPU frame", "ph": "X", "pid": 1, "tid": 1, "ts": float(row["start_ms"]) * 1000,
-                           "dur": float(row["gpu_ms_total"]) * 1000,
-                           "args": {"frame": int(row["frame"]), **{k[7:]: float(v) for k, v in row.items()
-                                                                  if k.startswith("gpu_ms_") and k != "gpu_ms_total"}}})
+    try:
+        with table_files.open_text(source) as f:
+            for row in csv.DictReader(f):
+                events.append({"name": "GPU frame", "ph": "X", "pid": 1, "tid": 1, "ts": float(row["start_ms"]) * 1000,
+                               "dur": float(row["gpu_ms_total"]) * 1000,
+                               "args": {"frame": int(row["frame"]), **{k[7:]: float(v) for k, v in row.items()
+                                                                      if k.startswith("gpu_ms_") and k != "gpu_ms_total"}}})
+    except (*table_files.UNREADABLE, KeyError, TypeError, ValueError):
+        raise paths.ToolError(f"{source.name} cannot be read; record it again") from None
     target = config.OUT / f"{run}.chrome-trace"
     paths.write_file(target, json.dumps({"traceEvents": events, "displayTimeUnit": "ms"}))
     return {"file": target.name, "frames": len(events)}

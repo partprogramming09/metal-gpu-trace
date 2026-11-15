@@ -32,6 +32,56 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   changed on purpose: the `project_info` description no longer names `profile`, `prompts/list` has two more prompts, the
   instructions mention them and `tools/list` has `capture_diff`.
 
+## Pending (becomes 0.27.0)
+
+(Memory, disk, agent guidance and thermal care. Before it ships, group it into 1 to 5 improvements with their
+icons and proof, as the release rule asks.)
+
+### Added
+
+- A check before every recording starts (`preflight`): a missing Wine directory or program, no `xcrun`, too little free
+  disk (the runs folder and `TMPDIR`; under Windows only the runs folder), a locked screen and a recording already
+  running are refused at once with what to do, before `memory_pressure` or any process starts. Under Windows it never
+  signals the process that owns the lock.
+- `suggested_actions` in `perf_diagnose` and `perf_compare`: a list of `{tool, arguments, reason}` so an agent knows what
+  to call next (`perf_cold_warm` for shader-compile hitches, `perf_compare` with a `skip_s` when they all fall in the first
+  quarter of the run, a longer `perf_record`, `perf_ab` with `cooldown_s` after throttling). `recommendations` is unchanged.
+- `cooldown_s` (0 to 600 seconds, default 0) on `perf_baseline_record`, `perf_ab` and `perf_sweep`: a rest between any two
+  consecutive recordings, never before the first or after the last; a cancel ends it. 60 is a starting value, not a
+  measurement.
+- `noisy_environment` in the summary (and `noisy_basis` with the numbers when true): the GPU's total use exceeded the
+  program's own share by 20 points or more, so another process was loading it. `perf_compare` and `perf_baseline` name the
+  runs. The 20-point threshold is provisional, not measured on real recordings.
+- The first progress notification of a recording says its worst case: `recording: up to N s including read-back`.
+- `tier` on `perf_record` and on the tools that record (`perf_baseline_record`, `perf_sweep`, `perf_ab`,
+  `perf_cold_warm`): `light` (no Metal memory, no counters: seconds of read-back, to iterate), `standard` (the default,
+  what a recording was before) and `deep` (also GPU counters, and the `.trace` is kept unless the disk limit drops it;
+  macOS only). `memory` and `counters` given on their own replace that part of the tier. The summary records its `tier`,
+  and `perf_compare` says so when the two recordings were made at different tiers.
+- `METAL_TRACE_MAX_DISK_MB`: a size limit for the runs folder, in MiB. After each recording the oldest `.trace`, then
+  `.chrome-trace`, then per-frame and Metal memory tables are removed until it fits; summaries (`.json`), `baselines.json`
+  and the run just recorded keep what they need (its `.trace` goes last of all). When files were removed the summary has
+  `retention` with what went. Unset, or anything but a whole number of 1 or more, means no limit. `KEEP_RUNS` still counts
+  runs.
+- `schema_version: 2` in every new summary (first key) and in each `perf_runs` row; a summary without it is version 1 and
+  every tool still reads it.
+
+### Changed
+
+- A locked screen now refuses a recording (it was only a warning in `perf_compare` afterwards). `METAL_TRACE_ALLOW_LOCKED=1`
+  records anyway.
+- The per-frame and Metal memory tables of a new recording are written compressed, as `<run>.frames.csv.gz` and
+  `<run>.metal_memory.csv.gz` (both engines). Recordings made before still have plain `.csv` files and every tool reads
+  both; a `.csv.gz` that is cut short or damaged is a `ToolError` that says to record again.
+
+- Reading a table of a trace no longer holds every row in memory: each row is freed after it is read and only the values
+  that a later row refers to are kept (found by a first pass over the exported file, so the file is read twice).
+  Measured on synthetic tables with an `id` on every cell, 80 000 rows peaked at 142.1 MiB before and 3.1 MiB now, and
+  3.1 MiB again at 320 000 rows, with the same time (about 0.46 s for 80 000 rows, 3 runs each). The peak follows the
+  number of distinct values that rows refer to, so a real table with many of them grows more than these. Not measured on a
+  real trace of several gigabytes. `perf_report.summarize` still keeps one entry per GPU interval in lists, so a whole
+  summary still grows with the trace.
+
 ## 0.25.0 — 2026-11-15
 
 ### Removed (incompatible)

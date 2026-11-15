@@ -6,7 +6,8 @@ the folder its recordings go to and are read from; METAL_TRACE_PROJECT names tha
 
 Environment: METAL_TRACE_OUT is where recordings go without a project file (default ./perf-runs); METAL_TRACE_READ lists more directories,
 separated by ':', whose files the tools may read; METAL_TRACE_WINE is the default Wine directory; KEEP_RUNS caps the
-recordings kept; METAL_TRACE_LOCK moves the lock that keeps recordings one at a time (in the cache folder below);
+recordings kept; METAL_TRACE_MAX_DISK_MB caps the size of the recordings folder (the oldest .trace and per-frame tables go first,
+summaries never); METAL_TRACE_ALLOW_LOCKED=1 records with the screen locked (it is refused otherwise); METAL_TRACE_LOCK moves the lock that keeps recordings one at a time (in the cache folder below);
 METAL_TRACE_LOG=off silences the one stderr line per call. Test programs that workload_fetch
 downloads go to ~/Library/Caches/metal-gpu-trace.
 """
@@ -34,7 +35,14 @@ INSTRUCTIONS = (
     "that lists examples), or the compare-layer prompt. The diagnose-stutter prompt tells first-seen shader stutter from "
     "steady stutter; bisect-regression finds the commit that slowed a program. perf_sweep records one run per value of dim, example, api or an "
     "environment variable and fits GPU ms per frame on the value. trace_query with window_ms sums a long table by time window instead of listing rows. memory_free_pct holds the whole Mac short of memory "
-    "while recording (keep other work off it) and background throttles the program: repeat a run that uses either."
+    "while recording (keep other work off it) and background throttles the program: repeat a run that uses either. "
+    "Use tier light to iterate, standard to decide, deep for GPU counters and a kept .trace (METAL_TRACE_MAX_DISK_MB may "
+    "drop it); compare recordings of the same tier. "
+    "perf_diagnose and perf_compare return suggested_actions: when it is not empty, run the first one that fits. On a "
+    "laptop set cooldown_s on perf_baseline_record, perf_ab and perf_sweep so the Mac cools between recordings; a run "
+    "whose summary has noisy_environment (another process was loading the GPU) is repeated before it is trusted. A "
+    "recording is refused before it starts when its program, xcrun, the disk or the lock is not ready, or when the "
+    "screen is locked (METAL_TRACE_ALLOW_LOCKED=1 allows that)."
 )
 
 protocol.configure(instructions=INSTRUCTIONS, version=__version__)
