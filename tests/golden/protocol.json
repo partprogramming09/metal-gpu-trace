@@ -581,7 +581,7 @@
       "readOnlyHint": true,
       "title": "Show the active project"
      },
-     "description": "Says which project is active: its name, profile, baseline and format, the folder its recordings go to and\nwhere that folder comes from (the project file, METAL_TRACE_OUT or the default ./perf-runs). Without a project\nfile, project and baseline are null and profile is generic.",
+     "description": "Says which project is active: its name, baseline and format, the folder its recordings go to and\nwhere that folder comes from (the project file, METAL_TRACE_OUT or the default ./perf-runs). Without a project\nfile, project and baseline are null.",
      "inputSchema": {
       "additionalProperties": false,
       "properties": {},
@@ -1975,7 +1975,7 @@
       "readOnlyHint": true,
       "title": "Show the active project"
      },
-     "description": "Says which project is active: its name, profile, baseline and format, the folder its recordings go to and\nwhere that folder comes from (the project file, METAL_TRACE_OUT or the default ./perf-runs). Without a project\nfile, project and baseline are null and profile is generic.",
+     "description": "Says which project is active: its name, baseline and format, the folder its recordings go to and\nwhere that folder comes from (the project file, METAL_TRACE_OUT or the default ./perf-runs). Without a project\nfile, project and baseline are null.",
      "inputSchema": {
       "additionalProperties": false,
       "properties": {},

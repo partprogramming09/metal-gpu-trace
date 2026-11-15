@@ -146,7 +146,7 @@ The server reads these environment variables:
 A repository can hold a `metal-gpu-trace.json` that names its project and the folder of its recordings:
 
 ```json
-{"name": "my-game", "runs": "perf-runs", "profile": "translation-layer", "baseline": "main-ref"}
+{"name": "my-game", "runs": "perf-runs", "baseline": "main-ref"}
 ```
 
 The server looks for it in its working directory and the folders above it, stopping below the home folder, so one
@@ -158,7 +158,6 @@ each project's folder on its own. `runs` is relative to the file, starts with `~
 | --- | --- |
 | `name` | The project's name (letters, digits, `.`, `_`, `-`). Required. |
 | `runs` | The recordings folder. Required. It must be new, empty or already marked by the server (a plain `.metal-gpu-trace-runs` file, not a folder or a link): `KEEP_RUNS` removes old `.json` files there, so a folder holding other files is refused. The mark the server leaves holds the project's `name`, and another project's file that names a folder marked with a different name is refused; an empty mark, written by hand, takes the name of the first project that uses the folder. To hand a folder to another project, edit or remove its mark. |
-| `profile` | `translation-layer`, `native` or `generic` (the default). No tool reads it since the panel was removed in 0.25.0; `project_info` reports it. It will be removed in a later version. |
 | `baseline` | The name of the project's reference (`perf_baseline`). `project_info` reports it; `perf_check` still takes the reference it is given. |
 | `format` | `metal-gpu-trace`, the only one for now. |
 

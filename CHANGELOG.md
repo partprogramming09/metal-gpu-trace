@@ -3,6 +3,22 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## Unreleased
+
+(Becomes 0.26.0 when it ships; the release rule in [docs/evidence/README.md](docs/evidence/README.md) applies from there.)
+
+### Removed (incompatible)
+
+- The `profile` key of `metal-gpu-trace.json`: it is now an unknown key and the file is refused, naming it. `project_info`
+  no longer returns `profile`. It had no effect since the panel was removed in 0.25.0
+  ([ADR-0005](docs/adr/0005-remove-the-panel.md)). The `panel.json` exclusion stays for now: old folders still keep that file.
+
+### Documentation
+
+- Release proof: `docs/evidence/` says how each release proves its improvements, and `tests/test_docs.py` fails when a
+  release from 0.26.0 on does not list 5 to 10 improvements, each linking to its proof. `tests/golden/protocol.json`
+  changed on purpose: the `project_info` description no longer names `profile`.
+
 ## 0.25.0 — 2026-11-15
 
 ### Removed (incompatible)

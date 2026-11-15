@@ -62,9 +62,9 @@ def test_load_survives_deep_object_nesting(tmp_path):
 
 
 def test_load_refuses_nan_infinity_and_null_values(tmp_path):
-    for field, raw in (("name", "NaN"), ("runs", "Infinity"), ("profile", "NaN"), ("format", "-Infinity"),
-                       ("baseline", "NaN"), ("name", "null"), ("runs", "null"), ("profile", "null"),
-                       ("profile", '["generic"]'), ("format", '{"metal-gpu-trace": 1}'), ("name", "true"),
+    for field, raw in (("name", "NaN"), ("runs", "Infinity"), ("format", "-Infinity"),
+                       ("baseline", "NaN"), ("name", "null"), ("runs", "null"),
+                       ("format", '{"metal-gpu-trace": 1}'), ("name", "true"),
                        ("runs", '["r"]')):
         values = {"name": '"m"', "runs": '"r"', field: raw}
         text = refused(write(tmp_path, "{" + ", ".join(f'"{k}": {v}' for k, v in values.items()) + "}"))

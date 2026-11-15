@@ -152,7 +152,7 @@ El servidor lee estas variables de entorno:
 Un repositorio puede tener un `metal-gpu-trace.json` con el nombre de su proyecto y la carpeta de sus grabaciones:
 
 ```json
-{"name": "mi-juego", "runs": "perf-runs", "profile": "translation-layer", "baseline": "main-ref"}
+{"name": "mi-juego", "runs": "perf-runs", "baseline": "main-ref"}
 ```
 
 El servidor lo busca en su directorio de trabajo y en las carpetas de encima, hasta debajo de la carpeta personal,
@@ -164,7 +164,6 @@ guardan y se leen en `runs` en vez de en `METAL_TRACE_OUT` (`METAL_TRACE_READ` s
 | --- | --- |
 | `name` | El nombre del proyecto (letras, dígitos, `.`, `_`, `-`). Obligatoria. |
 | `runs` | La carpeta de las grabaciones. Obligatoria. Tiene que ser nueva, estar vacía o tener ya la marca del servidor (un archivo `.metal-gpu-trace-runs` normal, no una carpeta ni un enlace): `KEEP_RUNS` borra allí los `.json` antiguos, así que se rechaza una carpeta con otros archivos. La marca que deja el servidor lleva el `name` del proyecto, y el archivo de otro proyecto que nombre una carpeta marcada con otro nombre se rechaza; una marca vacía, puesta a mano, toma el nombre del primer proyecto que use la carpeta. Para pasar una carpeta a otro proyecto, edita o borra su marca. |
-| `profile` | `translation-layer`, `native` o `generic` (la de serie). Ninguna herramienta la lee desde que se quitó el panel en 0.25.0; `project_info` la informa. Se quitará en una versión posterior. |
 | `baseline` | El nombre de la referencia del proyecto (`perf_baseline`). `project_info` la informa; `perf_check` sigue usando la referencia que se le pasa. |
 | `format` | `metal-gpu-trace`, el único por ahora. |
 

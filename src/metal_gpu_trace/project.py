@@ -11,9 +11,8 @@ from metal_gpu_trace import config, paths
 
 FILE_NAME = "metal-gpu-trace.json"
 RUNS_MARK = ".metal-gpu-trace-runs"
-PROFILES = ("translation-layer", "native", "generic")
 FORMATS = ("metal-gpu-trace",)
-KEYS = ("name", "runs", "profile", "baseline", "format")
+KEYS = ("name", "runs", "baseline", "format")
 # files a desktop leaves in a folder on its own: a folder holding only these counts as empty
 LITTER = {".DS_Store", "desktop.ini", "Thumbs.db"}
 
@@ -29,7 +28,7 @@ def unique_keys(pairs):
 
 
 def load(path, home=None):
-    """Reads the project file at `path` and returns {"name", "profile", "baseline", "format", "runs", "root"}, with
+    """Reads the project file at `path` and returns {"name", "baseline", "format", "runs", "root"}, with
     "runs" resolved and "root" the file's folder; raises ToolError naming the field when the file is wrong."""
     path = pathlib.Path(path)
     try:
@@ -48,18 +47,16 @@ def load(path, home=None):
     for key in ("name", "runs"):
         if key not in data:
             raise paths.ToolError(f"{FILE_NAME}: \"{key}\" is required")
-    name, profile = data["name"], data.get("profile", "generic")
+    name = data["name"]
     baseline, fmt = data.get("baseline"), data.get("format", "metal-gpu-trace")
     if not isinstance(name, str) or not paths.name_ok(name):
         raise paths.ToolError(f"{FILE_NAME}: \"name\" holds only letters, digits, '.', '_' and '-'")
-    if profile not in PROFILES:
-        raise paths.ToolError(f"{FILE_NAME}: \"profile\" is one of {', '.join(PROFILES)}")
     if baseline is not None and (not isinstance(baseline, str) or not paths.name_ok(baseline)):
         raise paths.ToolError(f"{FILE_NAME}: \"baseline\" is a baseline name as perf_baseline saved it")
     if fmt not in FORMATS:
         raise paths.ToolError(f"{FILE_NAME}: \"format\" is one of {', '.join(FORMATS)}; other formats come with their reader")
     root = path.resolve().parent
-    return {"name": name, "profile": profile, "baseline": baseline, "format": fmt,
+    return {"name": name, "baseline": baseline, "format": fmt,
             "runs": runs_folder(data["runs"], root, pathlib.Path(home) if home else pathlib.Path.home(), name),
             "root": root}
 
@@ -223,9 +220,9 @@ def shown(folder, root, home):
 
 
 def tool_project_info():
-    """Says which project is active: its name, profile, baseline and format, the folder its recordings go to and
+    """Says which project is active: its name, baseline and format, the folder its recordings go to and
     where that folder comes from (the project file, METAL_TRACE_OUT or the default ./perf-runs). Without a project
-    file, project and baseline are null and profile is generic."""
+    file, project and baseline are null."""
     return info(os.environ)
 
 
@@ -245,6 +242,6 @@ def answer(environ):
     found = config.PROJECT or {}
     source = "project file" if found else "METAL_TRACE_OUT" if "METAL_TRACE_OUT" in environ else "default"
     root = found.get("root") or pathlib.Path.cwd().resolve()
-    return {"project": found.get("name"), "profile": found.get("profile", "generic"), "baseline": found.get("baseline"),
+    return {"project": found.get("name"), "baseline": found.get("baseline"),
             "format": found.get("format", "metal-gpu-trace"), "runs": shown(config.OUT, root, home) or ".",
             "source": source}

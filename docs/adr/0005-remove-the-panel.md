@@ -26,8 +26,8 @@ the numbers; an agent reads them from the tool results.
 ## Consequences
 - **Positive:** 24 tools instead of 25; the HTTP endpoint only serves `POST /mcp`.
 - **Negative / cost:** a client that called `perf_panel` gets an unknown-tool error; nobody was asked beforehand.
-- **Left behind on purpose:** the `profile` key of `metal-gpu-trace.json` is still accepted and has no effect, and a
+- **Left behind on purpose:** the `profile` key of `metal-gpu-trace.json` was still accepted (and ignored) in 0.25.0 and was removed in 0.26.0; a
   `panel.json` in a runs folder is still not a recording (`paths.LAYOUT_FILE`), so old folders keep working.
 
 ## Revisit when
-The next release after 0.25.0: drop the `profile` key and the `panel.json` exclusion.
+The `profile` key was dropped in 0.26.0. Still open: the `panel.json` exclusion (`paths.LAYOUT_FILE`, plus the names written out in `analysis.py`, `perf_record_windows.py` and `prune_runs.sh`): dropping it makes `KEEP_RUNS` delete that file in old folders.
