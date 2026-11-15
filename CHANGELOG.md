@@ -17,6 +17,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - 🧮 `trace_query` takes `window_ms` (1 to 3600000): it returns time windows, each with its `count` and summed duration (`duration_ms`), in the same `rows` page instead of rows, so a long table is summarized without cutting off its middle. It uses the table's `start` or `time` column (nanoseconds), refuses a table that has neither, and counts rows with no usable time in `skipped_rows`. `window_ms` is a whole number. [proof](docs/evidence/v0.26.0.md#trace_query-with-window_ms)
 
+- 🧪 Every new run's summary carries `context`: the short commit and dirty flag of the project file's repository (null without a project file or a git repository; `dirty` looks at the tracked files of the whole repository, not at new untracked files) and Instruments' version, and drops the `GIT_*` variables so they cannot point at another repository. `perf_compare` returns `context` saying whether two runs share it (runs from before 0.26.0 are named in `missing_in`). No branch, path, user or machine name. Experimental until a full recording is checked: the function ran for real, a whole `perf_record` did not. [proof](docs/evidence/v0.26.0.md#run-context-commit-and-instruments-version)
+
 ### Documentation
 
 - Release proof: `docs/evidence/` says how each release proves its improvements, and `tests/test_docs.py` fails when a

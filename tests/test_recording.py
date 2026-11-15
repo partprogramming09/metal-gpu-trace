@@ -874,6 +874,8 @@ def test_no_gpu_work_is_an_error(tmp_path):
         os.environ["SUMMARY"] = json.dumps(working)
         got = recording.record_run("ok", 20, "native", "-", str(tmp_path), [str(script)], layer={"none": "x"})
         assert got["gpu"]["frames"] == 300 and (out / "ok_1.json").exists()
+        saved_context = json.loads((out / "ok_1.json").read_text())["context"]
+        assert set(saved_context) == {"git", "instruments"} and saved_context == got["context"], saved_context
     finally:
         config.PACKAGE_DIR, config.OUT = saved[0], saved[1]
         os.environ.pop("SUMMARY") if saved[2] is None else os.environ.update(SUMMARY=saved[2])
@@ -892,3 +894,98 @@ def test_crossover_version(tmp_path):
         (wine / "bin" / "wine").write_text(f"#!/bin/sh\nprintf '%s\\n' '{printed}'\n" if printed else "#!/bin/sh\n")
         (wine / "bin" / "wine").chmod(0o755)
         assert recording.layer_of(str(wine), str(tmp_path / "prefix"))["wine_version"] == expected, printed
+
+
+# --- context: where a run came from ---------------------------------------------------------------------------------
+
+def context_with(tmp_path, answers, project=True):
+    """Runs recording.run_context with `answers` {first argv word: output or exception} and returns (context, argvs)."""
+    from metal_gpu_trace import config, recording
+    argvs, envs = [], []
+
+    def read(argv, env=None):
+        argvs.append(tuple(argv))
+        envs.append(env)
+        subcommand = next((w for w in argv if w in ("rev-parse", "status")), None) if argv[0] == "git" else argv[-2]
+        answer = answers.get(subcommand, "")
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    saved = config.PROJECT
+    config.PROJECT = {"name": "p", "root": tmp_path} if project else None
+    try:
+        context_with.envs = envs
+        return recording.run_context(read), argvs
+    finally:
+        config.PROJECT = saved
+
+
+def test_context_has_the_short_commit_the_dirty_flag_and_instruments(tmp_path):
+    answers = {"rev-parse": "abc1234\n", "status": "", "xctrace": "xctrace version 27.2 (27B52)\n"}
+    got, _ = context_with(tmp_path, answers)
+    assert got == {"git": {"commit": "abc1234", "dirty": False}, "instruments": "27.2 (27B52)"}, got
+    answers["status"] = " M src/x.py\n"
+    assert context_with(tmp_path, answers)[0]["git"]["dirty"] is True
+
+
+def test_context_reads_the_project_repo_not_the_working_directory(tmp_path):
+    _, argvs = context_with(tmp_path, {"rev-parse": "abc1234", "status": ""})
+    git = [a for a in argvs if a[0] == "git"]
+    assert git and all(a[:4] == ("git", "--no-optional-locks", "-C", str(tmp_path)) for a in git), argvs
+    assert all("--short=12" in a for a in git if "rev-parse" in a), argvs
+
+
+def test_context_drops_the_git_variables_of_the_environment(tmp_path):
+    os.environ["GIT_DIR"], os.environ["GIT_INDEX_FILE"] = "/elsewhere/.git", "/elsewhere/index"
+    try:
+        context_with(tmp_path, {"rev-parse": "abc1234", "status": ""})
+    finally:
+        os.environ.pop("GIT_DIR"), os.environ.pop("GIT_INDEX_FILE")
+    assert context_with.envs and all(not any(k.startswith("GIT_") for k in env) for env in context_with.envs), context_with.envs
+
+
+def test_context_without_a_project_file_or_a_repo_has_no_git(tmp_path):
+    from subprocess import CalledProcessError
+    assert context_with(tmp_path, {}, project=False)[0]["git"] is None
+    failing = {"rev-parse": CalledProcessError(128, "git"), "xctrace": OSError("no xctrace")}
+    assert context_with(tmp_path, failing)[0] == {"git": None, "instruments": None}
+
+
+def test_context_names_no_branch_path_or_person(tmp_path):
+    answers = {"rev-parse": "abc1234", "status": "", "xctrace": "xctrace version 27.2 (27B52)"}
+    got, argvs = context_with(tmp_path, answers)
+    text = json.dumps(got)
+    assert set(got) == {"git", "instruments"} and set(got["git"]) == {"commit", "dirty"}, got
+    assert str(tmp_path) not in text and "branch" not in text and "/" not in text, text
+    assert not any("branch" in word or "--abbrev-ref" in word for argv in argvs for word in argv), argvs
+
+
+def test_context_change_says_whether_two_runs_share_a_context():
+    from metal_gpu_trace import recording
+    one = {"context": {"git": {"commit": "abc1234", "dirty": False}, "instruments": "27.2 (27B52)"}}
+    two = {"context": {"git": {"commit": "def5678", "dirty": False}, "instruments": "27.2 (27B52)"}}
+    assert recording.context_change(one, dict(one), "a", "b") == {"same": True}
+    got = recording.context_change(one, two, "a", "b")
+    assert got["same"] is False and got["a"] == one["context"] and got["b"] == two["context"], got
+    old = recording.context_change(one, {}, "a", "b")
+    assert old["missing_in"] == ["b"], old
+    nogit = {"context": {"git": None, "instruments": "27.2 (27B52)"}}
+    assert recording.context_change(nogit, dict(nogit), "a", "b") == {"same": None, "unknown_in": ["a", "b"]}
+    mixed = recording.context_change(one, nogit, "a", "b")
+    assert mixed["same"] is False and mixed["unknown_in"] == ["b"], mixed
+
+
+def test_perf_compare_carries_the_context_change(tmp_path):
+    from metal_gpu_trace import analysis, config
+    base = {"gpu": {"frames": 300, "fps_estimate": 60.0}}
+    git = lambda commit: {"git": {"commit": commit, "dirty": False}, "instruments": None}
+    (tmp_path / "a.json").write_text(json.dumps({**base, "context": git("abc1234")}))
+    (tmp_path / "b.json").write_text(json.dumps({**base, "context": git("def5678")}))
+    (tmp_path / "old.json").write_text(json.dumps(base))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        assert analysis.tool_perf_compare("a", "b")["context"]["same"] is False
+        assert analysis.tool_perf_compare("a", "a")["context"] == {"same": True}
+        assert analysis.tool_perf_compare("a", "old")["context"]["missing_in"] == ["old"]
+    finally:
+        config.OUT = saved

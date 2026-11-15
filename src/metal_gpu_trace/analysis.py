@@ -103,7 +103,9 @@ def tool_perf_compare(a, b, short_us=25, markdown=False, skip_s=0):
     `markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,
     where shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the
     per-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.
-    `screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable."""
+    `screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable.
+    context says whether both runs share the commit of the project's repository and Instruments' version (same true or
+    false; null when a run's commit is unknown, named in unknown_in; runs from before 0.26.0 are named in missing_in)."""
     sa, sb = (steady_summary(r, skip_s) for r in (a, b))
     result = compare_summaries(sa, sb, a, b, short_us)
     if sa.get("steady"):
@@ -149,7 +151,7 @@ def compare_summaries(sa, sb, a, b, short_us=25):
         except (KeyError, TypeError):
             out[name] = change(None, None)
     short = [r for r, s in ((a, sa), (b, sb)) if (s.get("gpu") or {}).get("frames", 0) < 100]
-    result = {"a": a, "b": b, "layer": recording.layer_change(sa, sb, a, b), "metrics": out, "too_short": short}
+    result = {"a": a, "b": b, "layer": recording.layer_change(sa, sb, a, b), "context": recording.context_change(sa, sb, a, b), "metrics": out, "too_short": short}
     stalled = unpresented(**{a: sa, b: sb})
     if stalled:
         result["unpresented"] = stalled
