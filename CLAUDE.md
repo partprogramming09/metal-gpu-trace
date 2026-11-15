@@ -6,6 +6,8 @@ MCP server (stdio and Streamable HTTP, JSON-RPC, standard library only) and shel
 programs with Instruments' Metal System Trace on Apple silicon and read the recordings back. Published as
 `metal-gpu-trace` on PyPI.
 
+**Modo de los docs:** terceros (the package is published on PyPI; docs name no personal tools).
+
 ## Layout
 
 - `src/metal_gpu_trace/`: the package. `metal_trace_mcp.py` holds `INSTRUCTIONS`, the text clients read about how to

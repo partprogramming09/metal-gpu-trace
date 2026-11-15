@@ -20,12 +20,38 @@ def test_readme_lists_every_tool(tmp_path):
     import re
     from metal_gpu_trace import registry
     for name in ("README.md", "es/README.md"):
-        rows = set(re.findall(r"^\| `([a-z_]+)` \|", (ROOT / name).read_text(encoding="utf-8"), re.M))
+        listed = re.findall(r"^\| `([a-z_]+)` \|", (ROOT / name).read_text(encoding="utf-8"), re.M)
+        rows = set(listed)
+        assert len(listed) == len(rows), f"{name} lists a tool twice"
         missing = sorted(set(registry.TOOLS) - rows)
         assert not missing, f"{name} lacks rows for {missing}"
         text = (ROOT / name).read_text(encoding="utf-8")
         for word in ("mtl-x64", "bgfx-examples", "memory_free_pct", "gpu_state", "screen_locked", "resource_allocations"):
             assert word in text, f"{name} does not mention {word}"
+
+def test_readme_has_plain_words_first():
+    """Both READMEs open with what the tool is in plain words (at most 150), before any recording command, explain the 15
+    words a newcomer meets, and name a diagram that exists."""
+    english = ("frame", "GPU ms per frame", "FPS", "1 % low", "hitch", "frame pacing", "encoder", "command buffer",
+               "translation layer", "Wine", "Metal System Trace", ".trace", ".gputrace", "baseline", "regression")
+    spanish = tuple("GPU ms por frame" if term == "GPU ms per frame" else term for term in english)
+    for name, plain, recording, words, terms, image in (
+            ("README.md", "## In plain words", "## Recording", "## Words used here", english, "docs/diagrams/how-it-works.png"),
+            ("es/README.md", "## En palabras sencillas", "## Grabar", "## Palabras que se usan", spanish,
+             "../docs/diagrams/how-it-works.png")):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert text.count(plain) == 1 and text.index(plain) < text.index(recording), f"{name}: plain words come first"
+
+        def section(heading):
+            start = text.index(heading) + len(heading)
+            end = text.find("\n## ", start)
+            return text[start:end if end != -1 else len(text)]
+        assert len(section(plain).split()) <= 150, f"{name}: plain words are at most 150 words"
+        glossary = section(words)
+        missing = [term for term in terms if f"**{term}**" not in glossary]
+        assert not missing, f"{name}: the glossary lacks {missing}"
+        assert image in text and (ROOT / "docs" / "diagrams" / "how-it-works.png").is_file(), f"{name}: the diagram"
+
 
 def test_server(tmp_path):
     """The server answers on stdout with JSON only, pages lists, refuses paths outside its directories and turns

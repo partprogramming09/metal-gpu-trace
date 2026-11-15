@@ -23,6 +23,14 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   their time and size). Measured through the panel's data before the panel was removed: with two recordings of 50 000
   frames and `skip_s` 5 it took a median of 0.45 s, from 1.04 s (3 runs of 5 on one machine).
 
+### Documentation
+
+- Both READMEs (English and Spanish) now open for readers who do not program: a plain-words summary, a diagram of how
+  it works, four start-up steps, a glossary of the 15 terms the tools use, and a real, trimmed example result. The
+  tools table is grouped in four parts (record, judge and compare, dig deeper, setup and test programs), each row
+  starting with a plain sentence. Nothing was removed from them; `tests/test_server.py` checks the order and the
+  glossary.
+
 ## 0.24.0 — 2026-11-12
 
 - `KEEP_RUNS` no longer removes `baselines.json` (on macOS) or `panel.json` (on macOS and Windows) when it prunes old

@@ -4,6 +4,73 @@
 
 <!-- mcp-name: io.github.partprogramming09/metal-gpu-trace -->
 
+English · [Español](es/README.md)
+
+## In plain words
+
+metal-gpu-trace measures how hard a program works the graphics chip (the GPU) of a Mac with Apple silicon, and whether
+its pictures come out evenly. It is for people who port or test games and apps on a Mac, Windows games run through Wine
+included, and for the AI coding agents that help them. You ask your agent to record the program for 30 seconds. The tool
+starts Instruments (Apple's profiler, installed with Xcode) and hands back a short summary: how long the GPU needs for each picture (a frame), how many
+frames per second (FPS), how often the picture stutters and how much memory is used. Run it again after a change and it
+says, with numbers, whether the program got faster, slower or stayed the same. It does not fix the program, and it needs
+Xcode installed to record.
+
+## How it works
+
+![Your AI agent asks the metal-gpu-trace server, which has Instruments record the program, writes summary files, and reads them back as comparisons and checks.](https://raw.githubusercontent.com/partprogramming09/metal-gpu-trace/main/docs/diagrams/how-it-works.png)
+
+## Start in 4 steps
+
+1. **Install Xcode** from the App Store. Open the Terminal app and type `xcrun xctrace version`: it should print a version.
+2. **Install uv**, a tool that downloads and runs the server for you. In the Terminal: `brew install uv` (needs Homebrew, see brew.sh).
+3. **Connect the server to your agent.** An MCP server is a small helper program that gives your AI agent new tools. For Claude Code, paste this in the Terminal (`METAL_TRACE_OUT` is the folder where recordings are saved): `claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -- uvx metal-gpu-trace`. For other AI apps see [MCP server](#mcp-server).
+4. **Ask:** "Record my app for 30 seconds, then tell me its FPS and how long the GPU takes per frame." For a Windows program under Wine (software that runs Windows programs on a Mac), also add `-e METAL_TRACE_WINE=/path/to/wine` to the command of step 3 (see [Install](#install)).
+
+## Words used here
+
+- **frame**: one picture the program draws. A game at 60 FPS draws 60 of them each second.
+- **FPS**: frames per second. Higher is smoother, until the screen's refresh rate caps it (vsync).
+- **GPU ms per frame**: the milliseconds the graphics chip works on one frame. Lower is better, and unlike FPS the screen does not cap it.
+- **1 % low**: the FPS of the slowest 1 % of frames. It shows the stutter an average hides, and needs at least 100 frames.
+- **hitch**: a frame that takes far longer than its neighbours; you see it as a stutter.
+- **frame pacing**: how evenly frames arrive. Even gaps look smooth, uneven gaps look like stutter.
+- **encoder**: a block of GPU commands the program sends. Too many tiny ones waste GPU time.
+- **command buffer**: the package of work a program hands the GPU; it holds one or more encoders.
+- **translation layer**: software that lets a program written for another graphics API (Direct3D, Vulkan) run on Metal, such as DXMT, Mullion or MoltenVK.
+- **Wine**: software that runs Windows programs on a Mac.
+- **Metal System Trace**: the Instruments recording template that logs what the GPU does; this tool records with it.
+- **.trace**: the file Instruments writes. It is large (tens to hundreds of MB), so it is deleted after the summary unless you set `KEEP_TRACE=1`.
+- **.gputrace**: a Metal capture of the draw commands of a few frames; this tool reads it without Xcode.
+- **baseline**: a saved reference made of several equal recordings. It shows how much a number moves by itself, so a later run can be judged against it.
+- **regression**: a change that makes the program worse than its baseline, for example FPS falling under the baseline's range by more than the margin.
+
+## A first result
+
+A trimmed summary of a real 20-second recording of the `drawstress` test program in native Metal (the file holds many more fields):
+
+```json
+{
+  "process": {"name": "drawstress", "arguments": "--mtl"},
+  "duration_s": 20.78,
+  "gpu": {
+    "frames": 2034,
+    "fps_estimate": 104.5,
+    "frame_gpu_ms": {"mean": 5.564, "p95": 6.16},
+    "frame_interval_ms": {"p95": 10.017, "max": 22.189}
+  },
+  "encoders": {"per_frame": {"p50": 2}},
+  "gpu_idle": {"idle_share": 0.422}
+}
+```
+
+Read it like this: 2 034 frames in 20.8 s. `fps_estimate` is 104.5: it comes from the median gap between frames, so it can differ from frames divided by seconds (about 98). The GPU needed 5.6 ms per frame on average, and under 6.2 ms
+for 95 % of them (`p95`). The longest wait between two frames was 22.2 ms. The program sent 2 encoders per frame (the
+median, `p50`), and the GPU sat idle 42 % of the time. One recording says little by itself: compare two, and repeat a
+run before calling a difference real.
+
+## For developers
+
 Measure how a Wine or macOS program uses the GPU on an Apple silicon Mac, from the command line or through an AI
 coding agent: GPU time per frame, frame pacing, FPS and memory, recorded with Instruments' Metal System Trace; whether
 a translation layer (DXMT, Mullion, MoltenVK) splits the work into too many short encoders; Metal
@@ -170,32 +237,51 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 
 ### Tools
 
+24 tools in four groups. Your agent picks them; you rarely call one yourself. Each row starts with what the tool is for, then the detail.
+
+#### Record
+
 | Tool | Reads or records |
 | --- | --- |
-| `perf_record` | Records a program and returns its summary; when it ends it stops every program of its Wine prefix, or every process named like a native program. `counters=true` also records Metal GPU Counters: `gpu_counters` (the limiters, utilization, occupancy and memory bandwidth of the GPU, with the main limiter) in the summary, at about 40 s of read-back per recorded second; not under Windows |
-| `perf_attach` | Records a program that is already running, by pid or name, and leaves it running |
-| `project_info` | Says which project is active (from `metal-gpu-trace.json`), its profile and baseline, and its recordings folder and where that comes from |
-| `perf_runs` | Lists recordings, newest first, one page at a time, whether each kept its `.trace`, and the translation layer it ran on (a fingerprint of its Direct3D DLLs, and its Wine); `project` names the active project |
-| `perf_compare` | Compares two recordings: headline numbers, encoders, GPU idle time and each encoder label's GPU ms per frame, largest change first; flags those under 100 frames. `markdown=true` adds the numbers as Markdown tables for a PR comment; `skip_s` leaves out the first seconds of each recording (start-up) and recomputes the GPU numbers, hitches and Metal memory without them. `perf_gate` takes `skip_s` too |
-| `perf_baseline` | Saves several equal recordings as a named reference and returns the range each number spans across them and `spread_pct`, how much equal runs differ (the noise a change must beat); alone, lists the references. `skip_s` saves each run without its first seconds and `perf_check` applies the same cut to the run it judges |
-| `perf_baseline_record` | Records the same program `count` times (default 3) with `perf_record`'s arguments and saves the runs as a reference in one call. `skip_s` as in `perf_baseline` |
-| `perf_cold_warm` | Records the same program twice in a row and says how many more shader-compile hitches the first run has than the second (`first_seen_hitches`), with each run's hitches, hitches per minute and graphics compiler time; the Metal shader cache is not cleared between them |
-| `perf_ab` | Records the same program with two environments (`env_a`, `env_b`: `NAME=VALUE` pairs) in the order A B B A and says per metric (FPS, 1 % low, GPU ms, stutter) whether B is better, worse or the same: better or worse only when every B value is outside A's range |
-| `perf_sweep` | Records the same program once per value of one variable (`dim`, `size`, `example`, `api` or `env:NAME`), 2 to 8 values, `rounds` times (every other round in reverse order), and returns per value the median FPS, 1 % low, GPU ms per frame and stutter; with 3 or more numeric values it fits GPU ms per frame on the value (fixed ms and ms per draw for `dim`) with its r2 |
-| `perf_check` | Judges a recording against a reference: `regressed` when FPS falls under the range by more than `margin_pct` (default 3), GPU ms per frame rises over it, or encoders or command buffers per frame exceed it; `improved` or `same` otherwise, with the reasons and the full comparison |
-| `perf_gate` | Checks a recording against budgets you set (FPS and 1% low floors; stutter, p95 GPU ms, hitch and Metal MiB ceilings) and returns pass or fail with each limit and value; a missing number fails |
-| `perf_history` | Follows FPS, 1% low, GPU ms, stutter, hitches and Metal MiB across the runs whose name starts with a prefix, oldest first, with the change from first to last |
-| `perf_export_trace` | Writes a recording's GPU frames as `<run>.chrome-trace`, one slice per frame, for ui.perfetto.dev or chrome://tracing |
-| `perf_diagnose` | Says whether a recording splits its GPU work into too many short encoders, as translation layers do, with encoders and command buffers per frame, the labels with the most GPU time and the GPU's idle time |
-| `trace_tables` | Lists the tables of a kept `.trace`, named by its run or its path |
-| `trace_count` | Counts the rows of several tables of a kept `.trace`, in all and per process; by default the tables that matter for a translation layer (GPU intervals, encoders, compiler spills, compiled shaders, allocations, counters, Time Profiler), so an empty one shows before reading it |
-| `trace_query` | One page of rows of one table, optionally one process |
-| `capture_summary` | Summarizes a `.gputrace`; lists its 100 most frequent calls out of `calls_total` |
-| `capture_records` | One page of a `.gputrace`'s records |
-| `gpu_family` | Apple's facts for a family or chip (`Apple7`, `M1 Pro`, `M3 Max`) |
-| `presentmon_install` | Windows only: downloads PresentMon, checks its pinned SHA-256 and keeps it in `%LOCALAPPDATA%\metal-gpu-trace`, where `perf_record` and `perf_attach` find it; Claude Code asks before every call |
-| `workload_list` | Lists the test programs `workload_fetch` can download; for `bgfx-examples`, `example_traits` gives each example's class and its encoders per frame in native Metal |
-| `workload_fetch` | Downloads a test program once, checks its SHA-256 and keeps it in `~/Library/Caches/metal-gpu-trace`; Claude Code asks before every call |
+| `perf_record` | Records one run of a program and returns its summary. — Records a program and returns its summary; when it ends it stops every program of its Wine prefix, or every process named like a native program. `counters=true` also records Metal GPU Counters: `gpu_counters` (the limiters, utilization, occupancy and memory bandwidth of the GPU, with the main limiter) in the summary, at about 40 s of read-back per recorded second; not under Windows |
+| `perf_attach` | Records a program that is already running, without restarting it. — Records a program that is already running, by pid or name, and leaves it running |
+| `perf_baseline_record` | Records the same program several times and saves the runs as a reference. — Records the same program `count` times (default 3) with `perf_record`'s arguments and saves the runs as a reference in one call. `skip_s` as in `perf_baseline` |
+| `perf_ab` | Tries two settings of the same program and says which comes out better. — Records the same program with two environments (`env_a`, `env_b`: `NAME=VALUE` pairs) in the order A B B A and says per metric (FPS, 1 % low, GPU ms, stutter) whether B is better, worse or the same: better or worse only when every B value is outside A's range |
+| `perf_sweep` | Records the program once per value of one setting (size, resolution, …) to see how it scales. — Records the same program once per value of one variable (`dim`, `size`, `example`, `api` or `env:NAME`), 2 to 8 values, `rounds` times (every other round in reverse order), and returns per value the median FPS, 1 % low, GPU ms per frame and stutter; with 3 or more numeric values it fits GPU ms per frame on the value (fixed ms and ms per draw for `dim`) with its r2 |
+| `perf_cold_warm` | Records the program twice in a row to see how much its first start-up stutters while compiling shaders. — Records the same program twice in a row and says how many more shader-compile hitches the first run has than the second (`first_seen_hitches`), with each run's hitches, hitches per minute and graphics compiler time; the Metal shader cache is not cleared between them |
+
+#### Judge and compare
+
+| Tool | Reads or records |
+| --- | --- |
+| `perf_compare` | Compares two recordings: what got faster and what got slower. — Compares two recordings: headline numbers, encoders, GPU idle time and each encoder label's GPU ms per frame, largest change first; flags those under 100 frames. `markdown=true` adds the numbers as Markdown tables for a PR comment; `skip_s` leaves out the first seconds of each recording (start-up) and recomputes the GPU numbers, hitches and Metal memory without them. `perf_gate` takes `skip_s` too |
+| `perf_check` | Judges a recording against a saved reference: same, better or regressed. — Judges a recording against a reference: `regressed` when FPS falls under the range by more than `margin_pct` (default 3), GPU ms per frame rises over it, or encoders or command buffers per frame exceed it; `improved` or `same` otherwise, with the reasons and the full comparison |
+| `perf_gate` | Checks a recording against limits you set and answers pass or fail. — Checks a recording against budgets you set (FPS and 1% low floors; stutter, p95 GPU ms, hitch and Metal MiB ceilings) and returns pass or fail with each limit and value; a missing number fails |
+| `perf_baseline` | Saves several equal recordings as a reference and tells how much equal runs differ by themselves. — Saves several equal recordings as a named reference and returns the range each number spans across them and `spread_pct`, how much equal runs differ (the noise a change must beat); alone, lists the references. `skip_s` saves each run without its first seconds and `perf_check` applies the same cut to the run it judges |
+| `perf_history` | Follows one number across many recordings. — Follows FPS, 1% low, GPU ms, stutter, hitches and Metal MiB across the runs whose name starts with a prefix, oldest first, with the change from first to last |
+| `perf_diagnose` | Says whether the program splits GPU work into too many tiny pieces, as translation layers do. — Says whether a recording splits its GPU work into too many short encoders, as translation layers do, with encoders and command buffers per frame, the labels with the most GPU time and the GPU's idle time |
+
+#### Dig deeper
+
+| Tool | Reads or records |
+| --- | --- |
+| `perf_export_trace` | Exports a recording's frames to a file that Perfetto or Chrome can draw. — Writes a recording's GPU frames as `<run>.chrome-trace`, one slice per frame, for ui.perfetto.dev or chrome://tracing |
+| `trace_tables` | Lists the tables of a kept `.trace`. — Lists the tables of a kept `.trace`, named by its run or its path |
+| `trace_count` | Counts the rows of several tables of a kept `.trace`. — Counts the rows of several tables of a kept `.trace`, in all and per process; by default the tables that matter for a translation layer (GPU intervals, encoders, compiler spills, compiled shaders, allocations, counters, Time Profiler), so an empty one shows before reading it |
+| `trace_query` | Returns rows of one table of a kept `.trace`. — One page of rows of one table, optionally one process |
+| `capture_summary` | Summarizes a `.gputrace` capture. — Summarizes a `.gputrace`; lists its 100 most frequent calls out of `calls_total` |
+| `capture_records` | Returns the records of a `.gputrace` capture, one page at a time. — One page of a `.gputrace`'s records |
+
+#### Setup and test programs
+
+| Tool | Reads or records |
+| --- | --- |
+| `project_info` | Says which project is active and where its recordings are kept. — Says which project is active (from `metal-gpu-trace.json`), its profile and baseline, and its recordings folder and where that comes from |
+| `perf_runs` | Lists the recordings, newest first. — Lists recordings, newest first, one page at a time, whether each kept its `.trace`, and the translation layer it ran on (a fingerprint of its Direct3D DLLs, and its Wine); `project` names the active project |
+| `gpu_family` | Apple's published facts for a GPU family or chip. — Apple's facts for a family or chip (`Apple7`, `M1 Pro`, `M3 Max`) |
+| `workload_list` | Lists the test programs you can download. — Lists the test programs `workload_fetch` can download; for `bgfx-examples`, `example_traits` gives each example's class and its encoders per frame in native Metal |
+| `workload_fetch` | Downloads a test program and checks its SHA-256. — Downloads a test program once, checks its SHA-256 and keeps it in `~/Library/Caches/metal-gpu-trace`; Claude Code asks before every call |
+| `presentmon_install` | Windows only: downloads PresentMon, the tool that measures frames there. — Windows only: downloads PresentMon, checks its pinned SHA-256 and keeps it in `%LOCALAPPDATA%\metal-gpu-trace`, where `perf_record` and `perf_attach` find it; Claude Code asks before every call |
 
 `perf_record` takes `workload`, `api` (`mtl`, `mtl-x64`, `vk`, `d3d11` or `d3d12`), `dim`, `size` and `example` instead of
 `program`, to record a fetched test program (`workload_list` says what each has). `mtl-x64` is native Metal built for
