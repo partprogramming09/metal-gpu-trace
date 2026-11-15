@@ -1,6 +1,6 @@
 # metal-gpu-trace
 
-lanzamientos: 5-10
+lanzamientos: 1-5
 
 MCP server (stdio and Streamable HTTP, JSON-RPC, standard library only) and shell scripts that record Wine or macOS
 programs with Instruments' Metal System Trace on Apple silicon and read the recordings back. Published as

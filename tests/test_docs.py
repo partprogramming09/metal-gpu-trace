@@ -1,4 +1,4 @@
-"""The release rule: a version from 0.26.0 on ships between 5 and 10 improvements, each one a CHANGELOG bullet under
+"""The release rule: a version from 0.26.0 on ships 1 to 5 improvements, each one a CHANGELOG bullet under
 "### Added" that starts with its icon and ends with a link to its proof in docs/evidence/, and both READMEs link each
 proof from their "What's new" section. Experimental (🧪) bullets need their proof too but do not count toward the
 minimum. Older sections keep their own format and are not checked."""
@@ -7,7 +7,7 @@ import re
 from support import ROOT
 
 FIRST_CHECKED = (0, 26, 0)
-MIN_IMPROVEMENTS, MAX_IMPROVEMENTS = 5, 10  # also written as `lanzamientos: 5-10` in CLAUDE.md (a test pins both)
+MIN_IMPROVEMENTS, MAX_IMPROVEMENTS = 1, 5  # also written as `lanzamientos: 1-5` in CLAUDE.md (a test pins both)
 ICONS = "✨🔍🩺⚡🛡⚠🧪🛠"  # the icon vocabulary of docs/evidence/README.md, without variation selectors
 EXPERIMENTAL = "🧪"
 PROOF = re.compile(r"\[(?:proof|prueba)\]\((docs/evidence/v(\d+\.\d+\.\d+)\.md)#([\w-]+)\)\s*$")
@@ -53,7 +53,7 @@ def problems(changelog, readmes, evidence_files):
     if not MIN_IMPROVEMENTS <= len(counted) <= MAX_IMPROVEMENTS or len(bullets) > MAX_IMPROVEMENTS:
         wrong.append(f"{name} has {len(counted)} improvements ({len(bullets) - len(counted)} experimental); "
                      f"a release has {MIN_IMPROVEMENTS} to {MAX_IMPROVEMENTS}, experimental ones not counting "
-                     "toward the minimum")
+                     f"toward the minimum but counting toward the maximum ({len(bullets)} bullets here)")
     anchors = []
     for bullet in bullets:
         proof = PROOF.search(bullet)
@@ -99,10 +99,10 @@ def test_a_complete_release_has_no_problems():
     assert problems(good_changelog(), readmes(), evidence()) == []
 
 
-def test_release_has_between_5_and_10_improvements():
-    assert problems(good_changelog(4), readmes(4), evidence(4))[0].startswith("0.26.0 has 4")
-    assert problems(good_changelog(11), readmes(11), evidence(11))[0].startswith("0.26.0 has 11")
-    for count in (5, 10):
+def test_release_has_between_1_and_5_improvements():
+    assert problems(good_changelog(0), readmes(0), evidence(0))[0].startswith("0.26.0 has 0")
+    assert problems(good_changelog(6), readmes(6), evidence(6))[0].startswith("0.26.0 has 6")
+    for count in (1, 5):
         assert problems(good_changelog(count), readmes(count), evidence(count)) == []
 
 
@@ -110,7 +110,12 @@ def test_experimental_improvements_do_not_count_toward_the_minimum():
     only_experimental = problems(good_changelog(5, icon="🧪"), readmes(), evidence())
     assert only_experimental and only_experimental[0].startswith("0.26.0 has 0 improvements (5 experimental)")
     mixed = good_changelog(5).replace("✨ Thing 4", "🧪 Thing 4")
-    assert problems(mixed, readmes(), evidence())[0].startswith("0.26.0 has 4 improvements (1 experimental)")
+    assert problems(mixed, readmes(), evidence()) == []
+    too_many = good_changelog(6).replace("✨ Thing 5", "🧪 Thing 5")  # experimental ones count toward the maximum
+    assert problems(too_many, readmes(6), evidence(6))[0].startswith("0.26.0 has 5 improvements (1 experimental)")
+    assert "(6 bullets here)" in problems(too_many, readmes(6), evidence(6))[0]
+    plain = good_changelog(5).replace("### Added\n", "### Added\n\n- plain note, no icon\n", 1)  # not a bullet of the rule
+    assert problems(plain, readmes(), evidence()) == []
 
 
 def test_each_improvement_links_to_an_existing_evidence_anchor():
@@ -137,8 +142,8 @@ def test_a_heading_inside_a_code_block_is_not_a_heading():
 
 
 def test_a_bullet_without_an_icon_is_not_an_improvement():
-    plain = good_changelog().replace("- ✨ Thing 0", "- Thing 0").replace("- ✨ Thing 1", "- Évite Thing 1")
-    assert problems(plain, readmes(), evidence())[0].startswith("0.26.0 has 3")
+    plain = good_changelog(2).replace("- ✨ Thing 0", "- Thing 0").replace("- ✨ Thing 1", "- Évite Thing 1")
+    assert problems(plain, readmes(2), evidence(2))[0].startswith("0.26.0 has 0")
 
 
 def test_only_the_added_section_counts():
