@@ -187,15 +187,19 @@ PROMPTS = {
     },
     "diagnose-stutter": {
         "description": "Records a program twice to tell first-seen shader stutter from steady stutter, then diagnoses it",
-        "arguments": [{"name": "workload", "description": "a workload from workload_list, default drawstress"}],
+        "arguments": [{"name": "workload", "description": "a workload from workload_list, default drawstress"},
+                      {"name": "api", "description": "the API the workload runs: mtl (default, native Metal), d3d12 or d3d11"}],
     },
     "bisect-regression": {
         "description": "Finds the commit that made a workload slower: git bisect, with a recording and a check at each step. "
                        "The recordings use a workload, so a commit must change what the workload runs (its arguments or "
                        "environment)",
-        "arguments": [{"name": "good_rev", "description": "a commit, tag or branch name that was fast (letters, digits, . _ -)"},
-                      {"name": "bad_rev", "description": "a commit, tag or branch name that is slow (letters, digits, . _ -)"},
-                      {"name": "workload", "description": "the workload to record, default drawstress"}],
+        "arguments": [{"name": "good_rev", "required": True,
+                       "description": "a commit, tag or branch name that was fast (letters, digits, . _ -)"},
+                      {"name": "bad_rev", "required": True,
+                       "description": "a commit, tag or branch name that is slow (letters, digits, . _ -)"},
+                      {"name": "workload", "description": "the workload to record, default drawstress"},
+                      {"name": "api", "description": "the API the workload runs: mtl (default, native Metal), d3d12 or d3d11"}],
     },
 }  # each prompt also holds "render", the function that builds its text from the arguments; prompts/list leaves it out
 
@@ -218,14 +222,15 @@ def prompt_compare_layer(workload="drawstress", api="d3d12"):
 PROMPTS["compare-layer"]["render"] = prompt_compare_layer
 
 
-def prompt_diagnose_stutter(workload="drawstress"):
-    """Returns the steps of the diagnose-stutter prompt for `workload`."""
+def prompt_diagnose_stutter(workload="drawstress", api="mtl"):
+    """Returns the steps of the diagnose-stutter prompt for `workload` run with `api`."""
     return (
         f"Find out whether {workload} stutters because pipelines are built while it runs, with the metal-trace tools:\n"
-        f"1. perf_cold_warm name={workload}-stutter workload={workload} seconds=30. It records the program twice.\n"
-        "2. Read first_seen_hitches (shader_compile hitches only the first run had), extra_hitches_in_first (hitches of "
+        f"1. workload_fetch name={workload} (it is skipped when already downloaded).\n"
+        f"2. perf_cold_warm name={workload}-stutter workload={workload} api={api} seconds=30. It records the program twice.\n"
+        "3. Read first_seen_hitches (shader_compile hitches only the first run had), extra_hitches_in_first (hitches of "
         "any cause the first run had more) and compiler_busy_ms of both runs.\n"
-        "3. perf_diagnose run=<the first run's name> and perf_diagnose run=<the second run's name>: its stutter_analysis "
+        "4. perf_diagnose run=<the first run's name> and perf_diagnose run=<the second run's name>: its stutter_analysis "
         "is the steady state.\n"
         "Say which case it is: first_seen_hitches above 0 means the first frames compile shaders (cache them or build "
         "the pipelines at load); hitches in both runs with causes other than shader_compile mean steady stutter, and "
@@ -235,7 +240,7 @@ def prompt_diagnose_stutter(workload="drawstress"):
     )
 
 
-def prompt_bisect_regression(good_rev, bad_rev, workload="drawstress"):
+def prompt_bisect_regression(good_rev, bad_rev, workload="drawstress", api="mtl"):
     """Returns the steps of the bisect-regression prompt. A revision that starts with '-' would be read by git as an
     option, so it is refused (the protocol answers with an invalid-params error)."""
     good_rev, bad_rev = str(good_rev), str(bad_rev)  # the protocol passes a number as it came
@@ -244,13 +249,14 @@ def prompt_bisect_regression(good_rev, bad_rev, workload="drawstress"):
     return (
         f"Find the commit that made {workload} slower, between {good_rev} (fast) and {bad_rev} (slow). You run git with "
         "your own permissions: this server runs no commands. Work in the program's repository, with a clean tree.\n"
-        f"1. git checkout {good_rev}, then perf_baseline_record name=bisect-good workload={workload} seconds=30.\n"
-        f"2. git bisect start {bad_rev} {good_rev}\n"
-        f"3. At each step perf_record label=bisect-<short commit> workload={workload} seconds=30, then perf_check "
-        "run=<that run> baseline=bisect-good. It is good when perf_check does not report a regression.\n"
-        "4. Repeat step 3 once before you mark the commit: one run is not enough to call it slow. If the two "
+        f"1. workload_fetch name={workload} (it is skipped when already downloaded).\n"
+        f"2. git checkout {good_rev}, then perf_baseline_record name=bisect-good workload={workload} api={api} seconds=30.\n"
+        f"3. git bisect start {bad_rev} {good_rev}\n"
+        f"4. At each step perf_record label=bisect-<short commit> workload={workload} api={api} seconds=30, then "
+        "perf_check run=<that run> baseline=bisect-good. It is good when perf_check does not report a regression.\n"
+        "5. Repeat step 4 once before you mark the commit: one run is not enough to call it slow. If the two "
         "disagree, record a third and take the majority; a run under 100 frames is too_short, record it again longer.\n"
-        "5. git bisect good or git bisect bad, and go on until git names the first bad commit. Then git bisect reset.\n"
+        "6. git bisect good or git bisect bad, and go on until git names the first bad commit. Then git bisect reset.\n"
         "Report that commit, and the perf_check numbers of the last good and the first bad step."
     )
 

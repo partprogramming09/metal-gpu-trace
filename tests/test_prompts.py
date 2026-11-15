@@ -26,7 +26,7 @@ def tools_named(text):
 def test_both_prompts_are_listed_with_their_arguments():
     listed = {p["name"]: p for p in protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "prompts/list"})["result"]["prompts"]}
     assert {"diagnose-stutter", "bisect-regression"} <= set(listed), sorted(listed)
-    assert [a["name"] for a in listed["bisect-regression"]["arguments"]] == ["good_rev", "bad_rev", "workload"]
+    assert [a["name"] for a in listed["bisect-regression"]["arguments"]] == ["good_rev", "bad_rev", "workload", "api"]
     assert all("render" not in p for p in listed.values())
 
 
@@ -57,7 +57,7 @@ def test_prompts_name_only_existing_tools():
 def test_bisect_regression_uses_both_revisions_and_the_workload():
     text = text_of("bisect-regression", {"good_rev": "v1.0", "bad_rev": "abc123", "workload": "drawstress"})
     assert "git bisect start abc123 v1.0" in text and "workload=drawstress" in text, text
-    for word in ("perf_record", "perf_check", "Repeat step 3"):
+    for word in ("perf_record", "perf_check", "Repeat step 4"):
         assert word in text, word
 
 
@@ -109,3 +109,25 @@ def test_bisect_regression_drops_revisions_that_are_not_plain_names():
 
 def test_diagnose_stutter_drops_an_argument_that_is_not_a_plain_name():
     assert "rm -rf" not in text_of("diagnose-stutter", {"workload": "x; rm -rf /"})
+
+
+def test_every_recording_step_that_names_a_workload_names_its_api():
+    """perf_record without api fails for a workload (`api is one of ...`), so the steps must carry it."""
+    for name, arguments in (("diagnose-stutter", None), ("diagnose-stutter", {"api": "d3d12"}),
+                            ("bisect-regression", {"good_rev": "v1.0", "bad_rev": "abc123"})):
+        text = text_of(name, arguments)
+        calls = re.findall(r"\b(?:perf_record|perf_cold_warm|perf_baseline_record) [^\n.]*workload=\S+[^\n]*", text)
+        assert calls and all(re.search(r"\bapi=(mtl|d3d12)\b", c) for c in calls), (name, calls)
+    assert "api=d3d12" in text_of("diagnose-stutter", {"api": "d3d12"})
+
+
+def test_both_prompts_fetch_the_workload_before_recording_it():
+    for name, arguments in (("diagnose-stutter", None), ("bisect-regression", {"good_rev": "v1.0", "bad_rev": "abc123"})):
+        text = text_of(name, arguments)
+        assert text.index("workload_fetch name=drawstress") < text.index("perf_"), (name, text)
+
+
+def test_bisect_regression_lists_both_revisions_as_required():
+    listed = {p["name"]: p for p in protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "prompts/list"})["result"]["prompts"]}
+    required = {a["name"] for a in listed["bisect-regression"]["arguments"] if a.get("required")}
+    assert required == {"good_rev", "bad_rev"}, required

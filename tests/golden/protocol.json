@@ -1320,6 +1320,10 @@
       {
        "description": "a workload from workload_list, default drawstress",
        "name": "workload"
+      },
+      {
+       "description": "the API the workload runs: mtl (default, native Metal), d3d12 or d3d11",
+       "name": "api"
       }
      ],
      "description": "Records a program twice to tell first-seen shader stutter from steady stutter, then diagnoses it",
@@ -1329,15 +1333,21 @@
      "arguments": [
       {
        "description": "a commit, tag or branch name that was fast (letters, digits, . _ -)",
-       "name": "good_rev"
+       "name": "good_rev",
+       "required": true
       },
       {
        "description": "a commit, tag or branch name that is slow (letters, digits, . _ -)",
-       "name": "bad_rev"
+       "name": "bad_rev",
+       "required": true
       },
       {
        "description": "the workload to record, default drawstress",
        "name": "workload"
+      },
+      {
+       "description": "the API the workload runs: mtl (default, native Metal), d3d12 or d3d11",
+       "name": "api"
       }
      ],
      "description": "Finds the commit that made a workload slower: git bisect, with a recording and a check at each step. The recordings use a workload, so a commit must change what the workload runs (its arguments or environment)",

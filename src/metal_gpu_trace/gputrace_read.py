@@ -14,11 +14,13 @@ import re
 import struct
 import sys
 
+PUSH, SIGNPOST, POP = -16244, -16245, -16243  # debug group push, signpost, pop
+
 # call id -> (Metal call, certainty): "confirmado" matched one by one against Xcode's command list
 CALLS = {
-    -16244: ("pushDebugGroup", "confirmado"),
-    -16245: ("insertDebugSignpost", "confirmado"),
-    -16243: ("popDebugGroup", "confirmado"),
+    PUSH: ("pushDebugGroup", "confirmado"),
+    SIGNPOST: ("insertDebugSignpost", "confirmado"),
+    POP: ("popDebugGroup", "confirmado"),
     -16218: ("drawPrimitives", "confirmado"),
     -16279: ("setRenderPipelineState", "confirmado"),
     -16254: ("setDepthStencilState", "confirmado"),
@@ -62,7 +64,7 @@ def records(path):
 def stream_of(capture):
     """Returns (bundle path, its `capture` file), or raises FileNotFoundError naming the bundle without its folder."""
     capture = pathlib.Path(capture)
-    if not (capture / "capture").exists():
+    if not (capture / "capture").is_file():
         raise FileNotFoundError(f"{capture.name} has no capture file")
     return capture, capture / "capture"
 
@@ -75,7 +77,7 @@ def summarize(capture):
     for _, _, call, signature, strings in records(stream):
         calls[(call, signature)] += 1
         count += 1
-        if call in (-16244, -16245) and strings:
+        if call in (PUSH, SIGNPOST) and strings:
             labels[CALLS[call][0]].append(strings[0])
     named = lambda call: sum(n for (c, _), n in calls.items() if c == call)
     return {
@@ -87,7 +89,7 @@ def summarize(capture):
         "draw_primitives": named(-16218),
         "debug_groups": labels.get("pushDebugGroup", []),
         "signposts": labels.get("insertDebugSignpost", []),
-        "pops": named(-16243),
+        "pops": named(POP),
         "calls": [
             {"id": c, "signature": s, "count": n, "name": CALLS.get(c, (None, None))[0], "certainty": CALLS.get(c, (None, None))[1]}
             for (c, s), n in sorted(calls.items(), key=lambda kv: -kv[1])
@@ -105,14 +107,14 @@ def counts(capture):
     totals, groups, open_groups = collections.Counter(), {}, []
     for _, _, call, _, strings in records(stream):
         name, certainty = CALLS.get(call, (None, None))
-        if call == -16244:
+        if call == PUSH:
             label = strings[0][:200] if strings else "(unnamed)"
             open_groups.append(label)
             groups.setdefault(label, collections.Counter())
-        elif call == -16243:
+        elif call == POP:
             if open_groups:
                 open_groups.pop()
-        elif certainty == "confirmado" and call != -16245:
+        elif certainty == "confirmado" and call != SIGNPOST:
             totals[name] += 1
             if open_groups:
                 groups[open_groups[-1]][name] += 1
