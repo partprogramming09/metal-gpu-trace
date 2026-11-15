@@ -19,9 +19,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Changed
 
-- Reading a recording's `.frames.csv` again while it has not changed no longer parses it again (the last four files are kept, keyed by
-  their time and size). Measured through the panel's data before the panel was removed: with two recordings of 50 000
-  frames and `skip_s` 5 it took a median of 0.45 s, from 1.04 s (3 runs of 5 on one machine).
+- Reading a recording's `.frames.csv` again while it has not changed no longer parses it again (the last four files are
+  kept, keyed by their time and size).
 
 ### Documentation
 

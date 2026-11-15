@@ -29,6 +29,13 @@ def test_readme_lists_every_tool(tmp_path):
         for word in ("mtl-x64", "bgfx-examples", "memory_free_pct", "gpu_state", "screen_locked", "resource_allocations"):
             assert word in text, f"{name} does not mention {word}"
 
+def section(text, heading):
+    """The text under a `## ` heading, up to the next one."""
+    start = text.index(heading) + len(heading)
+    end = text.find("\n## ", start)
+    return text[start:end if end != -1 else len(text)]
+
+
 def test_readme_has_plain_words_first():
     """Both READMEs open with what the tool is in plain words (at most 150), before any recording command, explain the 15
     words a newcomer meets, and name a diagram that exists."""
@@ -42,12 +49,8 @@ def test_readme_has_plain_words_first():
         text = (ROOT / name).read_text(encoding="utf-8")
         assert text.count(plain) == 1 and text.index(plain) < text.index(recording), f"{name}: plain words come first"
 
-        def section(heading):
-            start = text.index(heading) + len(heading)
-            end = text.find("\n## ", start)
-            return text[start:end if end != -1 else len(text)]
-        assert len(section(plain).split()) <= 150, f"{name}: plain words are at most 150 words"
-        glossary = section(words)
+        assert len(section(text, plain).split()) <= 150, f"{name}: plain words are at most 150 words"
+        glossary = section(text, words)
         missing = [term for term in terms if f"**{term}**" not in glossary]
         assert not missing, f"{name}: the glossary lacks {missing}"
         assert image in text and (ROOT / "docs" / "diagrams" / "how-it-works.png").is_file(), f"{name}: the diagram"
