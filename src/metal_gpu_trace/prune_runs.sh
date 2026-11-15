@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Keeps the newest <keep> recordings in <folder>: removes every file of each older recording.
-# baselines.json (the baselines) and panel.json (the panel's tab order) are not recordings and are never removed.
+# baselines.json (the baselines) and panel.json (left by the removed panel of 0.24.0) are not recordings and are never removed.
 # Usage: prune_runs.sh <folder> <keep>
 set -euo pipefail
 setopt extendedglob

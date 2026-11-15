@@ -73,7 +73,7 @@ El servidor lee estas variables de entorno:
 | `METAL_TRACE_READ` | Más directorios que las herramientas pueden leer, separados por `:`. |
 | `METAL_TRACE_LOG` | `off` apaga la línea de log por llamada en stderr. |
 | `KEEP_TRACE` | `1` guarda el `.trace` de cada grabación, para `trace_tables`, `trace_query` o Instruments. |
-| `KEEP_RUNS` | Guarda solo las N grabaciones más recientes; nunca borra `baselines.json` ni `panel.json`. |
+| `KEEP_RUNS` | Guarda solo las N grabaciones más recientes; nunca borra `baselines.json` (ni el `panel.json` que dejaron 0.24.0 y anteriores). |
 | `METAL_TRACE_LOCK` | El candado que hace que las grabaciones vayan de una en una, vaya cada una a la carpeta que vaya (de serie, `~/Library/Caches/metal-gpu-trace/recording.lock`). `perf_record.sh` lanzado a mano toma el mismo, o el que diga `PERF_LOCK`. |
 | `PERF_ENV` | Pares `NOMBRE=VALOR`, separados por espacios, que recibe el programa grabado. |
 | `PERF_INSTRUMENTS` | Instrumentos que se añaden a la plantilla Metal System Trace, separados por `;` (`xcrun xctrace list instruments` los nombra); sus tablas necesitan el `.trace`, así que va con `KEEP_TRACE=1`. |
@@ -95,18 +95,13 @@ guardan y se leen en `runs` en vez de en `METAL_TRACE_OUT` (`METAL_TRACE_READ` s
 | --- | --- |
 | `name` | El nombre del proyecto (letras, dígitos, `.`, `_`, `-`). Obligatoria. |
 | `runs` | La carpeta de las grabaciones. Obligatoria. Tiene que ser nueva, estar vacía o tener ya la marca del servidor (un archivo `.metal-gpu-trace-runs` normal, no una carpeta ni un enlace): `KEEP_RUNS` borra allí los `.json` antiguos, así que se rechaza una carpeta con otros archivos. La marca que deja el servidor lleva el `name` del proyecto, y el archivo de otro proyecto que nombre una carpeta marcada con otro nombre se rechaza; una marca vacía, puesta a mano, toma el nombre del primer proyecto que use la carpeta. Para pasar una carpeta a otro proyecto, edita o borra su marca. |
-| `profile` | `translation-layer`, `native` o `generic` (la de serie). `perf_panel` abre con los ms de GPU por cuadro en `translation-layer` (con vsync, los FPS dejan de distinguir builds) y con los FPS en los demás, y redacta sus definiciones en consecuencia; `project_info` lo informa. |
-| `baseline` | El nombre de la referencia del proyecto (`perf_baseline`). `perf_panel` juzga cada corrida contra ella, como lo haría `perf_check`, y `project_info` la informa; `perf_check` sigue usando la referencia que se le pasa. |
+| `profile` | `translation-layer`, `native` o `generic` (la de serie). Ninguna herramienta la lee desde que se quitó el panel en 0.25.0; `project_info` la informa. Se quitará en una versión posterior. |
+| `baseline` | El nombre de la referencia del proyecto (`perf_baseline`). `project_info` la informa; `perf_check` sigue usando la referencia que se le pasa. |
 | `format` | `metal-gpu-trace`, el único por ahora. |
 
 Cualquier otra clave, o un valor equivocado, es un error que cada herramienta explica, con el campo, hasta que se
 arregle el archivo. `project_info` dice qué proyecto está activo y de dónde sale su carpeta. Sin archivo de proyecto
 no cambia nada: se usa `METAL_TRACE_OUT`, o `./perf-runs`, como antes.
-
-Con un `baseline`, `perf_panel` pone arriba de la página la comprobación contra la referencia: el veredicto de cada
-corrida (el que da `perf_check`, con un margen del 3 %), el rango de la referencia, un mapa de calor y la tendencia de las
-grabaciones más recientes del mismo programa. Sin `baseline`, o si la referencia nombrada no existe, la página lo dice y
-muestra el resto.
 
 ### Claude Code
 
@@ -200,7 +195,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | `perf_attach` | Graba un programa que ya corre, por pid o nombre, y lo deja corriendo |
 | `project_info` | Dice qué proyecto está activo (por `metal-gpu-trace.json`), su perfil y su referencia, y su carpeta de grabaciones y de dónde sale |
 | `perf_runs` | Lista las grabaciones, la más reciente primero, por páginas, si cada una guardó su `.trace`, y la capa de traducción con que corrió (una huella de sus DLL de Direct3D, y su Wine); `project` nombra el proyecto activo |
-| `perf_compare` | Compara dos grabaciones: cifras principales, encoders, tiempo ocioso de la GPU y los ms de GPU por cuadro de cada etiqueta de encoder, el mayor cambio primero; marca las de menos de 100 frames. `markdown=true` añade las cifras como tablas Markdown para un comentario de PR; `skip_s` deja fuera los primeros segundos de cada grabación (el arranque) y recalcula sin ellos las cifras de GPU, los hitches y la memoria de Metal. `perf_gate` y `perf_panel` también aceptan `skip_s` |
+| `perf_compare` | Compara dos grabaciones: cifras principales, encoders, tiempo ocioso de la GPU y los ms de GPU por cuadro de cada etiqueta de encoder, el mayor cambio primero; marca las de menos de 100 frames. `markdown=true` añade las cifras como tablas Markdown para un comentario de PR; `skip_s` deja fuera los primeros segundos de cada grabación (el arranque) y recalcula sin ellos las cifras de GPU, los hitches y la memoria de Metal. `perf_gate` también acepta `skip_s` |
 | `perf_baseline` | Guarda varias grabaciones iguales como referencia con nombre y devuelve el rango que abarca cada cifra entre ellas y `spread_pct`, cuánto difieren corridas iguales (el ruido que un cambio tiene que superar); sola, lista las referencias. `skip_s` guarda cada corrida sin sus primeros segundos y `perf_check` aplica el mismo corte a la corrida que juzga |
 | `perf_baseline_record` | Graba el mismo programa `count` veces (3 por defecto) con los argumentos de `perf_record` y guarda las corridas como referencia en una sola llamada. `skip_s` como en `perf_baseline` |
 | `perf_cold_warm` | Graba el mismo programa dos veces seguidas y dice cuántos tirones por compilación de shaders tiene la primera ejecución más que la segunda (`first_seen_hitches`), con los tirones de cada una, los tirones por minuto y el tiempo del compilador gráfico; la caché de shaders de Metal no se vacía entre ellas |
@@ -209,7 +204,6 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | `perf_check` | Juzga una grabación contra una referencia: `regressed` si los FPS bajan del rango más de `margin_pct` (3 por defecto), los ms de GPU por cuadro lo superan, o los encoders o command buffers por cuadro lo exceden; `improved` o `same` si no, con las razones y la comparación completa |
 | `perf_gate` | Comprueba una grabación contra presupuestos que fijas (pisos de FPS y de 1 % bajo; techos de tirones, ms de GPU p95, hitches y MiB de Metal) y devuelve pasa o falla con cada límite y valor; una cifra que falta falla |
 | `perf_history` | Sigue FPS, 1 % bajo, ms de GPU, tirones, hitches y MiB de Metal en las corridas cuyo nombre empieza por un prefijo, de la más antigua a la más reciente, con el cambio de la primera a la última |
-| `perf_panel` | Escribe `<nombre>.panel.html`: una página que abre con la comprobación contra la referencia del proyecto (el veredicto de cada corrida, dónde cae en el rango de la referencia, un mapa de calor y la tendencia de las builds más recientes) y luego muestra solo las secciones para las que las grabaciones tienen datos: el tiempo de GPU por cuadro y sus hitches, las cifras, la memoria de Metal y, con dos corridas, A contra B; lo que una grabación no recopiló se lista con lo que hay que hacer. Un proyecto `translation-layer` abre con los ms de GPU por cuadro, no con los FPS. Una grabación sin su `.frames.csv` se abre con sus cifras y sin curvas (no junto con `skip_s`). No tiene servidor y no carga nada de la red; quien la ve oculta o reordena widgets y exporta la disposición como JSON. Con `--http`, `/panel#token=...&runs=a,b` la muestra en vivo, refrescada cada 10 s. `layout` (ids de las secciones en orden: `tests`, `summary`, `ab`, `frames`, `encoders`, `counters`, `memory`, `data`) guarda `panel.json` en el directorio de corridas como orden por defecto de todo panel, el vivo incluido; un `panel.json` anterior a `tests` sigue funcionando |
 | `perf_export_trace` | Escribe los frames de GPU de una grabación como `<corrida>.chrome-trace`, un corte por frame, para ui.perfetto.dev o chrome://tracing |
 | `perf_diagnose` | Dice si una grabación reparte su trabajo de GPU en demasiados encoders cortos, como hacen las capas de traducción, con encoders y command buffers por cuadro, las etiquetas con más tiempo de GPU y el tiempo ocioso de la GPU |
 | `trace_tables` | Lista las tablas de un `.trace` guardado, por el nombre de su grabación o su ruta |

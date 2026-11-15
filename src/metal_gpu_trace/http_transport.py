@@ -1,4 +1,4 @@
-"""The Streamable HTTP transport on 127.0.0.1: POST /mcp and the panel pages."""
+"""The Streamable HTTP transport on 127.0.0.1: POST /mcp."""
 import base64
 import json
 import os
@@ -8,7 +8,7 @@ import socket
 import sys
 import threading
 
-from metal_gpu_trace import analysis, config, logs, panel, paths, project, protocol, worker
+from metal_gpu_trace import config, logs, protocol, worker
 
 POLL_S = 0.5  # how often a modern POST that waits for its result looks for a client that closed the connection
 NAMED = {"tools/call": "name", "prompts/get": "name", "resources/read": "uri"}  # methods whose Mcp-Name mirrors a param
@@ -85,8 +85,7 @@ def check_headers(headers, message, era):
 def http_handler(token):
     """Returns the request handler class of the Streamable HTTP endpoint POST /mcp: one JSON-RPC message in, one JSON
     reply out (202 for a notification). A request needs the bearer `token`, a loopback Host and no foreign Origin,
-    which also stops a web page from reaching the server through DNS rebinding. GET /panel serves the panel page
-    (no data) and GET /panel/data?runs=a,b&preset=fps its data, with the same checks; without runs it is the newest."""
+    which also stops a web page from reaching the server through DNS rebinding."""
     import hmac
     from http.server import BaseHTTPRequestHandler
 
@@ -172,30 +171,7 @@ def http_handler(token):
             self.reply(405)  # this server has no sessions to end
 
         def do_GET(self):
-            from urllib.parse import parse_qs, urlsplit
-            url = urlsplit(self.path)
-            if url.path not in ("/panel", "/panel/data"):
-                return self.reply(405)
-            if self.foreign():
-                return self.reply(403)
-            if url.path == "/panel":
-                # the page holds no data and reads the token from the URL fragment, which never reaches the server
-                return self.reply(200, panel.panel_html(True), "text/html; charset=utf-8")
-            if self.unauthorized():
-                return self.reply(401)
-            query = parse_qs(url.query)
-            runs = [r for r in (query.get("runs") or [""])[0].split(",") if r]
-            skip = (query.get("skip_s") or [0])[0]
-            try:
-                project.check()
-                if not runs:
-                    runs = [analysis.tool_perf_runs(0, 1)["rows"][0]["run"]]
-                self.reply(200, panel.panel_data(runs, (query.get("preset") or [None])[0], skip))
-            except (paths.ToolError, IndexError) as error:
-                self.reply(400, {"error": str(error) if isinstance(error, paths.ToolError) else "no recordings yet"})
-            except Exception as error:  # a damaged summary must not stop the server
-                logs.log(f"internal error {type(error).__name__}")
-                self.reply(500, {"error": "internal error"})
+            self.reply(405)  # no event stream: this endpoint only answers POST
 
         def log_message(self, *args):
             pass

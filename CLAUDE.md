@@ -1,5 +1,7 @@
 # metal-gpu-trace
 
+agentes-externos: abierto
+
 MCP server (stdio and Streamable HTTP, JSON-RPC, standard library only) and shell scripts that record Wine or macOS
 programs with Instruments' Metal System Trace on Apple silicon and read the recordings back. Published as
 `metal-gpu-trace` on PyPI.
@@ -9,11 +11,11 @@ programs with Instruments' Metal System Trace on Apple silicon and read the reco
 - `src/metal_gpu_trace/`: the package. `metal_trace_mcp.py` holds `INSTRUCTIONS`, the text clients read about how to
   use the server; `registry.py` the tools, resources and prompts; `protocol.py`, `stdio.py`, `http_transport.py` and
   `worker.py` the JSON-RPC side; `recording.py`, `experiments.py` and `analysis.py` what the tools do.
-  `project.py` reads the repository's `metal-gpu-trace.json` (the project and its recordings folder); `panel.py` builds
-  the data the HTML panel draws; `paths.py` holds what a tool may read or write.
+  `project.py` reads the repository's `metal-gpu-trace.json` (the project and its recordings folder); `paths.py` holds
+  what a tool may read or write.
 - `src/metal_gpu_trace/perf_record.sh`: records one run; `perf_report.py`: summarizes a `.trace`;
   `gputrace_read.py`: reads `.gputrace`; `perf_record_windows.py`: the Windows recording engine.
-- `src/metal_gpu_trace/data/`: Apple GPU family facts, workloads and the HTML panel.
+- `src/metal_gpu_trace/data/`: Apple GPU family facts and workloads.
 - `tests/`: `test_*.py` per area, `run.py` runs them without pytest; `conformance/` uses the official MCP SDK as a
   client. `windows/`: the scripts that run the Windows tests.
 

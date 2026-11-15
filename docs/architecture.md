@@ -1,6 +1,6 @@
 # Architecture
 
-**Reader:** people who change the code. Reviewed 2026-11-12.
+**Reader:** people who change the code. Reviewed 2026-11-15.
 
 ## Why it is shaped this way
 
@@ -23,7 +23,7 @@ From the top (the entry point) to the bottom (what everything else rests on):
 |---|---|---|
 | 7 | `metal_trace_mcp` | Entry point: `INSTRUCTIONS`, version, `main()`; configures `protocol` and `worker`; applies the project file at start-up |
 | 6 | `stdio` | Newline-delimited JSON-RPC on stdin and stdout |
-| 6 | `http_transport` | `POST /mcp` on 127.0.0.1 with a bearer token, and the panel pages |
+| 6 | `http_transport` | `POST /mcp` on 127.0.0.1 with a bearer token |
 | 5 | `protocol` | One JSON-RPC request in, one reply out; picks the era, checks `_meta`, decorates results |
 | 4 | `worker` | One tool call at a time, cancel, progress |
 | 3 | `registry` | Tool list and schemas, resources, prompts |
@@ -32,7 +32,6 @@ From the top (the entry point) to the bottom (what everything else rests on):
 | 2 | `experiments` | A/B, cold/warm, sweeps |
 | 2 | `workloads` | Test programs, downloads, PresentMon |
 | 2 | `traces` | `.trace` and `.gputrace` files, GPU families |
-| 2 | `panel` | The HTML panel: builds its data (`panel_data`) and writes the saved page |
 | 1 | `paths` | Names and paths a caller may use, paging, reading a file of the runs folder |
 | 1 | `project` | The `metal-gpu-trace.json` project file: finds it, checks it, points the recordings folder at it |
 | 0 | `config` | Settings, read as `config.NAME` at use time |
@@ -64,8 +63,7 @@ family facts and the workload list.
 
 ## Where recordings live, and what reads them
 
-Think of the runs folder as one drawer per project: everything about a project (its recordings, its `baselines.json`,
-its `panel.json`) is in its own drawer, so one project's clean-up never touches another's.
+Think of the runs folder as one drawer per project: everything about a project (its recordings and its `baselines.json`) is in its own drawer, so one project's clean-up never touches another's.
 
 - **Which drawer.** `main()` calls `project.apply()` once at start-up (also for `metal-gpu-trace check`). It looks for
   `metal-gpu-trace.json` from the working directory upwards, or where `METAL_TRACE_PROJECT` points, validates it, and
@@ -74,7 +72,7 @@ its `panel.json`) is in its own drawer, so one project's clean-up never touches 
   message goes to `config.PROJECT_ERROR` and every tool answers with it. Why a file per repository and not a central
   list: [ADR-0004](adr/0004-project-file.md). `project` sits in layer 1 beside `paths` because `config` and `paths` are
   all it needs and the tools above read what it set.
-- **What counts as a recording.** A `.json` in the runs folder, except `baselines.json` and `panel.json`
+- **What counts as a recording.** A `.json` in the runs folder, except `baselines.json` and the `panel.json` that 0.24.0 and older left
   (`paths.LAYOUT_FILE`); `paths.run_path` and `perf_runs` skip both. Names are at most 120 characters
   (`paths.name_ok`), because each recording adds suffixes to its file names.
 - **How a file is read.** Summaries go through `paths.read_object` and the per-frame and memory CSVs through
@@ -83,28 +81,6 @@ its `panel.json`) is in its own drawer, so one project's clean-up never touches 
 - **One recording at a time, everywhere.** The lock is not per project: `config.LOCK` (`recording.lock` in the user's
   cache folder, moved by `METAL_TRACE_LOCK`; `PERF_LOCK` for `perf_record.sh` run by hand) is taken by every recording,
   because two programs sharing the GPU spoil both measurements whatever folder they write to.
-
-## The panel
-
-`panel.panel_data` decides everything the page shows and `data/panel.html` only draws it; the saved file
-(`perf_panel`) and the live page (`http_transport`, `/panel` and `/panel/data`) use the same data. It is built from the
-recordings' summaries (and CSVs), the project and `panel.json`:
-
-- `runs`: each recording's numbers and curves, with `has` (which sections it has data for) and `missing` (why each other
-  one is missing: Metal-only, recorded without counters, cut by `skip_s`, or not in the recording). A recording without
-  its `.frames.csv` is accepted and has no curves.
-- `project` and `primary`: the project's `profile` decides the main metric: `gpu_ms_mean` for `translation-layer`,
-  `fps` for `native` and `generic`.
-- `tests` and `changes`: when the project names a `baseline`, `tests_mode` asks `analysis.tool_perf_check` for each run's
-  verdict (the same rule and margin as the tool) and `changes_against` sets the newest builds of the same program
-  against the reference's mean. Without a reference, or with one that cannot be read, `tests` is null and `tests_hint`
-  says why; the rest of the page still draws.
-- `warnings`: confidence notes, each once (few frames, short Wine run, a single run each, different layers, and so on).
-- `layout`: the order and visibility of the sections from `panel.json`; `tests` is a section like the others, first by
-  default, and a `panel.json` written before it existed stays valid.
-
-`perf_panel` checks everything before it writes: a call that fails changes nothing on disk, and it refuses to write over a
-symbolic link. Numbers that JSON cannot hold (NaN, infinity) become `null`.
 
 ## Where the facts are pinned
 

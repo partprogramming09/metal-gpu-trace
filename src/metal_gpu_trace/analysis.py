@@ -25,7 +25,7 @@ def unpresented(**summaries):
 
 def reads_recordings(tool):
     """Makes a tool that reads recordings or references answer a summary whose sections have the wrong type with a
-    ToolError (naming the kind of error, never a path), as the panel does, instead of an internal error."""
+    ToolError (naming the kind of error, never a path), instead of an internal error."""
     @functools.wraps(tool)
     def guarded(*args, **kwargs):
         try:
@@ -38,7 +38,7 @@ def reads_recordings(tool):
 
 
 def _recordings(pattern="*.json"):
-    """Returns the summaries in the runs folder that match `pattern`, oldest first: not baselines.json or panel.json,
+    """Returns the summaries in the runs folder that match `pattern`, oldest first: not baselines.json or the panel.json of 0.24.0,
     which are not recordings, nor a link to nothing."""
     found = []
     for path in config.OUT.glob(pattern):
@@ -269,7 +269,7 @@ def judge(metric, value, span, margin_pct):
     """Returns how a checked metric's `value` stands against the reference's `span` ({"min", "max"}): worse when it is
     past the bad end by more than margin_pct (no margin for the encoder and command buffer counts, which are
     exact), better when past the good end, same inside; None when the value or the span is missing. This is
-    perf_check's rule, and the panel uses it for every build it draws."""
+    perf_check's rule."""
     if value is None or span is None:
         return None
     higher_is_worse = CHECKED[metric][1]
@@ -463,7 +463,7 @@ def read_frames(run):
     return list(_frames(source, stat.st_mtime_ns, stat.st_size))
 
 
-@functools.lru_cache(maxsize=4)  # the panel reads a recording's frames several times per request; a few files at most
+@functools.lru_cache(maxsize=4)  # the last few files read stay in memory, keyed by time and size
 def _frames(source, mtime_ns, size):
     """Returns the rows of a frames.csv as a tuple; the file's time and size are the key, so a changed file is read
     again (a call that fails is not kept)."""

@@ -1,5 +1,5 @@
 """What clients read: the tool list with its schemas, the resources and the prompts."""
-from metal_gpu_trace import analysis, config, experiments, panel, project, recording, traces, workloads
+from metal_gpu_trace import analysis, config, experiments, project, recording, traces, workloads
 
 
 OBJECT = {"type": "object"}
@@ -136,16 +136,6 @@ TOOLS = {
          "limit": {**I, "description": "newest runs to keep, default 50"},
          "skip_s": {"type": "number", "description": SKIP}}, ["prefix"]),
         hints("Follow a number across runs")),
-    "perf_panel": (panel.tool_perf_panel, schema(
-        {"name": {**S, "description": "name for the panel file: letters, digits, '.', '_', '-'"},
-         "runs": {"type": "array", "items": S, "description": "one or two run names from perf_runs; with two, the first "
-                                                             "is A, the reference"},
-         "preset": {**S, "description": "fps (default) or compare (needs two runs)"},
-         "skip_s": {"type": "number", "description": SKIP},
-         "layout": {"type": "array", "items": S, "description": "tabs to show, in order: tests, summary, ab, frames, encoders, counters, memory, data; "
-                                                                "saved as panel.json in the runs directory as the default for every panel"}},
-        ["name", "runs"]),
-        hints("Write an HTML panel", destructive=False, idempotent=True)),
     "perf_diagnose": (analysis.tool_perf_diagnose, schema(
         {"run": {**S, "description": "a run name from perf_runs"},
          "min_encoders": {**I, "description": "encoders per frame (median) from which the verdict can be yes, default 4"},

@@ -69,7 +69,7 @@ The server reads these environment variables:
 | `METAL_TRACE_READ` | More directories the tools may read, separated by `:`. |
 | `METAL_TRACE_LOG` | `off` silences the one-line stderr log per call. |
 | `KEEP_TRACE` | `1` keeps each recording's `.trace`, for `trace_tables`, `trace_query` or Instruments. |
-| `KEEP_RUNS` | Keeps only the newest N recordings; `baselines.json` and `panel.json` are never removed. |
+| `KEEP_RUNS` | Keeps only the newest N recordings; `baselines.json` is never removed (nor is the `panel.json` that 0.24.0 and older left). |
 | `METAL_TRACE_LOCK` | The lock that keeps recordings one at a time, whatever folder each goes to (default `~/Library/Caches/metal-gpu-trace/recording.lock`). `perf_record.sh` run by hand takes the same one, or the one `PERF_LOCK` names. |
 | `PERF_ENV` | `NAME=VALUE` pairs, separated by spaces, set for the recorded program. |
 | `PERF_INSTRUMENTS` | Instruments added to the Metal System Trace template, separated by `;` (`xcrun xctrace list instruments` names them); their tables need the `.trace`, so pair it with `KEEP_TRACE=1`. |
@@ -91,13 +91,9 @@ each project's folder on its own. `runs` is relative to the file, starts with `~
 | --- | --- |
 | `name` | The project's name (letters, digits, `.`, `_`, `-`). Required. |
 | `runs` | The recordings folder. Required. It must be new, empty or already marked by the server (a plain `.metal-gpu-trace-runs` file, not a folder or a link): `KEEP_RUNS` removes old `.json` files there, so a folder holding other files is refused. The mark the server leaves holds the project's `name`, and another project's file that names a folder marked with a different name is refused; an empty mark, written by hand, takes the name of the first project that uses the folder. To hand a folder to another project, edit or remove its mark. |
-| `profile` | `translation-layer`, `native` or `generic` (the default). `perf_panel` leads with GPU ms per frame for `translation-layer` (with vsync, FPS stops telling builds apart) and with FPS for the others, and words its definitions to match; `project_info` reports it. |
-| `baseline` | The name of the project's reference (`perf_baseline`). `perf_panel` judges each run against it, as `perf_check` would, and `project_info` reports it; `perf_check` itself still takes the reference it is given. |
+| `profile` | `translation-layer`, `native` or `generic` (the default). No tool reads it since the panel was removed in 0.25.0; `project_info` reports it. It will be removed in a later version. |
+| `baseline` | The name of the project's reference (`perf_baseline`). `project_info` reports it; `perf_check` still takes the reference it is given. |
 | `format` | `metal-gpu-trace`, the only one for now. |
-
-With a `baseline`, `perf_panel` puts a reference check at the top of the page: a verdict for each run (the one
-`perf_check` gives, with a 3 % margin), the reference's range, a heat map and a trend of the newest recordings of the
-same program. Without one, or when the named reference does not exist, the page says so and still shows the rest.
 
 Any other key, or a wrong value, is an error that every tool reports, naming the field, until the file is fixed.
 `project_info` says which project is active and where its folder comes from. Without a project file nothing changes:
@@ -180,7 +176,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `perf_attach` | Records a program that is already running, by pid or name, and leaves it running |
 | `project_info` | Says which project is active (from `metal-gpu-trace.json`), its profile and baseline, and its recordings folder and where that comes from |
 | `perf_runs` | Lists recordings, newest first, one page at a time, whether each kept its `.trace`, and the translation layer it ran on (a fingerprint of its Direct3D DLLs, and its Wine); `project` names the active project |
-| `perf_compare` | Compares two recordings: headline numbers, encoders, GPU idle time and each encoder label's GPU ms per frame, largest change first; flags those under 100 frames. `markdown=true` adds the numbers as Markdown tables for a PR comment; `skip_s` leaves out the first seconds of each recording (start-up) and recomputes the GPU numbers, hitches and Metal memory without them. `perf_gate` and `perf_panel` take `skip_s` too |
+| `perf_compare` | Compares two recordings: headline numbers, encoders, GPU idle time and each encoder label's GPU ms per frame, largest change first; flags those under 100 frames. `markdown=true` adds the numbers as Markdown tables for a PR comment; `skip_s` leaves out the first seconds of each recording (start-up) and recomputes the GPU numbers, hitches and Metal memory without them. `perf_gate` takes `skip_s` too |
 | `perf_baseline` | Saves several equal recordings as a named reference and returns the range each number spans across them and `spread_pct`, how much equal runs differ (the noise a change must beat); alone, lists the references. `skip_s` saves each run without its first seconds and `perf_check` applies the same cut to the run it judges |
 | `perf_baseline_record` | Records the same program `count` times (default 3) with `perf_record`'s arguments and saves the runs as a reference in one call. `skip_s` as in `perf_baseline` |
 | `perf_cold_warm` | Records the same program twice in a row and says how many more shader-compile hitches the first run has than the second (`first_seen_hitches`), with each run's hitches, hitches per minute and graphics compiler time; the Metal shader cache is not cleared between them |
@@ -189,7 +185,6 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `perf_check` | Judges a recording against a reference: `regressed` when FPS falls under the range by more than `margin_pct` (default 3), GPU ms per frame rises over it, or encoders or command buffers per frame exceed it; `improved` or `same` otherwise, with the reasons and the full comparison |
 | `perf_gate` | Checks a recording against budgets you set (FPS and 1% low floors; stutter, p95 GPU ms, hitch and Metal MiB ceilings) and returns pass or fail with each limit and value; a missing number fails |
 | `perf_history` | Follows FPS, 1% low, GPU ms, stutter, hitches and Metal MiB across the runs whose name starts with a prefix, oldest first, with the change from first to last |
-| `perf_panel` | Writes `<name>.panel.html`: one page that leads with the project's reference check (a verdict for each run, where it falls in the reference's range, a heat map and a trend of the newest builds) and then shows only the sections the recordings have data for: GPU time per frame and its hitches, the numbers, Metal memory and, for two runs, A against B; what a recording did not collect is listed with what to do. A `translation-layer` project leads with GPU ms per frame, not FPS. A recording without its `.frames.csv` opens with its numbers and no curves (not together with `skip_s`). It has no server and loads nothing from the network; the viewer hides or reorders widgets and exports the layout as JSON. With `--http`, `/panel#token=...&runs=a,b` shows it live, refreshed every 10 s. `layout` (section ids in order: `tests`, `summary`, `ab`, `frames`, `encoders`, `counters`, `memory`, `data`) saves `panel.json` in the runs directory as the default order of every panel, the live one included; a `panel.json` from before `tests` existed still works |
 | `perf_export_trace` | Writes a recording's GPU frames as `<run>.chrome-trace`, one slice per frame, for ui.perfetto.dev or chrome://tracing |
 | `perf_diagnose` | Says whether a recording splits its GPU work into too many short encoders, as translation layers do, with encoders and command buffers per frame, the labels with the most GPU time and the GPU's idle time |
 | `trace_tables` | Lists the tables of a kept `.trace`, named by its run or its path |
