@@ -9,6 +9,7 @@ import array
 import collections
 import concurrent.futures
 import csv
+import html
 import json
 import os
 import pathlib
@@ -120,19 +121,46 @@ def toc_and_tables(trace, schemas, optional=()):
         raise
 
 
+REF_CHUNK = 1 << 20  # bytes read at a time by referenced_ids; a test shrinks it
+REF_TAIL = 64  # bytes kept between chunks so a ref="..." cut by a boundary is found; far more than an id is long
+REF_ATTRIBUTE = re.compile(rb'\bref="([^"]*)"')
+
+
+def referenced_ids(path):
+    """Returns every value that a ref="..." in the file names, found by reading it in chunks. A false positive (the text
+    ref="x" inside a cell) only keeps one more id."""
+    found, tail = set(), b""
+    with open(path, "rb") as f:
+        while chunk := f.read(REF_CHUNK):
+            data = tail + chunk
+            found.update(html.unescape(m.decode("utf-8", "replace")) for m in REF_ATTRIBUTE.findall(data))
+            tail = data[-REF_TAIL:]
+    return found
+
+
 def rows(path):
     """Yields each row of an exported table as {column mnemonic: element}, with xctrace's id/ref values resolved,
-    and deletes the file when done or closed early."""
-    ids, columns = {}, []
+    and deletes the file when done or closed early. Memory follows the values that rows share, not the rows: each row is
+    freed after its turn (its elements are valid until the next one) and only the cells that a later ref names are kept,
+    found by a first pass over the file."""
+    ids, columns, node = {}, [], None
     try:
-        for _, el in ET.iterparse(path, events=("end",)):
-            if "id" in el.attrib:
+        referenced = referenced_ids(path)
+        for event, el in ET.iterparse(path, events=("start", "end")):
+            if event == "start":
+                if node is None and el.tag == "node":
+                    node = el  # the parent of the rows
+                continue
+            if "id" in el.attrib and el.attrib["id"] in referenced:
                 ids[el.attrib["id"]] = el
             if el.tag == "col":
                 columns.append(el.findtext("mnemonic"))
             elif el.tag == "row":
                 values = [ids.get(c.attrib["ref"], c) if "ref" in c.attrib else c for c in el]
                 yield dict(zip(columns, values))
+                el.clear()  # the row only: a cell in ids stays whole, because later rows refer to it
+                if node is not None:  # xctrace always wraps the rows in a <node>
+                    del node[:]
     except ET.ParseError:
         if not complete_xml(path):  # a file cut at a row boundary by xctrace's crash has every row already
             raise

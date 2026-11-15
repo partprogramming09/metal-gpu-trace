@@ -3,6 +3,18 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## 0.26.0 — unreleased
+
+### Changed
+
+- Reading a table of a trace no longer holds every row in memory: each row is freed after it is read and only the values
+  that a later row refers to are kept (found by a first pass over the exported file, so the file is read twice).
+  Measured on synthetic tables with an `id` on every cell, 80 000 rows peaked at 142.1 MiB before and 3.1 MiB now, and
+  3.1 MiB again at 320 000 rows, with the same time (about 0.46 s for 80 000 rows, 3 runs each). The peak follows the
+  number of distinct values that rows refer to, so a real table with many of them grows more than these. Not measured on a
+  real trace of several gigabytes. `perf_report.summarize` still keeps one entry per GPU interval in lists, so a whole
+  summary still grows with the trace.
+
 ## 0.25.0 — 2026-11-15
 
 ### Removed (incompatible)
