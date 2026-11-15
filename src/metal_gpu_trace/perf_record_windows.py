@@ -331,7 +331,7 @@ def get_process_rss_kib(pid):
 
 def is_process_alive(pid):
     """Returns True if process `pid` is currently running."""
-    if pid <= 0:
+    if not 0 < pid < 2**31:  # OpenProcess takes a 32-bit pid, and a stale lock file can hold anything
         return False
     kernel32 = ctypes.windll.kernel32
     handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)

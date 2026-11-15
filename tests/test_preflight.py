@@ -386,3 +386,23 @@ def test_missing_path_in_environ_is_not_the_process_path(tmp_path):
         kw = setup(tmp_path)
         kw["environ"] = {"TMPDIR": str(tmp_path), "PERF_MIN_FREE_GB": "1"}
         refused(["xcrun"], **kw)
+
+
+def test_a_pid_beyond_what_the_system_gives_is_never_asked_about(tmp_path):
+    """On Windows OpenProcess takes a 32-bit pid: a lock file with a larger one must not reach it (ctypes raises)."""
+    with Saved():
+        kw = setup(tmp_path)
+        asked = []
+        kw["alive"] = lambda pid: asked.append(pid) or True
+        make_lock(tmp_path, 2**31)
+        preflight.check(**kw)
+        assert asked == [], asked
+        (config.LOCK / "pid").write_text(str(2**31 - 1))
+        refused(["another recording is running"], **kw)
+        assert asked == [2**31 - 1], asked
+
+
+def test_windows_is_process_alive_refuses_a_pid_outside_32_bits_before_the_api():
+    """OpenProcess takes a 32-bit pid and a stale lock file can hold anything; on macOS reaching ctypes.windll raises."""
+    for pid in (0, -1, 2**31, 2**32 + 1, 10**20):
+        assert perf_record_windows.is_process_alive(pid) is False, pid

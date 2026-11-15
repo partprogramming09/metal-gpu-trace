@@ -4,8 +4,6 @@ import csv
 import gzip
 import io
 import os
-import pathlib
-import tempfile
 import zlib
 
 # what reading a table can raise, whichever format it is in (a truncated or damaged gzip is EOFError, BadGzipFile or zlib.error)
@@ -35,10 +33,11 @@ def write(directory, stem, header, rows, compress=True):
     the same bytes (no name or time in the gzip header). It is written under a temporary name beside the target and
     renamed, so an exception in `rows` leaves no half file."""
     target = directory / (stem + (".csv.gz" if compress else ".csv"))
-    # a name of its own (mkstemp creates it exclusively and never through a link), starting like the run's files so a
-    # killed writer's leftover is removed with the run (KEEP_RUNS, a cancelled recording)
-    descriptor, name = tempfile.mkstemp(dir=directory, prefix=target.name + ".", suffix=".tmp")
-    temporary = pathlib.Path(name)
+    # a name of its own, starting like the run's files so a killed writer's leftover is removed with the run (KEEP_RUNS, a
+    # cancelled recording); created exclusively and never through a link, with the mode the other outputs get (the
+    # umask), which mkstemp's owner-only 0600 would not give
+    temporary = directory / f"{target.name}.{os.urandom(4).hex()}.tmp"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o666)
     try:
         with os.fdopen(descriptor, "wb") as raw:
             if compress:

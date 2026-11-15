@@ -110,3 +110,17 @@ def test_failed_write_leaves_nothing(tmp_path):
 def test_find_ignores_a_temporary_name(tmp_path):
     (tmp_path / "r.frames.csv.gz.abc123.tmp").write_bytes(b"x")
     assert tables.find(tmp_path, "r.frames") is None
+
+
+def test_a_written_table_gets_the_mode_the_other_outputs_get(tmp_path):
+    """mkstemp makes 0600; a table is read by whoever reads the summary beside it, so it follows the umask instead."""
+    import os
+    import sys
+    if sys.platform == "win32":
+        return
+    old = os.umask(0o022)
+    try:
+        path = tables.write(tmp_path, "r.frames", ["a"], [[1]])
+    finally:
+        os.umask(old)
+    assert oct(path.stat().st_mode & 0o777) == oct(0o644), oct(path.stat().st_mode & 0o777)

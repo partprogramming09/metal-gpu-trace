@@ -38,11 +38,13 @@ def whole_seconds(seconds):
     return None
 
 
-def disk_needed(seconds, environ):
+def disk_needed(seconds, environ, windows=False):
     """Returns the GB perf_record.sh asks for: PERF_MIN_FREE_GB, else 2 plus 0.8 GB per recorded second (Instruments'
-    temporary files)."""
+    temporary files); under Windows, with no Instruments, 1."""
     given = (environ.get("PERF_MIN_FREE_GB") or "").strip()
-    return int(given) if given.isascii() and given.isdigit() else 2 + (int(seconds) * 8 + 9) // 10
+    if given.isascii() and given.isdigit():
+        return int(given)
+    return 1 if windows else 2 + (int(seconds) * 8 + 9) // 10
 
 
 def executable(path):
@@ -84,7 +86,19 @@ def lock_owner_alive(alive):
         return False
     finally:
         os.close(descriptor)
-    return owner.isascii() and owner.isdigit() and len(owner) <= 10 and alive(int(owner))
+    return owner.isascii() and owner.isdigit() and len(owner) <= 10 \
+        and 1 <= int(owner) < 2**31 and alive(int(owner))  # OpenProcess takes a 32-bit pid
+
+
+def recording_running(alive=None):
+    """Returns True when the recording lock names a live process; `alive` (a test seam) replaces the platform's check."""
+    if alive is None:
+        if sys.platform == "win32":
+            from metal_gpu_trace import perf_record_windows
+            alive = perf_record_windows.is_process_alive
+        else:
+            alive = process_alive
+    return lock_owner_alive(alive)
 
 
 def check(*, wine, command, seconds, environ=None, read=perf_report.read_command, alive=None):
@@ -108,11 +122,10 @@ def check(*, wine, command, seconds, environ=None, read=perf_report.read_command
         raise paths.ToolError(f"{name} is not an executable file")
     if not windows and not shutil.which("xcrun", path=environ.get("PATH", "")):
         raise paths.ToolError("xcrun is not on PATH: install Xcode or the command line tools (xcode-select --install)")
-    if windows:  # no Instruments here: only the runs folder takes the recording, so no 0.8 GB per second
-        given = (environ.get("PERF_MIN_FREE_GB") or "").strip()
-        need, places = (int(given) if given.isascii() and given.isdigit() else 1), [("the runs folder", config.OUT)]
+    need = disk_needed(seconds, environ, windows)
+    if windows:  # no Instruments here: only the runs folder takes the recording
+        places = [("the runs folder", config.OUT)]
     else:
-        need = disk_needed(seconds, environ)
         places = [("the temporary folder (TMPDIR)", environ.get("TMPDIR") or "/tmp"), ("the runs folder", config.OUT)]
     for what, where in places:
         free = free_gb(where)
@@ -122,12 +135,6 @@ def check(*, wine, command, seconds, environ=None, read=perf_report.read_command
     if not windows and environ.get("METAL_TRACE_ALLOW_LOCKED") != "1" and perf_report.screen_locked(read) is True:
         raise paths.ToolError("the screen is locked: a locked session leaves the program's frames unpaced by the display, "
                               "so the numbers do not compare; unlock the Mac, or set METAL_TRACE_ALLOW_LOCKED=1 to record anyway")
-    if alive is None:
-        if windows:
-            from metal_gpu_trace import perf_record_windows
-            alive = perf_record_windows.is_process_alive
-        else:
-            alive = process_alive
-    if lock_owner_alive(alive):
+    if recording_running(alive):
         raise paths.ToolError("another recording is running; one runs at a time. If none is, remove the lock folder "
                               "(METAL_TRACE_LOCK names it)")

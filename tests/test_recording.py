@@ -1007,8 +1007,8 @@ def test_record_run_prunes_and_notes_it(tmp_path):
     (out / "old_1.trace").write_bytes(b"x" * (2 * 2**20))
     os.utime(out / "old_1.trace", (1_000_000, 1_000_000))
     summary = {"process": {"name": "x"}, "duration_s": 20.0, "gpu": {"intervals": 900, "frames": 300}}
-    saved = config.PACKAGE_DIR, config.OUT, config.MAX_DISK_MB, os.environ.get("SUMMARY")
-    config.PACKAGE_DIR, config.OUT = package, out
+    saved = config.PACKAGE_DIR, config.OUT, config.MAX_DISK_MB, os.environ.get("SUMMARY"), config.LOCK
+    config.PACKAGE_DIR, config.OUT, config.LOCK = package, out, tmp_path / "lock"  # a recording running here must not matter
     os.environ["SUMMARY"] = json.dumps(summary)
     try:
         config.MAX_DISK_MB = None
@@ -1022,6 +1022,7 @@ def test_record_run_prunes_and_notes_it(tmp_path):
         assert not (out / "old_1.trace").exists() and (out / "r_1.frames.csv.gz").exists()
     finally:
         config.PACKAGE_DIR, config.OUT, config.MAX_DISK_MB = saved[:3]
+        config.LOCK = saved[4]
         os.environ.pop("SUMMARY") if saved[3] is None else os.environ.update(SUMMARY=saved[3])
 
 
@@ -1037,8 +1038,8 @@ def test_windows_branch_prunes_too(tmp_path):
         path = out / f"{label}_1.json"
         path.write_text("{}")
         return {"gpu": {"intervals": 5}}, path
-    saved = config.OUT, config.MAX_DISK_MB, sys.platform, perf_record_windows.record_windows
-    config.OUT, config.MAX_DISK_MB = out, 1
+    saved = config.OUT, config.MAX_DISK_MB, sys.platform, perf_record_windows.record_windows, config.LOCK
+    config.OUT, config.MAX_DISK_MB, config.LOCK = out, 1, tmp_path / "lock"
     perf_record_windows.record_windows = record_windows
     recording.__dict__["perf_record_windows"] = perf_record_windows  # recording imports it only on Windows
     sys.platform = "win32"
@@ -1048,6 +1049,7 @@ def test_windows_branch_prunes_too(tmp_path):
         sys.platform = saved[2]
         config.OUT, config.MAX_DISK_MB = saved[:2]
         perf_record_windows.record_windows = saved[3]
+        config.LOCK = saved[4]
         del recording.__dict__["perf_record_windows"]
     assert got["retention"]["removed"] == 1, got
     assert json.loads((out / "w_1.json").read_text())["retention"]["removed"] == 1
@@ -1416,3 +1418,23 @@ def test_cancelled_cooldown_starts_no_next_recording(tmp_path):
 def test_one_recording_has_no_pause(tmp_path):
     events = run_experiment(tmp_path, lambda e: e.tool_perf_baseline_record("b", count=1, cooldown_s=60))
     assert events == ["rec"], events
+
+
+def test_finish_leaves_the_runs_folder_alone_while_another_recording_runs(tmp_path):
+    """Another recording's .trace is written into the runs folder as it goes: pruning then could delete it."""
+    from metal_gpu_trace import config, recording
+    out = tmp_path / "runs"
+    out.mkdir()
+    saved = config.OUT, config.LOCK, config.MAX_DISK_MB
+    config.OUT, config.LOCK, config.MAX_DISK_MB = out, tmp_path / "lock", 1
+    try:
+        (out / "live.trace").write_bytes(b"x" * (2 * 2**20))
+        config.LOCK.mkdir()
+        (config.LOCK / "pid").write_text(str(os.getpid()))  # a live process holds the recording lock
+        got = recording.finish({}, out / "cur.json", None, None)
+        assert (out / "live.trace").exists() and "retention" not in got, got
+        (config.LOCK / "pid").unlink()
+        got = recording.finish({}, out / "cur.json", None, None)
+        assert not (out / "live.trace").exists() and got["retention"]["removed"] == 1, got
+    finally:
+        config.OUT, config.LOCK, config.MAX_DISK_MB = saved

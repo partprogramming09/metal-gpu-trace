@@ -26,7 +26,7 @@ def resolve_tier(tier, memory, counters):
     """Returns (memory, counters, keep_trace) for a capture tier: light records neither Metal memory nor counters,
     standard the Metal memory, deep also the GPU counters and keeps the .trace (subject to METAL_TRACE_MAX_DISK_MB).
     A `memory` or `counters` that is not None replaces that part of the tier."""
-    if not isinstance(tier, str) or tier not in TIERS:
+    if tier not in TIERS:
         raise paths.ToolError("tier is one of light, standard, deep")
     if not all(value is None or isinstance(value, bool) for value in (memory, counters)):
         raise paths.ToolError("memory and counters are true or false")
@@ -348,10 +348,14 @@ def free_lock(pid):
     if owner == str(pid):
         shutil.rmtree(lock, ignore_errors=True)
 
-def finish(summary, json_path):
-    """Applies METAL_TRACE_MAX_DISK_MB after a recording (the run just recorded is `json_path`'s): when files had to go,
-    notes it in the summary's `retention` and in its JSON. Returns the summary. Both engines end through here."""
-    if config.MAX_DISK_MB:
+def finish(summary, json_path, layer, tier):
+    """Adds `layer`, the run's `context` and `tier` to the summary, applies METAL_TRACE_MAX_DISK_MB (the run just recorded
+    is `json_path`'s; not while another recording runs, whose .trace is being written into the same folder): when files
+    had to go, notes it in the summary's `retention`; writes the JSON and returns the summary. Both engines end here."""
+    summary["layer"], summary["context"] = layer, run_context()
+    if tier:
+        summary["tier"] = tier
+    if config.MAX_DISK_MB and not preflight.recording_running():
         removed = retention.prune_to_quota(config.OUT, config.MAX_DISK_MB, json_path.stem)
         if removed["removed"]:
             summary["retention"] = removed
@@ -365,8 +369,6 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
     it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV, `memory` false sets PERF_MEMORY=0, and `layer`
     names the translation layer a native run goes through (MoltenVK) instead of "native Metal"; `keep_trace` sets KEEP_TRACE=1
     for the script; `tier` is written into the summary."""
-    if not paths.name_ok(label, 100):
-        raise paths.ToolError("label holds up to 100 letters, digits, '.', '_' and '-'")
     env = dict(os.environ, PERF_OUT=str(config.OUT), PERF_LOCK=str(config.LOCK), PERF_PARENT_PID=str(os.getpid()),
                PERF_ENV=" ".join(filter(None, [os.environ.get("PERF_ENV", ""), program_env])))
     if not memory:
@@ -391,10 +393,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
             raise paths.ToolError(str(error)) from error
         except OSError as error:
             raise paths.ToolError(f"recording failed: {error}") from error
-        summary["layer"], summary["context"] = layer, run_context()
-        if tier:
-            summary["tier"] = tier
-        return finish(summary, json_path)
+        return finish(summary, json_path, layer, tier)
     before = set(config.OUT.glob(f"{label}_*"))
     tmp = pathlib.Path(os.environ.get("TMPDIR", "/tmp"))
     ktraces = set(tmp.glob("instruments*.ktrace"))
@@ -446,10 +445,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
         raise paths.ToolError(f"the program did no GPU work: it ended ({ended}) after {summary.get('duration_s', 0):.1f} s "
                               f"of recording, and its summary was not saved{kept}; check that it starts (under Wine: "
                               "the Wine build, the prefix and the program's own log)")
-    summary["layer"], summary["context"] = layer, run_context()
-    if tier:
-        summary["tier"] = tier
-    return finish(summary, new[-1])
+    return finish(summary, new[-1], layer, tier)
 
 
 def record_new_summary(label, **record):

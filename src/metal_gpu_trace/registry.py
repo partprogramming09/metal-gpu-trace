@@ -57,7 +57,7 @@ RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits
                                                         "which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run"},
          "counters": {"type": "boolean", "description": "default false; true also records Metal GPU Counters (gpu_counters in "
                                                         "the summary); not under Windows; adds about 40 s of read-back per recorded second"},
-         "tier": {**S, "enum": ["light", "standard", "deep"],
+         "tier": {**S, "enum": list(recording.TIERS),
                   "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; "
                                  "standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace "
                                  "(subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own "
