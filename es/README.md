@@ -288,7 +288,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | `perf_export_trace` | Exporta los frames de una grabación a un archivo que Perfetto o Chrome pueden dibujar. — Escribe los frames de GPU de una grabación como `<corrida>.chrome-trace`, un corte por frame, para ui.perfetto.dev o chrome://tracing |
 | `trace_tables` | Lista las tablas de un `.trace` conservado. — Lista las tablas de un `.trace` guardado, por el nombre de su grabación o su ruta |
 | `trace_count` | Cuenta las filas de varias tablas de un `.trace` conservado. — Cuenta las filas de varias tablas de un `.trace` guardado, en total y por proceso; por defecto las que importan para una capa de traducción (intervalos de GPU, encoders, derrames del compilador, shaders compilados, asignaciones, contadores, Time Profiler), para ver una vacía antes de leerla |
-| `trace_query` | Devuelve filas de una tabla de un `.trace` conservado. — Una página de filas de una tabla, opcionalmente de un proceso |
+| `trace_query` | Devuelve filas de una tabla de un `.trace` conservado. — Una página de filas de una tabla, opcionalmente de un proceso; con `window_ms`, una página de ventanas de tiempo (`count` y duración sumada) en `rows` en vez de filas |
 | `capture_summary` | Resume una captura `.gputrace`. — Resume un `.gputrace`; lista sus 100 llamadas más frecuentes de `calls_total` |
 | `capture_records` | Devuelve los registros de una captura `.gputrace`, por páginas. — Una página de los registros de un `.gputrace` |
 
@@ -296,7 +296,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 
 | Herramienta | Lee o graba |
 | --- | --- |
-| `project_info` | Dice qué proyecto está activo y dónde guarda sus grabaciones. — Dice qué proyecto está activo (por `metal-gpu-trace.json`), su perfil y su referencia, y su carpeta de grabaciones y de dónde sale |
+| `project_info` | Dice qué proyecto está activo y dónde guarda sus grabaciones. — Dice qué proyecto está activo (por `metal-gpu-trace.json`), su referencia, y su carpeta de grabaciones y de dónde sale |
 | `perf_runs` | Lista las grabaciones, la más nueva primero. — Lista las grabaciones, la más reciente primero, por páginas, si cada una guardó su `.trace`, y la capa de traducción con que corrió (una huella de sus DLL de Direct3D, y su Wine); `project` nombra el proyecto activo |
 | `gpu_family` | Los datos que publica Apple de una familia de GPU o de un chip. — Los datos de Apple de una familia o chip (`Apple7`, `M1 Pro`, `M3 Max`) |
 | `workload_list` | Lista los programas de prueba que se pueden descargar. — Lista los programas de prueba que `workload_fetch` puede descargar; para `bgfx-examples`, `example_traits` da la clase de cada ejemplo y sus encoders por cuadro en Metal nativo |

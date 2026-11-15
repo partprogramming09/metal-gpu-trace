@@ -152,7 +152,10 @@ TOOLS = {
                     hints("Count a trace's rows")),
     "trace_query": (traces.tool_trace_query, schema(
         {"trace": TRACE, "schema": {**S, "description": "a table name that trace_tables lists, such as metal-gpu-intervals"},
-         "pid": {**I, "description": "keep only this process's rows"}, **PAGE}, ["trace", "schema"]),
+         "pid": {**I, "description": "keep only this process's rows"},
+         "window_ms": {"type": "integer", "description": "1 to 3600000: return time windows of this many ms, each with "
+                       "its count and summed duration, instead of rows (the table needs a start or time column)"},
+         **PAGE}, ["trace", "schema"]),
                     hints("Read a trace table")),
     "capture_summary": (traces.tool_capture_summary, schema({"capture": CAPTURE}, ["capture"]), hints("Summarize a capture")),
     "capture_records": (traces.tool_capture_records, schema({"capture": CAPTURE, **PAGE}, ["capture"]),

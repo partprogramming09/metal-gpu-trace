@@ -32,7 +32,7 @@ INSTRUCTIONS = (
     "or every process named like a native program. To compare native Metal with a translation layer without a game "
     "of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload "
     "that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an "
-    "environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory "
+    "environment variable and fits GPU ms per frame on the value. trace_query with window_ms sums a long table by time window instead of listing rows. memory_free_pct holds the whole Mac short of memory "
     "while recording (keep other work off it) and background throttles the program: repeat a run that uses either."
 )
 
