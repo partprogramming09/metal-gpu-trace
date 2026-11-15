@@ -3,9 +3,9 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## Unreleased
+## 0.26.0 — 2026-11-15
 
-(Becomes 0.26.0 when it ships; the release rule in [docs/evidence/README.md](docs/evidence/README.md) applies from there.)
+(The release rule in [docs/evidence/README.md](docs/evidence/README.md) applies from this version on.)
 
 ### Removed (incompatible)
 
