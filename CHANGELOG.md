@@ -5,6 +5,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+- 🛠️ A `.gputrace` whose `capture` file is a link is refused by `capture_summary`, `capture_diff` and `capture_records`, as a link in the runs folder is (the link could point outside the readable folders); a run or label name that starts with a dot is refused, since it would name a hidden file.
+
 ## 0.27.3 — 2026-11-16
 
 (A summary both platforms write the same way, a memory breakdown, and fixes. Its proof is [docs/evidence/v0.27.3.md](docs/evidence/v0.27.3.md).)

@@ -64,9 +64,10 @@ def records(path):
 def stream_of(capture):
     """Returns (bundle path, its `capture` file), or raises FileNotFoundError naming the bundle without its folder."""
     capture = pathlib.Path(capture)
-    if not (capture / "capture").is_file():
+    stream = capture / "capture"
+    if stream.is_symlink() or not stream.is_file():  # a link could point outside the readable folders
         raise FileNotFoundError(f"{capture.name} has no capture file")
-    return capture, capture / "capture"
+    return capture, stream
 
 
 def summarize(capture):

@@ -562,6 +562,7 @@ def test_listings_survive_hostile_files(tmp_path):
     finally:
         config.OUT, config.BASELINES = saved
     assert paths.name_ok("a" * 120) and not paths.name_ok("a" * 121) and not paths.name_ok("\u00e9" * 61)
+    assert not paths.name_ok(".trace") and not paths.name_ok("..a"), "a name that starts with a dot is hidden"
 
 
 def test_tools_answer_a_summary_of_the_wrong_type_with_a_tool_error(tmp_path):
