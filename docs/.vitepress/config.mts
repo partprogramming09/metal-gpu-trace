@@ -3,7 +3,6 @@ import { defineConfig } from 'vitepress'
 // Cambia estos cuatro valores al copiar la plantilla.
 const titulo = 'metal-gpu-trace'
 const descripcion = 'An MCP server that records Wine or macOS programs with Instruments\' Metal System Trace on Apple silicon and reads the recordings back.'
-const sitio = 'https://partprogramming09.github.io/metal-gpu-trace'
 const repo = 'https://github.com/partprogramming09/metal-gpu-trace'
 
 export default defineConfig({
@@ -14,7 +13,6 @@ export default defineConfig({
   // Plans and internal notes are never published; templates are copied, not published; README.md is the index for people browsing the repository
   srcExclude: ['README.md', 'plans/**', 'estado.md', 'research/**', 'guides/_plantilla-*.md', 'adr/_plantilla.md', 'fallos/_plantilla.md'],
   lastUpdated: true,
-  sitemap: { hostname: sitio },
   head: [
     ['meta', { property: 'og:title', content: titulo }],
     ['meta', { property: 'og:description', content: descripcion }],
