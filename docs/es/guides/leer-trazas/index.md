@@ -30,7 +30,7 @@ English: [Reading traces](../../../guides/reading-traces/index.md)
 
 | Etiqueta | Significa |
 |---|---|
-| **confirmada** | con `archivo:línea`, comprobada con `rg` o `sed` el 2026-11-16 contra el árbol de trabajo (0.27.2 más las entradas `[Unreleased]` de `CHANGELOG.md`) |
+| **confirmada** | con `archivo:línea`, comprobada con `rg` o `sed` el 2026-11-16 contra el árbol de trabajo (0.27.3) |
 | **probable** | leída en el código, no ejecutada aquí |
 | **especulación** | una conjetura sobre el porqué |
 | **no verificado** | un dato de fuera que no se comprobó contra su fuente |

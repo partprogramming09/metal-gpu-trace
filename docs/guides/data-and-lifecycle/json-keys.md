@@ -23,7 +23,7 @@ Keys are written in sequence by:
 |---|---|---|
 | 1 | The original keys | before 0.27.0 |
 | 2 | Compressed tables, `tier`, `retention` (`metrics.py:9`) | 0.27.0 (`CHANGELOG.md`) |
-| 3 | The `common` block (`metrics.py:9`) | `[Unreleased]` in `CHANGELOG.md`; the code already writes it |
+| 3 | The `common` block (`metrics.py:9`) | 0.27.3; the code writes it |
 
 **Every real summary here is generation 1** (E3: no `schema_version`, `common`, `tier` or `retention`), recorded before 0.27.0. The key lists below come from the code; a generation 3 summary was **not reproduced** (needs a macOS recording with Instruments). Every key in a real file is in these tables (E3, known limit 11).
 

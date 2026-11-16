@@ -25,7 +25,7 @@ Esta guía muestra de dónde sale cada número, por qué una sola corrida prueba
 ## Cómo leer las etiquetas
 
 Cada afirmación técnica es **confirmada** (con `archivo:línea`, comprobada con `rg` o `sed` el 2026-11-16 contra el árbol de
-trabajo: la 0.27.2 más las entradas `[Unreleased]` de `CHANGELOG.md`), **probable** (leída en el código, no ejecutada aquí) o
+trabajo: la 0.27.3), **probable** (leída en el código, no ejecutada aquí) o
 **especulación** (una conjetura sobre el porqué). **No verificado** marca un dato de fuera que no se comparó con su fuente;
 **no reproducido** significa que el comportamiento no se pudo ejecutar para esta guía. Las líneas se mueven con el código:
 busca el nombre, no solo el número. Cada cifra tiene su comando en [Evidencia](./evidencia.md). Dos límites valen para toda la

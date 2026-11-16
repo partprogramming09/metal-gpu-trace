@@ -23,7 +23,7 @@ Las claves se escriben en secuencia:
 |---|---|---|
 | 1 | Las claves originales | antes de la 0.27.0 |
 | 2 | Tablas comprimidas, `tier`, `retention` (`metrics.py:9`) | 0.27.0 (`CHANGELOG.md`) |
-| 3 | El bloque `common` (`metrics.py:9`) | `[Unreleased]` en `CHANGELOG.md`; el código ya lo escribe |
+| 3 | El bloque `common` (`metrics.py:9`) | 0.27.3; el código lo escribe |
 
 **Todos los resúmenes reales de aquí son de generación 1** (E3: sin `schema_version`, `common`, `tier` ni `retention`), grabados antes de la 0.27.0. Las listas de claves salen del código; un resumen de generación 3 **no se reprodujo** (necesita una grabación en macOS con Instruments). Toda clave de un archivo real está en estas tablas (E3, límite conocido 11).
 

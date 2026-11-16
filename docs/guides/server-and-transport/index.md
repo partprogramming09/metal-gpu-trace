@@ -31,8 +31,7 @@ and [Summarizing and analyzing](../summarizing/index.md): this guide stops where
 
 ## How to read the labels
 
-Every claim is **confirmed** (`file:line`, checked with `rg` or `sed` on 2026-11-16 against the working tree: 0.27.2 plus
-the `[Unreleased]` entries of `CHANGELOG.md`), **probable** (read from the code, not run) or **speculation** (a guess at
+Every claim is **confirmed** (`file:line`, checked with `rg` or `sed` on 2026-11-16 against the working tree: 0.27.3), **probable** (read from the code, not run) or **speculation** (a guess at
 why). **Not verified** marks an outside fact not checked at its source. Lines move: search the name, not only the number.
 Every number has its command in [Evidence](./evidence.md). **Not reproduced** means not run: the session that wrote this
 could only read, so no server was started, no request sent, no test run; the tests that pin each behaviour are named and

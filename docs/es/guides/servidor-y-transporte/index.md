@@ -34,7 +34,7 @@ salidas y mensajes de error del programa no se traducen).
 ## Cómo leer las etiquetas
 
 Cada afirmación es **confirmada** (`archivo:línea`, comprobada con `rg` o `sed` el 2026-11-16 contra el árbol de trabajo:
-0.27.2 más las entradas `[Unreleased]` de `CHANGELOG.md`), **probable** (leída en el código, no ejecutada) o
+0.27.3), **probable** (leída en el código, no ejecutada) o
 **especulación** (una conjetura sobre el porqué). **No verificado** marca un dato de fuera no comparado con su fuente. Las
 líneas se mueven: busca el nombre, no solo el número. Cada cifra tiene su comando en [Evidencia](./evidencia.md). **No
 reproducido** significa no ejecutado: la sesión que la escribió solo podía leer, así que no se arrancó el servidor, no se

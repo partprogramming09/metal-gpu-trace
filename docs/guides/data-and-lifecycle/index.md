@@ -12,7 +12,7 @@ Español: [Datos y su ciclo de vida](../../es/guides/datos-y-su-ciclo-de-vida/in
 
 | Label | Meaning |
 |---|---|
-| **confirmed** | Read with `rg` or `sed` on 2026-11-16 against the working tree (0.27.2 plus the `[Unreleased]` entries of `CHANGELOG.md`), with `file:line` |
+| **confirmed** | Read with `rg` or `sed` on 2026-11-16 against the working tree (0.27.3), with `file:line` |
 | **probable** | Read from the code, not run here |
 | **speculation** | A guess about why |
 | **not reproduced** | Could not be run here (the evidence page says why) |

@@ -71,7 +71,17 @@ run before calling a difference real.
 
 ## What's new
 
-Version 0.27.2. Each item links to the command that was run and its real output.
+Version 0.27.3. Each item links to the command that was run and its real output.
+
+- ✨ **One summary shape on both platforms.** Every new summary (`schema_version` 3) has a `common` block with frame
+  pacing, memory pressure and graphics API, the same keys on macOS and Windows and a `source` per number; what cannot be
+  measured the same way says `comparable: false` instead of a made-up number. [Proof](docs/evidence/v0.27.3.md#a-summary-has-a-common-block-on-both-platforms)
+- 🔍 **What a recording allocated.** `perf_memory_breakdown` splits the Metal allocations by type, what is still live and
+  how many times over the live memory was allocated (5.47 in a real run), from the summary alone. [Proof](docs/evidence/v0.27.3.md#what-a-recording-allocated-by-type)
+- 🩺 **An honest verdict against one run.** `perf_check` adds a `note` when the verdict is not same and the reference is a
+  single run: its noise is not measured, so a small change may be noise. [Proof](docs/evidence/v0.27.3.md#perf_check-says-when-its-reference-is-one-run)
+
+Version 0.27.2, still current:
 
 - 🔍 **How long the GPU takes to start.** `gpu.start_latency_ms` gives the count, mean, median, p95 and max of the time
   between the work being submitted and the GPU starting it; `perf_compare` compares the median. On a real run it was

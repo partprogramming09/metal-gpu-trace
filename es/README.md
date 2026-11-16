@@ -71,7 +71,17 @@ corrida antes de dar una diferencia por real.
 
 ## Novedades
 
-Versión 0.27.2. Cada punto enlaza al comando que se ejecutó y a su salida real.
+Versión 0.27.3. Cada punto enlaza al comando que se ejecutó y a su salida real.
+
+- ✨ **Una sola forma de resumen en las dos plataformas.** Todo resumen nuevo (`schema_version` 3) trae un bloque
+  `common` con el ritmo de frames, la presión de memoria y la API gráfica, con las mismas claves en macOS y Windows y una
+  `source` por número; lo que no se puede medir igual dice `comparable: false` en vez de un número inventado. [Prueba](../docs/evidence/v0.27.3.md#a-summary-has-a-common-block-on-both-platforms)
+- 🔍 **Qué reservó una grabación.** `perf_memory_breakdown` reparte las reservas de Metal por tipo, lo que sigue vivo y
+  cuántas veces se reservó la memoria viva (5,47 en una corrida real), solo con el resumen. [Prueba](../docs/evidence/v0.27.3.md#what-a-recording-allocated-by-type)
+- 🩺 **Un veredicto honesto contra una sola corrida.** `perf_check` añade una `note` cuando el veredicto no es same y la
+  referencia es una corrida: su ruido no está medido, así que un cambio pequeño puede ser ruido. [Prueba](../docs/evidence/v0.27.3.md#perf_check-says-when-its-reference-is-one-run)
+
+Versión 0.27.2, aún vigente:
 
 - 🔍 **Cuánto tarda la GPU en arrancar.** `gpu.start_latency_ms` da la cuenta, la media, la mediana, el p95 y el máximo
   del tiempo entre enviar el trabajo y que la GPU lo empiece; `perf_compare` compara la mediana. En una corrida real fue

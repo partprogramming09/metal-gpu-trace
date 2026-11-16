@@ -22,7 +22,7 @@ It does not repeat [How it works](../how-it-works.md) (which layer calls which) 
 ## How to read the labels
 
 Every technical claim is **confirmed** (with `file:line`, checked with `rg` or `sed` on 2026-11-16 against the working
-tree, which is 0.27.2 plus the `[Unreleased]` entries of `CHANGELOG.md`), **probable** (read from the code but not run
+tree, which is 0.27.3), **probable** (read from the code but not run
 here) or **speculation** (a guess about why). **Not verified** marks an outside fact not checked against its source.
 Lines move: search the name, not only the number. Every number comes with its command in the evidence pages.
 **Not reproduced** means the behaviour could not be run for this guide: no recording was made (it needs Instruments, a

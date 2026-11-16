@@ -12,7 +12,7 @@ English: [Data and its lifecycle](../../../guides/data-and-lifecycle/index.md)
 
 | Etiqueta | Significado |
 |---|---|
-| **confirmado** | Leído con `rg` o `sed` el 2026-11-16 contra el árbol de trabajo (la 0.27.2 más las entradas `[Unreleased]` de `CHANGELOG.md`), con `archivo:línea` |
+| **confirmado** | Leído con `rg` o `sed` el 2026-11-16 contra el árbol de trabajo (la 0.27.3), con `archivo:línea` |
 | **probable** | Leído en el código, no ejecutado aquí |
 | **especulación** | Una conjetura sobre el porqué |
 | **no reproducido** | No se pudo correr aquí (la página de evidencia dice por qué) |

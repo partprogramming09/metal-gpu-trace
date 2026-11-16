@@ -23,7 +23,7 @@ los enlaza. Es la versión en español de la guía en inglés: mismo contenido, 
 ## Cómo leer las etiquetas
 
 Cada afirmación técnica es **confirmada** (con `archivo:línea`, comprobada con `rg` o `sed` el 2026-11-16 contra el árbol
-de trabajo, que es la 0.27.2 más las entradas `[Unreleased]` de `CHANGELOG.md`), **probable** (leída en el código pero no
+de trabajo, que es la 0.27.3), **probable** (leída en el código pero no
 ejecutada aquí) o **especulación** (una conjetura sobre el porqué). **No verificado** marca un dato de fuera que no se
 comparó con su fuente. Las líneas se mueven: busca el nombre, no solo el número. Cada cifra viene con su comando en las
 páginas de evidencia. **No reproducido** significa que el comportamiento no se pudo ejecutar para esta guía: no se hizo

@@ -29,7 +29,7 @@ Español: [Leer trazas](../../es/guides/leer-trazas/index.md)
 
 | Label | Means |
 |---|---|
-| **confirmed** | with `file:line`, checked with `rg` or `sed` on 2026-11-16 against the working tree (0.27.2 plus the `[Unreleased]` entries of `CHANGELOG.md`) |
+| **confirmed** | with `file:line`, checked with `rg` or `sed` on 2026-11-16 against the working tree (0.27.3) |
 | **probable** | read from the code, not run here |
 | **speculation** | a guess about why |
 | **not verified** | an outside fact not checked against its source |
