@@ -170,7 +170,7 @@ def tool_capture_records(capture, offset=0, limit=100):
     """Returns one page of the records of a .gputrace command stream, with their Metal call names when known."""
     out = [{"offset": off, "size": size, "id": call, "signature": signature,
             "name": gputrace_read.CALLS.get(call, (None,))[0], "strings": strings[:3]}
-           for off, size, call, signature, strings in gputrace_read.records(paths.allowed(capture) / "capture")]
+           for off, size, call, signature, strings in gputrace_read.records(gputrace_read.stream_of(paths.allowed(capture))[1])]
     return paths.page(out, offset, limit)
 
 

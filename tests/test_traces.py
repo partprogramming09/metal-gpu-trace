@@ -123,3 +123,23 @@ def test_the_exported_file_is_deleted_also_when_the_table_has_no_time_column(tmp
         except paths.ToolError:
             assert window == 10
         assert not os.path.exists(EXPORTED[-1]), "the export was left on disk"
+
+
+def test_a_capture_file_that_is_a_link_is_not_read(tmp_path):
+    """A .gputrace whose `capture` file is a link to something outside the readable folders is refused by every
+    capture tool, as a link in the runs folder is."""
+    bundle, outside = tmp_path / "evil.gputrace", tmp_path / "outside.bin"
+    bundle.mkdir()
+    outside.write_bytes(b"MTSP\0\0\0\0" + b"\x20\0\0\0\x01\0\0\0" + b"SECRET" * 4)
+    (bundle / "capture").symlink_to(outside)
+    saved = config.READ
+    config.READ = [tmp_path.resolve()]
+    try:
+        for call in (traces.tool_capture_records, traces.tool_capture_summary):
+            try:
+                call(str(bundle))
+            except FileNotFoundError:
+                continue
+            raise AssertionError(f"{call.__name__} read a linked capture file")
+    finally:
+        config.READ = saved

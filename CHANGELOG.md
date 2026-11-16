@@ -5,7 +5,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
-- Test change (not a fix, so no icon): the `perf_cold_warm` test expects the refusal on Windows instead of calling it with a fake recording, and the `metal-trace-branch` job also records two Direct3D 11 runs and judges one against the other with `perf_check`. Found by running the suite on a real Windows PC.
+- 🛠️ A `.gputrace` whose `capture` file is a link is refused by `capture_summary`, `capture_diff` and `capture_records`, as a link in the runs folder is (the link could point outside the readable folders); a run or label name that starts with a dot is refused, since it would name a hidden file.
+
+- Test changes (not fixes, so no icon): five tests that assumed macOS now hold on Windows (`perf_cold_warm` refuses there, the import test gives `USERPROFILE` and `SYSTEMROOT`, a bad `TMPDIR` is not an error where preflight does not read it, every file passes the executable check, an NTFS-sized `utime` step), and the `metal-trace-branch` job runs the Windows tests with pytest and also judges two Direct3D 11 runs against each other with `perf_check`. Found by running the suite on a real Windows PC.
 
 ## 0.27.3 — 2026-11-16
 
