@@ -24,7 +24,13 @@ export default defineConfig({
       { text: 'Contributing', link: `${repo}/blob/main/CONTRIBUTING.md` },
     ],
     sidebar: {
-      '/guides/': [{ text: 'Guides', items: [{ text: 'What this is about', link: '/guides/' }] }],
+      '/guides/': [{ text: 'Guides', items: [
+        { text: 'What this is about', link: '/guides/' },
+        { text: 'Data and its lifecycle', link: '/guides/data-and-lifecycle' },
+      ] }],
+      '/es/guides/': [{ text: 'Guías (español)', items: [
+        { text: 'Datos y su ciclo de vida', link: '/es/guides/datos-y-su-ciclo-de-vida' },
+      ] }],
     },
     search: {
       provider: 'local',

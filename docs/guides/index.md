@@ -33,6 +33,9 @@ You ask your AI agent: "Record my app for 30 seconds, then tell me its FPS and h
 ## Guides
 - [How it works](./how-it-works): how the modules are layered and how one request flows through them.
 - [Run from a clone](./run-from-a-clone): run and test the code without PyPI.
+- [Data and its lifecycle](./data-and-lifecycle): what a recording leaves on disk, where it lives, how the summary is
+  built key by key, and which of `KEEP_RUNS` and `METAL_TRACE_MAX_DISK_MB` deletes what. Español:
+  [Datos y su ciclo de vida](../es/guides/datos-y-su-ciclo-de-vida).
 
 ## Words used here
 The full glossary (frame, FPS, hitch, encoder, baseline, regression and more) is in the [README](https://github.com/partprogramming09/metal-gpu-trace#words-used-here).

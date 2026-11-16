@@ -16,5 +16,7 @@ ADR status: proposed · accepted · rejected · superseded by NNNN.
 | [evidence/README.md](evidence/README.md) | How each release proves its improvements, and the rule `tests/test_docs.py` checks |
 | [adr/0006-compressed-tables-and-disk-quota.md](adr/0006-compressed-tables-and-disk-quota.md) | Why per-frame tables are gzip and the runs folder has a size limit (accepted) |
 | [guides/run-from-a-clone.md](guides/run-from-a-clone.md) | Commands to run the server, the scripts and the checks from a clone |
+| [guides/data-and-lifecycle.md](guides/data-and-lifecycle.md) | What a recording leaves on disk, the summary key by key, the two retention settings, the cache and the lock |
+| [es/guides/datos-y-su-ciclo-de-vida.md](es/guides/datos-y-su-ciclo-de-vida.md) | The same guide in Spanish |
 | [../tests/golden/README.md](../tests/golden/README.md) | What the golden files pin and how to re-record them |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) · [../SECURITY.md](../SECURITY.md) | How to send a change · how to report a vulnerability |
