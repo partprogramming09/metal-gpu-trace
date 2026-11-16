@@ -71,7 +71,19 @@ run before calling a difference real.
 
 ## What's new
 
-Version 0.27.0. Each item links to the command that was run and its real output.
+Version 0.27.2. Each item links to the command that was run and its real output.
+
+- 🔍 **How long the GPU takes to start.** `gpu.start_latency_ms` gives the count, mean, median, p95 and max of the time
+  between the work being submitted and the GPU starting it; `perf_compare` compares the median. On a real run it was
+  0.56 ms, the same as a hand count over the table. [Proof](docs/evidence/v0.27.2.md#how-long-the-gpu-takes-to-start)
+- 🩺 **Who else is loading the GPU.** When `noisy_environment` is true, `noisy_basis.processes` names up to 3 other
+  processes, with their GPU time and share (50.3 % in a real run). [Proof](docs/evidence/v0.27.2.md#which-other-processes-load-the-gpu)
+- ⚡ **What stayed allocated.** `resource_allocations.live` says what was still allocated at the end, by mode and type
+  (65 resources, 81.9 MiB in a real run, matching a hand count), a lower bound. [Proof](docs/evidence/v0.27.2.md#what-is-still-allocated-at-the-end)
+- 🧪 **Shader register spills** (experimental). `shader_spills` and a `perf_diagnose` line. A real run had none; the
+  positive case was tested only with synthetic rows. [Proof](docs/evidence/v0.27.2.md#shader-register-spills)
+
+Version 0.27.0, still current:
 
 - 🛡️ **A recording that cannot work is refused at once.** Before anything starts, `perf_record` checks the program, Wine,
   `xcrun`, free disk, the recording lock and a locked screen, and says what to do. In a real run the three refusals took

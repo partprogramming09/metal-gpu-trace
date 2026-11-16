@@ -5,16 +5,23 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+## 0.27.2 — 2026-11-16
+
+(What the GPU did while it waited, who else loaded it, and what stayed allocated. Its proof is [docs/evidence/v0.27.2.md](docs/evidence/v0.27.2.md).)
+
 ### Added
 
 - 🔍 `gpu.start_latency_ms` (`count`, `mean`, `p50`, `p95`, `max`): how long the GPU takes to start the submitted work;
-  `perf_compare` compares its p50.
+  `perf_compare` compares its p50. [proof](docs/evidence/v0.27.2.md#how-long-the-gpu-takes-to-start)
+
 - 🩺 `noisy_basis.processes`: with `noisy_environment` true, up to 3 other processes loading the GPU, by name (no pid),
-  `gpu_ms` and `share`.
+  `gpu_ms` and `share`. [proof](docs/evidence/v0.27.2.md#which-other-processes-load-the-gpu)
+
 - ⚡ `resource_allocations.live`, `.freed` and `.freed_before_recording`: what is still allocated at the end, by mode and
-  type (a lower bound), and what was freed.
+  type (a lower bound), and what was freed. [proof](docs/evidence/v0.27.2.md#what-is-still-allocated-at-the-end)
+
 - 🧪 `shader_spills` (`events`, `bytes`, `encoders`) and a `perf_diagnose` line when a program spills shader registers.
-  Tested with synthetic rows: the real recording had no spill events.
+  Tested with synthetic rows: the real recording had no spill events. [proof](docs/evidence/v0.27.2.md#shader-register-spills)
 
 ## 0.27.1 — 2026-11-16
 
