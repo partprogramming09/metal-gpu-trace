@@ -188,6 +188,8 @@ def test_check_against_a_one_run_reference_says_its_noise_is_not_measured(tmp_pa
         analysis.tool_perf_baseline("two", ["r1", "r2"])
         one = analysis.tool_perf_check("dip", "one")
         assert one["verdict"] == "regressed" and "not measured" in one["note"], one
+        analysis.tool_perf_baseline("flat", ["dip"])
+        assert "note" not in analysis.tool_perf_check("dip", "flat"), "a same verdict needs no noise warning"
         two = analysis.tool_perf_check("dip", "two")
         assert two["verdict"] == "same" and "note" not in two, two
     finally:

@@ -5,7 +5,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
-- `perf_check` against a reference of one run adds a `note`: the range is a point, so the noise between equal runs is not measured and a small change may be noise. The verdict is unchanged; a reference of several runs already carries its noise in its range.
+- `perf_check` against a reference of one run adds a `note` when the verdict is not same: the range is a point, so the noise between equal runs is not measured and a small change may be noise. The verdict is unchanged; a reference of several runs already carries its noise in its range.
 - 🛠️ `KEEP_RUNS` no longer deletes the `.trace` of an older recording, as ADR-0006 says: only `METAL_TRACE_MAX_DISK_MB` frees a `.trace`; without it the `.trace` files stay, and once their `.json` is pruned they no longer show in `perf_runs`. Set the quota if you use `KEEP_TRACE=1` with `KEEP_RUNS`.
 - `perf_memory_breakdown`: a saved recording's Metal allocations by type (texture, buffer, heap), what is still live, how much was recycled and the allocation rate after start-up, from the summary and without reading the trace. A recording from before 0.27.0 says it has no live numbers instead of showing zero.
 - `schema_version` 3: every new summary, from macOS or Windows, has a `common` block (frame pacing, memory pressure, graphics API) with the same keys and a `source` per number; `perf_compare` reads it and does not subtract memory that was measured differently. Older summaries keep reading. Proven on a real macOS recording (not yet on Windows).

@@ -339,7 +339,7 @@ def tool_perf_check(run, baseline, margin_pct=3):
     comparison but do not decide: they vary too much between equal runs. A run from Windows against a Metal
     reference (or the reverse) is judged on FPS alone. A reference saved with skip_s judges the run without its first
     skip_s seconds too (`skipped_s` says so). Returns the reasons and perf_compare's
-    full comparison against the reference's first run. A reference of one run adds a `note`: the range is a point, so
+    full comparison against the reference's first run. A reference of one run adds a `note` when the verdict is not same: the range is a point, so
     the noise between equal runs is not measured."""
     baselines = load_baselines()
     if baseline not in baselines:
@@ -375,7 +375,7 @@ def tool_perf_check(run, baseline, margin_pct=3):
     stalled = unpresented(**{run: s})
     if stalled:
         result["unpresented"] = stalled
-    if len(ref["summaries"]) == 1:
+    if len(ref["summaries"]) == 1 and verdict != "same":
         result["note"] = "the reference is one run, so its noise is not measured and a small change may be noise; " \
                          "save 2 or more runs with perf_baseline"
     if (s.get("gpu") or {}).get("frames", 0) < 100:
