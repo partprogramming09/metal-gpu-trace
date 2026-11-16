@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The checks of a POST to /mcp, in order</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--color-paper:#f5f5f5;--color-ink:#2d3142;--color-muted:#4f5d75;--color-accent:#bf4520;--font-sans:'Geist',system-ui,sans-serif;--font-serif:'Instrument Serif','Noto Serif',serif;--font-mono:'Geist Mono',ui-monospace,monospace}
+body{font-family:var(--font-sans);background:var(--color-paper);color:var(--color-ink);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:3rem 2rem}
+.frame{max-width:1240px;width:100%}
+.diagram-container{width:100%;overflow-x:auto}
+.eyebrow{font-family:var(--font-mono);font-size:.66rem;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--color-muted);margin-bottom:.5rem}
+h1{font-family:var(--font-serif);font-size:clamp(1.5rem,2.4vw + .75rem,2rem);font-weight:400;letter-spacing:-.02em;line-height:1.15;margin-bottom:1.5rem}
+svg{width:100%;min-width:1240px;display:block}
+@media print{.diagram-container{overflow-x:visible}svg{min-width:0}}
+</style>
+</head>
+<body>
+<div class="frame">
+<p class="eyebrow">Flow · Diagram Design</p>
+<h1>HTTP: six checks in order, and the status each one answers with</h1>
+<div class="diagram-container">
+<svg viewBox="0 0 1240 556" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="shc-title shc-desc">
+<title id="shc-title">The checks the HTTP transport makes on a POST before anything runs</title>
+<desc id="shc-desc">Seven boxes in a row joined by arrows: path, host and origin, token, size, JSON, headers and run. The first six can refuse the request; under each one the status it answers with is written: 404, 403, 401, 413, 400 with a parse error, and 400 or 404 with a JSON-RPC error for a header that does not match. If all six pass, a notification gets 202, a tools/call goes through the worker and everything else through protocol.handle, with a 200 reply.</desc>
+<defs>
+<marker id="shc-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+<marker id="shc-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+</defs>
+<rect width="100%" height="100%" fill="#f5f5f5"/>
+<text x="24" y="44" font-family="Geist Mono, monospace" font-size="11" letter-spacing="1.5" fill="#4f5d75">THE FIRST CHECK THAT FAILS STOPS THE REQUEST · NOTHING HAS RUN · http_transport.py:118-168</text>
+<text x="24" y="68" font-family="Geist Mono, monospace" font-size="11" fill="#4f5d75">the token is checked before the body is read; a client that stalls mid-request is dropped after 15 s</text>
+<!-- arrows between boxes -->
+<g stroke="#4f5d75" stroke-width="1.2" fill="none">
+<line x1="174" y1="190" x2="196" y2="190" marker-end="url(#shc-arrow)"/>
+<line x1="348" y1="190" x2="370" y2="190" marker-end="url(#shc-arrow)"/>
+<line x1="522" y1="190" x2="544" y2="190" marker-end="url(#shc-arrow)"/>
+<line x1="696" y1="190" x2="718" y2="190" marker-end="url(#shc-arrow)"/>
+<line x1="870" y1="190" x2="892" y2="190" marker-end="url(#shc-arrow)"/>
+<line x1="1044" y1="190" x2="1066" y2="190" stroke="#bf4520" marker-end="url(#shc-arrow-accent)"/>
+</g>
+<!-- refusal arrows -->
+<g stroke="#bf4520" stroke-width="1.2" stroke-dasharray="5,4" fill="none">
+<line x1="99" y1="270" x2="99" y2="326" marker-end="url(#shc-arrow-accent)"/>
+<line x1="273" y1="270" x2="273" y2="326" marker-end="url(#shc-arrow-accent)"/>
+<line x1="447" y1="270" x2="447" y2="326" marker-end="url(#shc-arrow-accent)"/>
+<line x1="621" y1="270" x2="621" y2="326" marker-end="url(#shc-arrow-accent)"/>
+<line x1="795" y1="270" x2="795" y2="326" marker-end="url(#shc-arrow-accent)"/>
+<line x1="969" y1="270" x2="969" y2="326" marker-end="url(#shc-arrow-accent)"/>
+</g>
+<!-- check boxes -->
+<g>
+<rect x="24" y="110" width="150" height="160" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<rect x="198" y="110" width="150" height="160" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<rect x="372" y="110" width="150" height="160" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<rect x="546" y="110" width="150" height="160" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<rect x="720" y="110" width="150" height="160" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<rect x="894" y="110" width="150" height="160" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<rect x="1068" y="110" width="150" height="160" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.5"/>
+</g>
+<g font-family="Geist, system-ui, sans-serif" font-size="13" font-weight="600" fill="#2d3142" text-anchor="middle">
+<text x="99" y="136">1 · Path</text>
+<text x="273" y="136">2 · Host, Origin</text>
+<text x="447" y="136">3 · Token</text>
+<text x="621" y="136">4 · Size</text>
+<text x="795" y="136">5 · JSON</text>
+<text x="969" y="136">6 · Headers</text>
+<text x="1143" y="136">Run</text>
+</g>
+<g font-family="Geist Mono, monospace" font-size="9" fill="#4f5d75" text-anchor="middle">
+<text x="99" y="160">the target is exactly</text><text x="99" y="174">/mcp: a query string</text><text x="99" y="188">or a trailing slash</text><text x="99" y="202">fails too</text>
+<text x="99" y="256" fill="#2d3142">:119-120</text>
+<text x="273" y="160">Host is localhost or</text><text x="273" y="174">127.0.0.1, any port;</text><text x="273" y="188">Origin too, if sent;</text><text x="273" y="202">no Host: refused</text>
+<text x="273" y="256" fill="#2d3142">:108-111, 121-122</text>
+<text x="447" y="160">Authorization: Bearer</text><text x="447" y="174">equals the token,</text><text x="447" y="188">compared in constant</text><text x="447" y="202">time (hmac)</text>
+<text x="447" y="256" fill="#2d3142">:113-116, 123-124</text>
+<text x="621" y="160">Content-Length: digits</text><text x="621" y="174">only, 0 to 1 000 000</text><text x="621" y="188">(none counts as 0)</text>
+<text x="621" y="256" fill="#2d3142">:125-129</text>
+<text x="795" y="160">the body is UTF-8 and</text><text x="795" y="174">valid JSON, not nested</text><text x="795" y="188">too deep for the parser</text>
+<text x="795" y="256" fill="#2d3142">:130-133</text>
+<text x="969" y="160">check_headers (:46-82):</text><text x="969" y="174">old era: version known</text><text x="969" y="188">modern: version, method</text><text x="969" y="202">and name match the body</text>
+<text x="969" y="256" fill="#2d3142">:134-136</text>
+<text x="1143" y="160">notification: 202</text><text x="1143" y="174">tools/call: the worker</text><text x="1143" y="188">the rest: handle</text><text x="1143" y="202">reply: 200</text>
+<text x="1143" y="256" fill="#2d3142">:137-168</text>
+</g>
+<!-- refusal messages -->
+<text x="1086" y="330" font-family="Geist Mono, monospace" font-size="9" font-weight="600" letter-spacing="1" fill="#bf4520"><tspan x="1086" dy="0">WHAT THE CLIENT</tspan><tspan x="1086" dy="14">GETS WHEN A</tspan><tspan x="1086" dy="14">CHECK FAILS</tspan></text>
+<g stroke="#bf4520" stroke-opacity="0.6" fill="rgba(191,69,32,0.04)">
+<rect x="24" y="334" width="150" height="110" rx="4"/>
+<rect x="198" y="334" width="150" height="110" rx="4"/>
+<rect x="372" y="334" width="150" height="110" rx="4"/>
+<rect x="546" y="334" width="150" height="110" rx="4"/>
+<rect x="720" y="334" width="150" height="110" rx="4"/>
+<rect x="894" y="334" width="150" height="110" rx="4"/>
+</g>
+<g font-family="Geist Mono, monospace" font-size="9" fill="#2d3142" text-anchor="middle">
+<text x="99" y="354" font-weight="600">404, empty body</text><text x="99" y="372">the client learns</text><text x="99" y="386">nothing else</text>
+<text x="273" y="354" font-weight="600">403, empty body</text><text x="273" y="372">a web page cannot use</text><text x="273" y="386">DNS rebinding to</text><text x="273" y="400">reach the server</text>
+<text x="447" y="354" font-weight="600">401, empty body</text><text x="447" y="372">no token, no reading</text><text x="447" y="386">of the body</text>
+<text x="621" y="354" font-weight="600">413, empty body</text><text x="621" y="372">the body is never read</text>
+<text x="795" y="354" font-weight="600">400, JSON-RPC error</text><text x="795" y="372">-32700 parse error</text><text x="795" y="386">id is null</text>
+<text x="969" y="354" font-weight="600">400 with -32020</text><text x="969" y="368">(header differs),</text><text x="969" y="382">-32022 (version) or</text><text x="969" y="396">-32600 (old version);</text><text x="969" y="410">404 -32601: no method</text>
+</g>
+<line x1="24" y1="486" x2="1216" y2="486" stroke="#2d3142" stroke-opacity="0.2"/>
+<g font-family="Geist Mono, monospace" font-size="10" fill="#4f5d75">
+<rect x="24" y="500" width="24" height="12" rx="3" fill="rgba(191,69,32,0.08)" stroke="#bf4520"/><text x="56" y="510">the request goes on</text>
+<line x1="250" y1="506" x2="290" y2="506" stroke="#bf4520" stroke-dasharray="5,4" marker-end="url(#shc-arrow-accent)"/><text x="298" y="510">a failed check</text>
+<text x="440" y="506">GET and DELETE: 405 at once, before any check (:170-174)</text>
+<text x="440" y="522">the reply carries no body unless it says JSON-RPC</text>
+<text x="440" y="538">line numbers are in http_transport.py</text>
+</g>
+</svg>
+</div>
+</div>
+</body>
+</html>

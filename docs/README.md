@@ -22,5 +22,9 @@ ADR status: proposed · accepted · rejected · superseded by NNNN.
 | [es/guides/grabar.md](es/guides/grabar.md) | The same guide in Spanish |
 | [guides/summarizing.md](guides/summarizing.md) | How a `.trace` becomes the summary, how each number is computed, what compare, check and gate decide, the experiments, noise, what happens when it fails |
 | [es/guides/resumir-y-analizar.md](es/guides/resumir-y-analizar.md) | The same guide in Spanish |
+| [guides/reading-traces.md](guides/reading-traces.md) | The tools that read a `.trace` or a `.gputrace`, windows and paging, Chrome-trace export, what the code assumes about a capture, what happens when it fails |
+| [es/guides/leer-trazas.md](es/guides/leer-trazas.md) | The same guide in Spanish |
+| [guides/server-and-transport.md](guides/server-and-transport.md) | Starting over stdio and HTTP, the registry, the worker, the HTTP checks, the logs, what happens when it fails |
+| [es/guides/servidor-y-transporte.md](es/guides/servidor-y-transporte.md) | The same guide in Spanish |
 | [../tests/golden/README.md](../tests/golden/README.md) | What the golden files pin and how to re-record them |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) · [../SECURITY.md](../SECURITY.md) | How to send a change · how to report a vulnerability |

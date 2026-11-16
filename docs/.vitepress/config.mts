@@ -29,11 +29,15 @@ export default defineConfig({
         { text: 'Data and its lifecycle', link: '/guides/data-and-lifecycle' },
         { text: 'Recording', link: '/guides/recording' },
         { text: 'Summarizing and analyzing', link: '/guides/summarizing' },
+        { text: 'Reading traces', link: '/guides/reading-traces' },
+        { text: 'Server and transport', link: '/guides/server-and-transport' },
       ] }],
       '/es/guides/': [{ text: 'Guías (español)', items: [
         { text: 'Datos y su ciclo de vida', link: '/es/guides/datos-y-su-ciclo-de-vida' },
         { text: 'Grabar', link: '/es/guides/grabar' },
         { text: 'Resumir y analizar', link: '/es/guides/resumir-y-analizar' },
+        { text: 'Leer trazas', link: '/es/guides/leer-trazas' },
+        { text: 'Servidor y transporte', link: '/es/guides/servidor-y-transporte' },
       ] }],
     },
     search: {
