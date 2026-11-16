@@ -5,6 +5,8 @@ description: What metal-gpu-trace is, who it is for and how it is used, in plain
 
 # What this is about
 
+**Reader:** anyone arriving at the project: what it is, who it is for, and which guide to read next. Reviewed 2026-11-16.
+
 ## In one sentence
 metal-gpu-trace measures how hard a program works the graphics chip (the GPU) of a Mac with Apple silicon, and whether its pictures come out evenly.
 

@@ -74,6 +74,7 @@ lanzada a mano desde un clon no caen en el mismo sitio (confirmado, líneas de a
 | `<run>.trace/` | El paquete de Instruments (una carpeta) | `xctrace`, `perf_record.sh:140-151` | 259 MiB | `trace_query`, `trace_tables`, Instruments |
 | `<run>.chrome-trace` | Los fotogramas como Chrome trace, solo cuando se llama a la herramienta de exportación | `traces.py:28` | no medido aquí | el visor de trazas de un navegador |
 | `<run>.presentmon.csv` | Las filas de PresentMon (solo Windows) | `perf_record_windows.py:650` | no medido aquí | `perf_record_windows.py` |
+| `<run>.drawstress.log` | El registro propio del programa de prueba, una línea por lote de fotogramas (solo Windows, fuente `drawstress-log`) | `perf_record_windows.py:632-633`, se conserva tras una grabación buena (`:937-941`) | no medido aquí | `perf_record_windows.py:762-764`; la cuota lo ignora, igual que `.presentmon.csv` (`retention.py:30-43`) |
 | `baselines.json` | Referencias con nombre: copias de varios resúmenes | `analysis.py:282` | 10 KiB, 1 línea base de 3 corridas (E7) | `load_baselines`, `analysis.py:254` |
 | `.metal-gpu-trace-runs` | La marca de la carpeta: un archivo simple con el nombre del proyecto | `project.py:198` | 8 bytes | `project.mark_owner`, `project.py:109` |
 | `panel.json` | Lo dejó la 0.24.0, cuyo panel se quitó ([ADR-0005](../../adr/0005-remove-the-panel.md)) | nadie ahora | ninguno en esta máquina | solo se omite: `paths.py:10`, `analysis.py:52` |

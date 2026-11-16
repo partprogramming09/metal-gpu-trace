@@ -73,6 +73,7 @@ do not land in the same place (confirmed, lines above).
 | `<run>.trace/` | The Instruments bundle (a folder) | `xctrace`, `perf_record.sh:140-151` | 259 MiB | `trace_query`, `trace_tables`, Instruments |
 | `<run>.chrome-trace` | The frames as a Chrome trace, only when the export tool is called | `traces.py:28` | not measured here | a browser's trace viewer |
 | `<run>.presentmon.csv` | PresentMon's rows (Windows only) | `perf_record_windows.py:650` | not measured here | `perf_record_windows.py` |
+| `<run>.drawstress.log` | The test program's own log, one line per batch of frames (Windows only, `drawstress-log` source) | `perf_record_windows.py:632-633`, kept after a good run (`:937-941`) | not measured here | `perf_record_windows.py:762-764`; the quota ignores it, like `.presentmon.csv` (`retention.py:30-43`) |
 | `baselines.json` | Named references: copies of several summaries | `analysis.py:282` | 10 KiB, 1 baseline of 3 runs (E7) | `load_baselines`, `analysis.py:254` |
 | `.metal-gpu-trace-runs` | The folder's mark: a plain file holding the project's name | `project.py:198` | 8 bytes | `project.mark_owner`, `project.py:109` |
 | `panel.json` | Left by 0.24.0, whose panel was removed ([ADR-0005](../adr/0005-remove-the-panel.md)) | nobody now | none on this machine | it is only skipped: `paths.py:10`, `analysis.py:52` |
