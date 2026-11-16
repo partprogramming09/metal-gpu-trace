@@ -443,6 +443,48 @@ def test_stale_lock_macos(tmp_path):
     assert (lock / "pid").read_text().strip() == str(dead.pid), "only one recording takes a dead lock over"
     assert ".recording.takeover" in proc.stderr, "a takeover lock left by a killed recording is named, to remove"
 
+def test_dir_in_args_quotes_the_folder_and_the_path_after_it_as_one_argument():
+    """On Windows "C:\\a b"/project split in two (the folder and /project): the quotes must cover the whole path."""
+    from metal_gpu_trace import recording, workloads
+    saved = sys.platform
+    try:
+        sys.platform = "win32"
+        text = workloads.dir_in_args("--path {dir}/project --x 1", "C:\\Users\\a b\\godot")
+        assert text == '--path "C:\\Users\\a b\\godot/project" --x 1', text
+        assert recording.split_args(text) == ["--path", "C:\\Users\\a b\\godot/project", "--x", "1"]
+        sys.platform = "linux"
+        text = workloads.dir_in_args("--path {dir}/project --x 1", "/tmp/a b/godot")
+        assert recording.split_args(text) == ["--path", "/tmp/a b/godot/project", "--x", "1"], text
+        assert workloads.dir_in_args("{dir}", "/tmp/g") == "/tmp/g" and workloads.dir_in_args("--no-dir", "/x") == "--no-dir"
+        two = workloads.dir_in_args("--a {dir}/x,{dir}/y", "/tmp/a b")  # each {dir} and its path, none left over
+        assert "{dir}" not in two and recording.split_args(two) == ["--a", "/tmp/a b/x,/tmp/a b/y"], two
+    finally:
+        sys.platform = saved
+
+
+def test_a_windows_recording_reaches_the_windows_engine_whatever_was_imported_first(tmp_path):
+    """recording imported its Windows engine only when it was first imported on Windows; a module first imported under
+    another platform (as a test run does) then failed with a NameError on the first Windows recording."""
+    from metal_gpu_trace import config, paths, perf_record_windows, recording
+    saved = sys.platform, config.OUT, perf_record_windows.record_windows
+    asked = []
+
+    def engine(*args, **kwargs):
+        asked.append(args[0])
+        raise RuntimeError("engine reached")
+    try:
+        sys.platform, config.OUT, perf_record_windows.record_windows = "win32", tmp_path, engine
+        recording.__dict__.pop("perf_record_windows", None)  # as if the module had been imported on another platform
+        try:
+            recording.record_run("w", 1, "native", "-", str(tmp_path), ["prog"])
+            raise AssertionError("the engine's error must reach the caller")
+        except paths.ToolError as error:
+            assert "engine reached" in str(error), error
+    finally:
+        sys.platform, config.OUT, perf_record_windows.record_windows = saved
+    assert asked == ["w"]
+
+
 def test_kill_program_and_watchdog(tmp_path):
     """kill_program ends a program that ignores SIGTERM, and perf_record.sh stops its recording, frees its lock and
     its program when the server named in PERF_PARENT_PID dies."""
@@ -1041,7 +1083,6 @@ def test_windows_branch_prunes_too(tmp_path):
     saved = config.OUT, config.MAX_DISK_MB, sys.platform, perf_record_windows.record_windows, config.LOCK
     config.OUT, config.MAX_DISK_MB, config.LOCK = out, 1, tmp_path / "lock"
     perf_record_windows.record_windows = record_windows
-    recording.__dict__["perf_record_windows"] = perf_record_windows  # recording imports it only on Windows
     sys.platform = "win32"
     try:
         got = recording.record_run("w", 5, "native", "-", str(tmp_path), ["prog"], layer={"none": "x"})
@@ -1050,7 +1091,6 @@ def test_windows_branch_prunes_too(tmp_path):
         config.OUT, config.MAX_DISK_MB = saved[:2]
         perf_record_windows.record_windows = saved[3]
         config.LOCK = saved[4]
-        del recording.__dict__["perf_record_windows"]
     assert got["retention"]["removed"] == 1, got
     assert json.loads((out / "w_1.json").read_text())["retention"]["removed"] == 1
     assert not (out / "old_1.trace").exists()
