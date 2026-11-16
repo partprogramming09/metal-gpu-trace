@@ -2,11 +2,15 @@
 
 lanzamientos: 1-5
 
+Tipo: abierto
+
 MCP server (stdio and Streamable HTTP, JSON-RPC, standard library only) and shell scripts that record Wine or macOS
 programs with Instruments' Metal System Trace on Apple silicon and read the recordings back. Published as
 `metal-gpu-trace` on PyPI.
 
 **Modo de los docs:** terceros (the package is published on PyPI; docs name no personal tools).
+
+Antes de tocar documentación, lee `.claude/ROUTING.md`. Mapa de piezas: `.claude/ARQUITECTURA.md`.
 
 ## Layout
 
