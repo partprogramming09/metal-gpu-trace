@@ -5,6 +5,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+## 0.27.1 — 2026-11-16
+
+(Fixes only, found by running the suite on a real Windows PC.)
+
 ### Fixed
 
 - 🛠️ `preflight.process_alive` no longer sends a signal on Windows, where `os.kill(pid, 0)` is `CTRL_C_EVENT`: asked
@@ -15,8 +19,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - 🛠️ Workload arguments such as Godot's `--path {dir}/project` stay one argument on Windows: the quotes cover the path
   after `{dir}` too, where before `"C:\x"/project` split into two.
 - 🛠️ A `runs` folder with a lone surrogate in its name is refused on Windows, as macOS and Linux already did.
-- 🧪 Test changes: the PresentMon install test ignores `PRESENTMON_EXE`, and the POSIX liveness test sends no real signal
-  on Windows. They were found by running the suite on a real Windows PC.
+- Test changes (not fixes, so no icon): the PresentMon install test ignores `PRESENTMON_EXE`, and the POSIX liveness
+  test sends no real signal on Windows. They were found by running the suite on a real Windows PC.
 
 ## 0.27.0 — 2026-11-15
 
