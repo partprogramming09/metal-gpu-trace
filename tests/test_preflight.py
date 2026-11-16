@@ -74,7 +74,8 @@ def test_native_program_not_executable(tmp_path):
         kw = setup(tmp_path)
         plain = tmp_path / "plain"
         plain.write_text("x")
-        refused(["not an executable file"], **{**kw, "wine": "native", "command": [str(plain)]})
+        if os.name != "nt":  # on Windows every file passes the executable check
+            refused(["not an executable file"], **{**kw, "wine": "native", "command": [str(plain)]})
         refused(["not an executable file"], **{**kw, "wine": "native", "command": [str(tmp_path / "missing")]})
 
 

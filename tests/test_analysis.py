@@ -2,6 +2,7 @@
 import json
 import os
 import pathlib
+import sys
 
 import support  # noqa: F401  (puts src/ on sys.path)
 
@@ -323,6 +324,12 @@ def test_cold_warm(tmp_path):
         (tmp_path / f"{label}_20260101-000000.json").write_text(json.dumps(summary(5 if label.endswith("first") else 1, 9.0)))
     recording.tool_perf_record = fake_record
     try:
+        if sys.platform == "win32":  # the tool reads Metal tables: macOS only
+            try:
+                experiments.tool_perf_cold_warm("w", program="x", seconds=5)
+            except paths.ToolError:
+                return
+            raise AssertionError("perf_cold_warm must refuse to run on Windows")
         real = experiments.tool_perf_cold_warm("w", program="x", seconds=5)
     finally:
         config.OUT, recording.tool_perf_record = original_out, original_record
@@ -679,7 +686,8 @@ def test_importing_the_server_survives_an_unusable_metal_trace_out(tmp_path):
     code = (f"import sys; sys.path.insert(0, {str(src)!r}); from metal_gpu_trace import config, project; "
             "project.apply(None, {'METAL_TRACE_OUT': " + repr(str(loop)) + "}); print('ok', bool(config.PROJECT_ERROR) or sys.version_info >= (3, 13))")
     got = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, cwd=tmp_path,
-                         env={"HOME": str(tmp_path), "PATH": os.environ.get("PATH", ""), "METAL_TRACE_OUT": str(loop)})
+                         env={"HOME": str(tmp_path), "USERPROFILE": str(tmp_path), "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+                              "PATH": os.environ.get("PATH", ""), "METAL_TRACE_OUT": str(loop)})  # Windows reads USERPROFILE
     assert got.returncode == 0 and got.stdout.strip() == "ok True", got.stderr[-300:]
 
 
@@ -703,7 +711,7 @@ def test_read_frames_parses_a_file_once_and_follows_its_changes(tmp_path):
         csv_path.write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n2,16.0,4.0\n3,32.0,5.0\n")
         assert len(analysis.read_frames("r")) == 3 and len(parsed) == 2
         csv_path.write_text("frame,start_ms,gpu_ms_total\n1,0.0,9.0\n2,16.0,9.0\n3,32.0,9.0\n")  # same size, same second
-        os.utime(csv_path, ns=(csv_path.stat().st_atime_ns, csv_path.stat().st_mtime_ns + 1))
+        os.utime(csv_path, ns=(csv_path.stat().st_atime_ns, csv_path.stat().st_mtime_ns + 1000))  # NTFS keeps 100 ns
         assert analysis.read_frames("r")[0] == (1, 0.0, 9.0) and len(parsed) == 3
     finally:
         analysis._csv_rows, config.OUT = real, saved

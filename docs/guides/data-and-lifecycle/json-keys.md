@@ -25,7 +25,7 @@ Keys are written in sequence by:
 | 2 | Compressed tables, `tier`, `retention` (`metrics.py:9`) | 0.27.0 (`CHANGELOG.md`) |
 | 3 | The `common` block (`metrics.py:9`) | 0.27.3; the code writes it |
 
-**Every real summary here is generation 1** (E3: no `schema_version`, `common`, `tier` or `retention`), recorded before 0.27.0. The key lists below come from the code; a generation 3 summary was **not reproduced** (needs a macOS recording with Instruments). Every key in a real file is in these tables (E3, known limit 11).
+**Every real summary here is generation 1** (E3: no `schema_version`, `common`, `tier` or `retention`), recorded before 0.27.0. The key lists below come from the code; a generation 3 summary was recorded on macOS and on Windows for 0.27.3 (see [its proof](../../evidence/v0.27.3.md)); the real files in this repository's runs folder are still older. Every key in a real file is in these tables (E3, known limit 11).
 
 ## Keys of a macOS summary: always present
 
@@ -43,7 +43,7 @@ Keys are written in sequence by:
 | `gpu_idle` | When the GPU waited | `perf_report.py:729`; `analysis.py:231`, `:715` |
 | `gpu_performance_state_share` | Time share per GPU clock state; `{}` if none | `perf_report.py:771`; `analysis.py:144` |
 | `hitches` | `count`, `per_minute`, `threshold_ms`, `causes`, 20 `worst` | `perf_report.py:822`; `analysis.py:574`, `:773` |
-| `common` | `frame_pacing`, `memory_pressure`, `boundness`, `submission_overhead`, `api`, from `metrics.common_block` | `perf_report.py:835`, rebuilt `recording.py:343`; `analysis.py:153` |
+| `common` | `frame_pacing`, `memory_pressure`, `boundness`, `submission_overhead`, `api` (its `runtime` is `metal` on macOS and `unknown` on Windows, which does not read it from PresentMon yet), from `metrics.common_block` | `perf_report.py:835`, rebuilt `recording.py:343`; `analysis.py:153` |
 | `layer` | Translation layer: Wine with overrides and DLL hashes, `none` (native), `unknown` (attached), MoltenVK, Rosetta | `recording.py:341`; `recording.py:208`, `metrics.layer_label` |
 | `context` | `git` (short commit and `dirty`, or null) and `instruments` (version, or null) | `recording.py:341`, `run_context` at `:168`; `recording.py:195` |
 
