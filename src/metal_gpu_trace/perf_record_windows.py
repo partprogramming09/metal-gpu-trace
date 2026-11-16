@@ -512,6 +512,8 @@ def clean_runs(out_dir, keep_runs):
     for old in json_files[keep_runs:]:
         stem = old.stem
         for related in out_dir.glob(f"{stem}.*"):
+            if related.suffix == ".trace":  # the same rule as prune_runs.sh: only the disk quota frees a .trace
+                continue
             try:
                 related.unlink()
             except OSError:
@@ -914,6 +916,7 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             ),
         }
 
+        summary["common"] = metrics.common_block(summary)
         json_path = out_dir / f"{name}.json"
         json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 

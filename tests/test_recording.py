@@ -792,6 +792,14 @@ def test_prune_keeps_baselines_and_panel_layout(tmp_path):
     assert sorted(p.name for p in out.iterdir()) == ["baselines.json", "new.json", "panel.json"]
 
 
+def test_windows_prune_never_removes_a_trace(tmp_path):
+    from metal_gpu_trace import perf_record_windows
+    out = prune_folder(tmp_path)
+    (out / "old.trace").write_text("x")
+    perf_record_windows.clean_runs(out, 1)
+    assert (out / "old.trace").exists() and not (out / "old.json").exists()
+
+
 def test_windows_prune_keeps_baselines_and_panel_layout(tmp_path):
     from metal_gpu_trace import perf_record_windows
     out = prune_folder(tmp_path)
@@ -1106,6 +1114,22 @@ def test_keep_runs_still_removes_old_tables(tmp_path):
         os.utime(out / name, (1_000_000 + age * 100, 1_000_000 + age * 100))
     subprocess.run(["zsh", str(PKG / "prune_runs.sh"), str(out), "1"], check=True)
     assert sorted(p.name for p in out.iterdir()) == ["new.json"]
+
+
+@macos_only
+def test_keep_runs_never_removes_a_trace(tmp_path):
+    """ADR-0006: KEEP_RUNS never prunes a .trace (only the disk quota frees it); the rest of the older run goes."""
+    out = tmp_path / "runs"
+    out.mkdir()
+    for age, name in enumerate(("baselines.json", "old.json", "old.frames.csv.gz", "old.chrome-trace", "old.trace", "new.json", "new.trace")):
+        if name.endswith(".trace"):
+            (out / name).mkdir()
+            (out / name / "form.template").write_text("x")
+        else:
+            (out / name).write_text("{}")
+        os.utime(out / name, (1_000_000 + age * 100, 1_000_000 + age * 100))
+    subprocess.run(["zsh", str(PKG / "prune_runs.sh"), str(out), "1"], check=True)
+    assert sorted(p.name for p in out.iterdir()) == ["baselines.json", "new.json", "new.trace", "old.trace"]
 
 
 @macos_only
@@ -1478,3 +1502,19 @@ def test_finish_leaves_the_runs_folder_alone_while_another_recording_runs(tmp_pa
         assert not (out / "live.trace").exists() and got["retention"]["removed"] == 1, got
     finally:
         config.OUT, config.LOCK, config.MAX_DISK_MB = saved
+
+
+def test_finish_refreshes_the_common_block_with_the_layer(tmp_path):
+    """`common` is built before the layer is known; finish adds the layer and rebuilds it, so it names the layer."""
+    from metal_gpu_trace import metrics, recording
+    summary = {"schema_version": 3, "gpu": {}}
+    summary["common"] = metrics.common_block(summary)
+    assert summary["common"]["api"]["translation_layer"] == "unknown"
+    got = recording.finish(summary, tmp_path / "r.json", {"none": "native Windows"}, None)
+    assert got["common"]["api"]["translation_layer"] == "native"
+    assert json.loads((tmp_path / "r.json").read_text())["common"]["api"]["translation_layer"] == "native"
+
+
+def test_finish_does_not_add_common_to_an_older_summary(tmp_path):
+    from metal_gpu_trace import recording
+    assert "common" not in recording.finish({"schema_version": 2, "gpu": {}}, tmp_path / "old.json", None, None)

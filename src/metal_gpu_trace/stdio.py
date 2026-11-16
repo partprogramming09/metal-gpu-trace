@@ -24,10 +24,14 @@ def reply_unless_cancelled(reply):
 
 def serve_stdio():
     """Serves newline-delimited JSON-RPC on stdin and stdout until stdin closes."""
-    for stream in (sys.stdin, sys.stdout):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8")
-    for line in sys.stdin:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    for raw in sys.stdin.buffer:  # bytes, so a line that is not UTF-8 is answered, not raised by the iterator
+        try:
+            line = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            send({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}})
+            continue
         if not line.strip():
             continue
         try:

@@ -15,7 +15,7 @@ import json
 import pathlib
 import sys
 
-__version__ = "0.27.2"
+__version__ = "0.27.3"
 if __package__ in (None, ""):  # run by path: make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from metal_gpu_trace import analysis, http_transport, paths, project, protocol, stdio, worker  # noqa: E402
@@ -42,7 +42,8 @@ INSTRUCTIONS = (
     "laptop set cooldown_s on perf_baseline_record, perf_ab and perf_sweep so the Mac cools between recordings; a run "
     "whose summary has noisy_environment (another process was loading the GPU) is repeated before it is trusted. A "
     "recording is refused before it starts when its program, xcrun, the disk or the lock is not ready, or when the "
-    "screen is locked (METAL_TRACE_ALLOW_LOCKED=1 allows that)."
+    "screen is locked (METAL_TRACE_ALLOW_LOCKED=1 allows that). When memory spikes or a run stalls, "
+    "perf_memory_breakdown says which resource types it allocates and drops."
 )
 
 protocol.configure(instructions=INSTRUCTIONS, version=__version__)

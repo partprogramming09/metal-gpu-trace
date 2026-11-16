@@ -152,6 +152,10 @@ TOOLS = {
          "short_share": {"type": "number", "description": "share of short encoders from which the verdict is yes, "
                                                           "default 0.25"}}, ["run"]),
         hints("Diagnose encoder use")),
+    "perf_memory_breakdown": (analysis.tool_perf_memory_breakdown, schema(
+        {"run": {**S, "description": "a run name from perf_runs"},
+         "top": {**I, "description": "how many resource types to keep, the largest allocated first, default 10"}}, ["run"]),
+        hints("Break down Metal allocations by type")),
     "trace_tables": (traces.tool_trace_tables, schema({"trace": TRACE}, ["trace"]), hints("List a trace's tables")),
     "trace_count": (traces.tool_trace_count, schema(
         {"trace": TRACE,

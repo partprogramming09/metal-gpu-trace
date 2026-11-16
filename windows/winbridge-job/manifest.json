@@ -6,18 +6,25 @@
       "session": 1,
       "description": "metal-gpu-trace: update its checkout and run its tests (no parameters; runs elevated)",
       "params": {}
-    }
-    ,
+    },
     "metal-trace-e2e": {
       "script": "metal-trace-e2e.ps1",
       "timeout_s": 900,
       "session": 1,
       "description": "metal-gpu-trace: install the published package in a clean venv and record drawstress (no parameters; runs elevated)",
       "params": {}
+    },
+    "metal-trace-branch": {
+      "script": "metal-trace-branch.ps1",
+      "timeout_s": 1200,
+      "session": 1,
+      "description": "metal-gpu-trace: test and record a branch of origin without touching the checkout (no parameters; runs elevated)",
+      "params": {}
     }
   },
   "env": {
     "METAL_TRACE_REPO": "C:\\Users\\CHANGE-ME\\metal-gpu-trace",
-    "METAL_TRACE_E2E_VERSION": "0.27.2"
+    "METAL_TRACE_E2E_VERSION": "0.27.2",
+    "METAL_TRACE_BRANCH": "chore/launches-without-limit"
   }
 }

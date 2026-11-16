@@ -11,7 +11,7 @@ from support import ROOT, PKG, write_capture, hang_stubs, golden, wait_until  # 
 def test_perf_panel_is_gone():
     """The panel was removed in 0.25.0: no tool, and no word about it in what clients read first."""
     from metal_gpu_trace import metal_trace_mcp, registry
-    assert "perf_panel" not in registry.TOOLS and len(registry.TOOLS) == 25
+    assert "perf_panel" not in registry.TOOLS and len(registry.TOOLS) == 26
     assert "panel" not in metal_trace_mcp.INSTRUCTIONS.lower()
 
 
@@ -136,7 +136,7 @@ def test_server(tmp_path):
     assert [x["uriTemplate"] for x in replies[17]["result"]["resourceTemplates"]] == ["metal-trace://runs/{run}"]
     assert json.loads(replies[26]["result"]["contents"][0]["text"]) == {"gpu": {"frames": 100}}
     assert replies[27]["error"]["code"] == replies[28]["error"]["code"] == -32002, "a bad run name is not found"
-    assert len(replies[2]["result"]["tools"]) == 25
+    assert len(replies[2]["result"]["tools"]) == 26
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -322,7 +322,7 @@ def test_http(tmp_path):
         assert post(ping, path="/other")[0] == 404
         assert post({"jsonrpc": "2.0", "method": "notifications/initialized"}) == (202, None)
         code, tools = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        assert code == 200 and len(tools["result"]["tools"]) == 25 and "perf_panel" not in json.dumps(tools)
+        assert code == 200 and len(tools["result"]["tools"]) == 26 and "perf_panel" not in json.dumps(tools)
         code, runs = post({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                            "params": {"name": "perf_runs", "arguments": {}, "_meta": {"progressToken": "x"}}})
         assert code == 200 and runs["result"]["structuredContent"]["total"] == 0, runs
@@ -663,7 +663,7 @@ def test_tool_shape(tmp_path):
     from metal_gpu_trace import protocol
     from metal_gpu_trace import metal_trace_mcp
     tools = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-    assert len(tools) == 25
+    assert len(tools) == 26
     info = next(t for t in tools if t["name"] == "project_info")
     assert info["annotations"]["readOnlyHint"] is True and not info["inputSchema"].get("properties"), info
     for tool in tools:
@@ -1247,3 +1247,13 @@ def test_broken_project_file_is_explained_not_ignored(tmp_path):
     finally:
         server.kill()
         server.wait()
+
+
+def test_stdio_invalid_utf8_is_a_parse_error_and_the_server_keeps_serving(tmp_path):
+    """A line that is not UTF-8 gets -32700 like on HTTP, and the next line is still served (it used to end the server)."""
+    ping = json.dumps({"jsonrpc": "2.0", "id": 5, "method": "ping"}).encode() + b"\n"
+    proc = subprocess.run([sys.executable, "-I", str(PKG / "metal_trace_mcp.py")], input=b"\xff\xfe\n" + ping,
+                          capture_output=True, cwd=tmp_path, timeout=30,
+                          env=dict(os.environ, METAL_TRACE_OUT=str(tmp_path / "runs")))
+    replies = [json.loads(line) for line in proc.stdout.decode().splitlines() if line.strip()]
+    assert [r.get("error", {}).get("code") for r in replies] == [-32700, None] and replies[1]["id"] == 5, (replies, proc.stderr)

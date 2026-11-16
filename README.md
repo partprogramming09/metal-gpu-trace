@@ -71,7 +71,17 @@ run before calling a difference real.
 
 ## What's new
 
-Version 0.27.2. Each item links to the command that was run and its real output.
+Version 0.27.3. Each item links to the command that was run and its real output.
+
+- ✨ **One summary shape on both platforms.** Every new summary (`schema_version` 3) has a `common` block with frame
+  pacing, memory pressure and graphics API, the same keys on macOS and Windows and a `source` per number; what cannot be
+  measured the same way says `comparable: false` instead of a made-up number. [Proof](docs/evidence/v0.27.3.md#a-summary-has-a-common-block-on-both-platforms)
+- 🔍 **What a recording allocated.** `perf_memory_breakdown` splits the Metal allocations by type, what is still live and
+  how many times over the live memory was allocated (5.47 in a real run), from the summary alone. [Proof](docs/evidence/v0.27.3.md#what-a-recording-allocated-by-type)
+- 🩺 **An honest verdict against one run.** `perf_check` adds a `note` when the verdict is not same and the reference is a
+  single run: its noise is not measured, so a small change may be noise. [Proof](docs/evidence/v0.27.3.md#perf_check-says-when-its-reference-is-one-run)
+
+Version 0.27.2, still current:
 
 - 🔍 **How long the GPU takes to start.** `gpu.start_latency_ms` gives the count, mean, median, p95 and max of the time
   between the work being submitted and the GPU starting it; `perf_compare` compares the median. On a real run it was
@@ -141,7 +151,7 @@ to compare.
 ## Disk use
 
 Each recording keeps a JSON summary and three CSVs, about 2 MB for 10 s (most of it the Metal memory samples). The
-`.trace` (tens to hundreds of MB) is deleted unless `KEEP_TRACE=1`. `KEEP_RUNS=N` keeps only the newest N recordings. `PERF_MEMORY=0` skips the Metal memory table, the slowest to read:
+`.trace` (tens to hundreds of MB) is deleted unless `KEEP_TRACE=1`. `KEEP_RUNS=N` keeps only the newest N recordings (an older one's `.trace` is not removed by it). `PERF_MEMORY=0` skips the Metal memory table, the slowest to read:
 the summary then has no `metal_memory_mib` and there is no memory CSV (41 % faster to summarize a 626 MB trace).
 The MCP tools `perf_record` and `perf_baseline_record` offer the same as `memory=false`.
 
@@ -173,7 +183,7 @@ The server reads these environment variables:
 | `KEEP_TRACE` | `1` keeps each recording's `.trace`, for `trace_tables`, `trace_query` or Instruments. |
 | `METAL_TRACE_ALLOW_LOCKED` | `1` records with the screen locked; without it a recording is refused, because a locked session leaves the program's frames unpaced by the display. |
 | `METAL_TRACE_MAX_DISK_MB` | Size limit of the runs folder, in MiB (a whole number of 1 or more): after each recording the oldest `.trace`, then `.chrome-trace`, then per-frame and memory tables are removed until it fits; summaries and `baselines.json` never. The new recording's `.trace` goes last, and its summary says what was removed (`retention`). |
-| `KEEP_RUNS` | Keeps only the newest N recordings; `baselines.json` is never removed (nor is the `panel.json` that 0.24.0 and older left). |
+| `KEEP_RUNS` | Keeps only the newest N recordings; `baselines.json` is never removed (nor is the `panel.json` that 0.24.0 and older left). An older recording's `.trace` is never removed by it: only `METAL_TRACE_MAX_DISK_MB` frees one, and without that variable they stay. |
 | `METAL_TRACE_LOCK` | The lock that keeps recordings one at a time, whatever folder each goes to (default `~/Library/Caches/metal-gpu-trace/recording.lock`). `perf_record.sh` run by hand takes the same one, or the one `PERF_LOCK` names. |
 | `PERF_ENV` | `NAME=VALUE` pairs, separated by spaces, set for the recorded program. |
 | `PERF_INSTRUMENTS` | Instruments added to the Metal System Trace template, separated by `;` (`xcrun xctrace list instruments` names them); their tables need the `.trace`, so pair it with `KEEP_TRACE=1`. |
@@ -273,7 +283,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 
 ### Tools
 
-25 tools in four groups. Your agent picks them; you rarely call one yourself. Each row starts with what the tool is for, then the detail.
+26 tools in four groups. Your agent picks them; you rarely call one yourself. Each row starts with what the tool is for, then the detail.
 
 #### Record
 
@@ -296,6 +306,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `perf_baseline` | Saves several equal recordings as a reference and tells how much equal runs differ by themselves. — Saves several equal recordings as a named reference and returns the range each number spans across them and `spread_pct`, how much equal runs differ (the noise a change must beat); alone, lists the references. `skip_s` saves each run without its first seconds and `perf_check` applies the same cut to the run it judges |
 | `perf_history` | Follows one number across many recordings. — Follows FPS, 1% low, GPU ms, stutter, hitches and Metal MiB across the runs whose name starts with a prefix, oldest first, with the change from first to last |
 | `perf_diagnose` | Says whether the program splits GPU work into too many tiny pieces, as translation layers do. — Says whether a recording splits its GPU work into too many short encoders, as translation layers do, with encoders and command buffers per frame, the labels with the most GPU time and the GPU's idle time |
+| `perf_memory_breakdown` | Shows which kinds of Metal resources a program allocates and drops. — Breaks a recording's Metal allocations down by type (texture, buffer, heap): allocated, still live, how much was recycled and the allocation rate after start-up |
 
 #### Dig deeper
 

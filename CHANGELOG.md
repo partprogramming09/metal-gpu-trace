@@ -5,6 +5,26 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+## 0.27.3 — 2026-11-16
+
+(A summary both platforms write the same way, a memory breakdown, and fixes. Its proof is [docs/evidence/v0.27.3.md](docs/evidence/v0.27.3.md).)
+
+### Added
+
+- ✨ `schema_version` 3: every new summary, from macOS or Windows, has a `common` block (frame pacing, memory pressure, graphics API) with the same keys and a `source` per number; `perf_compare` reads it and does not subtract memory that was measured differently. Older summaries keep reading. [proof](docs/evidence/v0.27.3.md#a-summary-has-a-common-block-on-both-platforms)
+- 🔍 `perf_memory_breakdown`: a saved recording's Metal allocations by type (texture, buffer, heap), what is still live, how much was recycled and the allocation rate after start-up, from the summary and without reading the trace. A recording from before 0.27.0 says it has no live numbers instead of showing zero. [proof](docs/evidence/v0.27.3.md#what-a-recording-allocated-by-type)
+- 🩺 `perf_check` against a reference of one run adds a `note` when the verdict is not same: the range is a point, so the noise between equal runs is not measured and a small change may be noise. The verdict is unchanged. [proof](docs/evidence/v0.27.3.md#perf_check-says-when-its-reference-is-one-run)
+
+### Fixed
+
+- 🛠️ Over stdio, a line that is not UTF-8 is answered with `-32700` and the server keeps serving, instead of stopping.
+
+- 🛠️ The error for the removed `profile` key of the project file says it was removed and to delete it, and the hint to set it shows only where the key is listed.
+
+- 🛠️ `KEEP_RUNS` no longer deletes the `.trace` of an older recording, as ADR-0006 says: only `METAL_TRACE_MAX_DISK_MB` frees a `.trace`; without it the `.trace` files stay, and once their `.json` is pruned they no longer show in `perf_runs`. Set the quota if you use `KEEP_TRACE=1` with `KEEP_RUNS`.
+
+- 🛠️ A link in the runs folder is no longer followed: a summary, a table (`.csv`, `.csv.gz`) or a `.trace` that is a link is refused like a run that does not exist, by every tool, the runs resource and `perf_runs`; a link is not written through on Windows either (a runs folder may come from a clone or a download). A summary that is not UTF-8 is an error reply, not an exception.
+
 ## 0.27.2 — 2026-11-16
 
 (What the GPU did while it waited, who else loaded it, and what stayed allocated. Its proof is [docs/evidence/v0.27.2.md](docs/evidence/v0.27.2.md).)

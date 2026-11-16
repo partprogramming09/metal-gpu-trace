@@ -2,6 +2,8 @@
 
 **Reader:** people who change the code. Reviewed 2026-11-15.
 
+**In short:** the server is plain Python, speaks two MCP versions at once and runs one tool call at a time on a worker thread, while the transport keeps listening so a recording can be cancelled.
+
 ## Why it is shaped this way
 
 The server has to run on a fresh Mac with nothing but the `python3` macOS ships, so it is standard library only
@@ -59,10 +61,12 @@ family facts and the workload list.
 ## One request, end to end
 
 1. The client sends `tools/call` and the transport reads one JSON message.
-2. `protocol.handle` checks the era, the `_meta` and that the tool exists.
-3. The call waits in the worker queue (at most `MAX_QUEUE` waiting).
-4. The worker thread runs the tool from `registry`. Right before, it stops with the project file's error if that file is wrong (`project.check`).
+2. The transport puts the raw message in the worker queue (at most `MAX_QUEUE` waiting): `stdio.py:47`, `http_transport.py:154`. Messages that are not tool calls (`ping`, `tools/list`, notifications) skip the queue and go straight to `protocol.handle`.
+3. On the worker thread, `protocol.handle` checks the era, the `_meta` and that the tool exists.
+4. Still on the worker thread, the tool runs from `registry`. Right before, it stops with the project file's error if that file is wrong (`project.check`).
 5. `protocol` decorates the result for its era and the transport writes the reply.
+
+The [Server and transport](./server-and-transport/) guide follows this path line by line.
 
 ## Where recordings live, and what reads them
 
@@ -81,7 +85,7 @@ Think of the runs folder as one drawer per project: everything about a project (
 - **How a file is read.** Summaries go through `paths.read_object` and the per-frame and memory tables through
   `tables` (`find` looks for `<run>.frames.csv.gz` first and `<run>.frames.csv` second; `open_text` reads either;
   `write` writes the compressed one, byte for byte the same for the same rows), read by `analysis._csv_rows` and
-  `traces.tool_perf_export_trace`. A summary without `schema_version` is generation 1 (`metrics.schema_of`). A truncated or malformed file becomes a `ToolError` that names the file (such as `<run>.json`) and never a path;
+  `traces.tool_perf_export_trace`. A summary without `schema_version` is generation 1 (`metrics.schema_of`). Generation 3 adds `common`, built by `metrics.common_block` for both engines: `frame_pacing` and `memory_pressure` (each with its `source`), `api` (`runtime`, `translation_layer`), and `boundness` and `submission_overhead` as `comparable: false` until both platforms measure them alike. The keys each backend already had stay where they are. `perf_compare` subtracts memory peaks only when both runs measured the same thing. A truncated or malformed file becomes a `ToolError` that names the file (such as `<run>.json`) and never a path;
   a CSV line that cannot be read, or that holds a value that is not finite, is left out instead of failing the whole read.
 - **Where a run came from.** `recording.run_context` adds `context` to each new summary: the 12-character commit and the
   dirty flag of the repository that holds the project file (`null` without a project file or a git repository) and

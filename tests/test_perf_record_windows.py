@@ -121,7 +121,8 @@ def test_recording_and_schema_verification(tmp_path):
     rss_csv = tmp_path / f"{stem}.rss.csv"
 
     assert json_path.exists(), f"Missing {json_path}"
-    assert list(summary)[0] == "schema_version" and summary["schema_version"] == 2
+    assert list(summary)[0] == "schema_version" and summary["schema_version"] == 3
+    assert summary["common"]["api"]["translation_layer"] == "native" and summary["common"]["memory_pressure"]["source"] in ("process-rss", None)
     assert frames_csv is not None and frames_csv.name.endswith(".frames.csv.gz"), "Missing the compressed frames table"
     assert not (tmp_path / f"{stem}.frames.csv").exists(), "a new recording writes no plain frames.csv"
     assert rss_csv.exists(), f"Missing {rss_csv}"

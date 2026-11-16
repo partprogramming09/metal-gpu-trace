@@ -11,16 +11,20 @@ UNREADABLE = (OSError, EOFError, UnicodeDecodeError, csv.Error, gzip.BadGzipFile
 
 
 def find(directory, stem):
-    """Returns `directory/<stem>.csv.gz` if it exists, else `directory/<stem>.csv`, else None."""
+    """Returns `directory/<stem>.csv.gz` if it exists, else `directory/<stem>.csv`, else None. A link is not a table: a
+    runs folder may come from a clone or a download."""
     for suffix in (".csv.gz", ".csv"):
         path = directory / (stem + suffix)
-        if path.is_file():
+        if path.is_file() and not path.is_symlink():
             return path
     return None
 
 
 def open_text(path):
-    """Opens a table for reading as UTF-8 text with newline="" (what csv wants); gzip when the name ends in `.gz`."""
+    """Opens a table for reading as UTF-8 text with newline="" (what csv wants); gzip when the name ends in `.gz`. Raises
+    OSError for a link."""
+    if path.is_symlink():
+        raise OSError("a table that is a link is not read")
     if path.name.endswith(".gz"):
         if path.stat().st_size == 0:  # gzip reads an empty file as an empty table: a recording cut at 0 bytes is not one
             raise EOFError("empty gzip file")

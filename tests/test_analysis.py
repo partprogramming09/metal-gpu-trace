@@ -167,6 +167,34 @@ def test_baseline(tmp_path):
     finally:
         config.OUT, config.BASELINES = saved
 
+def test_check_against_a_one_run_reference_says_its_noise_is_not_measured(tmp_path):
+    """A reference of several runs already carries the noise in its range; a one-run reference has none, so a 3.1 %
+    dip reads regressed. The verdict stays, and the result says the noise was not measured."""
+    from metal_gpu_trace import analysis, config
+
+    def summary(fps):
+        return {"gpu": {"frames": 300, "fps_estimate": fps, "frame_gpu_ms": {"mean": 4.3, "p95": 8.6},
+                        "frame_interval_ms": {"p95": 20.0}},
+                "encoders": {"per_frame": {"p50": 7}, "command_buffers_per_frame": {"p50": 5}, "short_share": {"25": 0.5},
+                             "by_label": [{"label": "Render", "per_frame": 1.0, "total_ms": 1.0}]},
+                "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 4}}}
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        for tick, (name, fps) in enumerate((("r1", 100.0), ("r2", 97.0), ("dip", 96.9))):
+            path = tmp_path / f"{name}.json"
+            path.write_text(json.dumps(summary(fps)))
+            os.utime(path, (1_000_000 + tick, 1_000_000 + tick))
+        analysis.tool_perf_baseline("one", ["r1"])
+        analysis.tool_perf_baseline("two", ["r1", "r2"])
+        one = analysis.tool_perf_check("dip", "one")
+        assert one["verdict"] == "regressed" and "not measured" in one["note"], one
+        analysis.tool_perf_baseline("flat", ["dip"])
+        assert "note" not in analysis.tool_perf_check("dip", "flat"), "a same verdict needs no noise warning"
+        two = analysis.tool_perf_check("dip", "two")
+        assert two["verdict"] == "same" and "note" not in two, two
+    finally:
+        config.OUT, config.BASELINES = saved
+
 def test_baseline_record(tmp_path):
     """perf_baseline_record records count runs named name-1.. with perf_record's arguments and saves them as the
     reference; count outside 1 to 10 fails before recording."""
@@ -850,13 +878,241 @@ def test_schema_of_defaults_to_one():
     """A summary says which generation it is in `schema_version`; one without it, or with a value that is not a whole
     number of 1 or more, is generation 1."""
     from metal_gpu_trace import metrics
-    assert metrics.SCHEMA_VERSION == 2
+    assert metrics.SCHEMA_VERSION == 3
     for value in (None, "2", 0, -1, True, 2.0, [2]):
         assert metrics.schema_of({"schema_version": value}) == 1, value
     assert metrics.schema_of({}) == 1 and metrics.schema_of({"schema_version": 2}) == 2
     assert metrics.schema_of({"schema_version": 3}) == 3
     for hostile in (None, [], "x", 7):
         assert metrics.schema_of(hostile) == 1, hostile
+
+
+COMMON_KEYS = {"frame_pacing", "memory_pressure", "boundness", "submission_overhead", "api"}  # a new key needs its docs
+
+
+def _mac_summary(**more):
+    return {"device": {"platform": "macOS"}, "gpu": {"fps_estimate": 60.0, "fps_1pct_low": 50.0, "fps_01pct_low": 40.0,
+                                                      "stutter_rate_pct": 1.5, "frame_jitter_ms": 0.8},
+            "metal_memory_mib": {"samples": 3, "peak": 120.0}, "process_rss_mib": {"count": 3, "max": 300.0},
+            "layer": {"fingerprint": "abc", "wine": "wine", "wine_version": "9.0"}, **more}
+
+
+def _windows_summary(source="presentmon", **more):
+    return {"device": {"platform": "Windows"}, "gpu": {"fps_estimate": 90.0, "fps_1pct_low": 70.0, "fps_01pct_low": 60.0,
+                                                        "stutter_rate_pct": 0.5, "frame_jitter_ms": 0.3, "source": source},
+            "process_rss_mib": {"count": 3, "max": 500.0}, "layer": {"none": "native Windows"}, **more}
+
+
+def test_common_block_has_the_same_keys_on_both_platforms():
+    """schema_version 3 adds `common`: the same keys whatever engine wrote the summary, so a new key is a decision."""
+    from metal_gpu_trace import metrics
+    for s in (_mac_summary(), _windows_summary(), {}):
+        assert set(metrics.common_block(s)) == COMMON_KEYS, s
+    for s in (_mac_summary(), _windows_summary()):
+        common = metrics.common_block(s)
+        for name in ("boundness", "submission_overhead"):  # not measured the same way on both: never invented
+            assert common[name]["comparable"] is False and common[name]["reason"], common[name]
+
+
+def test_common_block_names_where_each_number_comes_from():
+    from metal_gpu_trace import metrics
+    mac, win = metrics.common_block(_mac_summary()), metrics.common_block(_windows_summary())
+    assert mac["frame_pacing"] == {"fps_estimate": 60.0, "fps_1pct_low": 50.0, "fps_01pct_low": 40.0,
+                                   "stutter_rate_pct": 1.5, "frame_jitter_ms": 0.8, "source": "xctrace"}
+    assert win["frame_pacing"]["source"] == "presentmon" and win["frame_pacing"]["fps_estimate"] == 90.0
+    assert mac["memory_pressure"] == {"peak_mib": 120.0, "source": "metal-allocated"}  # not the RSS, which is also there
+    assert win["memory_pressure"] == {"peak_mib": 500.0, "source": "process-rss"}
+    assert mac["api"] == {"runtime": "metal", "translation_layer": "abc wine 9.0"}
+    assert win["api"] == {"runtime": "unknown", "translation_layer": "native"}  # the runtime is read from PresentMon later
+
+
+def test_common_block_keeps_what_was_not_measured_empty():
+    from metal_gpu_trace import metrics
+    log = _windows_summary(source="drawstress-log")
+    log["gpu"].update(fps_1pct_low=None, fps_01pct_low=None, stutter_rate_pct=None, frame_jitter_ms=None)
+    pacing = metrics.common_block(log)["frame_pacing"]
+    assert pacing["fps_1pct_low"] is None and pacing["stutter_rate_pct"] is None and pacing["source"] == "drawstress-log"
+    bare = metrics.common_block({"gpu": {}})
+    assert bare["memory_pressure"] == {"peak_mib": None, "source": None}
+    assert bare["api"]["translation_layer"] == "unknown" and bare["frame_pacing"]["fps_estimate"] is None
+    for hostile in (None, [], "x", {"gpu": None, "layer": "x", "metal_memory_mib": []}):
+        assert set(metrics.common_block(hostile)) == COMMON_KEYS, hostile
+
+
+def test_compare_reads_every_generation_and_does_not_subtract_unlike_memory(tmp_path):
+    """perf_compare over generations 1, 2 and 3: memory pressure is compared only when both runs measured it the same
+    way (a Metal allocation against a process RSS are two things)."""
+    from metal_gpu_trace import analysis, config, metrics
+    base = {"gpu": {"frames": 500, "fps_estimate": 60.0, "frame_gpu_ms": {"mean": 5.0, "p95": 6.0},
+                    "frame_interval_ms": {"p95": 17.0}},
+            "encoders": {"per_frame": {"p50": 7}, "command_buffers_per_frame": {"p50": 5}, "short_share": {"25": 0.5},
+                         "by_label": []}}
+    runs = {"g1": base, "g2": {"schema_version": 2, **base}, "g3a": {"schema_version": 3, **_mac_summary(**base)},
+            "g3b": {"schema_version": 3, **_mac_summary(**base)}, "g3w": {"schema_version": 3, **_windows_summary(**base)}}
+    runs["g3a"]["common"] = metrics.common_block(runs["g3a"])
+    runs["g3b"]["common"] = metrics.common_block(runs["g3b"])
+    runs["g3b"]["common"]["memory_pressure"]["peak_mib"] = 150.0
+    runs["g3w"]["common"] = metrics.common_block(runs["g3w"])
+    for name, s in runs.items():
+        (tmp_path / f"{name}.json").write_text(json.dumps(s))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        for a, b in (("g1", "g2"), ("g1", "g3a"), ("g2", "g3a"), ("g3a", "g3b")):
+            analysis.tool_perf_compare(a, b)
+        same = analysis.tool_perf_compare("g3a", "g3b")["memory_pressure"]
+        assert same["comparable"] is True and same["change"]["change"] == 30.0, same
+        unlike = analysis.tool_perf_compare("g3a", "g3w")["memory_pressure"]
+        assert unlike["comparable"] is False and unlike["a"]["source"] == "metal-allocated" \
+            and unlike["b"]["source"] == "process-rss" and "change" not in unlike, unlike
+        assert "memory_pressure" not in analysis.tool_perf_compare("g1", "g2")  # an older summary has none
+    finally:
+        config.OUT = saved
+
+
+def test_skip_s_rebuilds_the_common_block(tmp_path):
+    """With skip_s the Metal memory is recomputed without the start-up: `common` must follow it, or perf_compare gives two
+    different memory peaks in one answer."""
+    from metal_gpu_trace import analysis, config, metrics
+    _put_table_run(tmp_path, "r", True)
+    s = json.loads((tmp_path / "r.json").read_text())
+    s["schema_version"], s["common"] = 3, metrics.common_block(s)
+    assert s["common"]["memory_pressure"]["peak_mib"] == 90.0
+    (tmp_path / "r.json").write_text(json.dumps(s))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        whole = analysis.steady_summary("r", 0)
+        assert whole["common"]["memory_pressure"]["peak_mib"] == 90.0
+        late = analysis.steady_summary("r", 1.6)  # past the first 1 500 ms, where the 90 MiB were held
+        assert late["common"]["memory_pressure"]["peak_mib"] == late["metal_memory_mib"]["peak"] == 60.0, late["common"]
+        assert late["common"]["frame_pacing"]["fps_estimate"] == late["gpu"]["fps_estimate"]
+    finally:
+        config.OUT = saved
+
+
+def test_common_survives_hostile_fields():
+    """A summary edited by hand or written by another version never breaks `common` or the comparison of it."""
+    from metal_gpu_trace import analysis, metrics
+    for layer in ({"bad": 1}, {"fingerprint": "abc"}, {"moltenvk": True, "dylib": "x"},
+                  {"moltenvk": True, "dylib": {"sha256": 123}}):
+        assert metrics.common_block({"layer": layer})["api"]["translation_layer"], layer
+    ok = {"common": {"memory_pressure": {"source": "metal-allocated", "peak_mib": 20.0}}}
+    for bad in ({"common": {"memory_pressure": {"source": "metal-allocated", "peak_mib": "10"}}},
+                {"common": ["x"]}, {"common": {"memory_pressure": "x"}}):
+        assert analysis.memory_pressure_change(bad, ok) is None, bad
+    unmeasured = {"common": {"memory_pressure": {"source": None, "peak_mib": None}}}
+    assert analysis.memory_pressure_change(unmeasured, ok) is None  # not measured is not measured differently
+
+
+def _allocations():
+    """The `resource_allocations` of a summary: 1 000 events over 10 s, textures the largest and mostly recycled."""
+    return {"events": 1000, "mib": 800.0, "per_frame": 2.5,
+            "by_type": {"Buffer": {"count": 600, "mib": 100.0}, "Texture": {"count": 380, "mib": 690.0},
+                        "Heap": {"count": 20, "mib": 10.0}},
+            "live": {"count": 60, "mib": 120.0, "by_mode": {"Private": {"count": 40, "mib": 100.0}, "Shared": {"count": 20, "mib": 20.0}},
+                     "by_type": {"Buffer": {"count": 40, "mib": 20.0}, "Texture": {"count": 15, "mib": 95.0},
+                                 "Heap": {"count": 5, "mib": 5.0}}},
+            "freed": {"count": 900, "mib": 650.0}, "freed_before_recording": 3,
+            "after_3s": {"count": 700, "mib": 500.0}, "per_second": [100] * 10}
+
+
+def test_memory_breakdown_groups_allocations_by_type(tmp_path):
+    """perf_memory_breakdown answers from the saved summary, no trace: each type's allocated and live size, how much of
+    what was allocated is still live (a low share is churn) and the allocation rate after the start-up."""
+    from metal_gpu_trace import analysis, config
+    (tmp_path / "m.json").write_text(json.dumps({"resource_allocations": _allocations(), "metal_memory_mib": {"peak": 140.0}}))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        got = analysis.tool_perf_memory_breakdown("m")
+        assert [t["type"] for t in got["types"]] == ["Texture", "Buffer", "Heap"], got["types"]  # largest allocated first
+        texture = got["types"][0]
+        assert texture["allocated"] == {"count": 380, "mib": 690.0, "mean_mib": 1.816}, texture
+        assert texture["live"] == {"count": 15, "mib": 95.0} and texture["live_share_pct"] == 13.8, texture
+        assert texture["gone"] == 365  # allocated and no longer live
+        assert got["live"]["count"] == 60 and got["live"]["by_mode"]["Private"]["mib"] == 100.0
+        assert got["freed"] == {"count": 900, "mib": 650.0} and got["freed_before_recording"] == 3
+        assert got["allocated_mib_per_live_mib"] == 6.67 and got["peak_metal_mib"] == 140.0
+        assert got["events_per_s_after_3s"] == 100.0, got  # 700 events over the 7 s after the third
+        assert [t["type"] for t in analysis.tool_perf_memory_breakdown("m", top=1)["types"]] == ["Texture"]
+        assert got["how_to_read"]
+    finally:
+        config.OUT = saved
+
+
+def test_memory_breakdown_of_a_run_without_live_numbers(tmp_path):
+    """A run recorded before `live` existed (found on a real one): what is live is unknown, never zero."""
+    from metal_gpu_trace import analysis, config
+    old = {k: v for k, v in _allocations().items() if k not in ("live", "freed", "freed_before_recording")}
+    (tmp_path / "old.json").write_text(json.dumps({"resource_allocations": old}))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        got = analysis.tool_perf_memory_breakdown("old")
+        assert got["live"] is None and got["allocated_mib_per_live_mib"] is None and got["freed"] is None, got
+        for t in got["types"]:
+            assert t["live"] is None and t["live_share_pct"] is None and t["gone"] is None, t
+        assert got["types"][0]["allocated"]["count"] == 380 and "record" in got["how_to_read"]
+    finally:
+        config.OUT = saved
+
+
+def test_memory_breakdown_refuses_numbers_that_cannot_be_right(tmp_path):
+    """NaN, a negative size, a boolean or a `per_second` that is not a list never reach the client as numbers."""
+    from metal_gpu_trace import analysis, config, paths
+    def run(**changes):
+        found = _allocations()
+        found.update(changes)
+        return {"resource_allocations": found}
+    nan = float("nan")
+    bad = {"nan": run(mib=nan), "inf": run(mib=float("inf")), "negative": run(mib=-5.0), "bool": run(events=True),
+           "type_nan": run(by_type={"Buffer": {"count": 1, "mib": nan}}),
+           "type_negative": run(by_type={"Buffer": {"count": -1, "mib": 1.0}}),
+           "live_nan": run(live={"count": 1, "mib": nan, "by_type": {}}),
+           "per_second_text": run(per_second="abcdef"), "per_second_map": run(per_second={"0": 1})}
+    for name, body in bad.items():
+        (tmp_path / f"{name}.json").write_text(json.dumps(body))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        for name in bad:
+            try:
+                analysis.tool_perf_memory_breakdown(name)
+            except paths.ToolError as error:
+                assert "not in the form" in str(error), (name, str(error))
+            else:
+                raise AssertionError(f"{name} should be a ToolError")
+        # edges that are valid: a start-up shorter than 3 s has no later rate; a type of zero resources has no mean
+        (tmp_path / "short.json").write_text(json.dumps(run(per_second=[5, 5, 5],
+                                                            by_type={"Buffer": {"count": 0, "mib": 0.0}})))
+        got = analysis.tool_perf_memory_breakdown("short")
+        assert got["events_per_s_after_3s"] is None and got["types"][0]["allocated"]["mean_mib"] is None, got
+    finally:
+        config.OUT = saved
+
+
+def test_memory_breakdown_says_why_it_cannot(tmp_path):
+    """A run without allocation events is a ToolError that says what to record; odd fields never become a crash."""
+    from metal_gpu_trace import analysis, config, paths
+    for name, body in (("none", {"gpu": {}}), ("zero", {"resource_allocations": {"events": 0}}),
+                       ("win", {"device": {"platform": "Windows"}, "gpu": {}}),
+                       ("odd", {"resource_allocations": {"events": 5, "by_type": [1]}})):
+        (tmp_path / f"{name}.json").write_text(json.dumps(body))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        for name, why in (("none", "no resource allocations"), ("zero", "no resource allocations"), ("win", "Windows"),
+                          ("odd", "not in the form")):
+            try:
+                analysis.tool_perf_memory_breakdown(name)
+            except paths.ToolError as error:
+                assert why in str(error), (name, str(error))
+            else:
+                raise AssertionError(f"{name} should be a ToolError")
+        for bad in (0, -1, "x"):
+            try:
+                analysis.tool_perf_memory_breakdown("none", top=bad)
+            except paths.ToolError:
+                pass
+            else:
+                raise AssertionError(f"top={bad!r} should be a ToolError")
+    finally:
+        config.OUT = saved
 
 
 def test_old_summaries_read_in_every_tool(tmp_path):

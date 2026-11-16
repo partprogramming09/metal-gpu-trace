@@ -832,6 +832,7 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
         out, f"{label}.frames", ["frame", "start_ms"] + [f"gpu_ms_{c.lower()}" for c in channels] + ["gpu_ms_total"],
         ([frame, round(start, 3)] + [round(frames[frame].get(c, 0.0), 4) for c in channels] + [round(total, 4)]
          for frame, start, total in zip(ordered, starts, totals)))
+    summary["common"] = metrics.common_block(summary)
     (out / f"{label}.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
     return summary
 

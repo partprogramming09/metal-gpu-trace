@@ -71,7 +71,17 @@ corrida antes de dar una diferencia por real.
 
 ## Novedades
 
-Versión 0.27.2. Cada punto enlaza al comando que se ejecutó y a su salida real.
+Versión 0.27.3. Cada punto enlaza al comando que se ejecutó y a su salida real.
+
+- ✨ **Una sola forma de resumen en las dos plataformas.** Todo resumen nuevo (`schema_version` 3) trae un bloque
+  `common` con el ritmo de frames, la presión de memoria y la API gráfica, con las mismas claves en macOS y Windows y una
+  `source` por número; lo que no se puede medir igual dice `comparable: false` en vez de un número inventado. [Prueba](../docs/evidence/v0.27.3.md#a-summary-has-a-common-block-on-both-platforms)
+- 🔍 **Qué reservó una grabación.** `perf_memory_breakdown` reparte las reservas de Metal por tipo, lo que sigue vivo y
+  cuántas veces se reservó la memoria viva (5,47 en una corrida real), solo con el resumen. [Prueba](../docs/evidence/v0.27.3.md#what-a-recording-allocated-by-type)
+- 🩺 **Un veredicto honesto contra una sola corrida.** `perf_check` añade una `note` cuando el veredicto no es same y la
+  referencia es una corrida: su ruido no está medido, así que un cambio pequeño puede ser ruido. [Prueba](../docs/evidence/v0.27.3.md#perf_check-says-when-its-reference-is-one-run)
+
+Versión 0.27.2, aún vigente:
 
 - 🔍 **Cuánto tarda la GPU en arrancar.** `gpu.start_latency_ms` da la cuenta, la media, la mediana, el p95 y el máximo
   del tiempo entre enviar el trabajo y que la GPU lo empiece; `perf_compare` compara la mediana. En una corrida real fue
@@ -181,7 +191,7 @@ El servidor lee estas variables de entorno:
 | `KEEP_TRACE` | `1` guarda el `.trace` de cada grabación, para `trace_tables`, `trace_query` o Instruments. |
 | `METAL_TRACE_ALLOW_LOCKED` | `1` graba con la pantalla bloqueada; sin él se rechaza la grabación, porque una sesión bloqueada deja los frames del programa sin el ritmo de la pantalla. |
 | `METAL_TRACE_MAX_DISK_MB` | Límite de tamaño de la carpeta de grabaciones, en MiB (un número entero de 1 o más): tras cada grabación se borran el `.trace` más antiguo, luego el `.chrome-trace` y luego las tablas por frame y de memoria hasta que quepa; nunca los resúmenes ni `baselines.json`. El `.trace` de la grabación nueva se borra el último, y su resumen dice qué se quitó (`retention`). |
-| `KEEP_RUNS` | Guarda solo las N grabaciones más recientes; nunca borra `baselines.json` (ni el `panel.json` que dejaron 0.24.0 y anteriores). |
+| `KEEP_RUNS` | Guarda solo las N grabaciones más recientes; nunca borra `baselines.json` (ni el `panel.json` que dejaron 0.24.0 y anteriores). El `.trace` de una grabación vieja no lo borra: solo `METAL_TRACE_MAX_DISK_MB` lo libera, y sin esa variable se quedan. |
 | `METAL_TRACE_LOCK` | El candado que hace que las grabaciones vayan de una en una, vaya cada una a la carpeta que vaya (de serie, `~/Library/Caches/metal-gpu-trace/recording.lock`). `perf_record.sh` lanzado a mano toma el mismo, o el que diga `PERF_LOCK`. |
 | `PERF_ENV` | Pares `NOMBRE=VALOR`, separados por espacios, que recibe el programa grabado. |
 | `PERF_INSTRUMENTS` | Instrumentos que se añaden a la plantilla Metal System Trace, separados por `;` (`xcrun xctrace list instruments` los nombra); sus tablas necesitan el `.trace`, así que va con `KEEP_TRACE=1`. |
@@ -296,7 +306,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 
 ### Herramientas
 
-25 herramientas en cuatro grupos. Tu agente las elige; rara vez llamas a una tú. Cada fila empieza por para qué sirve y sigue con el detalle.
+26 herramientas en cuatro grupos. Tu agente las elige; rara vez llamas a una tú. Cada fila empieza por para qué sirve y sigue con el detalle.
 
 #### Grabar
 
@@ -319,6 +329,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | `perf_baseline` | Guarda varias grabaciones iguales como referencia y dice cuánto varían solas. — Guarda varias grabaciones iguales como referencia con nombre y devuelve el rango que abarca cada cifra entre ellas y `spread_pct`, cuánto difieren corridas iguales (el ruido que un cambio tiene que superar); sola, lista las referencias. `skip_s` guarda cada corrida sin sus primeros segundos y `perf_check` aplica el mismo corte a la corrida que juzga |
 | `perf_history` | Sigue una cifra a lo largo de muchas grabaciones. — Sigue FPS, 1 % bajo, ms de GPU, tirones, hitches y MiB de Metal en las corridas cuyo nombre empieza por un prefijo, de la más antigua a la más reciente, con el cambio de la primera a la última |
 | `perf_diagnose` | Dice si el programa reparte el trabajo de la GPU en demasiadas piezas diminutas, como hacen las capas de traducción. — Dice si una grabación reparte su trabajo de GPU en demasiados encoders cortos, como hacen las capas de traducción, con encoders y command buffers por cuadro, las etiquetas con más tiempo de GPU y el tiempo ocioso de la GPU |
+| `perf_memory_breakdown` | Muestra qué tipos de recursos de Metal asigna y suelta un programa. — Desglosa las asignaciones de Metal de una grabación por tipo (textura, búfer, heap): asignado, aún vivo, cuánto se recicla y la tasa de asignación tras el arranque |
 
 #### Ir más a fondo
 
