@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The macOS recording journey</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--color-paper:#f5f5f5;--color-ink:#2d3142;--color-muted:#4f5d75;--color-accent:#bf4520;--font-sans:'Geist',system-ui,sans-serif;--font-serif:'Instrument Serif','Noto Serif',serif;--font-mono:'Geist Mono',ui-monospace,monospace}
+body{font-family:var(--font-sans);background:var(--color-paper);color:var(--color-ink);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:3rem 2rem}
+.frame{max-width:700px;width:100%}
+.diagram-container{width:100%;overflow-x:auto}
+.eyebrow{font-family:var(--font-mono);font-size:14px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--color-muted);margin-bottom:.5rem}
+h1{font-family:var(--font-serif);font-size:28px;font-weight:400;letter-spacing:-.02em;line-height:1.15;margin-bottom:1.5rem}
+svg{width:700px;max-width:100%;display:block}
+</style>
+</head>
+<body>
+<div class="frame">
+<p class="eyebrow">Flow · Diagram Design</p>
+<h1>The macOS recording journey, and its exit by cancel</h1>
+<div class="diagram-container">
+<svg viewBox="0 0 800 624" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="macos-journey-title macos-journey-desc">
+<title id="macos-journey-title">One macOS recording</title>
+<desc id="macos-journey-desc">A request passes the tool checks and the wrapper's preflight, then starts the script in its own process group. The server watches it once a second, then finishes and replies. A cancel or an overrun leads to the kill sequence, which deletes the new files and saves nothing.</desc>
+<defs>
+<marker id="mj-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+<marker id="mj-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+</defs>
+<rect width="800" height="624" fill="#f5f5f5"/>
+<g font-family="Geist, system-ui, sans-serif" font-size="14" fill="#4f5d75">
+<text x="20" y="32">Each box is a stage of one recording; the server does every stage except the script.</text>
+<text x="20" y="56">The kill sequence leaves nothing behind: the run's new files are deleted.</text>
+</g>
+
+<!-- arrows first, so the boxes sit on top -->
+<g stroke="#4f5d75" stroke-width="1.2" fill="none">
+<line x1="180" y1="148" x2="220" y2="148" marker-end="url(#mj-arrow)"/>
+<line x1="380" y1="148" x2="420" y2="148" marker-end="url(#mj-arrow)"/>
+<line x1="580" y1="148" x2="620" y2="148" marker-end="url(#mj-arrow)"/>
+<path d="M700 208 V224 A8 8 0 0 1 692 232 H108 A8 8 0 0 1 100 240 V256" marker-end="url(#mj-arrow)"/>
+<line x1="180" y1="316" x2="220" y2="316" marker-end="url(#mj-arrow)"/>
+<line x1="380" y1="316" x2="420" y2="316" marker-end="url(#mj-arrow)"/>
+</g>
+<line x1="100" y1="376" x2="100" y2="424" stroke="#bf4520" stroke-width="1.2" marker-end="url(#mj-arrow-accent)"/>
+
+<!-- branch label beside the vertical arrow: opaque mask, 8 px gap -->
+<rect x="108" y="390" width="160" height="16" rx="2" fill="#f5f5f5"/>
+<text x="114" y="404" font-family="Geist, system-ui, sans-serif" font-size="14" fill="#bf4520">cancel or overrun</text>
+
+<!-- row 1 -->
+<rect x="20" y="88" width="160" height="120" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<rect x="220" y="88" width="160" height="120" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<rect x="420" y="88" width="160" height="120" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<rect x="620" y="88" width="160" height="120" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<!-- row 2 -->
+<rect x="20" y="256" width="160" height="120" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<rect x="220" y="256" width="160" height="120" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<rect x="420" y="256" width="160" height="120" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+<!-- row 3: the exit -->
+<rect x="20" y="424" width="160" height="120" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.5"/>
+
+<g font-family="Geist, system-ui, sans-serif" font-size="14" font-weight="600" fill="#2d3142" text-anchor="middle">
+<text x="100" y="116">Request</text>
+<text x="300" y="116">Tool checks</text>
+<text x="500" y="116">Wrapper</text>
+<text x="700" y="116">Script</text>
+<text x="100" y="284">Watch loop</text>
+<text x="300" y="284">Finish</text>
+<text x="500" y="284">Reply</text>
+<text x="100" y="452">Kill sequence</text>
+</g>
+<g font-family="Geist, system-ui, sans-serif" font-size="14" fill="#4f5d75" text-anchor="middle">
+<text x="100" y="140">tool_perf_record</text><text x="100" y="158">tier to 3 settings</text>
+<text x="300" y="140">check levers, env,</text><text x="300" y="158">workload, program</text>
+<text x="500" y="140">(preflight) first</text><text x="500" y="158">then record_run</text>
+<text x="700" y="140">own process group</text><text x="700" y="158">runs the program</text>
+<text x="100" y="308">every second: check</text><text x="100" y="326">deadline and cancel</text>
+<text x="300" y="308">server adds layer,</text><text x="300" y="326">context and tier</text>
+<text x="500" y="308">summary to client</text><text x="500" y="326">or error</text>
+</g>
+<g font-family="Geist, system-ui, sans-serif" font-size="14" fill="#2d3142" text-anchor="middle">
+<text x="100" y="476">kill the group,</text><text x="100" y="494">delete new files,</text><text x="100" y="512">nothing saved</text>
+</g>
+
+<line x1="20" y1="580" x2="780" y2="580" stroke="#2d3142" stroke-opacity="0.2"/>
+<g font-family="Geist, system-ui, sans-serif" font-size="14" fill="#4f5d75">
+<rect x="20" y="596" width="24" height="12" rx="3" fill="rgba(191,69,32,0.08)" stroke="#bf4520"/>
+<text x="52" y="607">exit by cancel or overrun</text>
+<line x1="300" y1="602" x2="332" y2="602" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#mj-arrow)"/>
+<text x="342" y="607">normal path</text>
+</g>
+</svg>
+</div>
+</div>
+</body>
+</html>

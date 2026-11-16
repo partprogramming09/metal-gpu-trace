@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What perf_report.py does with a .trace</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--color-paper:#f5f5f5;--color-ink:#2d3142;--color-muted:#4f5d75;--color-accent:#bf4520;--font-sans:'Geist',system-ui,sans-serif;--font-serif:'Instrument Serif','Noto Serif',serif;--font-mono:'Geist Mono',ui-monospace,monospace}
+body{font-family:var(--font-sans);background:var(--color-paper);color:var(--color-ink);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:3rem 2rem}
+.frame{width:700px;max-width:100%}
+.eyebrow{font-family:var(--font-mono);font-size:14px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--color-muted);margin-bottom:.5rem}
+h1{font-family:var(--font-serif);font-size:24px;font-weight:400;letter-spacing:-.02em;line-height:1.15;margin-bottom:1.5rem}
+svg{width:700px;max-width:100%;height:auto;display:block}
+</style>
+</head>
+<body>
+<div class="frame">
+<p class="eyebrow">Flow · Diagram Design</p>
+<h1>What perf_report.py does with a .trace</h1>
+<svg viewBox="0 0 800 488" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ts-title ts-desc">
+<title id="ts-title">What perf_report.py does with a .trace</title>
+<desc id="ts-desc">Eight steps in two rows: perf_report.py exports the trace tables with xctrace, checks the table of contents (a missing metal-gpu-intervals is an error, other missing tables go to missing_tables), reads the launched program's GPU work, detects unpresented work, then computes the frame numbers, the optional tables, pacing and hitches, and writes the files.</desc>
+<defs>
+<marker id="ts-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+<marker id="ts-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+<marker id="ts-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+</defs>
+
+<rect width="800" height="488" fill="#f5f5f5"/>
+
+<g font-family="'Geist Mono', ui-monospace, monospace" font-size="14" fill="#4f5d75">
+<text x="32" y="36">ONLY metal-gpu-intervals IS REQUIRED · THE OTHER TABLES ARE OPTIONAL</text>
+<text x="32" y="60">dashed box is the decision · dashed arrows are the branches out of it</text>
+</g>
+
+<!-- arrows first, then boxes -->
+<g stroke="#4f5d75" stroke-width="1.2" fill="none">
+<line x1="192" y1="172" x2="224" y2="172" marker-end="url(#ts-arrow)"/>
+<line x1="384" y1="172" x2="416" y2="172" marker-end="url(#ts-arrow)"/>
+<line x1="576" y1="172" x2="608" y2="172" marker-end="url(#ts-arrow)"/>
+<line x1="192" y1="356" x2="224" y2="356" marker-end="url(#ts-arrow)"/>
+<line x1="384" y1="356" x2="416" y2="356" marker-end="url(#ts-arrow)"/>
+<line x1="576" y1="356" x2="608" y2="356" marker-end="url(#ts-arrow)"/>
+<path d="M688 224 V256 Q688 264 680 264 H120 Q112 264 112 272 V304" marker-end="url(#ts-arrow)"/>
+<path d="M276 120 V88" stroke-dasharray="5,4" marker-end="url(#ts-arrow)"/>
+<path d="M332 120 V88" stroke-dasharray="5,4" marker-end="url(#ts-arrow)"/>
+</g>
+
+<!-- branch labels: opaque masks, 8 px and 6 px from the branch lines -->
+<rect x="148" y="94" width="120" height="20" rx="2" fill="#f5f5f5"/>
+<text x="264" y="109" text-anchor="end" font-family="'Geist Mono', ui-monospace, monospace" font-size="14" fill="#5a6580">absent: error</text>
+<rect x="338" y="94" width="251" height="20" rx="2" fill="#f5f5f5"/>
+<text x="342" y="109" font-family="'Geist Mono', ui-monospace, monospace" font-size="14" fill="#5a6580">other absent: missing_tables</text>
+
+<!-- boxes -->
+<rect x="32" y="120" width="160" height="104" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1"/>
+<rect x="224" y="120" width="160" height="104" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.5" stroke-dasharray="5,4"/>
+<rect x="416" y="120" width="160" height="104" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1"/>
+<rect x="608" y="120" width="160" height="104" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1"/>
+<rect x="32" y="304" width="160" height="104" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1"/>
+<rect x="224" y="304" width="160" height="104" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1"/>
+<rect x="416" y="304" width="160" height="104" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1"/>
+<rect x="608" y="304" width="160" height="104" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1"/>
+
+<g font-family="Geist, system-ui, sans-serif" font-size="14" font-weight="600" fill="#2d3142" text-anchor="middle">
+<text x="112" y="159">Export contents</text>
+<text x="112" y="177">and tables</text>
+<text x="112" y="195">(xctrace)</text>
+<text x="304" y="168">Check table</text>
+<text x="304" y="186">of contents</text>
+<text x="496" y="159">Read the</text>
+<text x="496" y="177">program's</text>
+<text x="496" y="195">GPU work</text>
+<text x="688" y="159">Detect</text>
+<text x="688" y="177">unpresented</text>
+<text x="688" y="195">work</text>
+<text x="112" y="352">Frame</text>
+<text x="112" y="370">numbers</text>
+<text x="304" y="352">Optional</text>
+<text x="304" y="370">tables</text>
+<text x="496" y="352">Pacing and</text>
+<text x="496" y="370">hitches</text>
+<text x="688" y="352">Write the</text>
+<text x="688" y="370">files</text>
+</g>
+
+<!-- legend -->
+<line x1="32" y1="440" x2="768" y2="440" stroke="#2d3142" stroke-opacity="0.2"/>
+<rect x="32" y="456" width="28" height="16" rx="3" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-dasharray="5,4"/>
+<text x="72" y="469" font-family="'Geist Mono', ui-monospace, monospace" font-size="14" fill="#4f5d75">decision</text>
+<rect x="200" y="456" width="28" height="16" rx="3" fill="#f5f5f5" stroke="#2d3142"/>
+<text x="240" y="469" font-family="'Geist Mono', ui-monospace, monospace" font-size="14" fill="#4f5d75">step</text>
+</svg>
+</div>
+</body>
+</html>

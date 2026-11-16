@@ -2,6 +2,8 @@
 
 **Reader:** people who change the code. Reviewed 2026-11-15.
 
+**In short:** the server is plain Python, speaks two MCP versions at once and runs one tool call at a time on a worker thread, while the transport keeps listening so a recording can be cancelled.
+
 ## Why it is shaped this way
 
 The server has to run on a fresh Mac with nothing but the `python3` macOS ships, so it is standard library only
@@ -64,7 +66,7 @@ family facts and the workload list.
 4. Still on the worker thread, the tool runs from `registry`. Right before, it stops with the project file's error if that file is wrong (`project.check`).
 5. `protocol` decorates the result for its era and the transport writes the reply.
 
-The [Server and transport](./server-and-transport) guide follows this path line by line.
+The [Server and transport](./server-and-transport/) guide follows this path line by line.
 
 ## Where recordings live, and what reads them
 

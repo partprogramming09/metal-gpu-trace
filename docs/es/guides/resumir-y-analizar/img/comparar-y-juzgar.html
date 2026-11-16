@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Comparar y juzgar una corrida</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #bf4520;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', 'Noto Serif KR', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 760px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    svg { width: 700px; max-width: 100%; height: auto; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Flujo · Diagrama</p>
+    <h1>Comparar y juzgar: un rango y un margen deciden, nunca un número contra otro</h1>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ac-title ac-desc">
+        <title id="ac-title">Cómo se comparan y juzgan las corridas</title>
+        <desc id="ac-desc">Ocho cajas en dos filas: leer los resúmenes; perf_compare, que solo muestra cambios; perf_baseline, con el rango de corridas iguales; perf_check, que decide cada métrica contra ese rango. Abajo: el veredicto regressed, improved o same; perf_ab y perf_gate, que son otras formas de decidir; y los avisos, que nunca cambian un veredicto.</desc>
+        <defs>
+          <marker id="ac-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="ac-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <text x="16" y="40" font-family="Geist Mono, monospace" font-size="16" fill="#4f5d75">El ruido de corridas iguales es la regla · analysis.py, experiments.py</text>
+
+        <!-- arrows first, so the boxes sit above them -->
+        <g stroke="#4f5d75" stroke-width="1.2" fill="none">
+          <line x1="234" y1="184" x2="266" y2="184" marker-end="url(#ac-arrow)"/>
+          <line x1="484" y1="184" x2="516" y2="184" marker-end="url(#ac-arrow)"/>
+          <line x1="734" y1="184" x2="766" y2="184" marker-end="url(#ac-arrow)"/>
+          <path d="M875 272 V324 Q875 332 867 332 H133 Q125 332 125 340 V392" marker-end="url(#ac-arrow)"/>
+        </g>
+
+        <!-- row 1 -->
+        <rect x="16" y="96" width="218" height="176" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+        <rect x="266" y="96" width="218" height="176" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+        <rect x="516" y="96" width="218" height="176" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+        <rect x="766" y="96" width="218" height="176" rx="6" fill="#f5f5f5"/>
+        <rect x="766" y="96" width="218" height="176" rx="6" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.5" stroke-dasharray="5,4"/>
+
+        <!-- row 2 -->
+        <rect x="16" y="392" width="218" height="176" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+        <rect x="266" y="392" width="218" height="176" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+        <rect x="516" y="392" width="218" height="176" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+        <rect x="766" y="392" width="218" height="176" rx="6" fill="#f5f5f5" stroke="#2d3142"/>
+
+        <!-- row 1 text -->
+        <g font-family="Geist, system-ui, sans-serif" font-size="16" font-weight="600" fill="#2d3142">
+          <text x="28" y="126">1 · Leer los</text>
+          <text x="28" y="147">resúmenes</text>
+          <text x="278" y="126">2 · perf_compare</text>
+          <text x="278" y="147">solo cambios</text>
+          <text x="528" y="126">3 · perf_baseline</text>
+          <text x="528" y="147">rango de N iguales</text>
+          <text x="778" y="126">4 · perf_check</text>
+          <text x="778" y="147">decide contra el</text>
+          <text x="778" y="168">rango</text>
+        </g>
+        <g font-family="Geist Mono, monospace" font-size="16" fill="#4f5d75">
+          <text x="28" y="196">el .json de cada</text>
+          <text x="28" y="216">corrida; con skip_s</text>
+          <text x="28" y="236">se recalculan FPS,</text>
+          <text x="28" y="256">mínimos y hitches</text>
+          <text x="278" y="196">cambio = b − a</text>
+          <text x="278" y="216">% = 100·cambio / a</text>
+          <text x="278" y="236">sin veredicto</text>
+          <text x="278" y="256">avisos, no decide</text>
+          <text x="528" y="196">N corridas iguales:</text>
+          <text x="528" y="216">mín y máx por</text>
+          <text x="528" y="236">métrica; la</text>
+          <text x="528" y="256">dispersión = ruido</text>
+          <text x="778" y="196">fps y ms de GPU:</text>
+          <text x="778" y="216">margen 3 % sobre</text>
+          <text x="778" y="236">el rango; cuentas</text>
+          <text x="778" y="256">de encoders: exacto</text>
+        </g>
+
+        <!-- row 2 text -->
+        <g font-family="Geist, system-ui, sans-serif" font-size="16" font-weight="600" fill="#2d3142">
+          <text x="28" y="422">5 · Veredicto</text>
+          <text x="28" y="443">regressed, improved</text>
+          <text x="28" y="464">o same</text>
+          <text x="278" y="422">6 · perf_ab</text>
+          <text x="278" y="443">A B B A, 1 a 5</text>
+          <text x="278" y="464">vueltas</text>
+          <text x="528" y="422">7 · perf_gate</text>
+          <text x="528" y="443">presupuestos fijos</text>
+          <text x="778" y="422">8 · Avisos que</text>
+          <text x="778" y="443">nunca cambian</text>
+          <text x="778" y="464">un veredicto</text>
+        </g>
+        <g font-family="Geist Mono, monospace" font-size="16" fill="#4f5d75">
+          <text x="28" y="492">regressed: alguna</text>
+          <text x="28" y="512">métrica peor;</text>
+          <text x="28" y="532">improved: alguna</text>
+          <text x="28" y="552">mejor, ninguna peor</text>
+          <text x="278" y="492">mejor o peor solo</text>
+          <text x="278" y="512">si cada b queda</text>
+          <text x="278" y="532">fuera del rango a</text>
+          <text x="278" y="552">sin datos: unknown</text>
+          <text x="528" y="492">un piso o techo</text>
+          <text x="528" y="512">por métrica</text>
+          <text x="528" y="532">dato ausente: falla</text>
+          <text x="528" y="552">pasa o falla</text>
+          <text x="778" y="492">menos de 100</text>
+          <text x="778" y="512">cuadros; sin</text>
+          <text x="778" y="532">presentar; GPU</text>
+          <text x="778" y="552">ruidosa; otra capa</text>
+        </g>
+
+        <!-- legend -->
+        <line x1="16" y1="592" x2="984" y2="592" stroke="#2d3142" stroke-opacity="0.2"/>
+        <rect x="16" y="606" width="24" height="14" rx="3" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-dasharray="5,4"/>
+        <text x="52" y="618" font-family="Geist Mono, monospace" font-size="16" fill="#4f5d75">decisión</text>
+        <text x="200" y="618" font-family="Geist Mono, monospace" font-size="16" fill="#4f5d75">casillas 6 a 8: otras formas de decidir, no pasos que siguen al 5</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

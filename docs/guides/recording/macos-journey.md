@@ -1,0 +1,135 @@
+# The macOS journey
+
+**Reader:** people who change `recording.py` or `perf_record.sh`. Reviewed 2026-11-16. Labels: see [Recording](./index.md#how-to-read-the-labels).
+
+Español: [El recorrido en macOS](../../es/guides/grabar/recorrido-macos.md)
+
+**In short:** a recording request goes through five stages: it becomes a command, a wrapper checks and prepares the Mac,
+a script is started with a clean environment, the server watches it once a second, and when the script returns the
+server completes the summary. Cancelling or running past the deadline follows a fixed kill sequence that deletes
+everything the run created. Two facts are added to every run: which translation layer it ran on and where the code came from.
+
+Everything below is **confirmed** by the lines named. The files it leaves are in the
+[data guide](../data-and-lifecycle/files-on-disk.md#what-a-recording-leaves-on-disk).
+
+![Boxes left to right: request, tool checks, wrapper with preflight, script in its own process group, watch loop every second, finish and reply. Below the watch loop an arrow for cancel or overrun leads to the kill sequence.](./img/macos-journey.png)
+*Figure 1. One macOS recording and the exit by cancel or overrun. HTML source: `img/macos-journey.html`.*
+
+## Step 1: the request becomes a command
+
+`tool_perf_record`, `recording.py:36-73`.
+
+1. `resolve_tier` turns `tier` into three settings (`recording.py:23-33`):
+
+   | Tier | Metal memory | GPU counters | `.trace` kept | What it costs |
+   |---|---|---|---|---|
+   | `light` | no | no | no | seconds of read-back: to iterate |
+   | `standard` (default) | yes | no | no | the memory table is the slowest to read |
+   | `deep` | yes | yes | yes (unless the disk limit drops it) | counters add about 40 s of read-back per recorded second (`recording.py:44`) |
+
+   A `memory` or `counters` passed on its own replaces that part of the tier. `deep` is refused on Windows
+   (`recording.py:49-50`).
+2. `check_levers` refuses a `memory_free_pct` outside 20 to 60 and either lever on Windows (`recording.py:274-284`).
+3. `check_env` accepts only `NAME=VALUE` pairs separated by spaces (`recording.py:76-81`): the script later splits the
+   text on spaces, so a space inside a value would break it.
+4. With `workload`, `workloads.workload_command` supplies the program, the Wine mode, the arguments and the environment
+   (`recording.py:53-56`; [The test programs](./test-programs.md)). `size` without a workload is refused (`:57-58`);
+   no `program` is refused (`:59-60`).
+5. Without `wine`, `METAL_TRACE_WINE` is used; on macOS with neither, the call is refused (`:61-65`). The program must
+   exist (`:66-68`); the error names the file, not the path.
+6. `perf_attach` skips most of that: `record(label, seconds, "attach", "-", "-", [process])` (`recording.py:95`). It
+   has no tier, so the summary has no `tier` key (`recording.py:344-345`), and the program keeps running afterwards.
+
+## Step 2: the wrapper
+
+`record`, `recording.py:309-322`. In this order:
+
+| # | What | Line |
+|---|---|---|
+| 1 | The label: letters, digits, `.`, `_`, `-`, at most 100 | `:312` |
+| 2 | The levers | `:314` |
+| 3 | **Preflight** ([Preflight](./preflight.md)) | `:315` |
+| 4 | `memory_pressure` if `memory_free_pct` was given: it waits up to 90 s for "Stable at percent free" and refuses if it never comes (`hold_memory_pressure`) | `:316`, `:287-306` |
+| 5 | `record_run`. A `finally` stops the pressure whatever happens | `:319-322` |
+
+Preflight goes before the pressure on purpose: a refused run must start nothing.
+`test_record_runs_preflight_before_memory_pressure` and `test_preflight_failure_starts_no_process`
+(`tests/test_preflight.py:275`, `:296`) pin that (not run for this guide).
+
+## Step 3: the environment the script gets
+
+`record_run` builds it at `recording.py:360-370` ([E6](./evidence.md)).
+
+| Variable | Set when | Meaning for the script |
+|---|---|---|
+| `PERF_OUT` | always | the runs folder (`config.OUT`) |
+| `PERF_LOCK` | always | the lock folder (`config.LOCK`), so the server and the script share one |
+| `PERF_PARENT_PID` | always | the server's pid: the script stops its program if the server dies (`perf_record.sh:82-92`) |
+| `PERF_ENV` | always | the program's `NAME=VALUE` variables, from the environment plus `env` and the workload |
+| `PERF_MEMORY=0` | `memory` is false | skip the Metal memory table |
+| `KEEP_TRACE=1` | tier `deep` | keep the `.trace` |
+| `PERF_PREFIX` | `background` | run the program under `taskpolicy -b` (`recording.py:271`) |
+| `PERF_INSTRUMENTS` | counters | add the `Metal GPU Counters` instrument |
+
+`KEEP_RUNS` and `PERF_MIN_FREE_GB` are not set here: the script reads them from the environment the server passed on
+(`dict(os.environ, ...)`, `recording.py:360`).
+
+Then `layer_of` runs (`recording.py:370`): it asks the Wine for its version (`wine --version`, timeout 30 s,
+`:140-143`) and fingerprints the layer ([What identifies a run](#what-identifies-a-run)).
+
+## Step 4: the watch loop
+
+`record_run`, `recording.py:386-421`.
+
+- **Before starting**, the server remembers which `<label>_*` files and which `instruments*.ktrace` already exist
+  (`:386-388`); that list is what it may delete later, so it never deletes a file it did not create.
+- **The start**: the script runs with `start_new_session=True` (`:389-392`): it leads its own process group, which is
+  what `os.killpg` kills.
+- **The loop** (`:394-421`) turns at most once a second. If the time is over or the client cancelled, it goes to the
+  kill sequence; otherwise it waits up to a second for the script and, every `PROGRESS_TICKS` (5, `config.py:48`)
+  turns, sends a progress line "recording and reading back: N s of up to M s".
+
+## Step 5: when the script returns
+
+| The script ends with | The server does | Line |
+|---|---|---|
+| A non-zero exit, or no new `.json` | `recording failed (exit N): <last line of stderr>` | `recording.py:422-425` |
+| A summary with no GPU intervals | The program did no GPU work: the run's files are deleted and the error says how it ended ([When it fails](./failures.md)) | `:427-436` |
+| Otherwise | `finish` adds `layer`, `context`, `tier`, applies the disk limit and rewrites the summary. Key tables: [data guide](../data-and-lifecycle/json-keys.md#the-summary-key-by-key) | `recording.py:337-351`, `:437` |
+
+## The kill sequence
+
+Cancel and overrun end the same way, in this order (`recording.py:396-413`):
+
+1. `os.killpg(proc.pid, SIGKILL)`: the script and everything it started (`:397`). `SIGKILL` cannot be caught, so the
+   script's own trap does not run: the server has to clean up itself.
+2. Stop the program: with `native`, every process of that name (`kill_program`, `:255-263`: `SIGTERM`, up to 3 s of
+   waiting, then `SIGKILL`); with Wine, `wineserver -k` for the prefix (`:402-403`); with `attach`, nothing: the program
+   was not ours (`:401`).
+3. `free_lock(proc.pid)`: remove the lock only if it still holds the script's pid (`:326-335`).
+4. Delete the files this run created: new `<label>_*` entries and new `instruments*.ktrace` (`:406-407`).
+5. Raise `the recording was cancelled; nothing was saved`, or, for an overrun, the message that names the likely cause
+   (a hidden window) (`:408-413`).
+
+`test_overrun`, `test_overrun_removes_lock_with_pid` and `test_free_lock_only_frees_its_own`
+(`tests/test_recording.py:358`, `:387`, `:733`) pin this (not run for this guide).
+
+## What identifies a run
+
+Two things are computed in the server, not in the script, because they need to read the machine and the repository.
+Example: two runs of the same game, one on CrossOver and one on a newer Wine, get different fingerprints, so
+`perf_compare` can say "different layers" before it says one is faster.
+
+| Piece | What it records | Line |
+|---|---|---|
+| **`layer_of`** | The translation layer the recording ran on. `native` gives `{"none": "native Metal, no translation layer"}`, `attach` gives `{"unknown": ...}` | `recording.py:127-157`, `:134-137` |
+| (with Wine) version | `wine_version`, which joins CrossOver's "Product Name" and "Public Version" lines | `:117-124` |
+| (with Wine) overrides | The `WINEDLLOVERRIDES` the script will pass, and the prefix's DLL overrides read from `user.reg` (`registry_overrides`) | `:102-114` |
+| (with Wine) DLLs | Size and SHA-256 of five DLLs (`d3d12`, `d3d12core`, `d3d11`, `d3d10core`, `dxgi`, `LAYER_DLLS`) in Wine and in the prefix, plus a 12-character fingerprint of all of it | `:99` |
+| **`run_context`** | The short commit and whether tracked files changed, of the repository that holds the project file, and `xctrace`'s version. It drops every `GIT_*` variable so none can point git at another repository, and leaves out the branch, the path and the user name: summaries are shared | `recording.py:168-188` |
+
+- Which of the two DLL copies Wine really loads is **not known** (`:128-130`: Instruments does not keep Wine's own
+  log), so the fingerprint treats the prefix's copy as the effective one when it exists (`effective_dlls`, `:160-162`).
+- Why: `perf_compare` must say whether two runs share a layer before it says one is faster (`layer_change`, `:205-223`).
+- A workload that goes through MoltenVK or Rosetta passes its own `layer` instead (`workloads.workload_layer`,
+  `workloads.py:39-49`), so a comparison against native says "different layers".

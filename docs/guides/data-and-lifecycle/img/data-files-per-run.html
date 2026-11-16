@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Files of one run and what each pruning removes</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #bf4520;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    /* Rendered at 700 px on the page: a 1000-unit viewBox at 0.7 scale. */
+    .frame { max-width: 700px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 1.5rem;
+    }
+    svg { width: 100%; min-width: 0; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <h1>The files of one run, and what each pruning removes</h1>
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 830" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="data-files-per-run-title data-files-per-run-desc">
+        <title id="data-files-per-run-title">Files of one run and what each pruning removes</title>
+        <desc id="data-files-per-run-desc">A matrix with one row per kind of file in the runs folder and four columns: who writes it, what happens to it at the end of a run, what KEEP_RUNS does to it and what METAL_TRACE_MAX_DISK_MB does to it. Shaded cells are where a file can be removed; the summary json is removed only by KEEP_RUNS, and baselines.json and the folder mark are never removed.</desc>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- header -->
+        <g font-family="Geist Mono, monospace" font-size="16" font-weight="600" fill="#4f5d75">
+          <text x="32" y="52">FILE</text>
+          <text x="264" y="52">WRITTEN BY</text>
+          <text x="444" y="52">END OF A RUN</text>
+          <text x="624" y="52">KEEP_RUNS=N</text>
+          <text x="804" y="40">METAL_TRACE_</text>
+          <text x="804" y="60">MAX_DISK_MB</text>
+        </g>
+        <line x1="24" y1="84" x2="976" y2="84" stroke="#2d3142" stroke-width="1"/>
+
+        <!-- column dividers -->
+        <g stroke="#2d3142" stroke-opacity="0.12">
+          <line x1="256" y1="84" x2="256" y2="692"/>
+          <line x1="436" y1="84" x2="436" y2="692"/>
+          <line x1="616" y1="84" x2="616" y2="692"/>
+          <line x1="796" y1="84" x2="796" y2="692"/>
+        </g>
+
+        <!-- shaded cells: removable here -->
+        <g fill="rgba(191,69,32,0.08)">
+          <rect x="618" y="87" width="176" height="70"/>
+          <rect x="798" y="87" width="176" height="70"/>
+          <rect x="618" y="239" width="176" height="70"/>
+          <rect x="798" y="239" width="176" height="70"/>
+          <rect x="618" y="315" width="176" height="70"/>
+          <rect x="618" y="391" width="176" height="70"/>
+          <rect x="798" y="391" width="176" height="70"/>
+          <rect x="618" y="467" width="176" height="70"/>
+        </g>
+        <!-- the one cell where a summary is removed -->
+        <rect x="618" y="163" width="176" height="70" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.5"/>
+
+        <!-- rows -->
+        <g font-family="Geist Mono, monospace" font-size="16" fill="#2d3142">
+          <!-- row 1: .trace -->
+          <text x="32" y="128" font-weight="600">&lt;run&gt;.trace</text>
+          <text x="264" y="128" fill="#4f5d75">xctrace</text>
+          <text x="444" y="108">deleted, unless</text>
+          <text x="444" y="128">KEEP_TRACE=1</text>
+          <text x="444" y="148">or deep</text>
+          <text x="624" y="128">goes with run</text>
+          <text x="804" y="118">1st; the current</text>
+          <text x="804" y="138">run: last</text>
+
+          <!-- row 2: .json -->
+          <text x="32" y="204" font-weight="600">&lt;run&gt;.json</text>
+          <text x="264" y="194" fill="#4f5d75">perf_report.py</text>
+          <text x="264" y="214" fill="#4f5d75">+ recording.py</text>
+          <text x="444" y="204">kept</text>
+          <text x="624" y="204" font-weight="600">goes with run</text>
+          <text x="804" y="204">never</text>
+
+          <!-- row 3: tables -->
+          <text x="32" y="270" font-weight="600">.frames.csv.gz</text>
+          <text x="32" y="290" font-weight="600">.metal_memory.csv.gz</text>
+          <text x="264" y="270" fill="#4f5d75">perf_report.py</text>
+          <text x="264" y="290" fill="#4f5d75">(:745, :831)</text>
+          <text x="444" y="280">kept</text>
+          <text x="624" y="280">goes with run</text>
+          <text x="804" y="270">3rd; the current</text>
+          <text x="804" y="290">run: never</text>
+
+          <!-- row 4: samplers -->
+          <text x="32" y="346" font-weight="600">.rss.csv</text>
+          <text x="32" y="366" font-weight="600">.agx.csv</text>
+          <text x="264" y="346" fill="#4f5d75">perf_record.sh</text>
+          <text x="264" y="366" fill="#4f5d75">(samplers)</text>
+          <text x="444" y="356">kept</text>
+          <text x="624" y="356">goes with run</text>
+          <text x="804" y="356">never</text>
+
+          <!-- row 5: chrome-trace -->
+          <text x="32" y="432" font-weight="600">&lt;run&gt;.chrome-trace</text>
+          <text x="264" y="422" fill="#4f5d75">trace export</text>
+          <text x="264" y="442" fill="#4f5d75">tool</text>
+          <text x="444" y="432">only if exported</text>
+          <text x="624" y="432">goes with run</text>
+          <text x="804" y="422">2nd; the current</text>
+          <text x="804" y="442">run: never</text>
+
+          <!-- row 6: presentmon -->
+          <text x="32" y="498" font-weight="600">.presentmon.csv</text>
+          <text x="32" y="518" fill="#4f5d75">(Windows only)</text>
+          <text x="264" y="508" fill="#4f5d75">Windows recorder</text>
+          <text x="444" y="508">kept</text>
+          <text x="624" y="508">goes with run</text>
+          <text x="804" y="508">never</text>
+
+          <!-- row 7: baselines -->
+          <text x="32" y="584" font-weight="600">baselines.json</text>
+          <text x="264" y="574" fill="#4f5d75">analysis.py</text>
+          <text x="264" y="594" fill="#4f5d75">copies of json</text>
+          <text x="444" y="584">kept</text>
+          <text x="624" y="584">never</text>
+          <text x="804" y="584">never</text>
+
+          <!-- row 8: mark -->
+          <text x="32" y="660" font-weight="600">.metal-gpu-trace-runs</text>
+          <text x="264" y="650" fill="#4f5d75">project.py</text>
+          <text x="264" y="670" fill="#4f5d75">the folder mark</text>
+          <text x="444" y="660">kept</text>
+          <text x="624" y="660">never</text>
+          <text x="804" y="660">never</text>
+        </g>
+
+        <!-- row separators -->
+        <g stroke="#2d3142" stroke-opacity="0.2">
+          <line x1="24" y1="160" x2="976" y2="160"/>
+          <line x1="24" y1="236" x2="976" y2="236"/>
+          <line x1="24" y1="312" x2="976" y2="312"/>
+          <line x1="24" y1="388" x2="976" y2="388"/>
+          <line x1="24" y1="464" x2="976" y2="464"/>
+          <line x1="24" y1="540" x2="976" y2="540"/>
+          <line x1="24" y1="616" x2="976" y2="616"/>
+        </g>
+        <line x1="24" y1="692" x2="976" y2="692" stroke="#2d3142" stroke-opacity="0.2"/>
+
+        <!-- legend -->
+        <line x1="24" y1="708" x2="976" y2="708" stroke="#2d3142" stroke-opacity="0.2"/>
+        <rect x="24" y="724" width="28" height="16" fill="rgba(191,69,32,0.08)"/>
+        <text x="64" y="740" font-family="Geist Mono, monospace" font-size="16" fill="#4f5d75">removable here</text>
+        <rect x="300" y="724" width="28" height="16" fill="rgba(191,69,32,0.08)" stroke="#bf4520" stroke-width="1.5"/>
+        <text x="340" y="740" font-family="Geist Mono, monospace" font-size="16" fill="#4f5d75">only KEEP_RUNS removes a .json</text>
+        <text x="24" y="776" font-family="Geist Mono, monospace" font-size="16" fill="#4f5d75">quota order: 1st .trace, 2nd .chrome-trace, 3rd tables</text>
+        <text x="24" y="808" font-family="Geist Mono, monospace" font-size="16" fill="#4f5d75">the current run keeps its tables and .chrome-trace</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

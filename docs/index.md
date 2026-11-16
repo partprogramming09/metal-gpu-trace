@@ -32,4 +32,4 @@ files of each release. Status as of 2026-11-16.
 | Pending | A trace that really leaks; `perf_compare` on two real runs (tests only); a Windows recording longer than 8 s; the three improvements of 0.27.2 that read Metal tables do not exist on Windows | [0.27.2](/evidence/v0.27.2) |
 
 New here? Start with [What this is about](/guides/). To know what a recording leaves on disk, where and for how long,
-read [Data and its lifecycle](/guides/data-and-lifecycle).
+read [Data and its lifecycle](/guides/data-and-lifecycle/).

@@ -2,6 +2,8 @@
 
 **Reader:** people who work on the code, or run it without PyPI.
 
+**In short:** you can run the server, the scripts and the checks straight from a git clone, with the `python3` that comes with the Mac and nothing installed.
+
 Everything runs with Python 3.9 or newer and the standard library; nothing has to be installed. Run Python with `-I`
 (isolated mode) so a file in the current folder can never shadow a module.
 
