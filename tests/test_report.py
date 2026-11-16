@@ -893,7 +893,7 @@ def test_summary_has_flag_and_basis_only_when_true(tmp_path):
             assert s["noisy_environment"] is flag, (device, s.get("noisy_environment"))
             if flag:
                 assert s["noisy_basis"] == {"gpu_device_pct_mean": device, "process_busy_pct": process_busy,
-                                            "external_pct": round(device - process_busy, 1)}, s["noisy_basis"]
+                                            "external_pct": round(device - process_busy, 1), "processes": []}, s["noisy_basis"]
             else:
                 assert "noisy_basis" not in s
     finally:
@@ -946,3 +946,61 @@ def test_start_latency_is_summarized_in_ms(tmp_path):
     stalled = [(f, st, 9_999_000_000 if f == 200 else 1_000_000, 7) for f, st, _, _, _ in stalled_spans()]
     got = _summary_with_latency(tmp_path, stalled)
     assert got["gpu"]["unpresented"]["frames"] == [200] and got["gpu"]["start_latency_ms"]["max"] == 1.0, got["gpu"]
+
+
+def test_noisy_basis_names_the_other_processes(tmp_path):
+    """With noisy_environment true, noisy_basis.processes lists up to 3 other processes by GPU ms and share of all GPU
+    time: the name has no pid and no sub-name ("(Aperitif)"), two pids with one name are one entry, the program itself
+    and a row without a process are left out, and a flag without other processes gives an empty list."""
+    def table(columns, body):
+        cols = "".join(f"<col><mnemonic>{c}</mnemonic></col>" for c in columns)
+        return f"<trace-query-result><node><schema>{cols}</schema>{body}</node></trace-query-result>"
+
+    def row(i, ms, process):
+        return (f"<row><start>{i * 10_000_000}</start><duration>{ms * 1_000_000}</duration>"
+                f"<channel-name>Vertex</channel-name><frame-number>{i + 1}</frame-number>{process}"
+                f"<cmdbuffer-id>c{i}</cmdbuffer-id><encoder-id>e{i}</encoder-id></row>")
+
+    def proc(pid, name):
+        return f'<process fmt="{name}"><pid>{pid}</pid></process>'
+
+    own = [row(i, 4, proc(7, "x (7)")) for i in range(60)]
+    others = [row(100, 10, proc(8, "Google Chrome Helper (Aperitif) (80813)")),
+              row(101, 10, proc(9, "Google Chrome Helper (80814)")), row(102, 40, proc(10, "WindowServer (160)")),
+              row(103, 30, proc(11, "Zed (11)")), row(104, 5, proc(12, "Tiny (12)")), row(105, 50, "<sentinel/>"),
+              row(106, 0, proc(13, "Idle (13)"))]
+    toc = ET.fromstring('<trace-toc><run><info><target><process type="launched" pid="7" name="x"/></target>'
+                        '</info><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
+    (tmp_path / "x.agx.csv").write_text("device_pct,renderer_pct,tiler_pct\n" + "100,1,1\n" * 3)
+
+    def run(body):
+        xml = {"metal-gpu-intervals": table(("start", "duration", "channel-name", "frame-number", "process",
+                                             "cmdbuffer-id", "encoder-id"), "".join(body)),
+               "gpu-performance-state-intervals": table(("start",), "")}
+
+        def fake(trace, schemas, optional=()):
+            files = {}
+            for name, text in xml.items():
+                files[name] = str(tmp_path / f"{name}.xml")
+                pathlib.Path(files[name]).write_text(text)
+            return toc, files
+        saved = perf_report.toc_and_tables
+        perf_report.toc_and_tables = fake
+        try:
+            return perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=False)
+        finally:
+            perf_report.toc_and_tables = saved
+
+    for raw, name in (("Google Chrome Helper (Aperitif) (80813)", "Google Chrome Helper"), ("App(Sub) (8)", "App"),
+                      ("/Users/someone/bin/tool (9)", "tool"), ("C:\\Users\\someone\\game.exe (10)", "game.exe"),
+                      (" (123)", ""), ("", "")):
+        assert perf_report.process_name(ET.fromstring(f'<process fmt="{raw}"/>')) == name, raw
+    assert perf_report.process_name(None) == ""
+    total = 60 * 4 + 10 + 10 + 40 + 30 + 5  # the row without a process is not counted
+    got = run(own + others)
+    assert got["noisy_environment"] is True, got.get("noisy_environment")
+    assert got["noisy_basis"]["processes"] == [
+        {"name": "WindowServer", "gpu_ms": 40.0, "share": round(40 / total, 3)},
+        {"name": "Zed", "gpu_ms": 30.0, "share": round(30 / total, 3)},
+        {"name": "Google Chrome Helper", "gpu_ms": 20.0, "share": round(20 / total, 3)}], got["noisy_basis"]
+    assert run(own)["noisy_basis"]["processes"] == []
