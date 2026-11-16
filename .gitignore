@@ -13,3 +13,9 @@ dist/
 *.key
 .venv/
 .pytest_cache/
+node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+docs/plans/
+docs/research/
+docs/estado.md
