@@ -25,7 +25,7 @@ Las claves se escriben en secuencia:
 | 2 | Tablas comprimidas, `tier`, `retention` (`metrics.py:9`) | 0.27.0 (`CHANGELOG.md`) |
 | 3 | El bloque `common` (`metrics.py:9`) | 0.27.3; el código lo escribe |
 
-**Todos los resúmenes reales de aquí son de generación 1** (E3: sin `schema_version`, `common`, `tier` ni `retention`), grabados antes de la 0.27.0. Las listas de claves salen del código; un resumen de generación 3 **no se reprodujo** (necesita una grabación en macOS con Instruments). Toda clave de un archivo real está en estas tablas (E3, límite conocido 11).
+**Todos los resúmenes reales de aquí son de generación 1** (E3: sin `schema_version`, `common`, `tier` ni `retention`), grabados antes de la 0.27.0. Las listas de claves salen del código; un resumen de generación 3 se grabó en macOS y en Windows para la 0.27.3 (ver [su prueba](../../../evidence/v0.27.3.md)); los archivos reales de la carpeta de corridas de este repositorio siguen siendo más viejos. Toda clave de un archivo real está en estas tablas (E3, límite conocido 11).
 
 ## Claves de un resumen de macOS: siempre presentes
 
@@ -43,7 +43,7 @@ Las claves se escriben en secuencia:
 | `gpu_idle` | Cuándo esperó la GPU | `perf_report.py:729`; `analysis.py:231`, `:715` |
 | `gpu_performance_state_share` | Proporción de tiempo por estado de reloj de la GPU; `{}` si no hay | `perf_report.py:771`; `analysis.py:144` |
 | `hitches` | `count`, `per_minute`, `threshold_ms`, `causes`, los 20 `worst` | `perf_report.py:822`; `analysis.py:574`, `:773` |
-| `common` | `frame_pacing`, `memory_pressure`, `boundness`, `submission_overhead`, `api`, de `metrics.common_block` | `perf_report.py:835`, reconstruida en `recording.py:343`; `analysis.py:153` |
+| `common` | `frame_pacing`, `memory_pressure`, `boundness`, `submission_overhead`, `api` (su `runtime` es `metal` en macOS y `unknown` en Windows, que aún no lo lee de PresentMon), de `metrics.common_block` | `perf_report.py:835`, reconstruida en `recording.py:343`; `analysis.py:153` |
 | `layer` | Capa de traducción: Wine con sus overrides y hashes de DLL, `none` (nativo), `unknown` (adjunto), MoltenVK, Rosetta | `recording.py:341`; `recording.py:208`, `metrics.layer_label` |
 | `context` | `git` (commit corto y `dirty`, o null) e `instruments` (la versión, o null) | `recording.py:341`, `run_context` en `:168`; `recording.py:195` |
 
