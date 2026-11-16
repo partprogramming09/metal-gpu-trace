@@ -289,6 +289,42 @@ def test_resource_summary(tmp_path):
     assert perf_report.resource_summary(rows, 99, frames=50) == {"events": 0}
     assert perf_report.resource_summary(rows, 7, frames=0)["per_frame"] is None
 
+def test_resource_summary_live_and_freed():
+    """resource_allocations says what is still allocated at the end, by mode and type, what was freed and how many
+    deallocations had no allocation in the recording; an empty resource-id is ignored, a repeated id replaces the
+    earlier one, and other processes do not count."""
+    def cell(text):
+        el = ET.Element("v")
+        el.text = text
+        return el
+
+    def row(pid, t_ms, size, rid, kind="Buffer", event="Allocation", label=""):
+        process = ET.Element("process")
+        ET.SubElement(process, "pid", {"fmt": str(pid)})
+        return {"process": process, "timestamp": cell(str(t_ms * 1_000_000)), "resource-size": cell(str(size)),
+                "resource-type": cell(kind), "event-type": cell(event), "resource-id": cell(rid),
+                "event-label": cell(label)}
+    mib = 1 << 20
+    rows = [row(7, 10, mib, "1", label="Shared"), row(7, 20, 2 * mib, "2", "Texture"),
+            row(7, 30, mib, "3", label="Private"), row(7, 40, mib, "3", event="Deallocation"),
+            row(7, 50, mib, "99", event="Deallocation"), row(7, 60, mib, "4", label="Shared"),
+            row(7, 70, 2 * mib, "4", label="Managed"), row(7, 80, mib, ""), row(8, 90, 1 << 30, "5", label="Shared"),
+            row(8, 95, mib, "1", event="Deallocation"), row(7, 99, mib, "", event="Deallocation")]
+    got = perf_report.resource_summary(rows, 7, frames=10)
+    assert got["live"] == {"count": 3, "mib": 5.0,
+                           "by_mode": {"Managed": {"count": 1, "mib": 2.0}, "Shared": {"count": 1, "mib": 1.0},
+                                       "unknown": {"count": 1, "mib": 2.0}},
+                           "by_type": {"Buffer": {"count": 2, "mib": 3.0}, "Texture": {"count": 1, "mib": 2.0}}}, got["live"]
+    assert got["freed"] == {"count": 1, "mib": 1.0} and got["freed_before_recording"] == 1, got
+    assert perf_report.resource_summary([r for r in rows if r["event-type"].text == "Deallocation"], 7, 10) == {"events": 0}
+    assert perf_report.resource_summary([], 7, 10) == {"events": 0}
+    pairs = [row(7, t, mib, str(t), event=e) for t in range(2000) for e in ("Allocation", "Deallocation")]
+    pairs.append(row(7, 5000, mib, "m", label="Memoryless"))
+    got = perf_report.resource_summary(pairs, 7, 10)
+    assert got["live"]["count"] == 1 and got["live"]["by_mode"] == {"Memoryless": {"count": 1, "mib": 1.0}}, got["live"]
+    assert got["freed"]["count"] == 2000, got["freed"]
+
+
 def test_gpu_activity(tmp_path):
     """agx_summary() reads the per-second AGX sample: utilization stats, the growth of split scenes and of the recovery
     count, and it tolerates empty cells and a missing column."""

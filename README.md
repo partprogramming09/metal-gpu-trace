@@ -339,7 +339,7 @@ unchanged in the second run.
 
 - A summary says where it ran and what the GPU did: `machine` (chip, cores, RAM, macOS, `screen_locked`), `gpu_activity`
   (utilization of the device, renderer and tiler, split scenes, GPU recoveries: it covers the whole GPU, not only the
-  program), `resource_allocations` (allocation events per frame, by type; a running total, not memory in use) and
+  program), `resource_allocations` (allocation events per frame, by type; `live` is what was still allocated at the end, by mode and type, a lower bound as anything allocated before the recording does not show; `freed` and `freed_before_recording`) and
   `command_buffer_errors`.
 - A locked Mac session leaves native Metal windows unpaced: 3 000 to 4 000 FPS against 120 with vsync, on the same
   examples. Record with the Mac unlocked; `perf_compare` returns `screen` when one run was recorded locked and the other not.

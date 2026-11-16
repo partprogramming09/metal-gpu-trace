@@ -365,8 +365,9 @@ la segunda corrida.
 
 - Un resumen dice dónde corrió y qué hizo la GPU: `machine` (chip, núcleos, RAM, macOS, `screen_locked`), `gpu_activity`
   (utilización del dispositivo, del renderizador y del tiler, escenas divididas, recuperaciones de la GPU: cubre toda la
-  GPU, no solo el programa), `resource_allocations` (asignaciones por cuadro y por tipo; un total acumulado, no la
-  memoria en uso) y `command_buffer_errors`.
+  GPU, no solo el programa), `resource_allocations` (asignaciones por cuadro y por tipo; `live` es lo que seguía asignado
+  al final, por modo y tipo, una cota inferior porque lo asignado antes de grabar no aparece; `freed` y
+  `freed_before_recording`) y `command_buffer_errors`.
 - Una sesión bloqueada del Mac deja sin ritmo las ventanas de Metal nativo: de 3 000 a 4 000 FPS frente a 120 con vsync,
   en los mismos ejemplos. Graba con el Mac desbloqueado; `perf_compare` devuelve `screen` cuando una corrida se grabó
   bloqueada y la otra no.

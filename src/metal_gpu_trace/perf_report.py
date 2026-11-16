@@ -449,19 +449,40 @@ def memory_trend(allocated):
     return round(sum((t - mx) * (s - my) for t, s in half) / sxx * 60000 / 2**20, 2) if sxx else None
 
 
+# the memory modes a resource allocation's label can name
+RESOURCE_MODES = ("Shared", "Private", "Managed", "Memoryless")
+
+
 def resource_summary(table_rows, pid, frames):
     """Summarizes the Metal resource allocation events of process `pid` from the rows of `metal-resource-allocations`:
     `events` and `mib` allocated (a running total, not memory in use: a drawable's texture each frame counts), `per_frame`, `by_type` (buffer, texture...), `after_3s` (events after the first 3 s of
-    the trace, the start-up) and `per_second` counts from second 0. Deallocations and other processes are left out;
-    {"events": 0} when there are none."""
+    the trace, the start-up) and `per_second` counts from second 0. `live` is what was allocated and not freed by the
+    end (a lower bound: what was allocated before the recording does not show), by `by_mode` (Shared, Private...,
+    "unknown" when the label has none) and `by_type`; `freed` what was allocated here and freed, and
+    `freed_before_recording` the deallocations whose allocation is not in the recording. Pairs by resource-id; an empty
+    id is ignored and a repeated one replaces the earlier. Other processes are left out; {"events": 0} when there are
+    no allocations."""
     events, total, after, after_bytes, by_type, per_second = 0, 0, 0, 0, {}, collections.Counter()
+    live, freed, freed_bytes, early = {}, 0, 0, 0  # resource-id -> (mode, type, size)
     for row in table_rows:
         when, size = number(row.get("timestamp")), number(row.get("resource-size")) or 0
-        if pid_of(row.get("process")) != pid or text(row.get("event-type")) != "Allocation" or when is None:
+        if pid_of(row.get("process")) != pid or when is None:
             continue
+        event, rid, kind_name = text(row.get("event-type")), text(row.get("resource-id")), text(row.get("resource-type")) or "other"
+        if event == "Deallocation" and rid:
+            gone = live.pop(rid, None)
+            if gone:
+                freed, freed_bytes = freed + 1, freed_bytes + gone[2]
+            else:
+                early += 1
+        if event != "Allocation":
+            continue
+        if rid:
+            label = text(row.get("event-label"))
+            live[rid] = (next((m for m in RESOURCE_MODES if m in label), "unknown"), kind_name, size)
         events += 1
         total += size
-        kind = by_type.setdefault(text(row.get("resource-type")) or "other", [0, 0])
+        kind = by_type.setdefault(kind_name, [0, 0])
         kind[0] += 1
         kind[1] += size
         per_second[when // 1_000_000_000] += 1
@@ -471,7 +492,15 @@ def resource_summary(table_rows, pid, frames):
     if not events:
         return {"events": 0}
     mib = lambda n: round(n / 2 ** 20, 1)
-    return {"events": events, "mib": mib(total), "per_frame": round(events / frames, 2) if frames else None,
+    groups = {"by_mode": collections.defaultdict(lambda: [0, 0]), "by_type": collections.defaultdict(lambda: [0, 0])}
+    for mode, kind_name, size in live.values():
+        for group, key in (("by_mode", mode), ("by_type", kind_name)):
+            groups[group][key][0] += 1
+            groups[group][key][1] += size
+    return {"events": events,
+            "live": {"count": len(live), "mib": mib(sum(v[2] for v in live.values())),
+                     **{g: {k: {"count": v[0], "mib": mib(v[1])} for k, v in sorted(d.items())} for g, d in groups.items()}},
+            "freed": {"count": freed, "mib": mib(freed_bytes)}, "freed_before_recording": early, "mib": mib(total), "per_frame": round(events / frames, 2) if frames else None,
             "by_type": {k: {"count": v[0], "mib": mib(v[1])} for k, v in sorted(by_type.items())},
             "after_3s": {"count": after, "mib": mib(after_bytes)},
             "per_second": [per_second[s] for s in range(max(per_second) + 1)]}
