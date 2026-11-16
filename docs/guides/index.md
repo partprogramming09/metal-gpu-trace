@@ -39,6 +39,10 @@ You ask your AI agent: "Record my app for 30 seconds, then tell me its FPS and h
 - [Recording](./recording): the whole path of a recording, why one runs at a time and 30 s or more under Wine, what
   `preflight` checks and what it says when it refuses, the test programs and their pinned downloads, the Windows engine,
   and what happens when a recording fails. Español: [Grabar](../es/guides/grabar).
+- [Summarizing and analyzing](./summarizing): how a `.trace` becomes the summary (the tables read and what a missing one
+  does), how FPS, the 1 % low, stutter and hitches are computed, what `perf_compare`, `perf_check` and `perf_gate` compare,
+  the experiments, how better, worse and same are decided, and what happens when it fails. Español:
+  [Resumir y analizar](../es/guides/resumir-y-analizar).
 
 ## Words used here
 The full glossary (frame, FPS, hitch, encoder, baseline, regression and more) is in the [README](https://github.com/partprogramming09/metal-gpu-trace#words-used-here).

@@ -28,10 +28,12 @@ export default defineConfig({
         { text: 'What this is about', link: '/guides/' },
         { text: 'Data and its lifecycle', link: '/guides/data-and-lifecycle' },
         { text: 'Recording', link: '/guides/recording' },
+        { text: 'Summarizing and analyzing', link: '/guides/summarizing' },
       ] }],
       '/es/guides/': [{ text: 'Guías (español)', items: [
         { text: 'Datos y su ciclo de vida', link: '/es/guides/datos-y-su-ciclo-de-vida' },
         { text: 'Grabar', link: '/es/guides/grabar' },
+        { text: 'Resumir y analizar', link: '/es/guides/resumir-y-analizar' },
       ] }],
     },
     search: {
