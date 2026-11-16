@@ -108,9 +108,14 @@ def test_server(tmp_path):
         {"jsonrpc": "2.0", "id": 27, "method": "resources/read", "params": {"uri": "metal-trace://runs/../x"}},
         {"jsonrpc": "2.0", "id": 28, "method": "resources/read", "params": {"uri": "metal-trace://runs/gone"}},
     ]
+    xcrun_stub = tmp_path / "xcrun-stub"  # preflight asks for xcrun before the attach call can say what it is about
+    xcrun_stub.mkdir()
+    (xcrun_stub / "xcrun").write_text("#!/bin/sh\n")
+    (xcrun_stub / "xcrun").chmod(0o755)
     proc = subprocess.run([sys.executable, "-I", str(PKG / "metal_trace_mcp.py")], text=True, capture_output=True,
                           input="\n".join(json.dumps(r) for r in requests) + "\n", timeout=60,
-                          cwd=tmp_path, env=dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="info"))
+                          cwd=tmp_path, env=dict(os.environ, METAL_TRACE_OUT=str(out), METAL_TRACE_LOG="info",
+                                                 PATH=f"{xcrun_stub}:{os.environ['PATH']}"))
     lines = [json.loads(line) for line in proc.stdout.splitlines()]
     replies = {r["id"]: r for r in lines if r["id"] is not None}
     assert sorted(replies) == list(range(1, 29)), (replies, proc.stderr)
