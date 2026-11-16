@@ -167,6 +167,32 @@ def test_baseline(tmp_path):
     finally:
         config.OUT, config.BASELINES = saved
 
+def test_check_against_a_one_run_reference_says_its_noise_is_not_measured(tmp_path):
+    """A reference of several runs already carries the noise in its range; a one-run reference has none, so a 3.1 %
+    dip reads regressed. The verdict stays, and the result says the noise was not measured."""
+    from metal_gpu_trace import analysis, config
+
+    def summary(fps):
+        return {"gpu": {"frames": 300, "fps_estimate": fps, "frame_gpu_ms": {"mean": 4.3, "p95": 8.6},
+                        "frame_interval_ms": {"p95": 20.0}},
+                "encoders": {"per_frame": {"p50": 7}, "command_buffers_per_frame": {"p50": 5}, "short_share": {"25": 0.5},
+                             "by_label": [{"label": "Render", "per_frame": 1.0, "total_ms": 1.0}]},
+                "gpu_idle": {"idle_share": 0.4, "idle_ms_per_frame": {"p50": 4}}}
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        for tick, (name, fps) in enumerate((("r1", 100.0), ("r2", 97.0), ("dip", 96.9))):
+            path = tmp_path / f"{name}.json"
+            path.write_text(json.dumps(summary(fps)))
+            os.utime(path, (1_000_000 + tick, 1_000_000 + tick))
+        analysis.tool_perf_baseline("one", ["r1"])
+        analysis.tool_perf_baseline("two", ["r1", "r2"])
+        one = analysis.tool_perf_check("dip", "one")
+        assert one["verdict"] == "regressed" and "not measured" in one["note"], one
+        two = analysis.tool_perf_check("dip", "two")
+        assert two["verdict"] == "same" and "note" not in two, two
+    finally:
+        config.OUT, config.BASELINES = saved
+
 def test_baseline_record(tmp_path):
     """perf_baseline_record records count runs named name-1.. with perf_record's arguments and saves them as the
     reference; count outside 1 to 10 fails before recording."""
