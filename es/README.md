@@ -71,27 +71,27 @@ corrida antes de dar una diferencia por real.
 
 ## Novedades
 
-Versión 0.26.0. Cada punto enlaza al comando que se ejecutó y a su salida real. 🧪 quiere decir experimental: funciona
-en lo que se probó, pero una parte no se comprobó de principio a fin, y la prueba dice cuál.
+Versión 0.27.0. Cada punto enlaza al comando que se ejecutó y a su salida real.
 
-- 🔍 **Ventanas de tiempo en `trace_query`.** Añade `window_ms` y una tabla larga (decenas de miles de filas) vuelve como
-  una línea por ventana de tiempo, con su cuenta y la duración sumada, en vez de filas cortadas por la mitad. En una
-  grabación real, 19 710 filas pasaron a 31 ventanas de 1 s. [Prueba](../docs/evidence/v0.26.0.md#trace_query-with-window_ms)
-- ✨ **De dónde sale una corrida.** Cada resumen nuevo dice qué commit de tu código midió, si ese código tenía cambios
-  sin commitear y qué versión de Instruments grabó. `perf_compare` dice si dos corridas lo comparten. Sin nombre de
-  rama, ruta ni nombre de máquina. [Prueba](../docs/evidence/v0.26.0.md#run-context-commit-and-instruments-version)
-- 🧪 **Prompt `diagnose-stutter`.** Una petición lista para tu agente: graba un programa dos veces, distingue el tirón
-  que solo ocurre la primera vez (shaders compilando) del que sigue ocurriendo, y cita solo cifras que devuelven las
-  herramientas. [Prueba](../docs/evidence/v0.26.0.md#the-diagnose-stutter-prompt)
-- 🧪 **Prompt `bisect-regression`.** Una petición lista para tu agente: encuentra con `git bisect` el commit que dejó un
-  programa más lento, grabando y comprobando contra una baseline en cada paso. El servidor no ejecuta ningún comando; lo
-  hace tu agente, con sus propios permisos. [Prueba](../docs/evidence/v0.26.0.md#the-bisect-regression-prompt)
-- 🧪 **`capture_diff`.** Compara dos capturas `.gputrace` y dice qué llamadas de Metal añadió o quitó un cambio, en total
-  y por grupo de depuración, sin Xcode. Probado solo con capturas sintéticas. [Prueba](../docs/evidence/v0.26.0.md#capture_diff-compares-two-captures)
+- 🛡️ **Una grabación que no puede funcionar se rechaza al instante.** Antes de empezar nada, `perf_record` comprueba el
+  programa, Wine, `xcrun`, el disco libre, el candado de grabación y la pantalla bloqueada, y dice qué hacer. En una
+  ejecución real los tres rechazos tardaron de 0,0 a 0,04 s y no crearon ningún archivo.
+  [Prueba](../docs/evidence/v0.27.0.md#a-recording-that-cannot-work-is-refused-before-it-starts)
+- 🛡️ **La carpeta de grabaciones se mantiene pequeña.** Las tablas por frame y de memoria de Metal se escriben
+  comprimidas (2,3 y 5,7 veces más pequeñas en una grabación real), y `METAL_TRACE_MAX_DISK_MB` borra primero el
+  `.trace` más viejo: una carpeta de 101 296 KiB bajó a 300 KiB, con los resúmenes y las tablas intactos.
+  [Prueba](../docs/evidence/v0.27.0.md#the-runs-folder-compressed-tables-and-a-size-limit)
+- ⚡ **Leer un trace grande ya no pide gigabytes.** En un trace real, una tabla de 3 millones de filas llegó a 196 MiB en
+  vez de 5,5 GiB, con las mismas filas; una de 1,5 millones, a 304 MiB. [Prueba](../docs/evidence/v0.27.0.md#reading-a-big-table-takes-a-fraction-of-the-memory)
+- ✨ **`tier`: `light`, `standard` o `deep`.** `light` omite la tabla de memoria de Metal y los contadores, para iterar;
+  `deep` también graba los contadores de la GPU y conserva el `.trace`. `perf_compare` avisa cuando dos corridas usaron
+  niveles distintos. [Prueba](../docs/evidence/v0.27.0.md#tier-light-standard-and-deep)
+- 🩺 **Siguientes pasos, y un Mac más fresco.** `perf_diagnose` y `perf_compare` devuelven `suggested_actions` para tu
+  agente; `cooldown_s` descansa entre grabaciones (20,1 s medidos); `noisy_environment` dice que otro proceso cargaba la
+  GPU (34,4 puntos en una grabación real). [Prueba](../docs/evidence/v0.27.0.md#next-actions-noisy-environment-and-cooldown)
 
-Cambio incompatible: la clave `profile` de `metal-gpu-trace.json` ya no existe (no hacía nada desde que se quitó el
-panel en 0.25.0), así que un archivo que aún la tenga se rechaza y el error nombra la clave. Borra esa línea. Detalles en
-el [changelog](../CHANGELOG.md).
+Cambio de comportamiento: una pantalla bloqueada ahora rechaza la grabación en vez de solo avisar después
+(`METAL_TRACE_ALLOW_LOCKED=1` graba igual). Detalles en el [changelog](../CHANGELOG.md).
 
 ## Para quien desarrolla
 
@@ -166,6 +166,8 @@ El servidor lee estas variables de entorno:
 | `METAL_TRACE_READ` | Más directorios que las herramientas pueden leer, separados por `:`. |
 | `METAL_TRACE_LOG` | `off` apaga la línea de log por llamada en stderr. |
 | `KEEP_TRACE` | `1` guarda el `.trace` de cada grabación, para `trace_tables`, `trace_query` o Instruments. |
+| `METAL_TRACE_ALLOW_LOCKED` | `1` graba con la pantalla bloqueada; sin él se rechaza la grabación, porque una sesión bloqueada deja los frames del programa sin el ritmo de la pantalla. |
+| `METAL_TRACE_MAX_DISK_MB` | Límite de tamaño de la carpeta de grabaciones, en MiB (un número entero de 1 o más): tras cada grabación se borran el `.trace` más antiguo, luego el `.chrome-trace` y luego las tablas por frame y de memoria hasta que quepa; nunca los resúmenes ni `baselines.json`. El `.trace` de la grabación nueva se borra el último, y su resumen dice qué se quitó (`retention`). |
 | `KEEP_RUNS` | Guarda solo las N grabaciones más recientes; nunca borra `baselines.json` (ni el `panel.json` que dejaron 0.24.0 y anteriores). |
 | `METAL_TRACE_LOCK` | El candado que hace que las grabaciones vayan de una en una, vaya cada una a la carpeta que vaya (de serie, `~/Library/Caches/metal-gpu-trace/recording.lock`). `perf_record.sh` lanzado a mano toma el mismo, o el que diga `PERF_LOCK`. |
 | `PERF_ENV` | Pares `NOMBRE=VALOR`, separados por espacios, que recibe el programa grabado. |
@@ -287,7 +289,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 
 | Herramienta | Lee o graba |
 | --- | --- |
-| `perf_record` | Graba una corrida de un programa y devuelve su resumen. — Graba un programa y devuelve su resumen; al terminar cierra todo programa de su prefijo de Wine, o todo proceso con el nombre de un programa nativo. `counters=true` graba además los contadores de GPU de Metal: `gpu_counters` (los limitadores, la utilización, la ocupación y el ancho de banda de memoria de la GPU, con el limitador principal) en el resumen, a unos 40 s de lectura por segundo grabado; no en Windows |
+| `perf_record` | Graba una corrida de un programa y devuelve su resumen. — Graba un programa y devuelve su resumen; al terminar cierra todo programa de su prefijo de Wine, o todo proceso con el nombre de un programa nativo. `counters=true` graba además los contadores de GPU de Metal: `gpu_counters` (los limitadores, la utilización, la ocupación y el ancho de banda de memoria de la GPU, con el limitador principal) en el resumen, a unos 40 s de lectura por segundo grabado; no en Windows. `tier` fija de una vez qué se graba: `light` (sin memoria de Metal ni contadores: para iterar), `standard` (por defecto) o `deep` (también contadores, y se guarda el `.trace`; solo macOS); compara grabaciones del mismo tier |
 | `perf_attach` | Graba un programa que ya está en marcha, sin reiniciarlo. — Graba un programa que ya corre, por pid o nombre, y lo deja corriendo |
 | `perf_baseline_record` | Graba el mismo programa varias veces y guarda las corridas como referencia. — Graba el mismo programa `count` veces (3 por defecto) con los argumentos de `perf_record` y guarda las corridas como referencia en una sola llamada. `skip_s` como en `perf_baseline` |
 | `perf_ab` | Prueba dos ajustes del mismo programa y dice cuál sale mejor. — Graba el mismo programa con dos entornos (`env_a`, `env_b`: pares `NOMBRE=VALOR`) en el orden A B B A y dice por métrica (FPS, 1 % bajo, ms de GPU, tirones) si B es mejor, peor o igual: mejor o peor solo cuando todos los valores de B quedan fuera del rango de A |

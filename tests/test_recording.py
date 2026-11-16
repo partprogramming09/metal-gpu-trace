@@ -42,7 +42,7 @@ def test_disk_guard(tmp_path):
 def test_levers(tmp_path):
     """memory_free_pct holds memory_pressure around a recording and stops it even when the recording fails;
     background sets PERF_PREFIX for perf_record.sh; out-of-range or Windows use is refused before anything starts."""
-    from metal_gpu_trace import config, paths, recording, registry
+    from metal_gpu_trace import config, paths, preflight, recording, registry
     stable = tmp_path / "stable.sh"
     stable.write_text("#!/bin/sh\necho 'Stable at percent free: 40.'\nsleep 300\n")
     never = tmp_path / "never.sh"
@@ -79,6 +79,7 @@ def test_levers(tmp_path):
             seen.update(kwargs, held=started[0].poll() is None)
             raise RuntimeError("boom")
         recording.record_run = fake_run
+        real_check, preflight.check = preflight.check, lambda **kw: None  # this test is about memory_pressure, not preflight
         try:
             recording.record("x", 5, "native", "-", ".", ["p"], memory_free_pct=40, background=True)
             raise AssertionError("the failure must come out")
@@ -98,6 +99,7 @@ def test_levers(tmp_path):
     finally:
         config.MEMORY_PRESSURE, recording.record_run = saved
         recording.hold_memory_pressure = original
+        preflight.check = real_check
     assert registry.RECORD_PROPS["memory_free_pct"]["type"] == "integer" and registry.RECORD_PROPS["background"]["type"] == "boolean"
 
 def test_rosetta_layer(tmp_path):
@@ -735,7 +737,7 @@ def prune_folder(tmp_path):
     """Writes two recordings plus baselines.json and panel.json, the last two the oldest, and returns the folder."""
     out = tmp_path / "runs"
     out.mkdir()
-    for age, name in enumerate(("baselines.json", "panel.json", "old.json", "old.frames.csv", "new.json")):
+    for age, name in enumerate(("baselines.json", "panel.json", "old.json", "old.frames.csv.gz", "new.json")):
         (out / name).write_text("{}")
         os.utime(out / name, (1_000_000 + age * 100, 1_000_000 + age * 100))
     return out
@@ -989,3 +991,450 @@ def test_perf_compare_carries_the_context_change(tmp_path):
         assert analysis.tool_perf_compare("a", "old")["context"]["missing_in"] == ["old"]
     finally:
         config.OUT = saved
+
+
+@macos_only
+def test_record_run_prunes_and_notes_it(tmp_path):
+    """With METAL_TRACE_MAX_DISK_MB set, record_run removes an older run's .trace to fit, writes what it did into the
+    summary (also in the JSON on disk), and leaves the new run's tables; without the limit nothing is removed."""
+    from metal_gpu_trace import config, recording
+    package, out = tmp_path / "package", tmp_path / "runs"
+    package.mkdir()
+    out.mkdir()
+    script = package / "perf_record.sh"
+    script.write_text('#!/bin/zsh\nprint -r -- "$SUMMARY" > "$PERF_OUT/${1}_1.json"\n'
+                      'head -c 1048576 /dev/zero > "$PERF_OUT/${1}_1.frames.csv.gz"\n')
+    (out / "old_1.trace").write_bytes(b"x" * (2 * 2**20))
+    os.utime(out / "old_1.trace", (1_000_000, 1_000_000))
+    summary = {"process": {"name": "x"}, "duration_s": 20.0, "gpu": {"intervals": 900, "frames": 300}}
+    saved = config.PACKAGE_DIR, config.OUT, config.MAX_DISK_MB, os.environ.get("SUMMARY"), config.LOCK
+    config.PACKAGE_DIR, config.OUT, config.LOCK = package, out, tmp_path / "lock"  # a recording running here must not matter
+    os.environ["SUMMARY"] = json.dumps(summary)
+    try:
+        config.MAX_DISK_MB = None
+        got = recording.record_run("r", 20, "native", "-", str(tmp_path), [str(script)], layer={"none": "x"})
+        assert "retention" not in got and (out / "old_1.trace").exists()
+        (out / "r_1.json").unlink()
+        config.MAX_DISK_MB = 2
+        got = recording.record_run("r", 20, "native", "-", str(tmp_path), [str(script)], layer={"none": "x"})
+        assert got["retention"]["removed"] == 1 and got["retention"]["trace_dropped"] is False, got.get("retention")
+        assert json.loads((out / "r_1.json").read_text())["retention"] == got["retention"]
+        assert not (out / "old_1.trace").exists() and (out / "r_1.frames.csv.gz").exists()
+    finally:
+        config.PACKAGE_DIR, config.OUT, config.MAX_DISK_MB = saved[:3]
+        config.LOCK = saved[4]
+        os.environ.pop("SUMMARY") if saved[3] is None else os.environ.update(SUMMARY=saved[3])
+
+
+def test_windows_branch_prunes_too(tmp_path):
+    """The Windows branch of record_run returns early; the quota still applies there and its note reaches the JSON."""
+    from metal_gpu_trace import config, perf_record_windows, recording
+    out = tmp_path / "runs"
+    out.mkdir()
+    (out / "old_1.trace").write_bytes(b"x" * (2 * 2**20))
+    os.utime(out / "old_1.trace", (1_000_000, 1_000_000))
+
+    def record_windows(label, *args, **kwargs):
+        path = out / f"{label}_1.json"
+        path.write_text("{}")
+        return {"gpu": {"intervals": 5}}, path
+    saved = config.OUT, config.MAX_DISK_MB, sys.platform, perf_record_windows.record_windows, config.LOCK
+    config.OUT, config.MAX_DISK_MB, config.LOCK = out, 1, tmp_path / "lock"
+    perf_record_windows.record_windows = record_windows
+    recording.__dict__["perf_record_windows"] = perf_record_windows  # recording imports it only on Windows
+    sys.platform = "win32"
+    try:
+        got = recording.record_run("w", 5, "native", "-", str(tmp_path), ["prog"], layer={"none": "x"})
+    finally:
+        sys.platform = saved[2]
+        config.OUT, config.MAX_DISK_MB = saved[:2]
+        perf_record_windows.record_windows = saved[3]
+        config.LOCK = saved[4]
+        del recording.__dict__["perf_record_windows"]
+    assert got["retention"]["removed"] == 1, got
+    assert json.loads((out / "w_1.json").read_text())["retention"]["removed"] == 1
+    assert not (out / "old_1.trace").exists()
+
+
+@macos_only
+def test_keep_runs_still_removes_old_tables(tmp_path):
+    """KEEP_RUNS removes every file of an older run, the compressed tables included (prune_runs.sh's `${old:r}.*`)."""
+    out = tmp_path / "runs"
+    out.mkdir()
+    for age, name in enumerate(("old.json", "old.frames.csv.gz", "old.metal_memory.csv.gz", "new.json")):
+        (out / name).write_text("{}")
+        os.utime(out / name, (1_000_000 + age * 100, 1_000_000 + age * 100))
+    subprocess.run(["zsh", str(PKG / "prune_runs.sh"), str(out), "1"], check=True)
+    assert sorted(p.name for p in out.iterdir()) == ["new.json"]
+
+
+@macos_only
+def test_keep_trace_argument_keeps_the_trace_of_an_empty_run(tmp_path):
+    """A deep recording (keep_trace) whose program did no GPU work keeps its .trace and says so, like KEEP_TRACE=1 does."""
+    from metal_gpu_trace import config, paths, recording
+    package, out = tmp_path / "package", tmp_path / "runs"
+    package.mkdir()
+    out.mkdir()
+    (package / "perf_record.sh").write_text('#!/bin/zsh\nprint -r -- \'{"gpu": {"intervals": 0}}\' > "$PERF_OUT/${1}_1.json"\n'
+                                            'mkdir "$PERF_OUT/${1}_1.trace"\n')
+    saved = config.PACKAGE_DIR, config.OUT, os.environ.pop("KEEP_TRACE", None)
+    config.PACKAGE_DIR, config.OUT = package, out
+    try:
+        try:
+            recording.record_run("k", 5, "native", "-", str(tmp_path), ["prog"], layer={"none": "x"}, keep_trace=True)
+            raise AssertionError("a run without GPU work must fail")
+        except paths.ToolError as error:
+            assert "k_1.trace is kept" in str(error), error
+        assert [p.name for p in out.iterdir()] == ["k_1.trace"]
+    finally:
+        config.PACKAGE_DIR, config.OUT = saved[:2]
+        if saved[2] is not None:
+            os.environ["KEEP_TRACE"] = saved[2]
+
+
+def test_resolve_tier_table():
+    """A tier sets memory, counters and whether the .trace is kept; a memory or counters given on its own wins."""
+    from metal_gpu_trace import recording
+    resolve = recording.resolve_tier
+    assert recording.TIERS == ("light", "standard", "deep")
+    assert resolve("light", None, None) == (False, False, False)
+    assert resolve("standard", None, None) == (True, False, False)
+    assert resolve("deep", None, None) == (True, True, True)
+    assert resolve("deep", False, None) == (False, True, True)
+    assert resolve("light", True, None) == (True, False, False)
+    assert resolve("standard", None, True) == (True, True, False)
+    assert resolve("deep", None, False) == (True, False, True)
+
+
+def test_unknown_tier_is_tool_error(tmp_path):
+    from metal_gpu_trace import paths, recording
+    program = tmp_path / "prog"
+    program.write_text("")
+    for bad in ("fast", "", "Deep", None, 3, ["light"]):
+        for call in (lambda bad=bad: recording.resolve_tier(bad, None, None),
+                     lambda bad=bad: recording.tool_perf_record("t", str(program), wine="native", tier=bad)):
+            try:
+                call()
+            except paths.ToolError as error:
+                assert "tier is one of light, standard, deep" in str(error), error
+            else:
+                raise AssertionError(f"{bad!r} must be refused")
+
+
+def capture_record(tmp_path, **options):
+    """Calls tool_perf_record with `recording.record` stubbed and returns what it was given: (positional, keyword)."""
+    from metal_gpu_trace import recording
+    program = tmp_path / "prog"
+    program.write_text("")
+    seen = {}
+    saved = recording.record
+    recording.record = lambda *args, **kw: seen.update(args=args, kw=kw) or {}
+    try:
+        recording.tool_perf_record("t", str(program), wine="native", **options)
+    finally:
+        recording.record = saved
+    return seen["args"], seen["kw"]
+
+
+def test_default_is_unchanged(tmp_path):
+    """With no tier, memory and counters, a recording is what it was before tiers existed."""
+    args, kw = capture_record(tmp_path)
+    assert args[7] is True and kw["counters"] is False and kw["keep_trace"] is False and kw["tier"] == "standard", (args, kw)
+    args, kw = capture_record(tmp_path, memory=False, counters=True)
+    assert args[7] is False and kw["counters"] is True and kw["keep_trace"] is False, (args, kw)
+
+
+def test_tiers_reach_the_recording(tmp_path):
+    args, kw = capture_record(tmp_path, tier="light")
+    assert args[7] is False and kw["counters"] is False and kw["keep_trace"] is False and kw["tier"] == "light"
+    args, kw = capture_record(tmp_path, tier="deep")
+    assert args[7] is True and kw["counters"] is True and kw["keep_trace"] is True and kw["tier"] == "deep"
+    args, kw = capture_record(tmp_path, tier="deep", memory=False)
+    assert args[7] is False and kw["counters"] is True, (args, kw)
+
+
+def run_stub_recording(tmp_path, **record_options):
+    """Runs record_run against a script that reports the environment it was given, and returns that report."""
+    from metal_gpu_trace import config, recording
+    package, out = tmp_path / "package", tmp_path / "runs"
+    package.mkdir()
+    out.mkdir()
+    (package / "perf_record.sh").write_text(
+        '#!/bin/zsh\nprint -r -- \'{"gpu": {"intervals": 1}, "seen": {"memory": "\'${PERF_MEMORY-unset}\'", '
+        '"instruments": "\'${PERF_INSTRUMENTS-unset}\'", "keep": "\'${KEEP_TRACE-unset}\'"}}\' > "$PERF_OUT/${1}_1.json"\n')
+    saved_env = {k: os.environ.pop(k, None) for k in ("PERF_MEMORY", "PERF_INSTRUMENTS", "KEEP_TRACE")}
+    saved = config.PACKAGE_DIR, config.OUT, config.MAX_DISK_MB
+    config.PACKAGE_DIR, config.OUT, config.MAX_DISK_MB = package, out, None
+    try:
+        return recording.record_run("t", 5, "native", "-", str(tmp_path), ["prog"], layer={"none": "x"},
+                                    **record_options)
+    finally:
+        config.PACKAGE_DIR, config.OUT, config.MAX_DISK_MB = saved
+        os.environ.update({k: v for k, v in saved_env.items() if v is not None})
+
+
+@macos_only
+def test_light_sets_no_memory_env(tmp_path):
+    summary = run_stub_recording(tmp_path, memory=False, counters=False, keep_trace=False, tier="light")
+    assert summary["seen"] == {"memory": "0", "instruments": "unset", "keep": "unset"}, summary["seen"]
+    assert summary["tier"] == "light"
+
+
+@macos_only
+def test_deep_sets_counters_and_keep_trace(tmp_path):
+    summary = run_stub_recording(tmp_path, memory=True, counters=True, keep_trace=True, tier="deep")
+    assert summary["seen"] == {"memory": "unset", "instruments": "Metal GPU Counters", "keep": "1"}, summary["seen"]
+    assert summary["tier"] == "deep"
+
+
+@macos_only
+def test_standard_sets_nothing_extra(tmp_path):
+    summary = run_stub_recording(tmp_path, tier="standard")
+    assert summary["seen"] == {"memory": "unset", "instruments": "unset", "keep": "unset"} and summary["tier"] == "standard"
+
+
+def test_baseline_record_passes_tier(tmp_path):
+    from metal_gpu_trace import analysis, config, experiments, recording
+    seen = []
+    saved = recording.tool_perf_record, analysis.tool_perf_baseline, config.OUT
+    config.OUT = tmp_path
+
+    def fake(label, **kw):
+        seen.append(kw.get("tier"))
+        (tmp_path / f"{label}_x.json").write_text("{}")
+    recording.tool_perf_record = fake
+    analysis.tool_perf_baseline = lambda name, runs, skip_s=0: {}
+    try:
+        experiments.tool_perf_baseline_record("tb", count=2, tier="light")
+    finally:
+        recording.tool_perf_record, analysis.tool_perf_baseline, config.OUT = saved
+    assert seen == ["light", "light"], seen
+
+
+def test_deep_refused_on_windows(tmp_path):
+    from metal_gpu_trace import paths
+    saved = sys.platform
+    sys.platform = "win32"
+    try:
+        try:
+            capture_record(tmp_path, tier="deep")
+        except paths.ToolError as error:
+            assert "deep needs Metal GPU counters: macOS only" in str(error), error
+        else:
+            raise AssertionError("deep must be refused under Windows")
+        capture_record(tmp_path, tier="light")
+        capture_record(tmp_path, tier="standard")
+    finally:
+        sys.platform = saved
+
+
+def test_tier_is_in_the_record_schemas():
+    from metal_gpu_trace import registry
+    assert registry.RECORD_PROPS["tier"]["enum"] == ["light", "standard", "deep"]
+    for tool in ("perf_record", "perf_baseline_record", "perf_sweep", "perf_ab", "perf_cold_warm"):
+        assert "tier" in registry.TOOLS[tool][1]["properties"], tool
+    for tool in ("perf_compare", "perf_gate", "perf_history"):
+        assert "tier" not in registry.TOOLS[tool][1]["properties"], tool
+
+
+def test_check_cooldown_bounds():
+    from metal_gpu_trace import paths
+    assert paths.check_cooldown(None) == 0 and paths.check_cooldown(0) == 0 and paths.check_cooldown("30") == 30.0
+    assert paths.check_cooldown(600) == 600.0 and paths.check_cooldown(0.5) == 0.5
+    for bad in (-1, 601, "x", float("nan"), float("inf"), True, [5]):
+        try:
+            paths.check_cooldown(bad)
+        except paths.ToolError as error:
+            assert "cooldown_s is 0 to 600 seconds" in str(error), error
+        else:
+            raise AssertionError(f"{bad!r} must be refused")
+
+
+def test_cooldown_sleeps_total_in_short_slices():
+    import time
+    from metal_gpu_trace import recording
+    slept, said = [], []
+    saved = time.sleep, recording.progress
+    time.sleep = slept.append
+    recording.progress = lambda done, total, message: said.append((done, total, message))
+    try:
+        recording.cooldown(3.5)
+    finally:
+        time.sleep, recording.progress = saved
+    assert abs(sum(slept) - 3.5) < 1e-9 and max(slept) <= 1 and len(slept) == 4, slept
+    assert said[0][2] == "cooling down: 4 s left" and said[-1][2] == "cooling down: 1 s left", said
+    assert all(total == 3.5 for _, total, _ in said)
+
+
+def test_cooldown_cancel_raises_and_stops():
+    import threading
+    import time
+    from metal_gpu_trace import paths, recording
+    slept = []
+    event = threading.Event()
+    event.set()
+    saved = time.sleep, getattr(recording.RUN, "cancel", None)
+    time.sleep = slept.append
+    recording.RUN.cancel = event
+    try:
+        try:
+            recording.cooldown(30)
+        except paths.ToolError as error:
+            assert "cancelled while cooling down" in str(error), error
+        else:
+            raise AssertionError("a cancelled cooldown must raise")
+    finally:
+        time.sleep, recording.RUN.cancel = saved
+    assert slept == [], "no slice is slept once cancelled"
+
+
+def test_cooldown_cancelled_in_the_middle():
+    import threading
+    import time
+    from metal_gpu_trace import paths, recording
+    event, slept = threading.Event(), []
+
+    def sleep(seconds):
+        slept.append(seconds)
+        if len(slept) == 2:
+            event.set()
+    saved = time.sleep, getattr(recording.RUN, "cancel", None)
+    time.sleep = sleep
+    recording.RUN.cancel = event
+    try:
+        try:
+            recording.cooldown(10)
+        except paths.ToolError as error:
+            assert "cancelled while cooling down" in str(error)
+        else:
+            raise AssertionError("must raise")
+    finally:
+        time.sleep, recording.RUN.cancel = saved
+    assert len(slept) == 2, slept
+
+
+def test_zero_cooldown_never_sleeps():
+    import time
+    from metal_gpu_trace import recording
+    saved = time.sleep
+    time.sleep = lambda s: (_ for _ in ()).throw(AssertionError("slept"))
+    try:
+        recording.cooldown(0)
+    finally:
+        time.sleep = saved
+
+
+def run_experiment(tmp_path, call, events=None):
+    """Runs `call(experiments)` with recordings and cooldowns stubbed; returns the order of events, "rec" and "cool N"
+    (`events`, when given, is the list they go to, so a call that raises still shows them)."""
+    from metal_gpu_trace import analysis, config, experiments, recording
+    events = [] if events is None else events
+    saved = recording.record_new_summary, recording.cooldown, analysis.steady_summary, config.OUT
+    config.OUT = tmp_path
+
+    def record(label, **kw):
+        events.append("rec")
+        return label, {"gpu": {"frames": 300, "fps_estimate": 60.0}}
+    recording.record_new_summary = record
+    recording.cooldown = lambda seconds: events.append(f"cool {seconds:g}")
+    analysis.steady_summary = lambda run, skip_s=0: {"gpu": {"frames": 300, "fps_estimate": 60.0, "frame_gpu_ms": {"mean": 4.0},
+                                                             "stutter_rate_pct": 0.0, "fps_1pct_low": 50.0}}
+    saved_baseline = analysis.tool_perf_baseline
+    analysis.tool_perf_baseline = lambda name, runs, skip_s=0: {}
+    try:
+        call(experiments)
+    finally:
+        recording.record_new_summary, recording.cooldown, analysis.steady_summary, config.OUT = saved
+        analysis.tool_perf_baseline = saved_baseline
+    return events
+
+
+def test_baseline_record_cooldown_between_runs_only(tmp_path):
+    events = run_experiment(tmp_path, lambda e: e.tool_perf_baseline_record("b", count=3, cooldown_s=5))
+    assert events == ["rec", "cool 5", "rec", "cool 5", "rec"], events
+
+
+def test_ab_cooldown_between_every_pair(tmp_path):
+    one = run_experiment(tmp_path, lambda e: e.tool_perf_ab("x", "A=1", "A=2", rounds=1, cooldown_s=7))
+    assert one.count("rec") == 4 and one.count("cool 7") == 3 and one[0] == "rec" and one[-1] == "rec", one
+    two = run_experiment(tmp_path, lambda e: e.tool_perf_ab("x", "A=1", "A=2", rounds=2, cooldown_s=7))
+    assert two.count("rec") == 8 and two.count("cool 7") == 7, two
+    assert all(a != b for a, b in zip(two, two[1:])), "a pause between any two recordings, never two in a row"
+
+
+def test_sweep_cooldown(tmp_path):
+    events = run_experiment(tmp_path, lambda e: e.tool_perf_sweep("s", "dim", [10, 20, 30], rounds=2, cooldown_s=2))
+    assert events.count("rec") == 6 and events.count("cool 2") == 5 and events[0] == "rec" and events[-1] == "rec", events
+
+
+def test_zero_cooldown_pauses_never(tmp_path):
+    events = run_experiment(tmp_path, lambda e: e.tool_perf_baseline_record("b", count=3))
+    assert events == ["rec", "rec", "rec"], events
+    events = run_experiment(tmp_path, lambda e: e.tool_perf_ab("x", "A=1", "A=2", cooldown_s=0))
+    assert not any(x.startswith("cool") for x in events), events
+
+
+def test_bad_cooldown_is_refused_before_recording(tmp_path):
+    from metal_gpu_trace import paths
+    seen = []
+    for call in (lambda e: e.tool_perf_baseline_record("b", cooldown_s=601), lambda e: e.tool_perf_ab("x", "", "", cooldown_s="x"),
+                 lambda e: e.tool_perf_sweep("s", "dim", [1, 2], cooldown_s=-1)):
+        try:
+            seen.append(run_experiment(tmp_path, call))
+        except paths.ToolError as error:
+            assert "cooldown_s" in str(error)
+        else:
+            raise AssertionError("must be refused")
+    assert seen == []
+
+
+def test_cooldown_in_schema():
+    from metal_gpu_trace import registry
+    for tool in ("perf_baseline_record", "perf_ab", "perf_sweep"):
+        assert "cooldown_s" in registry.TOOLS[tool][1]["properties"], tool
+    for tool in registry.TOOLS:
+        if tool not in ("perf_baseline_record", "perf_ab", "perf_sweep"):
+            assert "cooldown_s" not in registry.TOOLS[tool][1].get("properties", {}), tool
+
+
+def test_cancelled_cooldown_starts_no_next_recording(tmp_path):
+    """A cancel during the rest ends the experiment with the pause's error: the next recording never starts."""
+    from metal_gpu_trace import paths, recording
+    for call in (lambda e: e.tool_perf_baseline_record("b", count=3, cooldown_s=5), lambda e: e.tool_perf_ab("x", "", "", cooldown_s=5),
+                 lambda e: e.tool_perf_sweep("s", "dim", [1, 2, 3], cooldown_s=5)):
+        events = []
+
+        def cancelled(seconds):
+            raise paths.ToolError("cancelled while cooling down")
+        try:
+            run_experiment(tmp_path, lambda e, call=call: (recording.__dict__.update(cooldown=cancelled), call(e)), events)
+        except paths.ToolError as error:
+            assert "cancelled while cooling down" in str(error)
+        else:
+            raise AssertionError("must end with the cancel")
+        assert events == ["rec"], f"no recording starts after the cancel: {events}"
+
+
+def test_one_recording_has_no_pause(tmp_path):
+    events = run_experiment(tmp_path, lambda e: e.tool_perf_baseline_record("b", count=1, cooldown_s=60))
+    assert events == ["rec"], events
+
+
+def test_finish_leaves_the_runs_folder_alone_while_another_recording_runs(tmp_path):
+    """Another recording's .trace is written into the runs folder as it goes: pruning then could delete it."""
+    from metal_gpu_trace import config, recording
+    out = tmp_path / "runs"
+    out.mkdir()
+    saved = config.OUT, config.LOCK, config.MAX_DISK_MB
+    config.OUT, config.LOCK, config.MAX_DISK_MB = out, tmp_path / "lock", 1
+    try:
+        (out / "live.trace").write_bytes(b"x" * (2 * 2**20))
+        config.LOCK.mkdir()
+        (config.LOCK / "pid").write_text(str(os.getpid()))  # a live process holds the recording lock
+        got = recording.finish({}, out / "cur.json", None, None)
+        assert (out / "live.trace").exists() and "retention" not in got, got
+        (config.LOCK / "pid").unlink()
+        got = recording.finish({}, out / "cur.json", None, None)
+        assert not (out / "live.trace").exists() and got["retention"]["removed"] == 1, got
+    finally:
+        config.OUT, config.LOCK, config.MAX_DISK_MB = saved

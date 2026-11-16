@@ -7,13 +7,24 @@ import math
 import statistics
 import time
 
-from metal_gpu_trace import config, metrics, paths, perf_report, recording
+from metal_gpu_trace import config, metrics, paths, perf_report, recording, tables
 
 
 UNPRESENTED_NOTE = ("the program stopped presenting (its window hidden behind another, minimized or off screen, or a "
                     "load of a second or more that presented nothing) and "
                     "Instruments stopped numbering frames: the work from from_s for span_s is left out of the frame numbers, "
                     "which cover only the presented frames; record again with the program's window visible")
+
+
+NOISY_NOTE = ("another process was loading the GPU while these recorded (the GPU's total use exceeded the program's own by "
+              "20 points or more; noisy_basis in the summary has the numbers): close other GPU users and repeat the run "
+              "before trusting its numbers")
+
+
+def noisy(**summaries):
+    """Returns {"runs": [names], "note": ...} for the named summaries recorded with noisy_environment true, or None."""
+    runs = [name for name, s in summaries.items() if s.get("noisy_environment") is True]
+    return {"runs": runs, "note": NOISY_NOTE} if runs else None
 
 
 def unpresented(**summaries):
@@ -60,7 +71,7 @@ def tool_perf_runs(offset=0, limit=50):
         try:
             s = paths.read_object(path, path.name)
             gpu = s.get("gpu") or {}
-            runs.append({"run": path.stem, "program": (s.get("process") or {}).get("arguments"),
+            runs.append({"run": path.stem, "schema_version": metrics.schema_of(s), "program": (s.get("process") or {}).get("arguments"),
                          "frames": gpu.get("frames"), "fps": gpu.get("fps_estimate"),
                          "gpu_ms_mean": (gpu.get("frame_gpu_ms") or {}).get("mean"),
                          "metal_mib_peak": (s.get("metal_memory_mib") or {}).get("peak"),
@@ -105,9 +116,14 @@ def tool_perf_compare(a, b, short_us=25, markdown=False, skip_s=0):
     per-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.
     `screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable.
     context says whether both runs share the commit of the project's repository and Instruments' version (same true or
-    false; null when a run's commit is unknown, named in unknown_in; runs from before 0.26.0 are named in missing_in)."""
+    false; null when a run's commit is unknown, named in unknown_in; runs from before 0.26.0 are named in missing_in).
+    `noisy_environment` names the runs recorded while another process loaded the GPU. `suggested_actions` lists, as
+    {tool, arguments, reason}, what to call next for each run."""
     sa, sb = (steady_summary(r, skip_s) for r in (a, b))
     result = compare_summaries(sa, sb, a, b, short_us)
+    skip = paths.check_skip(skip_s)
+    result["suggested_actions"] = [x for r, s in ((a, sa), (b, sb))
+                                   for x in suggested_actions(s, r, skip, lambda r=r: _frames_or_none(r))]
     if sa.get("steady"):
         result["skipped_s"] = sa["steady"]["skip_s"]
     return {**result, "markdown": markdown_report(result)} if markdown else result
@@ -155,12 +171,20 @@ def compare_summaries(sa, sb, a, b, short_us=25):
     stalled = unpresented(**{a: sa, b: sb})
     if stalled:
         result["unpresented"] = stalled
+    loud = noisy(**{a: sa, b: sb})
+    if loud:
+        result["noisy_environment"] = loud
     locked = [(s.get("machine") or {}).get("screen_locked") for s in (sa, sb)]
     if None not in locked and locked[0] != locked[1]:
         result["screen"] = {"a": locked[0], "b": locked[1],
                             "note": "one run was recorded with the screen locked and the other not: a locked session may "
                                     "leave frames unpaced by the display, so FPS, and GPU ms (they follow the GPU's performance "
                                     "state), are not comparable; record both with the Mac unlocked"}
+    tiers = [s.get("tier") for s in (sa, sb)]
+    if None not in tiers and tiers[0] != tiers[1]:
+        result["tier"] = {"a": tiers[0], "b": tiers[1],
+                          "note": "the recordings were made at different tiers: a light recording has no Metal memory "
+                                  "or counters, so compare memory only between recordings of the same tier"}
     levels = [gpu_state_level(s) for s in (sa, sb)]
     if None not in levels and abs(levels[0] - levels[1]) >= 0.25:
         result["gpu_state"] = {"a": levels[0], "b": levels[1],
@@ -241,8 +265,10 @@ def tool_perf_baseline(name=None, runs=None, skip_s=0):
         b = baselines[name]
         span = ranges(b["summaries"])
         stalled = unpresented(**dict(zip(b["runs"], b["summaries"])))
+        loud = noisy(**dict(zip(b["runs"], b["summaries"])))
         return {"name": name, "runs": b["runs"], "set": b["set"], "range": span, "spread_pct": spreads(span),
-                **({"skip_s": b["skip_s"]} if b.get("skip_s") else {}), **({"unpresented": stalled} if stalled else {})}
+                **({"skip_s": b["skip_s"]} if b.get("skip_s") else {}), **({"unpresented": stalled} if stalled else {}),
+                **({"noisy_environment": loud} if loud else {})}
     return {"baselines": [{"name": n, "runs": b["runs"], "set": b["set"]} for n, b in baselines.items()]}
 
 
@@ -458,10 +484,13 @@ CSV_TOL_MS = 0.002  # frames.csv rounds start times to 0.001 ms, so a gap at the
 
 def read_frames(run):
     """Returns a run's GPU frames as (frame, start ms, GPU ms) from its frames.csv."""
-    source = config.OUT / f"{run}.frames.csv"
-    if not source.exists():
+    source = tables.find(config.OUT, f"{run}.frames")
+    if source is None:
         raise paths.ToolError(f"{run} has no per-frame file; record it again")
-    stat = source.stat()
+    try:
+        stat = source.stat()
+    except OSError:  # pruned between find and stat
+        raise paths.ToolError(f"{run} has no per-frame file; record it again") from None
     return list(_frames(source, stat.st_mtime_ns, stat.st_size))
 
 
@@ -474,8 +503,8 @@ def _frames(source, mtime_ns, size):
 
 def read_memory(run):
     """Returns a run's Metal memory as (ms, MiB) samples, or [] when it has none."""
-    source = config.OUT / f"{run}.metal_memory.csv"
-    if not source.exists():
+    source = tables.find(config.OUT, f"{run}.metal_memory")
+    if source is None:
         return []
     return _csv_rows(source, lambda r: (float(r["time_ms"]), int(r["metal_allocated_bytes"]) / 2**20))
 
@@ -485,7 +514,7 @@ def _csv_rows(source, row):
     recording cut short, a value that is not a finite number); a file that cannot be read at all raises ToolError."""
     out = []
     try:
-        with open(source, newline="", encoding="utf-8") as f:
+        with tables.open_text(source) as f:
             for r in csv.DictReader(f):
                 try:
                     values = row(r)
@@ -494,7 +523,7 @@ def _csv_rows(source, row):
                     continue
                 if finite:
                     out.append(values)
-    except (csv.Error, UnicodeDecodeError, OSError):
+    except tables.UNREADABLE:
         raise paths.ToolError(f"{source.name} cannot be read; record it again") from None
     return out
 
@@ -561,13 +590,91 @@ def display_synced_hz(gpu):
     return next((hz for hz in REFRESH_RATES if abs(fps - hz) <= hz * 0.01), None)
 
 
+def _frames_or_none(run):
+    """Returns the run's frames, or None when it has no per-frame file or it cannot be read."""
+    try:
+        return read_frames(run)
+    except paths.ToolError:
+        return None
+
+
+def _number(value):
+    """Returns `value` when it is a finite number (not a bool), else None."""
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
+
+
+def suggested_actions(summary, run, skip_s=0, rows=None):
+    """Returns what to call next for a run, as [{"tool", "arguments", "reason"}] (empty when nothing applies): `tool` is one
+    of this server's, `arguments` only what the rule knows (the program's own arguments are not known, and the reason says
+    so). `rows` is the run's frames from read_frames, None when it has no per-frame file; a function that returns them is
+    called only when a rule needs them."""
+    summary = summary if isinstance(summary, dict) else {}
+    gpu, hitches = (summary.get(k) if isinstance(summary.get(k), dict) else {} for k in ("gpu", "hitches"))
+    causes = hitches.get("causes") if isinstance(hitches.get("causes"), dict) else {}
+    first_cause = next(iter(causes), None)
+    actions = []
+
+    def add(tool, arguments, reason):
+        actions.append({"tool": tool, "arguments": arguments, "reason": f"{run}: {reason}"})
+    if first_cause == "shader_compile":
+        label = summary.get("label")
+        base = label if isinstance(label, str) and label and paths.name_ok(label) else run
+        # perf_cold_warm names its runs <name>-first and <name>-second, and a recording's label is 100 characters at most
+        name = f"{base[:90]}-cw"
+        add("perf_cold_warm", {"name": name}, "the hitches come from compiling shaders: a cold and a warm run tell first-run "
+            "compilation from steady state (use the same program arguments)")
+        skip = _startup_skip_s(hitches, summary, rows() if callable(rows) else rows)
+        if skip is not None and skip > skip_s:
+            add("perf_compare", {"skip_s": skip}, f"every shader hitch among the 20 longest ends within the first {skip} s: "
+                "compare without that start-up (this reads only the 20 longest hitches)")
+    frames = _number(gpu.get("frames"))
+    if frames is not None and frames < 100:
+        add("perf_record", {"seconds": 30}, f"only {int(frames)} frames: too short to trust; record 30 s or more "
+            "(with the same program arguments)")
+    if summary.get("noisy_environment") is True:
+        add("perf_record", {}, "another process was loading the GPU while it recorded: close other GPU users first and "
+            "record again (with the same program arguments)")
+    if gpu.get("unpresented"):
+        add("perf_record", {}, "the program stopped presenting: keep its window visible and record again (with the same "
+            "program arguments)")
+    throttling = gpu.get("throttling_analysis") if isinstance(gpu.get("throttling_analysis"), dict) else {}
+    if throttling.get("thermal_throttling_detected") is True or first_cause == "thermal":
+        add("perf_ab", {"cooldown_s": 60}, "the Mac throttled: rest between recordings; 60 s is a starting value, not a "
+            "measurement (with the same program arguments)")
+    return actions
+
+
+def _startup_skip_s(hitches, summary, rows):
+    """Returns the whole seconds that cover the shader-compile hitches among the 20 longest, when that is at most a quarter
+    of the run (start-up compilation), else None."""
+    duration = _number(summary.get("duration_s"))
+    if not rows or not duration or duration <= 0 or not isinstance(hitches.get("worst"), list):
+        return None
+    ends = []
+    for hitch in hitches["worst"]:
+        try:
+            if hitch["cause"] == "shader_compile":
+                ends.append(_number(hitch["window_ms"][1]))
+        except (KeyError, TypeError, IndexError):
+            continue
+    try:
+        first = _number(rows[0][1])
+    except (IndexError, TypeError, KeyError):
+        return None
+    if not ends or None in ends or first is None:
+        return None
+    span = (max(ends) - first) / 1000
+    return math.ceil(span) if 0 < span <= 0.25 * duration else None
+
+
 @reads_recordings
 def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     """Says whether a saved recording splits its GPU work into too many short encoders, the pattern of translation
     layers such as DXMT, Mullion or MoltenVK, with the numbers behind it: encoders and command buffers per frame, the
     share of short encoders, the labels with the most GPU time and the GPU's idle time. Read the idle time together
     with the FPS: a program waiting for vsync idles too. Defaults come from bgfx 17-drawstress on an M1 Pro: 7
-    encoders per frame and 50% under 25 us under Mullion, 2 and 2% in native Metal."""
+    encoders per frame and 50% under 25 us under Mullion, 2 and 2% in native Metal. `suggested_actions` lists, as
+    {tool, arguments, reason}, what to call next (a cold/warm run, a skip_s, a longer recording, a cooldown_s)."""
     s = paths.read_object(paths.run_path(run), f"{run}.json")
     encoders = s.get("encoders")
     if not encoders:
@@ -681,4 +788,5 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
                                  "verdict": stutter_verdict},
             "recommendations": recommendations, "hitches": hitches or None,
             "display_synced_hz": synced, "gpu_idle": s.get("gpu_idle"), "gpu_activity": s.get("gpu_activity"), "by_label": encoders["by_label"],
-            "too_short": frames < 100, **({"unpresented": stalled} if stalled else {})}
+            "too_short": frames < 100, **({"unpresented": stalled} if stalled else {}),
+            "suggested_actions": suggested_actions(s, run, 0, lambda: _frames_or_none(run))}

@@ -56,7 +56,12 @@ RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits
          "background": {"type": "boolean", "description": "macOS only, default false; true runs the program under taskpolicy -b, "
                                                         "which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run"},
          "counters": {"type": "boolean", "description": "default false; true also records Metal GPU Counters (gpu_counters in "
-                                                        "the summary); not under Windows; adds about 40 s of read-back per recorded second"}}
+                                                        "the summary); not under Windows; adds about 40 s of read-back per recorded second"},
+         "tier": {**S, "enum": list(recording.TIERS),
+                  "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; "
+                                 "standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace "
+                                 "(subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own "
+                                 "replace that part. Compare recordings of the same tier"}}
 
 SKIP = ("seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) "
         "keeps all. The GPU numbers, hitches and Metal memory are recomputed without them")
@@ -66,7 +71,8 @@ TOOLS = {
     "perf_baseline_record": (experiments.tool_perf_baseline_record, schema(
         {"name": {**S, "description": "reference name: letters, digits, '.', '_', '-'"},
          "count": {**I, "description": "equal recordings to make, default 3"},
-         "skip_s": {"type": "number", "description": SKIP + "; perf_check applies the same cut to the run it judges"},
+         "cooldown_s": {"type": "number", "description": "seconds to rest between two consecutive recordings (never before the first or after the last), 0 to 600, default 0; on a laptop 60 is a starting value, not a measurement: the summaries' thermal_state_share says whether it throttled"},
+                  "skip_s": {"type": "number", "description": SKIP + "; perf_check applies the same cut to the run it judges"},
          **{k: v for k, v in RECORD_PROPS.items() if k != "label"}}, ["name"]),
         hints("Record a reference", destructive=True)),
     "perf_sweep": (experiments.tool_perf_sweep, schema(
@@ -75,7 +81,8 @@ TOOLS = {
          "values": {"type": "array", "items": {"type": ["string", "integer"]},
                     "description": "2 to 8 values of the variable, such as [10, 20, 30] for dim"},
          "rounds": {**I, "description": "rounds, default 1, at most 5 and at most 24 recordings in all; every other round runs the values in reverse"},
-         "skip_s": {"type": "number", "description": SKIP},
+         "cooldown_s": {"type": "number", "description": "seconds to rest between two consecutive recordings (never before the first or after the last), 0 to 600, default 0; on a laptop 60 is a starting value, not a measurement: the summaries' thermal_state_share says whether it throttled"},
+                  "skip_s": {"type": "number", "description": SKIP},
          **{k: v for k, v in RECORD_PROPS.items() if k != "label"}}, ["name", "variable", "values"]),
         hints("Record one run per value of a variable", destructive=True)),
     "perf_ab": (experiments.tool_perf_ab, schema(
@@ -83,7 +90,8 @@ TOOLS = {
          "env_a": {**S, "description": "NAME=VALUE pairs for side A, the reference (empty: none)"},
          "env_b": {**S, "description": "NAME=VALUE pairs for side B, the change under test (empty: none)"},
          "rounds": {**I, "description": "A B B A rounds, default 1 (4 recordings), at most 5"},
-         "skip_s": {"type": "number", "description": SKIP},
+         "cooldown_s": {"type": "number", "description": "seconds to rest between two consecutive recordings (never before the first or after the last), 0 to 600, default 0; on a laptop 60 is a starting value, not a measurement: the summaries' thermal_state_share says whether it throttled"},
+                  "skip_s": {"type": "number", "description": SKIP},
          **{k: v for k, v in RECORD_PROPS.items() if k not in ("label", "env")}}, ["name", "env_a", "env_b"]),
         hints("Record two settings in A B B A order", destructive=True)),
     "perf_cold_warm": (experiments.tool_perf_cold_warm, schema(
