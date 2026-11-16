@@ -29,5 +29,5 @@ exec gitleaks git --pre-commit --staged --redact --no-banner
 - The golden files in `tests/golden/` pin the server's replies and the summary numbers. When a change moves them on
   purpose, follow `tests/golden/README.md` and name the change in the CHANGELOG.
 - Modules import other package modules as modules (`from metal_gpu_trace import config`), never names from them;
-  `tests/test_architecture.py` checks this and the layers listed in `docs/architecture.md`.
+  `tests/test_architecture.py` checks this and the layers listed in `docs/guides/how-it-works.md`.
 - Summaries are shared: no machine name, user name, UUID or absolute path in them or in the repository.

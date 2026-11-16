@@ -1,11 +1,11 @@
-# Architecture
+# How it works
 
 **Reader:** people who change the code. Reviewed 2026-11-15.
 
 ## Why it is shaped this way
 
 The server has to run on a fresh Mac with nothing but the `python3` macOS ships, so it is standard library only
-([ADR-0003](adr/0003-python-3-9-floor.md)). It speaks two MCP eras at once ([ADR-0002](adr/0002-dual-era-mcp.md)).
+([ADR-0003](../adr/0003-python-3-9-floor.md)). It speaks two MCP eras at once ([ADR-0002](../adr/0002-dual-era-mcp.md)).
 And a recording takes 30 seconds or more, so tool calls run one at a time on a worker thread while the transport
 keeps reading messages (to cancel, or to answer `tools/list` meanwhile).
 
@@ -73,7 +73,7 @@ Think of the runs folder as one drawer per project: everything about a project (
   sets `config.OUT`, `config.READ[0]` and `config.BASELINES` to the project's `runs` folder; the parsed file stays in
   `config.PROJECT`. Without a file, `METAL_TRACE_OUT` decides, as before. A wrong file does not stop the server: its
   message goes to `config.PROJECT_ERROR` and every tool answers with it. Why a file per repository and not a central
-  list: [ADR-0004](adr/0004-project-file.md). `project` sits in layer 1 beside `paths` because `config` and `paths` are
+  list: [ADR-0004](../adr/0004-project-file.md). `project` sits in layer 1 beside `paths` because `config` and `paths` are
   all it needs and the tools above read what it set.
 - **What counts as a recording.** A `.json` in the runs folder, except `baselines.json` and the `panel.json` that 0.24.0 and older left
   (`paths.LAYOUT_FILE`); `paths.run_path` and `perf_runs` skip both. Names are at most 120 characters
@@ -94,7 +94,7 @@ Think of the runs folder as one drawer per project: everything about a project (
 - **Disk limit.** `record_run` ends through `recording.finish` (both the macOS and the Windows branch), which calls
   `retention.prune_to_quota` when `config.MAX_DISK_MB` is set and notes what it removed in the summary's `retention`. It
   measures with `lstat`, never follows a link and removes one with `unlink`. Why and at what cost:
-  [ADR-0006](adr/0006-compressed-tables-and-disk-quota.md).
+  [ADR-0006](../adr/0006-compressed-tables-and-disk-quota.md).
 - **Before a recording.** `recording.record` calls `preflight.check` before it starts `memory_pressure`, so a doomed run
   starts nothing. The lock is read without following a link and without blocking; on Windows `os.kill` is never used
   (it ends the process there), `perf_record_windows.is_process_alive` is. `perf_record.sh` repeats the program, disk and

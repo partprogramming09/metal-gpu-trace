@@ -14,7 +14,7 @@ and every change touched the same file.
 ## Decision
 The code is one package in `src/metal_gpu_trace/`, split into modules with one job each, and the tests live in
 `tests/`. Modules import each other as modules (`from metal_gpu_trace import config`), so a test can patch one name in
-one place; `tests/test_architecture.py` checks that and the layers in `docs/architecture.md`.
+one place; `tests/test_architecture.py` checks that and the layers in `docs/guides/how-it-works.md`.
 
 ## Alternatives considered
 | Option | For | Against | Why yes / no |
