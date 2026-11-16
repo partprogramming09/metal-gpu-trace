@@ -1247,3 +1247,13 @@ def test_broken_project_file_is_explained_not_ignored(tmp_path):
     finally:
         server.kill()
         server.wait()
+
+
+def test_stdio_invalid_utf8_is_a_parse_error_and_the_server_keeps_serving(tmp_path):
+    """A line that is not UTF-8 gets -32700 like on HTTP, and the next line is still served (it used to end the server)."""
+    ping = json.dumps({"jsonrpc": "2.0", "id": 5, "method": "ping"}).encode() + b"\n"
+    proc = subprocess.run([sys.executable, "-I", str(PKG / "metal_trace_mcp.py")], input=b"\xff\xfe\n" + ping,
+                          capture_output=True, cwd=tmp_path, timeout=30,
+                          env=dict(os.environ, METAL_TRACE_OUT=str(tmp_path / "runs")))
+    replies = [json.loads(line) for line in proc.stdout.decode().splitlines() if line.strip()]
+    assert [r.get("error", {}).get("code") for r in replies] == [-32700, None] and replies[1]["id"] == 5, (replies, proc.stderr)
