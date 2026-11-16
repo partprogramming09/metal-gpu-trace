@@ -76,8 +76,9 @@ Version 0.27.2. Each item links to the command that was run and its real output.
 - 🔍 **How long the GPU takes to start.** `gpu.start_latency_ms` gives the count, mean, median, p95 and max of the time
   between the work being submitted and the GPU starting it; `perf_compare` compares the median. On a real run it was
   0.56 ms, the same as a hand count over the table. [Proof](docs/evidence/v0.27.2.md#how-long-the-gpu-takes-to-start)
-- 🩺 **Who else is loading the GPU.** When `noisy_environment` is true, `noisy_basis.processes` names up to 3 other
-  processes, with their GPU time and share (50.3 % in a real run). [Proof](docs/evidence/v0.27.2.md#which-other-processes-load-the-gpu)
+- 🩺 **How much of the GPU is not yours.** When `noisy_environment` is true, `noisy_basis.other_processes` gives how many
+  other processes used the GPU, their GPU time and share (2 processes, 50.3 % in a real run), and no names.
+  [Proof](docs/evidence/v0.27.2.md#how-many-other-processes-load-the-gpu)
 - ⚡ **What stayed allocated.** `resource_allocations.live` says what was still allocated at the end, by mode and type
   (65 resources, 81.9 MiB in a real run, matching a hand count), a lower bound. [Proof](docs/evidence/v0.27.2.md#what-is-still-allocated-at-the-end)
 - 🧪 **Shader register spills** (experimental). `shader_spills` and a `perf_diagnose` line. A real run had none; the

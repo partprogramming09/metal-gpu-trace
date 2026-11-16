@@ -14,8 +14,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - 🔍 `gpu.start_latency_ms` (`count`, `mean`, `p50`, `p95`, `max`): how long the GPU takes to start the submitted work;
   `perf_compare` compares its p50. [proof](docs/evidence/v0.27.2.md#how-long-the-gpu-takes-to-start)
 
-- 🩺 `noisy_basis.processes`: with `noisy_environment` true, up to 3 other processes loading the GPU, by name (no pid),
-  `gpu_ms` and `share`. [proof](docs/evidence/v0.27.2.md#which-other-processes-load-the-gpu)
+- 🩺 `noisy_basis.other_processes`: with `noisy_environment` true, how many other processes loaded the GPU, their
+  `gpu_ms` and their `share`. It keeps no process name, so no program you run reaches a summary you share. [proof](docs/evidence/v0.27.2.md#how-many-other-processes-load-the-gpu)
 
 - ⚡ `resource_allocations.live`, `.freed` and `.freed_before_recording`: what is still allocated at the end, by mode and
   type (a lower bound), and what was freed. [proof](docs/evidence/v0.27.2.md#what-is-still-allocated-at-the-end)

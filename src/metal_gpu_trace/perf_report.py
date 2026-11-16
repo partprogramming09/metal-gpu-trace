@@ -581,21 +581,13 @@ def noisy_environment(activity, idle):
             "external_pct": external}
 
 
-def process_name(process):
-    """Returns a <process> value's name without its pid or sub-name: "Chrome Helper (Aperitif) (80813)" is "Chrome
-    Helper", and a path keeps only its last part, so no user or folder reaches a shared summary; "" when the row names
-    no process."""
-    path = re.sub(r"(?:\s*\([^()]*\))+$", "", text(process))  # the pid and sub-names, before any folder is cut
-    return re.split(r"\s*\(", re.split(r"[\\/]", path)[-1])[0].strip()
-
-
-def other_processes(by_name, own_ns, limit=3):
-    """Returns the `limit` other processes that used the most GPU, as {name, gpu_ms, share}: `by_name` maps a name to
-    its GPU ns and `share` is its part of all GPU time, the program's own `own_ns` included. As the channels run in
-    parallel, the times can add up to more than the recording lasted."""
-    total = own_ns + sum(by_name.values())
-    top = sorted(by_name.items(), key=lambda item: (-item[1], item[0]))[:limit] if total else []
-    return [{"name": name, "gpu_ms": round(ns / 1e6, 3), "share": round(ns / total, 3)} for name, ns in top]
+def other_processes(by_pid, own_ns):
+    """Returns how many other processes used the GPU, their GPU ms and their `share` of all GPU time, the program's own
+    `own_ns` included: {count, gpu_ms, share}. `by_pid` maps a pid to its GPU ns. No name is kept, so no program the
+    person runs reaches a summary that is shared. As the channels run in parallel, the times can add up to more than
+    the recording lasted."""
+    other, total = sum(by_pid.values()), own_ns + sum(by_pid.values())
+    return {"count": len(by_pid), "gpu_ms": round(other / 1e6, 3), "share": round(other / total, 3) if total else 0.0}
 
 
 def read_command(argv, env=None):
@@ -678,12 +670,12 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
         intervals = 0
         spans = []
         latency_frames, latency_ns = array.array("q"), array.array("q")  # start-latency of each row that has one
-        by_process, own_ns = collections.Counter(), 0  # GPU ns of every other process, by name, and of the program
+        by_process, own_ns = collections.Counter(), 0  # GPU ns of every other process, by pid, and of the program
         for row in rows(tables["metal-gpu-intervals"]):
             if pid_of(row.get("process")) != pid:
-                name, other = process_name(row.get("process")), number(row.get("duration"))
-                if name and other and other > 0:
-                    by_process[name] += other
+                other_pid, other = pid_of(row.get("process")), number(row.get("duration"))
+                if other_pid is not None and other and other > 0:
+                    by_process[other_pid] += other
                 continue
             own_ns += number(row.get("duration")) or 0
             frame, start, duration = number(row.get("frame-number")), number(row.get("start")), number(row.get("duration"))
@@ -767,7 +759,7 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             summary["noisy_environment"] = noisy["flag"]
             if noisy["flag"]:
                 summary["noisy_basis"] = {k: noisy[k] for k in ("gpu_device_pct_mean", "process_busy_pct", "external_pct")}
-                summary["noisy_basis"]["processes"] = other_processes(by_process, own_ns)
+                summary["noisy_basis"]["other_processes"] = other_processes(by_process, own_ns)
 
         # the GPU's clock states over the recording, as a share of time
         states = collections.Counter()

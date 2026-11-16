@@ -948,7 +948,8 @@ def test_summary_has_flag_and_basis_only_when_true(tmp_path):
             assert s["noisy_environment"] is flag, (device, s.get("noisy_environment"))
             if flag:
                 assert s["noisy_basis"] == {"gpu_device_pct_mean": device, "process_busy_pct": process_busy,
-                                            "external_pct": round(device - process_busy, 1), "processes": []}, s["noisy_basis"]
+                                            "external_pct": round(device - process_busy, 1),
+                                            "other_processes": {"count": 0, "gpu_ms": 0.0, "share": 0.0}}, s["noisy_basis"]
             else:
                 assert "noisy_basis" not in s
     finally:
@@ -1003,10 +1004,10 @@ def test_start_latency_is_summarized_in_ms(tmp_path):
     assert got["gpu"]["unpresented"]["frames"] == [200] and got["gpu"]["start_latency_ms"]["max"] == 1.0, got["gpu"]
 
 
-def test_noisy_basis_names_the_other_processes(tmp_path):
-    """With noisy_environment true, noisy_basis.processes lists up to 3 other processes by GPU ms and share of all GPU
-    time: the name has no pid and no sub-name ("(Aperitif)"), two pids with one name are one entry, the program itself
-    and a row without a process are left out, and a flag without other processes gives an empty list."""
+def test_noisy_basis_counts_the_other_processes(tmp_path):
+    """With noisy_environment true, noisy_basis.other_processes says how many other processes used the GPU, their GPU ms
+    and their share of all GPU time, and never a name: the program itself, a row without a process and a zero duration
+    are left out, and a flag without other processes gives zeros."""
     def table(columns, body):
         cols = "".join(f"<col><mnemonic>{c}</mnemonic></col>" for c in columns)
         return f"<trace-query-result><node><schema>{cols}</schema>{body}</node></trace-query-result>"
@@ -1046,18 +1047,10 @@ def test_noisy_basis_names_the_other_processes(tmp_path):
         finally:
             perf_report.toc_and_tables = saved
 
-    for raw, name in (("Google Chrome Helper (Aperitif) (80813)", "Google Chrome Helper"), ("App(Sub) (8)", "App"),
-                      ("/Users/someone/bin/tool (9)", "tool"), ("C:\\Users\\someone\\game.exe (10)", "game.exe"),
-                      ("/Users/alice (work)/bin/tool (9)", "tool"), ("C:\\Program Files (x86)\\App\\a.exe (1)", "a.exe"),
-                      (" (123)", ""), ("", "")):
-        assert perf_report.process_name(ET.fromstring(f'<process fmt="{raw}"/>')) == name, raw
-    assert perf_report.process_name(None) == ""
-    total = 60 * 4 + 10 + 10 + 40 + 30 + 5  # the row without a process is not counted
+    total = 60 * 4 + 10 + 10 + 40 + 30 + 5  # the row without a process and the one with no duration are not counted
     got = run(own + others)
     assert got["noisy_environment"] is True, got.get("noisy_environment")
-    assert got["noisy_basis"]["processes"] == [
-        {"name": "WindowServer", "gpu_ms": 40.0, "share": round(40 / total, 3)},
-        {"name": "Zed", "gpu_ms": 30.0, "share": round(30 / total, 3)},
-        {"name": "Google Chrome Helper", "gpu_ms": 20.0, "share": round(20 / total, 3)}], got["noisy_basis"]
-    assert run(own)["noisy_basis"]["processes"] == []
+    assert got["noisy_basis"]["other_processes"] == {"count": 5, "gpu_ms": 95.0, "share": round(95 / total, 3)}, got["noisy_basis"]
+    assert "Chrome" not in json.dumps(got) and "WindowServer" not in json.dumps(got), "no process name reaches a summary"
+    assert run(own)["noisy_basis"]["other_processes"] == {"count": 0, "gpu_ms": 0.0, "share": 0.0}
     assert run(own + [row(2 ** 63, 5, proc(7, "x (7)"))])["gpu"]["start_latency_ms"]["count"] == 60, "a sentinel frame number must not abort the summary"
