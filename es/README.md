@@ -75,12 +75,12 @@ Versión 0.27.2. Cada punto enlaza al comando que se ejecutó y a su salida real
 
 - 🔍 **Cuánto tarda la GPU en arrancar.** `gpu.start_latency_ms` da la cuenta, la media, la mediana, el p95 y el máximo
   del tiempo entre enviar el trabajo y que la GPU lo empiece; `perf_compare` compara la mediana. En una corrida real fue
-  de 0,56 ms, igual que un conteo a mano sobre la tabla. [Prueba](../docs/evidence/v0.27.2.md#how-long-the-gpu-takes-to-start)
+  de 0,53 ms, igual que un conteo a mano sobre la tabla. [Prueba](../docs/evidence/v0.27.2.md#how-long-the-gpu-takes-to-start)
 - 🩺 **Cuánta GPU no es tuya.** Con `noisy_environment` en true, `noisy_basis.other_processes` da cuántos procesos
-  ajenos usaron la GPU, su tiempo de GPU y su parte (2 procesos, 50,3 % en una corrida real), y ningún nombre.
+  ajenos usaron la GPU, su tiempo de GPU y su parte (3 procesos, 52,6 % en una corrida real), y ningún nombre.
   [Prueba](../docs/evidence/v0.27.2.md#how-many-other-processes-load-the-gpu)
-- ⚡ **Qué quedó asignado.** `resource_allocations.live` dice qué seguía asignado al final, por modo y tipo (65 recursos,
-  81,9 MiB en una corrida real, igual que el conteo a mano), una cota inferior. [Prueba](../docs/evidence/v0.27.2.md#what-is-still-allocated-at-the-end)
+- ⚡ **Qué quedó asignado.** `resource_allocations.live` dice qué seguía asignado al final, por modo y tipo (66 recursos,
+  84,8 MiB en una corrida real, igual que el conteo a mano), una cota inferior. [Prueba](../docs/evidence/v0.27.2.md#what-is-still-allocated-at-the-end)
 - 🧪 **Derrames de registros de shader** (experimental). `shader_spills` y una línea en `perf_diagnose`. Una corrida real
   no tuvo ninguno; el caso positivo se probó solo con filas sintéticas. [Prueba](../docs/evidence/v0.27.2.md#shader-register-spills)
 
