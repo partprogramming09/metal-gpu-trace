@@ -266,3 +266,79 @@ def test_public_arguments_keeps_ordinary_arguments():
         assert public_arguments(line) == line, (line, public_arguments(line))
     assert public_arguments("-out:/Users/ZQXUSER/y.log") == "-out:y.log"
     assert public_arguments("-log:C:\\Users\\ZQXUSER\\y.log") == "-log:y.log"
+
+
+def test_a_link_in_the_runs_folder_is_not_read(tmp_path):
+    """A runs folder may come from a clone or a download. A summary that is a link to a file outside it would be read as
+    a recording by every tool, and by the runs resource, so a link is refused like a run that does not exist."""
+    import json
+
+    from metal_gpu_trace import analysis, config, paths
+    out = tmp_path / "out"
+    out.mkdir()
+    secret = tmp_path / "secret.json"
+    secret.write_text(json.dumps({"gpu": {"frames": 500, "fps_estimate": 60.0}, "marker": "OUTSIDE"}))
+    (out / "leak.json").symlink_to(secret)
+    (out / "real.json").write_text(json.dumps({"gpu": {"frames": 500, "fps_estimate": 60.0}}))
+    saved, config.OUT = config.OUT, out
+    try:
+        for read in (lambda: paths.run_path("leak"), lambda: analysis.tool_perf_diagnose("leak"),
+                     lambda: paths.read_object(out / "leak.json", "leak.json")):
+            try:
+                read()
+            except paths.ToolError as error:
+                assert str(tmp_path) not in str(error), "the message names no path"
+            else:
+                raise AssertionError("a linked summary was read")
+        assert paths.run_path("real").name == "real.json"
+        assert [r["run"] for r in analysis.tool_perf_runs()["rows"]] == ["real"], "perf_runs lists no linked summary"
+        reply = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/read",
+                                 "params": {"uri": f"{protocol.RUNS_URI}leak"}})
+        assert "OUTSIDE" not in json.dumps(reply), reply
+    finally:
+        config.OUT = saved
+
+
+def test_linked_tables_traces_and_odd_summaries_are_not_followed(tmp_path):
+    """The same rule as for summaries, for what sits beside them: a table or a .trace that is a link is not read, a
+    broken link is not a run, a summary that is not UTF-8 is an error reply and not an exception, and a link is not
+    written through."""
+    import json
+
+    from metal_gpu_trace import config, paths, tables
+    out, outside = tmp_path / "out", tmp_path / "outside"
+    out.mkdir()
+    outside.mkdir()
+    (outside / "t.csv").write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n")
+    (out / "r.frames.csv").symlink_to(outside / "t.csv")
+    (out / "r.frames.csv.gz").symlink_to(outside / "gone.csv.gz")  # broken
+    assert tables.find(out, "r.frames") is None, "a linked table is not found"
+    try:
+        tables.open_text(out / "r.frames.csv")
+    except OSError:
+        pass
+    else:
+        raise AssertionError("a linked table was opened")
+    (outside / "x.trace").mkdir()
+    (out / "leak.trace").symlink_to(outside / "x.trace")
+    (out / "dangling.json").symlink_to(outside / "none.json")
+    (out / "bad.json").write_bytes(b"\xff\xfe")
+    (outside / "w.txt").write_text("original")
+    (out / "w.txt").symlink_to(outside / "w.txt")
+    saved, config.OUT = config.OUT, out
+    try:
+        for read in (lambda: paths.trace_path("leak"), lambda: paths.run_path("dangling"),
+                     lambda: paths.read_object(out / "bad.json", "bad.json"),
+                     lambda: paths.write_file(out / "w.txt", "overwritten")):
+            try:
+                read()
+            except paths.ToolError as error:
+                assert str(tmp_path) not in str(error)
+            else:
+                raise AssertionError("a link or an odd file was accepted")
+        assert (outside / "w.txt").read_text() == "original"
+        reply = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "resources/read",
+                                 "params": {"uri": f"{protocol.RUNS_URI}bad"}})
+        assert "error" in reply and json.dumps(reply).count(str(tmp_path)) == 0, reply
+    finally:
+        config.OUT = saved
