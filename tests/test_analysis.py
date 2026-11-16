@@ -54,6 +54,12 @@ def test_diagnose(tmp_path):
         (tmp_path / "calm.json").write_text(json.dumps(calm))
         got = analysis.tool_perf_diagnose("calm")
         assert not any("recuper" in r or "dividió" in r for r in got["recommendations"]), got
+        spilled = {**no_spans, "shader_spills": {"events": 4, "bytes": 8192, "encoders": 2}}
+        (tmp_path / "spilled.json").write_text(json.dumps(spilled))
+        got = analysis.tool_perf_diagnose("spilled")
+        assert any("derrame" in r and "8192" in r for r in got["recommendations"]), got
+        (tmp_path / "nospill.json").write_text(json.dumps({**no_spans, "shader_spills": {"events": 0}}))
+        assert not any("derrame" in r for r in analysis.tool_perf_diagnose("nospill")["recommendations"])
         (tmp_path / "winbusy.json").write_text(json.dumps({**busy, "template": "Windows Native Trace"}))
         assert any("FlipQueueSize" in r for r in analysis.tool_perf_diagnose("winbusy")["recommendations"])
         assert not analysis.tool_perf_diagnose("new", min_encoders=8)["too_many_short_encoders"]

@@ -34,7 +34,8 @@ MEMORY = "metal-current-allocated-size"
 TABLES = ("metal-gpu-intervals", MEMORY, "gpu-performance-state-intervals")
 # read only when the trace has it: without it encoders go without labels
 OPTIONAL = ("metal-application-encoders-list", "graphics-compiler-activity-intervals", "device-thermal-state-intervals",
-            "ProcessCPUUsage", "metal-resource-allocations", "metal-command-buffer-error")
+            "ProcessCPUUsage", "metal-resource-allocations", "metal-command-buffer-error",
+            "graphics-compiler-spill-events")
 # each xctrace export keeps a temporary store of gigabytes on a big trace: two at a time bound the disk it needs
 EXPORT_WORKERS = 2
 # Metal GPU Counters (PERF_INSTRUMENTS): about 450 000 samples and 64 MB of XML per recorded second, so its export may take minutes
@@ -506,6 +507,21 @@ def resource_summary(table_rows, pid, frames):
             "per_second": [per_second[s] for s in range(max(per_second) + 1)]}
 
 
+def spill_summary(table_rows, pid):
+    """Counts the shader register spills of process `pid` from the rows of `graphics-compiler-spill-events`: `events`,
+    `bytes` spilled and the distinct `encoders` (rows without an encoder-id are not counted as one). {"events": 0}
+    when the program has no row."""
+    events, spilled, encoders = 0, 0, set()
+    for row in table_rows:
+        if pid_of(row.get("process")) != pid:
+            continue
+        events += 1
+        spilled += number(row.get("spilled-bytes")) or 0
+        if text(row.get("encoder-id")):
+            encoders.add(text(row.get("encoder-id")))
+    return {"events": events, "bytes": spilled, "encoders": len(encoders)} if events else {"events": 0}
+
+
 def agx_summary(path):
     """Summarizes a recording's `.agx.csv`, one row per second of the GPU driver's counters, which cover the whole GPU
     and not only the recorded program: utilization of the device, renderer and tiler as stats, `split_scenes` (growth of
@@ -791,6 +807,8 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             allocations = resource_summary(rows(tables["metal-resource-allocations"]), pid, len(frames))
             if allocations["events"]:
                 summary["resource_allocations"] = allocations
+        if "graphics-compiler-spill-events" in tables:
+            summary["shader_spills"] = spill_summary(rows(tables["graphics-compiler-spill-events"]), pid)
         if "metal-command-buffer-error" in tables:
             summary["command_buffer_errors"] = sum(1 for _ in rows(tables["metal-command-buffer-error"]))
         log = out / f"{label}.validation.log"

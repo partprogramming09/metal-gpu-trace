@@ -126,7 +126,8 @@ def test_report(tmp_path):
         perf_report.subprocess.run = saved_run
     toc = ET.fromstring('<trace-toc><run><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
     assert perf_report.missing_tables(toc) == ["ProcessCPUUsage", "device-thermal-state-intervals", "gpu-performance-state-intervals",
-                                               "graphics-compiler-activity-intervals", "metal-application-encoders-list",
+                                               "graphics-compiler-activity-intervals", "graphics-compiler-spill-events",
+                                               "metal-application-encoders-list",
                                                "metal-command-buffer-error", "metal-current-allocated-size",
                                                "metal-resource-allocations"]
     try:
@@ -323,6 +324,24 @@ def test_resource_summary_live_and_freed():
     got = perf_report.resource_summary(pairs, 7, 10)
     assert got["live"]["count"] == 1 and got["live"]["by_mode"] == {"Memoryless": {"count": 1, "mib": 1.0}}, got["live"]
     assert got["freed"]["count"] == 2000, got["freed"]
+
+
+def test_spill_summary():
+    """shader_spills counts the spill events of the recorded program, their bytes and the distinct encoders; rows of
+    other processes do not count, and a table with no row of the program gives {"events": 0}."""
+    def cell(text):
+        el = ET.Element("v")
+        el.text = text
+        return el
+
+    def row(pid, encoder, size):
+        process = ET.Element("process")
+        ET.SubElement(process, "pid", {"fmt": str(pid)})
+        return {"process": process, "encoder-id": cell(encoder), "spilled-bytes": cell(str(size))}
+    rows = [row(7, "a", 4096), row(7, "a", 1024), row(7, "b", 512), row(8, "c", 1 << 20), row(7, "", "x")]
+    assert perf_report.spill_summary(rows, 7) == {"events": 4, "bytes": 5632, "encoders": 2}
+    assert perf_report.spill_summary(rows, 9) == {"events": 0}
+    assert perf_report.spill_summary([], 7) == {"events": 0}
 
 
 def test_gpu_activity(tmp_path):

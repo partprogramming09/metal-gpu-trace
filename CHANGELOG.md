@@ -5,6 +5,17 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+### Added
+
+- 🔍 `gpu.start_latency_ms` (`count`, `mean`, `p50`, `p95`, `max`): how long the GPU takes to start the submitted work;
+  `perf_compare` compares its p50.
+- 🩺 `noisy_basis.processes`: with `noisy_environment` true, up to 3 other processes loading the GPU, by name (no pid),
+  `gpu_ms` and `share`.
+- ⚡ `resource_allocations.live`, `.freed` and `.freed_before_recording`: what is still allocated at the end, by mode and
+  type (a lower bound), and what was freed.
+- 🧪 `shader_spills` (`events`, `bytes`, `encoders`) and a `perf_diagnose` line when a program spills shader registers.
+  Tested with synthetic rows: the real recording had no spill events.
+
 ## 0.27.1 — 2026-11-16
 
 (Fixes only, found by running the suite on a real Windows PC.)
