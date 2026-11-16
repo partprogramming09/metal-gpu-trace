@@ -762,3 +762,367 @@ def test_unpresented_is_surfaced(tmp_path):
         assert "presentados" in diagnosis["recommendations"][0], diagnosis["recommendations"][0]
     finally:
         config.OUT, config.BASELINES = saved
+
+
+def _put_table_run(out, run, gz):
+    """Writes a summary and a 400-frame table (10 ms frames, a 40 ms hitch at frames 21 and 301) for `run`, as `.csv.gz`
+    (a recording made now) or as plain `.csv` (one made before the gzip change), with a Metal memory table likewise."""
+    from metal_gpu_trace import tables
+    t, starts = 0.0, []
+    for i in range(400):
+        t += 40.0 if i in (20, 300) else 10.0
+        starts.append(round(t, 3))
+    worst = [{"frame": f, "interval_ms": 40.0, "cause": "shader_compile", "cpu_pct": 100.0} for f in (21, 301)]
+    summary = {"gpu": {"frames": 400, "fps_estimate": 90.0, "frame_gpu_ms": {"mean": 4.0, "p50": 4.0, "p95": 4.0, "max": 4.0},
+                       "frame_interval_ms": {"p95": 10.0}},
+               "hitches": {"count": 2, "threshold_ms": 15.0, "causes": {"shader_compile": 2}, "worst": worst},
+               "metal_memory_mib": {"peak": 90.0},
+               "encoders": {"per_frame": {"p50": 2}, "command_buffers_per_frame": {"p50": 1}, "short_share": {"25": 0.1},
+                            "by_label": []},
+               "gpu_idle": {"idle_share": 0.1, "idle_ms_per_frame": {"p50": 1}}}
+    (out / f"{run}.json").write_text(json.dumps(summary))
+    frames = [(i + 1, s, 4.0) for i, s in enumerate(starts)]
+    memory = [(s, (90 if s < 1500 else 60) * 2**20) for s in starts[::10]]
+    tables.write(out, f"{run}.frames", ["frame", "start_ms", "gpu_ms_total"], frames, compress=gz)
+    tables.write(out, f"{run}.metal_memory", ["time_ms", "metal_allocated_bytes"], memory, compress=gz)
+
+
+def test_old_csv_and_new_csv_gz_read_the_same_in_every_tool(tmp_path):
+    """A recording whose tables are plain `.csv` (made before 0.26.0) answers perf_compare, perf_history, perf_gate and
+    perf_export_trace with the same numbers as one whose tables are `.csv.gz`."""
+    from metal_gpu_trace import analysis, config, traces
+    for run, gz in (("old1", False), ("old2", False), ("new1", True), ("new2", True)):
+        _put_table_run(tmp_path, run, gz)
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        assert (tmp_path / "old1.frames.csv").exists() and (tmp_path / "new1.frames.csv.gz").exists()
+        old = analysis.tool_perf_compare("old1", "old2", skip_s=1.5)
+        new = analysis.tool_perf_compare("new1", "new2", skip_s=1.5)
+        assert old["metrics"] == new["metrics"] and old["skipped_s"] == new["skipped_s"] == 1.5, (old, new)
+        assert new["metrics"]["metal_mib_peak"]["a"] == 60.0, "memory comes from the gz table too"
+        hist = {p: [{k: v for k, v in r.items() if k != "run"} for r in analysis.tool_perf_history(p, skip_s=1.5)["runs"]]
+                for p in ("old", "new")}
+        assert hist["old"] == hist["new"] and len(hist["new"]) == 2, hist
+        assert analysis.tool_perf_gate("old1", hitches_max=1, skip_s=1.5) == dict(
+            analysis.tool_perf_gate("new1", hitches_max=1, skip_s=1.5), run="old1")
+        a, b = traces.tool_perf_export_trace("old1"), traces.tool_perf_export_trace("new1")
+        assert a["frames"] == b["frames"] == 400, (a, b)
+        assert (tmp_path / "old1.chrome-trace").read_text() == (tmp_path / "new1.chrome-trace").read_text()
+    finally:
+        config.OUT, config.BASELINES = saved
+
+
+def test_truncated_gz_gives_tool_error(tmp_path):
+    """A `.csv.gz` that is cut short, damaged or not gzip at all is a ToolError that says to record again, in every
+    reader, never a gzip or zlib exception."""
+    from metal_gpu_trace import analysis, config, paths, traces
+    _put_table_run(tmp_path, "cut", True)
+    for name in ("frames", "metal_memory"):
+        path = tmp_path / f"cut.{name}.csv.gz"
+        data = path.read_bytes()
+        path.write_bytes(data[: len(data) // 2])
+    (tmp_path / "bad.json").write_text("{}")
+    (tmp_path / "bad.frames.csv.gz").write_text("not gzip at all")
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        for call in (lambda: analysis.read_frames("cut"), lambda: analysis.read_memory("cut"),
+                     lambda: analysis.read_frames("bad"), lambda: traces.tool_perf_export_trace("cut"),
+                     lambda: traces.tool_perf_export_trace("bad")):
+            try:
+                call()
+            except paths.ToolError as error:
+                assert "cannot be read; record it again" in str(error), error
+            else:
+                raise AssertionError("an unreadable table must raise ToolError")
+    finally:
+        config.OUT = saved
+
+
+def test_schema_of_defaults_to_one():
+    """A summary says which generation it is in `schema_version`; one without it, or with a value that is not a whole
+    number of 1 or more, is generation 1."""
+    from metal_gpu_trace import metrics
+    assert metrics.SCHEMA_VERSION == 2
+    for value in (None, "2", 0, -1, True, 2.0, [2]):
+        assert metrics.schema_of({"schema_version": value}) == 1, value
+    assert metrics.schema_of({}) == 1 and metrics.schema_of({"schema_version": 2}) == 2
+    assert metrics.schema_of({"schema_version": 3}) == 3
+    for hostile in (None, [], "x", 7):
+        assert metrics.schema_of(hostile) == 1, hostile
+
+
+def test_old_summaries_read_in_every_tool(tmp_path):
+    """A summary recorded before schema_version existed (generation 1, plain `.frames.csv`, no `tier`, no `retention`)
+    goes through every tool that reads recordings without error; perf_runs lists its generation."""
+    from metal_gpu_trace import analysis, config
+    for run, gz in (("v1a", False), ("v1b", False), ("v2a", True)):
+        _put_table_run(tmp_path, run, gz)
+    s = json.loads((tmp_path / "v2a.json").read_text())
+    (tmp_path / "v2a.json").write_text(json.dumps({"schema_version": 2, **s}))
+    assert "schema_version" not in json.loads((tmp_path / "v1a.json").read_text())
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        rows = {r["run"]: r["schema_version"] for r in analysis.tool_perf_runs()["rows"]}
+        assert rows == {"v1a": 1, "v1b": 1, "v2a": 2}, rows
+        analysis.tool_perf_compare("v1a", "v1b")
+        analysis.tool_perf_compare("v1a", "v2a", skip_s=1.5)
+        analysis.tool_perf_baseline("v1ref", ["v1a", "v1b"])
+        assert analysis.tool_perf_history("v1")["runs"], "history"
+        analysis.tool_perf_diagnose("v1a")
+        analysis.tool_perf_gate("v1a", fps_min=1)
+        assert analysis.tool_perf_check("v1a", "v1ref")["verdict"] in ("same", "better", "worse", "different")
+    finally:
+        config.OUT, config.BASELINES = saved
+
+
+def test_compare_notes_tier_difference(tmp_path):
+    """perf_compare says so when the two recordings were made at different tiers; same tier or an older recording
+    without one says nothing."""
+    from metal_gpu_trace import analysis, config
+    for run, tier in (("l", "light"), ("s", "standard"), ("s2", "standard"), ("old", None)):
+        _put_table_run(tmp_path, run, True)
+        if tier:
+            data = json.loads((tmp_path / f"{run}.json").read_text())
+            (tmp_path / f"{run}.json").write_text(json.dumps({**data, "tier": tier}))
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        got = analysis.tool_perf_compare("l", "s")
+        assert got["tier"]["a"] == "light" and got["tier"]["b"] == "standard", got.get("tier")
+        assert "memory only between recordings of the same tier" in got["tier"]["note"]
+        assert "tier" not in analysis.tool_perf_compare("s", "s2")
+        assert "tier" not in analysis.tool_perf_compare("old", "s")
+    finally:
+        config.OUT, config.BASELINES = saved
+
+
+def _actions_summary(**changes):
+    """A clean 20 s run of 300 frames with no hitches; `changes` replace whole top-level keys."""
+    base = {"label": "game", "duration_s": 20.0, "gpu": {"frames": 300, "fps_estimate": 60.0},
+            "hitches": {"count": 0, "causes": {}, "worst": []}}
+    return {**base, **changes}
+
+
+def _shader_hitches(end_ms, cause="shader_compile"):
+    return {"count": 2, "causes": {cause: 2},
+            "worst": [{"frame": 5, "cause": cause, "window_ms": [50.0, 100.0]},
+                      {"frame": 9, "cause": cause, "window_ms": [150.0, end_ms]}]}
+
+
+FRAMES = [(i, i * 10.0, 4.0) for i in range(300)]
+
+
+def _tools(actions):
+    return [a["tool"] for a in actions]
+
+
+def test_actions_cold_warm_on_shader_hitches():
+    from metal_gpu_trace import analysis
+    got = analysis.suggested_actions(_actions_summary(hitches=_shader_hitches(200.0)), "game_1")
+    assert got[0] == {"tool": "perf_cold_warm", "arguments": {"name": "game-cw"}, "reason": got[0]["reason"]}, got
+    assert "game_1" in got[0]["reason"] and "same program arguments" in got[0]["reason"]
+    assert _tools(got) == ["perf_cold_warm"], "no frames file: no skip_s rule"
+
+
+def test_actions_skip_s_from_startup_compile():
+    from metal_gpu_trace import analysis
+    got = analysis.suggested_actions(_actions_summary(hitches=_shader_hitches(1400.0)), "game_1", rows=FRAMES)
+    assert _tools(got) == ["perf_cold_warm", "perf_compare"], got
+    assert got[1]["arguments"] == {"skip_s": 2} and "20 longest" in got[1]["reason"], got[1]  # 1.4 s, rounded up
+
+
+def test_actions_skip_s_not_suggested_when_late_or_already_skipped():
+    from metal_gpu_trace import analysis
+    late = analysis.suggested_actions(_actions_summary(hitches=_shader_hitches(9000.0)), "r", rows=FRAMES)  # 9 s > 25 % of 20 s
+    assert _tools(late) == ["perf_cold_warm"], late
+    early = _actions_summary(hitches=_shader_hitches(1400.0))
+    assert "perf_compare" not in _tools(analysis.suggested_actions(early, "r", skip_s=2, rows=FRAMES)), "already skipped"
+    assert "perf_compare" in _tools(analysis.suggested_actions(early, "r", skip_s=1, rows=FRAMES))
+    other = _actions_summary(hitches=_shader_hitches(1400.0, cause="memory_growth"))
+    assert analysis.suggested_actions(other, "r", rows=FRAMES) == [], "only shader compilation asks for skip_s"
+
+
+def test_actions_without_frames_file_skips_rule_2():
+    from metal_gpu_trace import analysis
+    got = analysis.suggested_actions(_actions_summary(hitches=_shader_hitches(1400.0)), "r", rows=None)
+    assert "perf_compare" not in _tools(got) and "perf_cold_warm" in _tools(got)
+    assert "perf_compare" not in _tools(analysis.suggested_actions(_actions_summary(hitches=_shader_hitches(1400.0)), "r", rows=[]))
+
+
+def test_actions_short_run():
+    from metal_gpu_trace import analysis
+    got = analysis.suggested_actions(_actions_summary(gpu={"frames": 60}), "r")
+    assert got[0]["tool"] == "perf_record" and got[0]["arguments"] == {"seconds": 30}, got
+    assert analysis.suggested_actions(_actions_summary(gpu={"frames": 100}), "r") == []
+
+
+def test_actions_noisy():
+    from metal_gpu_trace import analysis
+    got = analysis.suggested_actions(_actions_summary(noisy_environment=True), "r")
+    assert got[0]["tool"] == "perf_record" and got[0]["arguments"] == {} and "GPU" in got[0]["reason"], got
+    assert analysis.suggested_actions(_actions_summary(noisy_environment=False), "r") == []
+
+
+def test_actions_unpresented():
+    from metal_gpu_trace import analysis
+    got = analysis.suggested_actions(_actions_summary(gpu={"frames": 300, "unpresented": {"frames": [200], "from_s": 9.0}}), "r")
+    assert got[0]["tool"] == "perf_record" and "visible" in got[0]["reason"], got
+
+
+def test_actions_thermal():
+    from metal_gpu_trace import analysis
+    drift = _actions_summary(gpu={"frames": 300, "throttling_analysis": {"thermal_throttling_detected": True}})
+    got = analysis.suggested_actions(drift, "r")
+    assert got[0]["tool"] == "perf_ab" and got[0]["arguments"] == {"cooldown_s": 60}, got
+    assert "starting value, not a measurement" in got[0]["reason"]
+    by_cause = analysis.suggested_actions(_actions_summary(hitches=_shader_hitches(200.0, cause="thermal")), "r")
+    assert _tools(by_cause) == ["perf_ab"], by_cause
+
+
+def test_actions_empty_for_clean_run():
+    from metal_gpu_trace import analysis
+    assert analysis.suggested_actions(_actions_summary(), "r", rows=FRAMES) == []
+
+
+def test_actions_survive_hostile_summaries():
+    from metal_gpu_trace import analysis
+    for hostile in ({}, {"gpu": "x"}, {"gpu": {"frames": "many"}}, {"hitches": []}, {"hitches": {"causes": []}},
+                    {"hitches": {"causes": {"shader_compile": 1}, "worst": ["x", {"cause": "shader_compile", "window_ms": "?"},
+                                                                           {"cause": "shader_compile", "window_ms": [1]}]},
+                     "duration_s": "long"},
+                    {"hitches": {"causes": {"shader_compile": 1}, "worst": [{"cause": "shader_compile", "window_ms": [0, float("nan")]}]},
+                     "duration_s": 20}, {"label": 5, "hitches": {"causes": {"shader_compile": 1}}}):
+        assert isinstance(analysis.suggested_actions(hostile, "r", rows=FRAMES), list), hostile
+
+
+def test_every_suggested_tool_exists():
+    from metal_gpu_trace import analysis, registry
+    every = {"hitches": _shader_hitches(1400.0), "gpu": {"frames": 10, "unpresented": {"frames": [1]},
+                                                         "throttling_analysis": {"thermal_throttling_detected": True}},
+             "noisy_environment": True, "label": "g", "duration_s": 20.0}
+    got = analysis.suggested_actions(every, "r", rows=FRAMES)
+    assert len(got) >= 6, _tools(got)
+    for action in got:
+        assert action["tool"] in registry.TOOLS, action
+        assert set(action) == {"tool", "arguments", "reason"} and isinstance(action["arguments"], dict)
+        properties = registry.TOOLS[action["tool"]][1]["properties"]
+        assert set(action["arguments"]) <= set(properties), (action, sorted(properties))
+
+
+def test_diagnose_and_compare_have_the_field(tmp_path):
+    from metal_gpu_trace import analysis, config
+    for run in ("a", "b"):
+        _put_table_run(tmp_path, run, True)
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        s = json.loads((tmp_path / "a.json").read_text())
+        (tmp_path / "a.json").write_text(json.dumps({**s, "label": "a", "duration_s": 4.0}))
+        diagnosed = analysis.tool_perf_diagnose("a")
+        assert "recommendations" in diagnosed and _tools(diagnosed["suggested_actions"]) == ["perf_cold_warm"], diagnosed["suggested_actions"]
+        compared = analysis.tool_perf_compare("a", "b")
+        assert [(x["tool"]) for x in compared["suggested_actions"]].count("perf_cold_warm") == 2, compared["suggested_actions"]
+        assert any("a:" in x["reason"] for x in compared["suggested_actions"]) and any("b:" in x["reason"] for x in compared["suggested_actions"])
+        clean = {k: v for k, v in s.items() if k != "hitches"}
+        (tmp_path / "b.json").write_text(json.dumps(clean))
+        assert analysis.tool_perf_diagnose("b")["suggested_actions"] == []
+    finally:
+        config.OUT, config.BASELINES = saved
+
+
+def _noisy_run(tmp_path, run, noisy):
+    _put_table_run(tmp_path, run, True)
+    data = json.loads((tmp_path / f"{run}.json").read_text())
+    if noisy is not None:
+        data["noisy_environment"] = noisy
+        if noisy:
+            data["noisy_basis"] = {"gpu_device_pct_mean": 90.0, "process_busy_pct": 50.0, "external_pct": 40.0}
+    (tmp_path / f"{run}.json").write_text(json.dumps(data))
+
+
+def test_compare_warns_with_the_runs(tmp_path):
+    from metal_gpu_trace import analysis, config
+    for run, noisy in (("q1", False), ("q2", False), ("n1", True), ("old", None)):
+        _noisy_run(tmp_path, run, noisy)
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        got = analysis.tool_perf_compare("q1", "n1")["noisy_environment"]
+        assert got["runs"] == ["n1"] and "another process" in got["note"] and "repeat" in got["note"], got
+        assert analysis.tool_perf_compare("n1", "n1")["noisy_environment"]["runs"] == ["n1"]
+        assert "noisy_environment" not in analysis.tool_perf_compare("q1", "q2")
+        assert "noisy_environment" not in analysis.tool_perf_compare("q1", "old"), "an old summary has no flag"
+    finally:
+        config.OUT, config.BASELINES = saved
+
+
+def test_baseline_warns(tmp_path):
+    from metal_gpu_trace import analysis, config
+    for run, noisy in (("q1", False), ("q2", False), ("n1", True)):
+        _noisy_run(tmp_path, run, noisy)
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        quiet = analysis.tool_perf_baseline("quiet", ["q1", "q2"])
+        assert "noisy_environment" not in quiet, quiet
+        noisy = analysis.tool_perf_baseline("loud", ["q1", "n1"])
+        assert noisy["noisy_environment"]["runs"] == ["n1"], noisy.get("noisy_environment")
+    finally:
+        config.OUT, config.BASELINES = saved
+
+
+def test_old_summary_without_flag_is_fine(tmp_path):
+    from metal_gpu_trace import analysis, config
+    _noisy_run(tmp_path, "old1", None)
+    _noisy_run(tmp_path, "old2", None)
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        assert "noisy_environment" not in analysis.tool_perf_compare("old1", "old2")
+        assert "noisy_environment" not in analysis.tool_perf_baseline("oldref", ["old1", "old2"])
+        assert analysis.tool_perf_diagnose("old1")["suggested_actions"] is not None
+    finally:
+        config.OUT, config.BASELINES = saved
+
+
+def test_actions_label_and_rows_edge_cases():
+    from metal_gpu_trace import analysis
+    hitches = _shader_hitches(1400.0)
+    long_label = "x" * 95  # <label>-cw-second would pass 100 characters: the name is cut so it stays valid
+    for label, expected in (("", "r_1-cw"), (long_label, "x" * 90 + "-cw"), ("g" * 90, "g" * 90 + "-cw"), (7, "r_1-cw"),
+                            ("bad label!", "r_1-cw")):
+        got = analysis.suggested_actions(_actions_summary(label=label, hitches=hitches), "r_1")
+        assert got[0]["arguments"] == {"name": expected}, (label, got[0])
+    for rows in ([()], [[]], [None], [("a", "b")], lambda: None, lambda: [()]):
+        assert _tools(analysis.suggested_actions(_actions_summary(hitches=hitches), "r", rows=rows)) == ["perf_cold_warm"], rows
+
+
+def test_frames_are_read_only_when_a_rule_needs_them(tmp_path):
+    from metal_gpu_trace import analysis, config
+    _put_table_run(tmp_path, "m", True)
+    data = json.loads((tmp_path / "m.json").read_text())
+    data["hitches"] = {"count": 1, "causes": {"memory_growth": 1}, "worst": []}
+    (tmp_path / "m.json").write_text(json.dumps({**data, "label": "m"}))
+    reads = []
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    real = analysis._frames_or_none
+    analysis._frames_or_none = lambda run: reads.append(run) or real(run)
+    try:
+        analysis.tool_perf_diagnose("m")
+        analysis.tool_perf_compare("m", "m")
+        assert reads == [], "no shader_compile cause: the frames table stays closed"
+        _put_table_run(tmp_path, "s", True)
+        analysis.tool_perf_diagnose("s")
+        assert reads == ["s"], reads
+    finally:
+        analysis._frames_or_none = real
+        config.OUT, config.BASELINES = saved
+
+
+def test_compare_accepts_skip_s_as_none_or_text(tmp_path):
+    """skip_s as steady_summary takes it (None, a numeric string) must not break the suggestions."""
+    from metal_gpu_trace import analysis, config
+    for run in ("a", "b"):
+        _put_table_run(tmp_path, run, True)
+    saved, (config.OUT, config.BASELINES) = (config.OUT, config.BASELINES), (tmp_path, tmp_path / "baselines.json")
+    try:
+        for skip in (None, "2", 0, "0", 1.5):
+            got = analysis.tool_perf_compare("a", "b", skip_s=skip)
+            assert isinstance(got["suggested_actions"], list), skip
+    finally:
+        config.OUT, config.BASELINES = saved

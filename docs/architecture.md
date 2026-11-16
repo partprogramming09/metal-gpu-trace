@@ -28,14 +28,17 @@ From the top (the entry point) to the bottom (what everything else rests on):
 | 4 | `worker` | One tool call at a time, cancel, progress |
 | 3 | `registry` | Tool list and schemas, resources, prompts (`compare-layer`, `diagnose-stutter`, `bisect-regression`: text for the agent; the server runs no command) |
 | 2 | `recording` | Records a run (`perf_record`, `perf_attach`) and writes its `context` |
+| 2 | `preflight` | What a recording needs, checked before any process starts: program, Wine, `xcrun`, disk, screen, lock |
 | 2 | `analysis` | Runs, compare, baselines, checks, gates, diagnose |
 | 2 | `experiments` | A/B, cold/warm, sweeps |
 | 2 | `workloads` | Test programs, downloads, PresentMon |
 | 2 | `traces` | `.trace` and `.gputrace` files (`trace_query` with `window_ms`, `capture_diff`), GPU families |
+| 1 | `retention` | Keeps the runs folder under `METAL_TRACE_MAX_DISK_MB`: removes the oldest heavy files, never a summary or a link's target |
 | 1 | `paths` | Names and paths a caller may use, paging, reading a file of the runs folder |
 | 1 | `project` | The `metal-gpu-trace.json` project file: finds it, checks it, points the recordings folder at it |
 | 0 | `config` | Settings, read as `config.NAME` at use time |
 | 0 | `logs` | One stderr line per tool call |
+| 0 | `tables` | Reads and writes the per-frame and Metal memory tables, `.csv.gz` or the plain `.csv` of older recordings |
 | 0 | `metrics` | Numbers that Mac and Windows summaries share |
 | 0 | `perf_report` | Summarizes a `.trace` (also a script) |
 | 0 | `perf_record_windows` | Windows recording (also a script) |
@@ -75,8 +78,10 @@ Think of the runs folder as one drawer per project: everything about a project (
 - **What counts as a recording.** A `.json` in the runs folder, except `baselines.json` and the `panel.json` that 0.24.0 and older left
   (`paths.LAYOUT_FILE`); `paths.run_path` and `perf_runs` skip both. Names are at most 120 characters
   (`paths.name_ok`), because each recording adds suffixes to its file names.
-- **How a file is read.** Summaries go through `paths.read_object` and the per-frame and memory CSVs through
-  `analysis._csv_rows`. A truncated or malformed file becomes a `ToolError` that names the file (such as `<run>.json`) and never a path;
+- **How a file is read.** Summaries go through `paths.read_object` and the per-frame and memory tables through
+  `tables` (`find` looks for `<run>.frames.csv.gz` first and `<run>.frames.csv` second; `open_text` reads either;
+  `write` writes the compressed one, byte for byte the same for the same rows), read by `analysis._csv_rows` and
+  `traces.tool_perf_export_trace`. A summary without `schema_version` is generation 1 (`metrics.schema_of`). A truncated or malformed file becomes a `ToolError` that names the file (such as `<run>.json`) and never a path;
   a CSV line that cannot be read, or that holds a value that is not finite, is left out instead of failing the whole read.
 - **Where a run came from.** `recording.run_context` adds `context` to each new summary: the 12-character commit and the
   dirty flag of the repository that holds the project file (`null` without a project file or a git repository) and
@@ -86,6 +91,20 @@ Think of the runs folder as one drawer per project: everything about a project (
 - **Long tables and captures.** `trace_query` with `window_ms` sums a table by time window (`traces.windows_of`) instead
   of returning rows; `capture_diff` counts the confirmed Metal calls of two `.gputrace` captures with
   `gputrace_read.diff`, matching debug groups by label.
+- **Disk limit.** `record_run` ends through `recording.finish` (both the macOS and the Windows branch), which calls
+  `retention.prune_to_quota` when `config.MAX_DISK_MB` is set and notes what it removed in the summary's `retention`. It
+  measures with `lstat`, never follows a link and removes one with `unlink`. Why and at what cost:
+  [ADR-0006](adr/0006-compressed-tables-and-disk-quota.md).
+- **Before a recording.** `recording.record` calls `preflight.check` before it starts `memory_pressure`, so a doomed run
+  starts nothing. The lock is read without following a link and without blocking; on Windows `os.kill` is never used
+  (it ends the process there), `perf_record_windows.is_process_alive` is. `perf_record.sh` repeats the program, disk and
+  lock checks; only the locked screen is checked just here (`METAL_TRACE_ALLOW_LOCKED=1` allows it).
+- **What to do next.** `analysis.suggested_actions` turns a summary into `{tool, arguments, reason}` items (shown by
+  `perf_diagnose` and `perf_compare`); `recording.cooldown` rests between recordings of `perf_baseline_record`,
+  `perf_ab` and `perf_sweep`; `perf_report.noisy_environment` compares the GPU's total use (`gpu_activity`) with the
+  program's own busy share (`gpu_idle`) and flags a gap of 20 points or more, a provisional threshold.
+- **Capture tiers.** `recording.resolve_tier` turns `tier` (`light`, `standard`, `deep`) into memory, counters and
+  keep-trace; a `memory` or `counters` passed on its own wins. The summary keeps the `tier`.
 - **One recording at a time, everywhere.** The lock is not per project: `config.LOCK` (`recording.lock` in the user's
   cache folder, moved by `METAL_TRACE_LOCK`; `PERF_LOCK` for `perf_record.sh` run by hand) is taken by every recording,
   because two programs sharing the GPU spoil both measurements whatever folder they write to.

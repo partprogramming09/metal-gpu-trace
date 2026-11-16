@@ -161,6 +161,8 @@ The server reads these environment variables:
 | `METAL_TRACE_READ` | More directories the tools may read, separated by `:`. |
 | `METAL_TRACE_LOG` | `off` silences the one-line stderr log per call. |
 | `KEEP_TRACE` | `1` keeps each recording's `.trace`, for `trace_tables`, `trace_query` or Instruments. |
+| `METAL_TRACE_ALLOW_LOCKED` | `1` records with the screen locked; without it a recording is refused, because a locked session leaves the program's frames unpaced by the display. |
+| `METAL_TRACE_MAX_DISK_MB` | Size limit of the runs folder, in MiB (a whole number of 1 or more): after each recording the oldest `.trace`, then `.chrome-trace`, then per-frame and memory tables are removed until it fits; summaries and `baselines.json` never. The new recording's `.trace` goes last, and its summary says what was removed (`retention`). |
 | `KEEP_RUNS` | Keeps only the newest N recordings; `baselines.json` is never removed (nor is the `panel.json` that 0.24.0 and older left). |
 | `METAL_TRACE_LOCK` | The lock that keeps recordings one at a time, whatever folder each goes to (default `~/Library/Caches/metal-gpu-trace/recording.lock`). `perf_record.sh` run by hand takes the same one, or the one `PERF_LOCK` names. |
 | `PERF_ENV` | `NAME=VALUE` pairs, separated by spaces, set for the recorded program. |
@@ -267,7 +269,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 
 | Tool | Reads or records |
 | --- | --- |
-| `perf_record` | Records one run of a program and returns its summary. — Records a program and returns its summary; when it ends it stops every program of its Wine prefix, or every process named like a native program. `counters=true` also records Metal GPU Counters: `gpu_counters` (the limiters, utilization, occupancy and memory bandwidth of the GPU, with the main limiter) in the summary, at about 40 s of read-back per recorded second; not under Windows |
+| `perf_record` | Records one run of a program and returns its summary. — Records a program and returns its summary; when it ends it stops every program of its Wine prefix, or every process named like a native program. `counters=true` also records Metal GPU Counters: `gpu_counters` (the limiters, utilization, occupancy and memory bandwidth of the GPU, with the main limiter) in the summary, at about 40 s of read-back per recorded second; not under Windows. `tier` sets what is recorded at once: `light` (no Metal memory, no counters: to iterate), `standard` (the default) or `deep` (also counters, and the `.trace` is kept; macOS only); compare recordings of the same tier |
 | `perf_attach` | Records a program that is already running, without restarting it. — Records a program that is already running, by pid or name, and leaves it running |
 | `perf_baseline_record` | Records the same program several times and saves the runs as a reference. — Records the same program `count` times (default 3) with `perf_record`'s arguments and saves the runs as a reference in one call. `skip_s` as in `perf_baseline` |
 | `perf_ab` | Tries two settings of the same program and says which comes out better. — Records the same program with two environments (`env_a`, `env_b`: `NAME=VALUE` pairs) in the order A B B A and says per metric (FPS, 1 % low, GPU ms, stutter) whether B is better, worse or the same: better or worse only when every B value is outside A's range |

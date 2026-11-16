@@ -32,6 +32,44 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
   changed on purpose: the `project_info` description no longer names `profile`, `prompts/list` has two more prompts, the
   instructions mention them and `tools/list` has `capture_diff`.
 
+## Pending (becomes 0.27.0)
+
+(Memory, disk, agent guidance and thermal care. The release rule in [docs/evidence/README.md](docs/evidence/README.md)
+applies when it ships; its proof is [docs/evidence/v0.27.0.md](docs/evidence/v0.27.0.md).)
+
+### Added
+
+- 🛡️ `preflight`: a recording that cannot work is refused before any process starts, with what to do: a missing Wine
+  directory or program, no `xcrun`, too little free disk (the runs folder and `TMPDIR`; under Windows only the runs
+  folder), a locked screen (`METAL_TRACE_ALLOW_LOCKED=1` records anyway) and a recording already running. Under Windows it
+  never signals the process that owns the lock. [proof](docs/evidence/v0.27.0.md#a-recording-that-cannot-work-is-refused-before-it-starts)
+- 🛡️ The runs folder takes less disk: per-frame and Metal memory tables of a new recording are written compressed
+  (`<run>.frames.csv.gz`, `<run>.metal_memory.csv.gz`, both engines; old `.csv` runs still read, and a cut or damaged
+  `.csv.gz` is a `ToolError` that says to record again), and `METAL_TRACE_MAX_DISK_MB` keeps the folder under a size in MiB
+  by removing the oldest `.trace`, then `.chrome-trace`, then tables; summaries (`.json`) and `baselines.json` never, the
+  run just recorded last, and nothing while another recording runs. When files went the summary says so in `retention`. [proof](docs/evidence/v0.27.0.md#the-runs-folder-compressed-tables-and-a-size-limit)
+- ⚡ Reading a big table takes a fraction of the memory: `rows` frees each row and keeps only the cells that a later row
+  refers to, found by a first pass over the exported file. On a real trace two tables of 1.5 and 3 million rows peaked
+  at 304 and 196 MiB instead of 5.5 GiB, with the same rows. `perf_report.summarize` still keeps one entry per GPU
+  interval, so the whole summary still grows with the trace. [proof](docs/evidence/v0.27.0.md#reading-a-big-table-takes-a-fraction-of-the-memory)
+- ✨ `tier` on `perf_record` and the tools that record (`perf_baseline_record`, `perf_sweep`, `perf_ab`, `perf_cold_warm`):
+  `light` (no Metal memory, no counters, to iterate), `standard` (the default, what a recording was before) and `deep`
+  (also GPU counters, and the `.trace` is kept unless the disk limit drops it; macOS only). `memory` and `counters` given
+  on their own replace that part of the tier. The summary records its `tier`, and `perf_compare` says when the two
+  recordings differ in it. [proof](docs/evidence/v0.27.0.md#tier-light-standard-and-deep)
+- 🩺 Next actions and thermal care: `suggested_actions` in `perf_diagnose` and `perf_compare` (a list of `{tool, arguments,
+  reason}` so an agent knows what to call next); `cooldown_s` (0 to 600 seconds) on `perf_baseline_record`, `perf_ab`
+  and `perf_sweep`, a rest between any two consecutive recordings, never before the first or after the last; and
+  `noisy_environment` in the summary (the GPU's total use exceeded the program's own share by 20 points or more; the
+  threshold is provisional). [proof](docs/evidence/v0.27.0.md#next-actions-noisy-environment-and-cooldown)
+
+### Changed
+
+- A locked screen now refuses a recording (it was only a warning in `perf_compare` afterwards).
+- `schema_version: 2` in every new summary (first key) and in each `perf_runs` row; a summary without it is version 1 and
+  every tool still reads it.
+- The first progress notification of a recording says its worst case: `recording: up to N s including read-back`.
+
 ## 0.25.0 — 2026-11-15
 
 ### Removed (incompatible)

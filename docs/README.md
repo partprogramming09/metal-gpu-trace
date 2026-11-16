@@ -14,6 +14,7 @@ ADR status: proposed · accepted · rejected · superseded by NNNN.
 | [adr/0004-project-file.md](adr/0004-project-file.md) | Why a metal-gpu-trace.json in each repository picks the recordings folder (accepted) |
 | [adr/0005-remove-the-panel.md](adr/0005-remove-the-panel.md) | Why the HTML panel was removed in 0.25.0 and what stays for old files (accepted) |
 | [evidence/README.md](evidence/README.md) | How each release proves its improvements, and the rule `tests/test_docs.py` checks |
+| [adr/0006-compressed-tables-and-disk-quota.md](adr/0006-compressed-tables-and-disk-quota.md) | Why per-frame tables are gzip and the runs folder has a size limit (accepted) |
 | [guides/run-from-a-clone.md](guides/run-from-a-clone.md) | Commands to run the server, the scripts and the checks from a clone |
 | [../tests/golden/README.md](../tests/golden/README.md) | What the golden files pin and how to re-record them |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) · [../SECURITY.md](../SECURITY.md) | How to send a change · how to report a vulnerability |

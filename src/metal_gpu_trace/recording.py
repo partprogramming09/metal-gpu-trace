@@ -1,6 +1,7 @@
 """Recording a run: perf_record and perf_attach, the layer overrides, memory pressure and cancellation."""
 import hashlib
 import json
+import math
 import os
 import pathlib
 import re
@@ -13,20 +14,42 @@ import tempfile
 import threading
 import time
 
-from metal_gpu_trace import config, paths, perf_report, workloads
+from metal_gpu_trace import config, paths, perf_report, preflight, retention, workloads
 if sys.platform == "win32":
     from metal_gpu_trace import perf_record_windows
 
 
+TIERS = ("light", "standard", "deep")
+
+
+def resolve_tier(tier, memory, counters):
+    """Returns (memory, counters, keep_trace) for a capture tier: light records neither Metal memory nor counters,
+    standard the Metal memory, deep also the GPU counters and keeps the .trace (subject to METAL_TRACE_MAX_DISK_MB).
+    A `memory` or `counters` that is not None replaces that part of the tier."""
+    if tier not in TIERS:
+        raise paths.ToolError("tier is one of light, standard, deep")
+    if not all(value is None or isinstance(value, bool) for value in (memory, counters)):
+        raise paths.ToolError("memory and counters are true or false")
+    base_memory, base_counters, keep_trace = {"light": (False, False, False), "standard": (True, False, False),
+                                              "deep": (True, True, True)}[tier]
+    return (base_memory if memory is None else memory, base_counters if counters is None else counters, keep_trace)
+
+
 def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, workdir=None, args="", workload=None,
-                     api=None, dim=None, memory=True, env="", counters=False, example=None, memory_free_pct=None,
-                     background=False, size=None):
+                     api=None, dim=None, memory=None, env="", counters=None, example=None, memory_free_pct=None,
+                     background=False, size=None, tier="standard"):
     """Records `program` (an .exe under Wine, or a macOS binary with wine="native"), or a test program fetched with
     workload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per
     frame, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest
     to read). When it ends it stops every program of that Wine prefix (wineserver -k), or every process named like
     the program with native. counters=true also records Metal GPU Counters (`gpu_counters` in the summary: the units the
-    GPU waited on, its utilization, occupancy and memory bandwidth); it adds about 40 s of read-back per recorded second."""
+    GPU waited on, its utilization, occupancy and memory bandwidth); it adds about 40 s of read-back per recorded second.
+    tier sets both at once: light (no Metal memory, no counters: seconds of read-back, to iterate), standard (the default:
+    Metal memory) and deep (also counters, and the .trace is kept unless METAL_TRACE_MAX_DISK_MB drops it); memory and
+    counters given on their own replace that part of the tier. Compare recordings of the same tier."""
+    memory, counters, keep_trace = resolve_tier(tier, memory, counters)
+    if tier == "deep" and sys.platform == "win32":
+        raise paths.ToolError("deep needs Metal GPU counters: macOS only")
     check_levers(memory_free_pct, background)
     program_env, layer = check_env(env), None
     if workload:
@@ -49,7 +72,7 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
     prefix = pathlib.Path(prefix or os.environ.get("WINEPREFIX", "~/.wine")).expanduser()
     return record(label, seconds, wine, prefix, workdir,
                   [str(program.resolve()), *split_args(args)], program_env, memory, layer=layer, counters=counters,
-                  background=background, memory_free_pct=memory_free_pct)
+                  background=background, memory_free_pct=memory_free_pct, keep_trace=keep_trace, tier=tier)
 
 
 def check_env(env):
@@ -228,6 +251,21 @@ def progress(done, total, message):
         send(done, total, message)
 
 
+def cooldown(seconds):
+    """Rests for `seconds` between two recordings, a laptop cooling off, in slices of at most 1 s: each sends a progress
+    line, and a cancelled call ends it with a ToolError, so no further recording starts."""
+    total = left = float(seconds)
+    while True:
+        if cancelled():
+            raise paths.ToolError("cancelled while cooling down")
+        if left <= 0:
+            return
+        progress(total - left, total, f"cooling down: {math.ceil(left)} s left")
+        step = min(1.0, left)
+        time.sleep(step)
+        left -= step
+
+
 def kill_program(name):
     """Stops every process named `name`: SIGTERM first, then SIGKILL for the ones that ignore it (a game that catches
     SIGTERM kept running for 40 minutes after its recording was cancelled)."""
@@ -285,7 +323,10 @@ def hold_memory_pressure(free_pct, hold_s, wait_s=90):
 def record(label, seconds, wine, prefix, workdir, command, *args, memory_free_pct=None, **options):
     """Runs record_run, holding the Mac at `memory_free_pct` percent free meanwhile when it is given, and stopping
     that pressure whatever happens."""
+    if not paths.name_ok(label, 100):
+        raise paths.ToolError("label holds up to 100 letters, digits, '.', '_' and '-'")
     check_levers(memory_free_pct, options.get("background", False))
+    preflight.check(wine=wine, command=command, seconds=seconds)
     hold = hold_memory_pressure(memory_free_pct, int(seconds) + 120) if memory_free_pct else None
     try:
         return record_run(label, seconds, wine, prefix, workdir, command, *args, **options)
@@ -307,22 +348,40 @@ def free_lock(pid):
     if owner == str(pid):
         shutil.rmtree(lock, ignore_errors=True)
 
+def finish(summary, json_path, layer, tier):
+    """Adds `layer`, the run's `context` and `tier` to the summary, applies METAL_TRACE_MAX_DISK_MB (the run just recorded
+    is `json_path`'s; not while another recording runs, whose .trace is being written into the same folder): when files
+    had to go, notes it in the summary's `retention`; writes the JSON and returns the summary. Both engines end here."""
+    summary["layer"], summary["context"] = layer, run_context()
+    if tier:
+        summary["tier"] = tier
+    if config.MAX_DISK_MB and not preflight.recording_running():
+        removed = retention.prune_to_quota(config.OUT, config.MAX_DISK_MB, json_path.stem)
+        if removed["removed"]:
+            summary["retention"] = removed
+    json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return summary
+
+
 def record_run(label, seconds, wine, prefix, workdir, command, program_env="", memory=True, layer=None, counters=False,
-               background=False):
+               background=False, keep_trace=False, tier=None):
     """Runs perf_record.sh and returns the summary it wrote, stopping the whole recording and deleting its files if
     it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV, `memory` false sets PERF_MEMORY=0, and `layer`
-    names the translation layer a native run goes through (MoltenVK) instead of "native Metal"."""
-    if not paths.name_ok(label, 100):
-        raise paths.ToolError("label holds up to 100 letters, digits, '.', '_' and '-'")
+    names the translation layer a native run goes through (MoltenVK) instead of "native Metal"; `keep_trace` sets KEEP_TRACE=1
+    for the script; `tier` is written into the summary."""
     env = dict(os.environ, PERF_OUT=str(config.OUT), PERF_LOCK=str(config.LOCK), PERF_PARENT_PID=str(os.getpid()),
                PERF_ENV=" ".join(filter(None, [os.environ.get("PERF_ENV", ""), program_env])))
     if not memory:
         env["PERF_MEMORY"] = "0"
+    if keep_trace:
+        env["KEEP_TRACE"] = "1"
     if background:
         env["PERF_PREFIX"] = BACKGROUND_PREFIX
     if counters:
         env["PERF_INSTRUMENTS"] = ";".join(filter(None, [os.environ.get("PERF_INSTRUMENTS", ""), "Metal GPU Counters"]))
     layer = layer or layer_of(wine, prefix, env["PERF_ENV"])
+    limit = deadline(seconds, True) if counters and sys.platform != "win32" else deadline(seconds)
+    progress(0, limit, f"recording: up to {limit} s including read-back")
     if sys.platform == "win32":
         try:
             summary, json_path = perf_record_windows.record_windows(
@@ -334,9 +393,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
             raise paths.ToolError(str(error)) from error
         except OSError as error:
             raise paths.ToolError(f"recording failed: {error}") from error
-        summary["layer"], summary["context"] = layer, run_context()
-        json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        return summary
+        return finish(summary, json_path, layer, tier)
     before = set(config.OUT.glob(f"{label}_*"))
     tmp = pathlib.Path(os.environ.get("TMPDIR", "/tmp"))
     ktraces = set(tmp.glob("instruments*.ktrace"))
@@ -344,7 +401,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
                              str(prefix), str(workdir), *command],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
                             start_new_session=True)
-    limit, started, ticks = (deadline(seconds, True) if counters else deadline(seconds)), time.monotonic(), 0
+    started, ticks = time.monotonic(), 0
     while True:
         left = limit - (time.monotonic() - started)
         if left <= 0 or cancelled():
@@ -379,18 +436,16 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
         raise paths.ToolError(f"recording failed (exit {proc.returncode}): {reason}")
     summary = json.loads(new[-1].read_text(encoding="utf-8"))
     if not (summary.get("gpu") or {}).get("intervals"):
-        run, keep = new[-1].stem, os.environ.get("KEEP_TRACE") == "1"
+        run, keep = new[-1].stem, keep_trace or os.environ.get("KEEP_TRACE") == "1"
         for path in set(config.OUT.glob(f"{run}.*")) - before:
             if not (keep and path.suffix == ".trace"):
                 shutil.rmtree(path) if path.is_dir() else path.unlink()
         ended = (summary.get("process") or {}).get("termination-reason") or "unknown"
-        kept = f"; {run}.trace is kept (KEEP_RUNS does not prune it: delete it by hand)" if keep and (config.OUT / f"{run}.trace").exists() else ""
+        kept = f"; {run}.trace is kept (METAL_TRACE_MAX_DISK_MB prunes it at the next recording, KEEP_RUNS does not)" if keep and (config.OUT / f"{run}.trace").exists() else ""
         raise paths.ToolError(f"the program did no GPU work: it ended ({ended}) after {summary.get('duration_s', 0):.1f} s "
                               f"of recording, and its summary was not saved{kept}; check that it starts (under Wine: "
                               "the Wine build, the prefix and the program's own log)")
-    summary["layer"], summary["context"] = layer, run_context()
-    new[-1].write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return summary
+    return finish(summary, new[-1], layer, tier)
 
 
 def record_new_summary(label, **record):
