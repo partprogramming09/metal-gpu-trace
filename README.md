@@ -69,6 +69,31 @@ for 95 % of them (`p95`). The longest wait between two frames was 22.2 ms. The p
 median, `p50`), and the GPU sat idle 42 % of the time. One recording says little by itself: compare two, and repeat a
 run before calling a difference real.
 
+## What's new
+
+Version 0.26.0. Each item links to the command that was run and its real output. 🧪 means experimental: it works on
+what was tried, but one part was not checked end to end, and the proof says which.
+
+- 🔍 **Time windows in `trace_query`.** Add `window_ms` and a long table (tens of thousands of rows) comes back as one
+  line per time window, with a count and the summed duration, instead of rows cut off in the middle. In a real run,
+  19 710 rows became 31 windows of 1 s. [Proof](docs/evidence/v0.26.0.md#trace_query-with-window_ms)
+- ✨ **Where a run came from.** Each new summary now says which commit of your code it measured, whether that code had
+  uncommitted changes, and which Instruments version recorded it. `perf_compare` says whether two runs share it. No
+  branch name, path or machine name. [Proof](docs/evidence/v0.26.0.md#run-context-commit-and-instruments-version)
+- 🧪 **`diagnose-stutter` prompt.** A ready-made request for your agent: record a program twice, tell stutter that only
+  happens the first time (shaders compiling) from stutter that keeps happening, and quote only numbers the tools
+  return. [Proof](docs/evidence/v0.26.0.md#the-diagnose-stutter-prompt)
+- 🧪 **`bisect-regression` prompt.** A ready-made request for your agent: find the commit that made a program slower
+  with `git bisect`, recording and checking against a baseline at each step. The server runs no command; your agent
+  does, with its own permissions. [Proof](docs/evidence/v0.26.0.md#the-bisect-regression-prompt)
+- 🧪 **`capture_diff`.** Compares two `.gputrace` captures and says which Metal calls a change added or removed, in
+  total and per debug group, without Xcode. Proven on synthetic captures only.
+  [Proof](docs/evidence/v0.26.0.md#capture_diff-compares-two-captures)
+
+Incompatible change: the `profile` key of `metal-gpu-trace.json` is gone (it did nothing since the panel was removed in
+0.25.0), so a file that still has it is refused and the error names the key. Delete the line. Details in the
+[changelog](CHANGELOG.md).
+
 ## For developers
 
 Measure how a Wine or macOS program uses the GPU on an Apple silicon Mac, from the command line or through an AI
@@ -146,7 +171,7 @@ The server reads these environment variables:
 A repository can hold a `metal-gpu-trace.json` that names its project and the folder of its recordings:
 
 ```json
-{"name": "my-game", "runs": "perf-runs", "profile": "translation-layer", "baseline": "main-ref"}
+{"name": "my-game", "runs": "perf-runs", "baseline": "main-ref"}
 ```
 
 The server looks for it in its working directory and the folders above it, stopping below the home folder, so one
@@ -158,7 +183,6 @@ each project's folder on its own. `runs` is relative to the file, starts with `~
 | --- | --- |
 | `name` | The project's name (letters, digits, `.`, `_`, `-`). Required. |
 | `runs` | The recordings folder. Required. It must be new, empty or already marked by the server (a plain `.metal-gpu-trace-runs` file, not a folder or a link): `KEEP_RUNS` removes old `.json` files there, so a folder holding other files is refused. The mark the server leaves holds the project's `name`, and another project's file that names a folder marked with a different name is refused; an empty mark, written by hand, takes the name of the first project that uses the folder. To hand a folder to another project, edit or remove its mark. |
-| `profile` | `translation-layer`, `native` or `generic` (the default). No tool reads it since the panel was removed in 0.25.0; `project_info` reports it. It will be removed in a later version. |
 | `baseline` | The name of the project's reference (`perf_baseline`). `project_info` reports it; `perf_check` still takes the reference it is given. |
 | `format` | `metal-gpu-trace`, the only one for now. |
 
@@ -237,7 +261,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 
 ### Tools
 
-24 tools in four groups. Your agent picks them; you rarely call one yourself. Each row starts with what the tool is for, then the detail.
+25 tools in four groups. Your agent picks them; you rarely call one yourself. Each row starts with what the tool is for, then the detail.
 
 #### Record
 
@@ -268,15 +292,16 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `perf_export_trace` | Exports a recording's frames to a file that Perfetto or Chrome can draw. — Writes a recording's GPU frames as `<run>.chrome-trace`, one slice per frame, for ui.perfetto.dev or chrome://tracing |
 | `trace_tables` | Lists the tables of a kept `.trace`. — Lists the tables of a kept `.trace`, named by its run or its path |
 | `trace_count` | Counts the rows of several tables of a kept `.trace`. — Counts the rows of several tables of a kept `.trace`, in all and per process; by default the tables that matter for a translation layer (GPU intervals, encoders, compiler spills, compiled shaders, allocations, counters, Time Profiler), so an empty one shows before reading it |
-| `trace_query` | Returns rows of one table of a kept `.trace`. — One page of rows of one table, optionally one process |
+| `trace_query` | Returns rows of one table of a kept `.trace`. — One page of rows of one table, optionally one process; with `window_ms`, one page of time windows (`count` and summed duration) in `rows` instead |
 | `capture_summary` | Summarizes a `.gputrace` capture. — Summarizes a `.gputrace`; lists its 100 most frequent calls out of `calls_total` |
+| `capture_diff` | Compares two `.gputrace` captures. — Counts of each confirmed Metal call in both (debug markers not counted), their difference, and the debug groups whose calls differ |
 | `capture_records` | Returns the records of a `.gputrace` capture, one page at a time. — One page of a `.gputrace`'s records |
 
 #### Setup and test programs
 
 | Tool | Reads or records |
 | --- | --- |
-| `project_info` | Says which project is active and where its recordings are kept. — Says which project is active (from `metal-gpu-trace.json`), its profile and baseline, and its recordings folder and where that comes from |
+| `project_info` | Says which project is active and where its recordings are kept. — Says which project is active (from `metal-gpu-trace.json`), its baseline, and its recordings folder and where that comes from |
 | `perf_runs` | Lists the recordings, newest first. — Lists recordings, newest first, one page at a time, whether each kept its `.trace`, and the translation layer it ran on (a fingerprint of its Direct3D DLLs, and its Wine); `project` names the active project |
 | `gpu_family` | Apple's published facts for a GPU family or chip. — Apple's facts for a family or chip (`Apple7`, `M1 Pro`, `M3 Max`) |
 | `workload_list` | Lists the test programs you can download. — Lists the test programs `workload_fetch` can download; for `bgfx-examples`, `example_traits` gives each example's class and its encoders per frame in native Metal |

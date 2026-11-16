@@ -14,7 +14,7 @@ import json
 import pathlib
 import sys
 
-__version__ = "0.25.0"
+__version__ = "0.26.0"
 if __package__ in (None, ""):  # run by path: make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from metal_gpu_trace import analysis, http_transport, paths, project, protocol, stdio, worker  # noqa: E402
@@ -31,8 +31,9 @@ INSTRUCTIONS = (
     "need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, "
     "or every process named like a native program. To compare native Metal with a translation layer without a game "
     "of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload "
-    "that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an "
-    "environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory "
+    "that lists examples), or the compare-layer prompt. The diagnose-stutter prompt tells first-seen shader stutter from "
+    "steady stutter; bisect-regression finds the commit that slowed a program. perf_sweep records one run per value of dim, example, api or an "
+    "environment variable and fits GPU ms per frame on the value. trace_query with window_ms sums a long table by time window instead of listing rows. memory_free_pct holds the whole Mac short of memory "
     "while recording (keep other work off it) and background throttles the program: repeat a run that uses either."
 )
 

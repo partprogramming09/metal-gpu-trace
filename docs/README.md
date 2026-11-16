@@ -13,6 +13,7 @@ ADR status: proposed · accepted · rejected · superseded by NNNN.
 | [adr/0003-python-3-9-floor.md](adr/0003-python-3-9-floor.md) | Why Python 3.9 is the oldest supported version (accepted) |
 | [adr/0004-project-file.md](adr/0004-project-file.md) | Why a metal-gpu-trace.json in each repository picks the recordings folder (accepted) |
 | [adr/0005-remove-the-panel.md](adr/0005-remove-the-panel.md) | Why the HTML panel was removed in 0.25.0 and what stays for old files (accepted) |
+| [evidence/README.md](evidence/README.md) | How each release proves its improvements, and the rule `tests/test_docs.py` checks |
 | [guides/run-from-a-clone.md](guides/run-from-a-clone.md) | Commands to run the server, the scripts and the checks from a clone |
 | [../tests/golden/README.md](../tests/golden/README.md) | What the golden files pin and how to re-record them |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) · [../SECURITY.md](../SECURITY.md) | How to send a change · how to report a vulnerability |

@@ -3,6 +3,35 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## 0.26.0 — 2026-11-15
+
+(The release rule in [docs/evidence/README.md](docs/evidence/README.md) applies from this version on.)
+
+### Removed (incompatible)
+
+- The `profile` key of `metal-gpu-trace.json`: it is now an unknown key and the file is refused, naming it. `project_info`
+  no longer returns `profile`. It had no effect since the panel was removed in 0.25.0
+  ([ADR-0005](docs/adr/0005-remove-the-panel.md)). The `panel.json` exclusion stays for now: old folders still keep that file.
+
+### Added
+
+- 🔍 `trace_query` takes `window_ms` (1 to 3600000): it returns time windows, each with its `count` and summed duration (`duration_ms`), in the same `rows` page instead of rows, so a long table is summarized without cutting off its middle. It uses the table's `start` or `time` column (nanoseconds), refuses a table that has neither, and counts rows with no usable time in `skipped_rows`. `window_ms` is a whole number. [proof](docs/evidence/v0.26.0.md#trace_query-with-window_ms)
+
+- ✨ Every new run's summary carries `context`: the short commit and dirty flag of the project file's repository (null without a project file or a git repository; `dirty` looks at the tracked files of the whole repository, not at new untracked files) and Instruments' version, and drops the `GIT_*` variables so they cannot point at another repository. `perf_compare` returns `context` saying whether two runs share it (runs from before 0.26.0 are named in `missing_in`). No branch, path, user or machine name. [proof](docs/evidence/v0.26.0.md#run-context-commit-and-instruments-version)
+
+- 🧪 Prompt `diagnose-stutter` (`workload`, `api`): it fetches the workload, records it twice with `perf_cold_warm` and tells first-seen shader stutter (`first_seen_hitches`) from steady stutter (`perf_diagnose`), using only fields those tools return. [proof](docs/evidence/v0.26.0.md#the-diagnose-stutter-prompt)
+
+- 🧪 Prompt `bisect-regression` (`good_rev` and `bad_rev` required, `workload`, `api`): the agent runs `git bisect` with its own permissions and, at each step, `perf_record` and `perf_check` against a baseline, repeating a step before marking it. It records a workload, so a commit must change what the workload runs (its arguments or environment). The server runs no command; a revision that is not a plain name, or starts with `-`, is refused. [proof](docs/evidence/v0.26.0.md#the-bisect-regression-prompt)
+
+- 🧪 `capture_diff` compares two `.gputrace` captures by their confirmed Metal calls: totals per call (`a`, `b`, `delta`) and the debug groups whose calls differ, matched by label so their order does not matter (the 100 largest changes, out of `groups_total`). A capture without debug groups is compared as a whole. Only calls matched one by one against Xcode's command list count. Debug markers are not counted, and calls outside every group are only in the totals. `capture_summary`, `capture_records` and `capture_diff` errors no longer include the capture's folder. [proof](docs/evidence/v0.26.0.md#capture_diff-compares-two-captures)
+
+### Documentation
+
+- Release proof: `docs/evidence/` says how each release proves its improvements, and `tests/test_docs.py` fails when a
+  release from 0.26.0 on does not list 1 to 5 improvements, each linking to its proof. `tests/golden/protocol.json`
+  changed on purpose: the `project_info` description no longer names `profile`, `prompts/list` has two more prompts, the
+  instructions mention them and `tools/list` has `capture_diff`.
+
 ## 0.25.0 — 2026-11-15
 
 ### Removed (incompatible)

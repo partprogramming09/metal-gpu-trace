@@ -33,17 +33,82 @@ def tool_trace_tables(trace):
     return {"tables": sorted({t.attrib["schema"] for t in toc.iter("table") if "schema" in t.attrib})}
 
 
-def tool_trace_query(trace, schema, offset=0, limit=50, pid=None):
-    """Returns one page of rows of one table of a .trace as {column: value}, optionally only one process's rows."""
+TIME_COLUMNS = ("start", "time")  # the GPU tables name their time column `start`, time-profile names it `time`; both in ns
+
+
+def check_window(window_ms):
+    """Returns `window_ms` as a whole number of milliseconds from 1 to 3600000 (10.0 counts as 10), or None when it is
+    None."""
+    if window_ms is None:
+        return None
+    if isinstance(window_ms, float) and window_ms.is_integer():
+        window_ms = int(window_ms)
+    if isinstance(window_ms, bool) or not isinstance(window_ms, int) or not 1 <= window_ms <= 3_600_000:
+        raise paths.ToolError("window_ms is a whole number of milliseconds from 1 to 3600000")
+    return window_ms
+
+
+def windows_of(rows, window_ms):
+    """Groups `rows` ({column: element}) by `window_ms` of their time column: returns (windows, skipped), the windows
+    as {"start_ms", "count"} plus "duration_ms" when the table has a duration column, and `skipped` the rows whose time
+    is not a number of ns from 0 (or whose time column is missing: the first row decides which column the table has).
+    Only windows that hold a row are listed."""
+    found, skipped, key, has_duration = {}, 0, None, False
+    for number, row in enumerate(rows):
+        if number == 0:
+            key = next((k for k in TIME_COLUMNS if k in row), None)
+            has_duration = "duration" in row
+            if key is None:
+                raise paths.ToolError("window_ms needs a table with a time column (start or time); trace_tables lists "
+                                      "the tables and trace_query without window_ms shows the columns")
+        try:
+            ns = int(row[key].text)
+            if ns < 0:
+                raise ValueError
+        except (KeyError, AttributeError, TypeError, ValueError):
+            skipped += 1
+            continue
+        index = ns // (window_ms * 1_000_000)
+        window = found.setdefault(index, {"start_ms": index * window_ms, "count": 0, "duration_ns": 0})
+        window["count"] += 1
+        if has_duration:
+            try:
+                window["duration_ns"] += int(row["duration"].text)
+            except (KeyError, AttributeError, TypeError, ValueError):
+                pass
+    out = []
+    for index in sorted(found):
+        window = found[index]
+        ns = window.pop("duration_ns")
+        if has_duration:
+            window["duration_ms"] = round(ns / 1_000_000, 3)
+        out.append(window)
+    return out, skipped
+
+
+def tool_trace_query(trace, schema, offset=0, limit=50, pid=None, window_ms=None):
+    """Returns one page of rows of one table of a .trace as {column: value}, optionally only one process's rows. With
+    window_ms (a whole number from 1 to 3600000) the page holds time windows instead, each {start_ms, count} and, when
+    the table has a duration column, duration_ms (the sum of the durations): a summary of a table too long to read
+    row by row. skipped_rows appears only when some row had no usable time."""
+    window = check_window(window_ms)
     if not schema.replace("-", "").isalnum():
         raise paths.ToolError("schema holds only letters, digits and '-'; trace_tables lists them")
     xpath = f'/trace-toc/run[@number="1"]/data/table[@schema="{schema}"]'
-    rows = []
-    for row in perf_report.rows(perf_report.export(paths.trace_path(trace), xpath=xpath)):
-        if pid is not None and "process" in row and perf_report.pid_of(row["process"]) != int(pid):
-            continue
-        rows.append({k: (v.attrib.get("fmt") or v.text) if v is not None else None for k, v in row.items()})
-    return paths.page(rows, offset, limit)
+    exported = perf_report.rows(perf_report.export(paths.trace_path(trace), xpath=xpath))
+    selected = (row for row in exported
+                if pid is None or "process" not in row or perf_report.pid_of(row["process"]) == int(pid))
+    try:
+        if window is not None:
+            windows, skipped = windows_of(selected, window)
+            got = {**paths.page(windows, offset, limit), "window_ms": window}
+            if skipped:
+                got["skipped_rows"] = skipped
+            return got
+        return paths.page([{k: (v.attrib.get("fmt") or v.text) if v is not None else None for k, v in row.items()}
+                           for row in selected], offset, limit)
+    finally:
+        exported.close()  # deletes the exported file now, also when windows_of raised
 
 
 # the tables of a kept .trace that say most about a translation layer, counted by trace_count when none are named
@@ -87,6 +152,15 @@ def tool_capture_summary(capture):
     summary["calls_total"] = len(summary["calls"])
     summary["calls"] = summary["calls"][:100]
     return summary
+
+
+def tool_capture_diff(a, b):
+    """Compares two .gputrace captures by their confirmed Metal calls: totals per call (a, b, delta) and the debug groups
+    whose calls differ, the 100 with the largest change out of groups_total. Needs no Xcode."""
+    result = gputrace_read.diff(paths.allowed(a), paths.allowed(b))
+    result["groups_total"] = len(result["groups"])
+    result["groups"] = result["groups"][:100]
+    return result
 
 
 def tool_capture_records(capture, offset=0, limit=100):

@@ -8,7 +8,7 @@
     "resources": {},
     "tools": {}
    },
-   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
+   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. The diagnose-stutter prompt tells first-seen shader stutter from steady stutter; bisect-regression finds the commit that slowed a program. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. trace_query with window_ms sums a long table by time window instead of listing rows. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
    "protocolVersion": "2025-06-18",
    "serverInfo": {
     "name": "metal-trace",
@@ -25,7 +25,7 @@
     "resources": {},
     "tools": {}
    },
-   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
+   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. The diagnose-stutter prompt tells first-seen shader stutter from steady stutter; bisect-regression finds the commit that slowed a program. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. trace_query with window_ms sums a long table by time window instead of listing rows. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
    "protocolVersion": "2025-11-25",
    "serverInfo": {
     "name": "metal-trace",
@@ -581,7 +581,7 @@
       "readOnlyHint": true,
       "title": "Show the active project"
      },
-     "description": "Says which project is active: its name, profile, baseline and format, the folder its recordings go to and\nwhere that folder comes from (the project file, METAL_TRACE_OUT or the default ./perf-runs). Without a project\nfile, project and baseline are null and profile is generic.",
+     "description": "Says which project is active: its name, baseline and format, the folder its recordings go to and\nwhere that folder comes from (the project file, METAL_TRACE_OUT or the default ./perf-runs). Without a project\nfile, project and baseline are null.",
      "inputSchema": {
       "additionalProperties": false,
       "properties": {},
@@ -650,7 +650,7 @@
       "readOnlyHint": true,
       "title": "Compare two recordings"
      },
-     "description": "Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the\nheadline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and\ncommand buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's\ncount and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:\nwith different layers it compares layers, not one change. A Windows run against a Metal run has `measure`: the\nGPU ms and Metal memory differ in kind and the encoders exist only in Metal, so use FPS, its lows, stutter and\njitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has\n`markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,\nwhere shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the\nper-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.\n`screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable.",
+     "description": "Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the\nheadline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and\ncommand buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's\ncount and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:\nwith different layers it compares layers, not one change. A Windows run against a Metal run has `measure`: the\nGPU ms and Metal memory differ in kind and the encoders exist only in Metal, so use FPS, its lows, stutter and\njitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has\n`markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,\nwhere shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the\nper-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.\n`screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable.\ncontext says whether both runs share the commit of the project's repository and Instruments' version (same true or\nfalse; null when a run's commit is unknown, named in unknown_in; runs from before 0.26.0 are named in missing_in).",
      "inputSchema": {
       "properties": {
        "a": {
@@ -969,7 +969,7 @@
       "readOnlyHint": true,
       "title": "Read a trace table"
      },
-     "description": "Returns one page of rows of one table of a .trace as {column: value}, optionally only one process's rows.",
+     "description": "Returns one page of rows of one table of a .trace as {column: value}, optionally only one process's rows. With\nwindow_ms (a whole number from 1 to 3600000) the page holds time windows instead, each {start_ms, count} and, when\nthe table has a duration column, duration_ms (the sum of the durations): a summary of a table too long to read\nrow by row. skipped_rows appears only when some row had no usable time.",
      "inputSchema": {
       "properties": {
        "limit": {
@@ -991,6 +991,10 @@
        "trace": {
         "description": "a run name from perf_runs whose trace_kept is true, or the path of a .trace",
         "type": "string"
+       },
+       "window_ms": {
+        "description": "1 to 3600000: return time windows of this many ms, each with its count and summed duration, instead of rows (the table needs a start or time column)",
+        "type": "integer"
        }
       },
       "required": [
@@ -1052,6 +1056,36 @@
       "type": "object"
      },
      "title": "Summarize a capture"
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Compare two captures"
+     },
+     "description": "Compares two .gputrace captures by their confirmed Metal calls: totals per call (a, b, delta) and the debug groups\nwhose calls differ, the 100 with the largest change out of groups_total. Needs no Xcode.",
+     "inputSchema": {
+      "properties": {
+       "a": {
+        "description": "the first .gputrace (usually the one before a change)",
+        "type": "string"
+       },
+       "b": {
+        "description": "the second .gputrace",
+        "type": "string"
+       }
+      },
+      "required": [
+       "a",
+       "b"
+      ],
+      "type": "object"
+     },
+     "name": "capture_diff",
+     "outputSchema": {
+      "type": "object"
+     },
+     "title": "Compare two captures"
     },
     {
      "annotations": {
@@ -1280,6 +1314,44 @@
      ],
      "description": "Records a test program in native Metal and under a translation layer, then diagnoses and compares both runs",
      "name": "compare-layer"
+    },
+    {
+     "arguments": [
+      {
+       "description": "a workload from workload_list, default drawstress",
+       "name": "workload"
+      },
+      {
+       "description": "the API the workload runs: mtl (default, native Metal), d3d12 or d3d11",
+       "name": "api"
+      }
+     ],
+     "description": "Records a program twice to tell first-seen shader stutter from steady stutter, then diagnoses it",
+     "name": "diagnose-stutter"
+    },
+    {
+     "arguments": [
+      {
+       "description": "a commit, tag or branch name that was fast (letters, digits, . _ -)",
+       "name": "good_rev",
+       "required": true
+      },
+      {
+       "description": "a commit, tag or branch name that is slow (letters, digits, . _ -)",
+       "name": "bad_rev",
+       "required": true
+      },
+      {
+       "description": "the workload to record, default drawstress",
+       "name": "workload"
+      },
+      {
+       "description": "the API the workload runs: mtl (default, native Metal), d3d12 or d3d11",
+       "name": "api"
+      }
+     ],
+     "description": "Finds the commit that made a workload slower: git bisect, with a recording and a check at each step. The recordings use a workload, so a commit must change what the workload runs (its arguments or environment)",
+     "name": "bisect-regression"
     }
    ]
   }
@@ -1411,7 +1483,7 @@
     "resources": {},
     "tools": {}
    },
-   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
+   "instructions": "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, or every process named like a native program. To compare native Metal with a translation layer without a game of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload that lists examples), or the compare-layer prompt. The diagnose-stutter prompt tells first-seen shader stutter from steady stutter; bisect-regression finds the commit that slowed a program. perf_sweep records one run per value of dim, example, api or an environment variable and fits GPU ms per frame on the value. trace_query with window_ms sums a long table by time window instead of listing rows. memory_free_pct holds the whole Mac short of memory while recording (keep other work off it) and background throttles the program: repeat a run that uses either.",
    "resultType": "complete",
    "supportedVersions": [
     "2026-07-28"
@@ -1975,7 +2047,7 @@
       "readOnlyHint": true,
       "title": "Show the active project"
      },
-     "description": "Says which project is active: its name, profile, baseline and format, the folder its recordings go to and\nwhere that folder comes from (the project file, METAL_TRACE_OUT or the default ./perf-runs). Without a project\nfile, project and baseline are null and profile is generic.",
+     "description": "Says which project is active: its name, baseline and format, the folder its recordings go to and\nwhere that folder comes from (the project file, METAL_TRACE_OUT or the default ./perf-runs). Without a project\nfile, project and baseline are null.",
      "inputSchema": {
       "additionalProperties": false,
       "properties": {},
@@ -2044,7 +2116,7 @@
       "readOnlyHint": true,
       "title": "Compare two recordings"
      },
-     "description": "Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the\nheadline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and\ncommand buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's\ncount and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:\nwith different layers it compares layers, not one change. A Windows run against a Metal run has `measure`: the\nGPU ms and Metal memory differ in kind and the encoders exist only in Metal, so use FPS, its lows, stutter and\njitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has\n`markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,\nwhere shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the\nper-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.\n`screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable.",
+     "description": "Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the\nheadline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and\ncommand buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's\ncount and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:\nwith different layers it compares layers, not one change. A Windows run against a Metal run has `measure`: the\nGPU ms and Metal memory differ in kind and the encoders exist only in Metal, so use FPS, its lows, stutter and\njitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has\n`markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,\nwhere shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the\nper-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.\n`screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable.\ncontext says whether both runs share the commit of the project's repository and Instruments' version (same true or\nfalse; null when a run's commit is unknown, named in unknown_in; runs from before 0.26.0 are named in missing_in).",
      "inputSchema": {
       "properties": {
        "a": {
@@ -2363,7 +2435,7 @@
       "readOnlyHint": true,
       "title": "Read a trace table"
      },
-     "description": "Returns one page of rows of one table of a .trace as {column: value}, optionally only one process's rows.",
+     "description": "Returns one page of rows of one table of a .trace as {column: value}, optionally only one process's rows. With\nwindow_ms (a whole number from 1 to 3600000) the page holds time windows instead, each {start_ms, count} and, when\nthe table has a duration column, duration_ms (the sum of the durations): a summary of a table too long to read\nrow by row. skipped_rows appears only when some row had no usable time.",
      "inputSchema": {
       "properties": {
        "limit": {
@@ -2385,6 +2457,10 @@
        "trace": {
         "description": "a run name from perf_runs whose trace_kept is true, or the path of a .trace",
         "type": "string"
+       },
+       "window_ms": {
+        "description": "1 to 3600000: return time windows of this many ms, each with its count and summed duration, instead of rows (the table needs a start or time column)",
+        "type": "integer"
        }
       },
       "required": [
@@ -2446,6 +2522,36 @@
       "type": "object"
      },
      "title": "Summarize a capture"
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Compare two captures"
+     },
+     "description": "Compares two .gputrace captures by their confirmed Metal calls: totals per call (a, b, delta) and the debug groups\nwhose calls differ, the 100 with the largest change out of groups_total. Needs no Xcode.",
+     "inputSchema": {
+      "properties": {
+       "a": {
+        "description": "the first .gputrace (usually the one before a change)",
+        "type": "string"
+       },
+       "b": {
+        "description": "the second .gputrace",
+        "type": "string"
+       }
+      },
+      "required": [
+       "a",
+       "b"
+      ],
+      "type": "object"
+     },
+     "name": "capture_diff",
+     "outputSchema": {
+      "type": "object"
+     },
+     "title": "Compare two captures"
     },
     {
      "annotations": {

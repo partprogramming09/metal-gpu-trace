@@ -15,7 +15,7 @@ differ per project.
 
 ## Decision
 A repository may hold a `metal-gpu-trace.json` with the project's `name`, its recordings folder `runs`, and optionally
-its `profile`, `baseline` and `format`. At start-up the server looks for the file in its working directory and the
+its `baseline` and `format` (a `profile` key existed until 0.25.0; see the note below). At start-up the server looks for the file in its working directory and the
 folders above it, stopping below the home folder; `METAL_TRACE_PROJECT` names it instead. When found, `runs` replaces
 `METAL_TRACE_OUT` for recording and reading, and `baselines.json` moves with it. The recording lock stays global (one
 recording at a time on the Mac). The `runs` folder must be new, empty or carry the server's mark
@@ -43,7 +43,7 @@ https://modelcontextprotocol.io/specification/versioning, read on 2026-11-12.
   none; `project_info` makes that visible.
 - **Harder:** recordings already in a shared folder must be moved by hand to their project's folder.
 - **Added later (2026-11-12, same branch; the decision stands):** in 0.24.0 the panel read `profile` and `baseline`. The panel
-  was removed in 0.25.0 ([ADR-0005](0005-remove-the-panel.md)): `profile` is still accepted and has no effect, `baseline`
+  was removed in 0.25.0 ([ADR-0005](0005-remove-the-panel.md)): `profile` was accepted and ignored until 0.25.0 and is refused from 0.26.0 on, and `baseline`
   is only reported by `project_info`. `perf_check` and the `check` command take the reference as an argument and do not
   read the project file, so the reference is named in two places when both are used. In the runs folder, `baselines.json` (and the `panel.json` of 0.24.0 and older)
   are not recordings: `KEEP_RUNS` keeps them and `perf_runs` does not list them.

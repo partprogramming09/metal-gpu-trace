@@ -13,7 +13,7 @@ import tempfile
 import threading
 import time
 
-from metal_gpu_trace import config, paths, workloads
+from metal_gpu_trace import config, paths, perf_report, workloads
 if sys.platform == "win32":
     from metal_gpu_trace import perf_record_windows
 
@@ -154,6 +154,43 @@ def layer_label(layer):
     if "moltenvk" in layer:
         return f"moltenvk {((layer.get('dylib') or {}).get('sha256') or '')[:12]}".strip()
     return f"{layer['fingerprint']} {layer['wine']} {layer['wine_version'] or ''}".strip()
+
+
+def run_context(read=perf_report.read_command):
+    """Returns where a run came from: `git` (the 12-character commit and whether any tracked file of the whole
+    repository had changes; new untracked files do not count) of the repository that holds the project file, null when
+    there is no project file or its folder is not a git repository, and `instruments` (xctrace's version), null where
+    xctrace is missing. The GIT_* variables of the environment are dropped so they cannot point at another repository.
+    No branch, path, user or machine name: summaries are shared."""
+    clean_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+    def ask(*argv):
+        try:
+            return read(argv, env=clean_env).strip()
+        except (OSError, subprocess.SubprocessError):
+            return None
+    root = (config.PROJECT or {}).get("root")
+    git = ("git", "--no-optional-locks", "-C", str(root))
+    commit = ask(*git, "rev-parse", "--short=12", "HEAD") if root else None
+    changes = ask(*git, "status", "--porcelain", "--untracked-files=no") if commit else None
+    xctrace = ask("xcrun", "xctrace", "version") or ""
+    version = re.search(r"version (\S+(?: \(\w+\))?)", xctrace)
+    return {"git": {"commit": commit, "dirty": bool(changes)} if commit and changes is not None else None,
+            "instruments": version.group(1) if version else None}
+
+
+def context_change(sa, sb, a, b):
+    """Returns whether two runs share a context (commit, dirty flag, Instruments version); a run recorded before
+    0.26.0 is named in missing_in, and a run whose commit is unknown (no project file or no git repository) in
+    unknown_in: `same` is then null, because nothing says the code is the same."""
+    ca, cb = sa.get("context"), sb.get("context")
+    missing = [r for r, context in ((a, ca), (b, cb)) if not context]
+    if missing:
+        return {"missing_in": missing}
+    unknown = [r for r, context in ((a, ca), (b, cb)) if not context.get("git")]
+    if unknown and ca == cb:
+        return {"same": None, "unknown_in": unknown}
+    return {"same": True} if ca == cb else {"same": False, "a": ca, "b": cb, **({"unknown_in": unknown} if unknown else {})}
 
 
 def layer_change(sa, sb, a, b):
@@ -297,7 +334,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
             raise paths.ToolError(str(error)) from error
         except OSError as error:
             raise paths.ToolError(f"recording failed: {error}") from error
-        summary["layer"] = layer
+        summary["layer"], summary["context"] = layer, run_context()
         json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         return summary
     before = set(config.OUT.glob(f"{label}_*"))
@@ -351,7 +388,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
         raise paths.ToolError(f"the program did no GPU work: it ended ({ended}) after {summary.get('duration_s', 0):.1f} s "
                               f"of recording, and its summary was not saved{kept}; check that it starts (under Wine: "
                               "the Wine build, the prefix and the program's own log)")
-    summary["layer"] = layer
+    summary["layer"], summary["context"] = layer, run_context()
     new[-1].write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return summary
 

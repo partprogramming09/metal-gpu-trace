@@ -11,7 +11,7 @@ from support import ROOT, PKG, write_capture, hang_stubs, golden, wait_until  # 
 def test_perf_panel_is_gone():
     """The panel was removed in 0.25.0: no tool, and no word about it in what clients read first."""
     from metal_gpu_trace import metal_trace_mcp, registry
-    assert "perf_panel" not in registry.TOOLS and len(registry.TOOLS) == 24
+    assert "perf_panel" not in registry.TOOLS and len(registry.TOOLS) == 25
     assert "panel" not in metal_trace_mcp.INSTRUCTIONS.lower()
 
 
@@ -118,7 +118,7 @@ def test_server(tmp_path):
     assert all("outputSchema" in t for t in tools.values()), "every tool declares its output"
     paged = replies[3]["result"]["structuredContent"]
     assert set(tools["perf_runs"]["outputSchema"]["required"]) <= set(paged), paged
-    assert [p["name"] for p in replies[22]["result"]["prompts"]] == ["compare-layer"]
+    assert [p["name"] for p in replies[22]["result"]["prompts"]] == ["compare-layer", "diagnose-stutter", "bisect-regression"]
     steps = replies[23]["result"]["messages"][0]["content"]["text"]
     assert all(w in steps for w in ("api=d3d11", "workload=drawstress", "perf_compare a=", "labels")), steps
     # an argument that is not a plain name is dropped, so the default api stays
@@ -131,7 +131,7 @@ def test_server(tmp_path):
     assert [x["uriTemplate"] for x in replies[17]["result"]["resourceTemplates"]] == ["metal-trace://runs/{run}"]
     assert json.loads(replies[26]["result"]["contents"][0]["text"]) == {"gpu": {"frames": 100}}
     assert replies[27]["error"]["code"] == replies[28]["error"]["code"] == -32002, "a bad run name is not found"
-    assert len(replies[2]["result"]["tools"]) == 24
+    assert len(replies[2]["result"]["tools"]) == 25
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -312,7 +312,7 @@ def test_http(tmp_path):
         assert post(ping, path="/other")[0] == 404
         assert post({"jsonrpc": "2.0", "method": "notifications/initialized"}) == (202, None)
         code, tools = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        assert code == 200 and len(tools["result"]["tools"]) == 24 and "perf_panel" not in json.dumps(tools)
+        assert code == 200 and len(tools["result"]["tools"]) == 25 and "perf_panel" not in json.dumps(tools)
         code, runs = post({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                            "params": {"name": "perf_runs", "arguments": {}, "_meta": {"progressToken": "x"}}})
         assert code == 200 and runs["result"]["structuredContent"]["total"] == 0, runs
@@ -653,7 +653,7 @@ def test_tool_shape(tmp_path):
     from metal_gpu_trace import protocol
     from metal_gpu_trace import metal_trace_mcp
     tools = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-    assert len(tools) == 24
+    assert len(tools) == 25
     info = next(t for t in tools if t["name"] == "project_info")
     assert info["annotations"]["readOnlyHint"] is True and not info["inputSchema"].get("properties"), info
     for tool in tools:
@@ -1046,7 +1046,7 @@ def test_prompt_dispatch():
         got = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "prompts/get", "params": {"name": "t"}})["result"]
         assert got["description"] == "t" and got["messages"][0]["content"]["text"] == "T", got
         listed = protocol.handle({"jsonrpc": "2.0", "id": 2, "method": "prompts/list"})["result"]["prompts"]
-        assert {p["name"] for p in listed} == {"compare-layer", "t"} and all("render" not in p for p in listed), listed
+        assert {p["name"] for p in listed} == {"compare-layer", "diagnose-stutter", "bisect-regression", "t"} and all("render" not in p for p in listed), listed
         assert "Compare drawstress" in protocol.handle(
             {"jsonrpc": "2.0", "id": 3, "method": "prompts/get", "params": {"name": "compare-layer"}}
         )["result"]["messages"][0]["content"]["text"]

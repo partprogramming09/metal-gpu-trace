@@ -483,9 +483,9 @@ def agx_summary(path):
             "gpu_recovered": None if recoveries is None else recoveries > 0}
 
 
-def read_command(argv):
-    """Returns the standard output of one short system command."""
-    return subprocess.run(argv, capture_output=True, text=True, check=True, timeout=10).stdout
+def read_command(argv, env=None):
+    """Returns the standard output of one short system command, run with `env` (default: this process's)."""
+    return subprocess.run(argv, capture_output=True, text=True, check=True, timeout=10, env=env).stdout
 
 
 def machine_info(device, read=read_command):

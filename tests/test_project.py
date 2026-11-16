@@ -24,16 +24,21 @@ def refused(path, **kwargs):
 
 
 def test_load_reads_a_valid_file(tmp_path):
-    got = project.load(write(tmp_path, {"name": "mullion", "runs": "perf-runs", "profile": "translation-layer",
-                                        "baseline": "ds-d3d12"}))
+    got = project.load(write(tmp_path, {"name": "mullion", "runs": "perf-runs", "baseline": "ds-d3d12"}))
     assert got["name"] == "mullion" and got["runs"] == (tmp_path / "perf-runs").resolve(), got
-    assert got["profile"] == "translation-layer" and got["baseline"] == "ds-d3d12" and got["format"] == "metal-gpu-trace"
+    assert got["baseline"] == "ds-d3d12" and got["format"] == "metal-gpu-trace" and "profile" not in got
     assert got["root"] == tmp_path.resolve(), got
 
 
-def test_load_defaults_profile_and_format(tmp_path):
+def test_load_defaults_format(tmp_path):
     got = project.load(write(tmp_path, {"name": "m", "runs": "r"}))
-    assert (got["profile"], got["format"], got["baseline"]) == ("generic", "metal-gpu-trace", None), got
+    assert (got["format"], got["baseline"]) == ("metal-gpu-trace", None), got
+
+
+def test_profile_key_is_rejected_as_unknown(tmp_path):
+    """0.25.0 accepted `profile` and ignored it; from 0.26.0 it is an unknown key (ADR-0005)."""
+    text = refused(write(tmp_path, {"name": "m", "runs": "r", "profile": "generic"}))
+    assert "unknown key 'profile'" in text and "profile" not in text.split("the keys are", 1)[1], text
 
 
 def test_load_expands_home_in_runs(tmp_path):
@@ -83,7 +88,7 @@ def test_load_refuses_unknown_keys(tmp_path):
 
 
 def test_load_refuses_bad_values(tmp_path):
-    for field, value in (("name", "a b"), ("name", 3), ("profile", "fast"), ("format", "vegaflow"),
+    for field, value in (("name", "a b"), ("name", 3), ("format", "vegaflow"),
                          ("baseline", 3), ("baseline", "../x"), ("runs", 5)):
         data = {"name": "m", "runs": "r", field: value}
         text = refused(write(tmp_path, data))
@@ -335,11 +340,11 @@ def test_find_ignores_a_file_at_the_disk_root(tmp_path):
 def test_project_info_names_the_project_and_its_folder(tmp_path):
     restore = saved_config()
     try:
-        write(tmp_path, {"name": "mullion", "runs": "perf-runs", "profile": "translation-layer", "baseline": "ds-d3d12"})
+        write(tmp_path, {"name": "mullion", "runs": "perf-runs", "baseline": "ds-d3d12"})
         env = {"HOME": "/nonexistent"}
         project.apply(tmp_path, env)
         got = project.info(env)
-        assert got == {"project": "mullion", "profile": "translation-layer", "baseline": "ds-d3d12",
+        assert got == {"project": "mullion", "baseline": "ds-d3d12",
                        "format": "metal-gpu-trace", "runs": "perf-runs", "source": "project file"}, got
     finally:
         restore()
@@ -376,7 +381,7 @@ def test_project_info_without_a_project(tmp_path):
                             ({"HOME": "/nonexistent", "METAL_TRACE_OUT": str(tmp_path / "o")}, "METAL_TRACE_OUT")):
             project.apply(tmp_path, env)
             got = project.info(env)
-            assert got["project"] is None and got["profile"] == "generic" and got["baseline"] is None, got
+            assert got["project"] is None and got["baseline"] is None and "profile" not in got, got
             assert got["source"] == source and str(tmp_path) not in json.dumps(got), got
     finally:
         restore()
