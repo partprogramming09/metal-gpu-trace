@@ -24,7 +24,7 @@
   },
   "env": {
     "METAL_TRACE_REPO": "C:\\Users\\CHANGE-ME\\metal-gpu-trace",
-    "METAL_TRACE_E2E_VERSION": "0.27.2",
+    "METAL_TRACE_E2E_VERSION": "0.27.3",
     "METAL_TRACE_BRANCH": "chore/launches-without-limit"
   }
 }
