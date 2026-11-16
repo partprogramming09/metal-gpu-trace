@@ -5,15 +5,67 @@ import pathlib
 import re
 import statistics
 
-# the generation of the summary files both engines write (2: tables compressed, `tier`, `retention`); a summary
-# without `schema_version` is generation 1
-SCHEMA_VERSION = 2
+# the generation of the summary files both engines write (2: tables compressed, `tier`, `retention`; 3: the `common`
+# block, built by common_block); a summary without `schema_version` is generation 1
+SCHEMA_VERSION = 3
 
 
 def schema_of(summary):
     """Returns a summary's generation: its `schema_version` when that is a whole number of 1 or more, else 1."""
     value = summary.get("schema_version") if isinstance(summary, dict) else None
     return value if type(value) is int and value >= 1 else 1
+
+
+def layer_label(layer):
+    """Returns a short name for a summary's layer: native, attached, or its fingerprint and Wine; None if absent."""
+    if not layer:
+        return None
+    if "none" in layer:
+        return "native"
+    if "unknown" in layer:
+        return "attached"
+    if "rosetta" in layer:
+        return "rosetta"
+    if "moltenvk" in layer:
+        return f"moltenvk {((layer.get('dylib') or {}).get('sha256') or '')[:12]}".strip()
+    return f"{layer['fingerprint']} {layer['wine']} {layer['wine_version'] or ''}".strip()
+
+
+PACING_KEYS = ("fps_estimate", "fps_1pct_low", "fps_01pct_low", "stutter_rate_pct", "frame_jitter_ms")
+
+
+def _dict(value):
+    return value if isinstance(value, dict) else {}
+
+
+def _layer(layer):
+    """Returns layer_label(layer), or None for a layer that is not in the form the recorder writes."""
+    try:
+        return layer_label(layer) if isinstance(layer, dict) else None
+    except (KeyError, TypeError, AttributeError):
+        return None
+
+
+def common_block(summary):
+    """Returns the `common` block of a summary (generation 3): what macOS and Windows summaries both say, with the
+    same keys. A new key belongs here only when both platforms mean the same by it (see CLAUDE.md); a number that
+    cannot be measured the same way is `comparable: false`, never invented. `source` says where a number came from."""
+    s = _dict(summary)
+    gpu, layer = _dict(s.get("gpu")), s.get("layer")
+    windows = _dict(s.get("device")).get("platform") == "Windows"
+    metal_peak, rss_peak = _dict(s.get("metal_memory_mib")).get("peak"), _dict(s.get("process_rss_mib")).get("max")
+    memory = ({"peak_mib": metal_peak, "source": "metal-allocated"} if metal_peak is not None
+              else {"peak_mib": rss_peak, "source": "process-rss"} if rss_peak is not None
+              else {"peak_mib": None, "source": None})
+    return {
+        "frame_pacing": {**{k: gpu.get(k) for k in PACING_KEYS}, "source": gpu.get("source") or ("xctrace" if gpu else None)},
+        "memory_pressure": memory,
+        "boundness": {"comparable": False, "reason": "CPU and GPU time are measured differently on each platform"},
+        "submission_overhead": {"comparable": False, "reason": "only Metal records command buffers and encoders"},
+        # the runtime of a Windows run is read from PresentMon later; a Metal trace is always Metal
+        "api": {"runtime": "metal" if gpu and not windows else "unknown",
+                "translation_layer": _layer(layer) or "unknown"},
+    }
 
 
 # encoder GPU times, in µs, whose share of all encoders each summary keeps

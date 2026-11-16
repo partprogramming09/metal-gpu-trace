@@ -914,6 +914,7 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             ),
         }
 
+        summary["common"] = metrics.common_block(summary)
         json_path = out_dir / f"{name}.json"
         json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 

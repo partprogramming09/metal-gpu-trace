@@ -749,7 +749,8 @@ def test_summary_leaves_out_unpresented(tmp_path):
         perf_report.toc_and_tables = saved
     assert with_memory["metal_memory_mib"]["samples"] == 3 and with_memory["metal_memory_mib"]["peak"] == 3.0, with_memory
     assert [p.name for p in tmp_path.glob("x.metal_memory*")] == ["x.metal_memory.csv.gz"], list(tmp_path.iterdir())
-    assert list(s)[0] == "schema_version" and s["schema_version"] == 2, list(s)[:2]
+    assert list(s)[0] == "schema_version" and s["schema_version"] == 3, list(s)[:2]
+    assert s["common"]["frame_pacing"]["source"] == "xctrace" and s["common"]["api"]["runtime"] == "metal", s["common"]
     gpu = s["gpu"]
     assert gpu["frames"] == 199 and gpu["frame_gpu_ms"]["max"] == 2.0, gpu
     assert gpu["unpresented"]["frames"] == [200] and gpu["unpresented"]["command_buffers"] == 1001, gpu["unpresented"]

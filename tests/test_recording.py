@@ -1478,3 +1478,19 @@ def test_finish_leaves_the_runs_folder_alone_while_another_recording_runs(tmp_pa
         assert not (out / "live.trace").exists() and got["retention"]["removed"] == 1, got
     finally:
         config.OUT, config.LOCK, config.MAX_DISK_MB = saved
+
+
+def test_finish_refreshes_the_common_block_with_the_layer(tmp_path):
+    """`common` is built before the layer is known; finish adds the layer and rebuilds it, so it names the layer."""
+    from metal_gpu_trace import metrics, recording
+    summary = {"schema_version": 3, "gpu": {}}
+    summary["common"] = metrics.common_block(summary)
+    assert summary["common"]["api"]["translation_layer"] == "unknown"
+    got = recording.finish(summary, tmp_path / "r.json", {"none": "native Windows"}, None)
+    assert got["common"]["api"]["translation_layer"] == "native"
+    assert json.loads((tmp_path / "r.json").read_text())["common"]["api"]["translation_layer"] == "native"
+
+
+def test_finish_does_not_add_common_to_an_older_summary(tmp_path):
+    from metal_gpu_trace import recording
+    assert "common" not in recording.finish({"schema_version": 2, "gpu": {}}, tmp_path / "old.json", None, None)

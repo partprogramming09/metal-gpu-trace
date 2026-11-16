@@ -5,6 +5,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+- `schema_version` 3: every new summary, from macOS or Windows, has a `common` block (frame pacing, memory pressure, graphics API) with the same keys and a `source` per number; `perf_compare` reads it and does not subtract memory that was measured differently. Older summaries keep reading. Not yet proven on a real recording.
+
 ## 0.27.2 — 2026-11-16
 
 (What the GPU did while it waited, who else loaded it, and what stayed allocated. Its proof is [docs/evidence/v0.27.2.md](docs/evidence/v0.27.2.md).)

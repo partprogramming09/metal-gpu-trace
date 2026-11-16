@@ -146,6 +146,23 @@ def gpu_state_level(s):
     return round(sum(levels[k] * v for k, v in share.items() if k in levels), 3) if share else None
 
 
+def memory_pressure_change(sa, sb):
+    """Returns the change of `common.memory_pressure` between two summaries when both measured it the same way, an
+    explanation when they measured it differently (a Metal allocation and a process RSS are two things), and None when
+    either has no usable `common` block (generation 1 or 2, or hand-edited) or did not measure memory at all."""
+    pa, pb = ((s.get("common") or {}).get("memory_pressure") if isinstance(s.get("common"), dict) else None
+              for s in (sa, sb))
+    if not (isinstance(pa, dict) and isinstance(pb, dict)) or pa.get("source") is None or pb.get("source") is None:
+        return None
+    if pa["source"] != pb["source"]:
+        return {"comparable": False, "a": pa, "b": pb,
+                "note": "the two runs measured memory differently, so their peaks are not subtracted"}
+    peaks = (pa.get("peak_mib"), pb.get("peak_mib"))
+    if any(type(v) not in (int, float) for v in peaks):
+        return None
+    return {"comparable": True, "source": pa["source"], "change": change(*peaks)}
+
+
 def compare_summaries(sa, sb, a, b, short_us=25):
     """perf_compare over two loaded summaries named a and b."""
     numbers = {
@@ -192,6 +209,9 @@ def compare_summaries(sa, sb, a, b, short_us=25):
                                "note": "the GPU spent its time in different performance states (0 is all Minimum, 1 all Medium, "
                                        "2 all Maximum): the same work takes more GPU ms in a lower state, so GPU ms per frame "
                                        "are not comparable; pace both runs alike or compare under load (drawstress at a high dim)"}
+    pressure = memory_pressure_change(sa, sb)
+    if pressure:
+        result["memory_pressure"] = pressure
     ma, mb = measurement(sa), measurement(sb)
     if ma != mb:
         result["measure"] = {"a": ma, "b": mb, "not_comparable": list(NOT_COMPARABLE),
@@ -573,6 +593,8 @@ def steady_summary(run, skip_s=0):
     s.pop("metal_memory_mib", None)
     if memory:
         s["metal_memory_mib"] = {"peak": round(max(memory), 2), "samples": len(memory)}
+    if "common" in s:  # follows the recomputed numbers
+        s["common"] = metrics.common_block(s)
     s["steady"] = {"skip_s": skip, "whole_run": ["gpu.start_latency_ms", "thermal_state_share", "process_rss_mib", "encoders", "gpu_idle", "gpu_counters"]}
     return s
 

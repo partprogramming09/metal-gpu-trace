@@ -14,7 +14,7 @@ import tempfile
 import threading
 import time
 
-from metal_gpu_trace import config, paths, perf_report, preflight, retention, workloads
+from metal_gpu_trace import config, metrics, paths, perf_report, preflight, retention, workloads
 
 
 TIERS = ("light", "standard", "deep")
@@ -162,19 +162,7 @@ def effective_dlls(layer):
     return {name: copies.get("prefix") or copies.get("builtin") for name, copies in (layer.get("dlls") or {}).items()}
 
 
-def layer_label(layer):
-    """Returns a short name for a summary's layer: native, attached, or its fingerprint and Wine; None if absent."""
-    if not layer:
-        return None
-    if "none" in layer:
-        return "native"
-    if "unknown" in layer:
-        return "attached"
-    if "rosetta" in layer:
-        return "rosetta"
-    if "moltenvk" in layer:
-        return f"moltenvk {((layer.get('dylib') or {}).get('sha256') or '')[:12]}".strip()
-    return f"{layer['fingerprint']} {layer['wine']} {layer['wine_version'] or ''}".strip()
+layer_label = metrics.layer_label  # one copy, shared with the engines (metrics cannot import this module)
 
 
 def run_context(read=perf_report.read_command):
@@ -351,6 +339,8 @@ def finish(summary, json_path, layer, tier):
     is `json_path`'s; not while another recording runs, whose .trace is being written into the same folder): when files
     had to go, notes it in the summary's `retention`; writes the JSON and returns the summary. Both engines end here."""
     summary["layer"], summary["context"] = layer, run_context()
+    if "common" in summary:  # built before the layer was known
+        summary["common"] = metrics.common_block(summary)
     if tier:
         summary["tier"] = tier
     if config.MAX_DISK_MB and not preflight.recording_running():
