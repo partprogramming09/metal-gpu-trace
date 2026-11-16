@@ -12,8 +12,6 @@ import tempfile
 import zipfile
 
 from metal_gpu_trace import config, paths
-if sys.platform == "win32":
-    from metal_gpu_trace import perf_record_windows
 
 
 def workload_entry(name):
@@ -89,8 +87,15 @@ def workload_command(name, api, dim, wine, args, example=None, size=None):
         program_env = " ".join(filter(None, [program_env, f"DYLD_LIBRARY_PATH={moltenvk_dir()}"]))
     use_wine = run["wine"] and sys.platform != "win32"
     return (target / entry["dir"] / run["program"], wine if use_wine else "native",
-            " ".join(filter(None, [run["args"].replace("{dir}", quote_path(target / entry["dir"])),
+            " ".join(filter(None, [dir_in_args(run["args"], target / entry["dir"]),
                                    examples[example] if example else "", args])), program_env)
+
+
+def dir_in_args(args, directory):
+    """Returns `args` with each {dir} (and the path written right after it, as in {dir}/project) replaced by one quoted
+    path: quoting only the folder would split "C:\\x"/project in two on Windows. The path after {dir} ends at a space,
+    a quote or another {dir}; an argument that quotes {dir} itself is not supported."""
+    return re.sub(r"\{dir\}([^\s\"{]*)", lambda m: quote_path(str(directory) + m[1]), args)
 
 
 def tool_workload_list():
@@ -185,6 +190,7 @@ def tool_presentmon_install():
     perf_attach find it; later calls reuse it. It needs administrator rights or the Performance Log Users group to run."""
     if sys.platform != "win32":
         raise paths.ToolError("PresentMon runs only on Windows")
+    from metal_gpu_trace import perf_record_windows  # here, not at import: the module may have been imported elsewhere
     target_dir = perf_record_windows.presentmon_dir()
     target = target_dir / f"PresentMon-{PRESENTMON['version']}-x64.exe"
     if target.is_file() and file_id(target)["sha256"] == PRESENTMON["sha256"]:

@@ -2,6 +2,7 @@
 "### Added" that starts with its icon and ends with a link to its proof in docs/evidence/, and both READMEs link each
 proof from their "What's new" section. Experimental (🧪) bullets need their proof too but do not count toward the
 minimum. Older sections keep their own format and are not checked."""
+import json
 import re
 
 from support import ROOT
@@ -48,6 +49,10 @@ def problems(changelog, readmes, evidence_files):
     version, text = found[0]
     name = ".".join(map(str, version))
     bullets = improvements(text)
+    if not bullets and re.findall(r"(?m)^### (.+)$", text) == ["Fixed"]:
+        icons = [i for i in re.findall(r"(?m)^- (\S)", text) if i in ICONS]
+        if icons and all(i == "🛠" for i in icons):
+            return []  # a release of fixes only has no minimum or maximum
     counted = [b for b in bullets if not b.startswith(EXPERIMENTAL)]
     wrong = []
     if not MIN_IMPROVEMENTS <= len(counted) <= MAX_IMPROVEMENTS or len(bullets) > MAX_IMPROVEMENTS:
@@ -168,6 +173,13 @@ def test_old_changelog_sections_are_not_checked():
     assert problems("# Changelog\n", {}, {}) == []
 
 
+def test_a_release_of_fixes_only_needs_no_improvements():
+    assert problems("## 0.27.1 — 2026-11-16\n\n### Fixed\n\n- 🛠️ A fix.\n", {}, {}) == []
+    assert problems("## 0.27.1 — 2026-11-16\n\n### Fixed\n\n- 🛠️ A fix.\n\n- ✨ Not a fix.\n", {}, {})
+    assert problems("## 0.27.1 — 2026-11-16\n\n### Fixed\n", {}, {})
+    assert problems("## 0.27.1 — 2026-11-16\n\n### Fixed\n\n- 🛠️ A fix.\n\n### Changed\n\n- Other.\n", {}, {})
+
+
 def test_the_numbers_here_match_claude_md():
     line = re.search(r"(?m)^lanzamientos: (\d+)-(\d+)$", (ROOT / "CLAUDE.md").read_text(encoding="utf-8"))
     assert line and (int(line.group(1)), int(line.group(2))) == (MIN_IMPROVEMENTS, MAX_IMPROVEMENTS)
@@ -178,7 +190,9 @@ def test_the_package_version_has_its_changelog_section():
     from metal_gpu_trace import metal_trace_mcp
     version = tuple(int(n) for n in metal_trace_mcp.__version__.split("."))
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert version in [v for v, _ in sections(changelog)], f"CHANGELOG.md has no section for {metal_trace_mcp.__version__}"
+    assert version == sections(changelog)[0][0], f"CHANGELOG.md's newest section is not {metal_trace_mcp.__version__}"
+    server = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
+    assert server["version"] == server["packages"][0]["version"] == metal_trace_mcp.__version__
 
 
 def test_the_real_latest_release_follows_the_rule():

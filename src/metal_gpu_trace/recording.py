@@ -15,8 +15,6 @@ import threading
 import time
 
 from metal_gpu_trace import config, paths, perf_report, preflight, retention, workloads
-if sys.platform == "win32":
-    from metal_gpu_trace import perf_record_windows
 
 
 TIERS = ("light", "standard", "deep")
@@ -383,6 +381,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
     limit = deadline(seconds, True) if counters and sys.platform != "win32" else deadline(seconds)
     progress(0, limit, f"recording: up to {limit} s including read-back")
     if sys.platform == "win32":
+        from metal_gpu_trace import perf_record_windows  # here, not at import: the module may have been imported elsewhere
         try:
             summary, json_path = perf_record_windows.record_windows(
                 label, int(seconds), wine, prefix, workdir, command, env["PERF_ENV"],

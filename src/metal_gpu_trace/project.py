@@ -67,6 +67,7 @@ def runs_folder(runs, root, home, name):
     if not isinstance(runs, str) or not runs.strip():
         raise paths.ToolError(f"{FILE_NAME}: \"runs\" is the folder of the project's recordings, such as \"perf-runs\"")
     try:
+        runs.encode("utf-8")  # Windows takes a lone surrogate as a folder name; nothing downstream can write it back out
         return checked(runs, root, home, name)
     except (OSError, RuntimeError, ValueError):  # a link loop (RuntimeError before 3.13), a NUL byte, no permission
         raise paths.ToolError(f"{FILE_NAME}: \"runs\" cannot be used as a folder; name a plain folder") from None

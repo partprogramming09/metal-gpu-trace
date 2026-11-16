@@ -548,6 +548,7 @@ def test_dwm_timing_structures_and_query(tmp_path):
 def test_presentmon_install_checks_the_pinned_hash(tmp_path, monkeypatch):
     """presentmon_install saves a download only when its SHA-256 is the pinned one, and reuses it afterwards."""
     import hashlib
+    monkeypatch.delenv("PRESENTMON_EXE", raising=False)  # find_presentmon prefers it: a machine that sets it must not change this test
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setattr(workloads, "download", lambda url, path, max_bytes: path.write_bytes(b"x"))
     with pytest.raises(paths.ToolError, match="pins"):
