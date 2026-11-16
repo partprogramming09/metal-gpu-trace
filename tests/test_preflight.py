@@ -233,17 +233,43 @@ def test_linux_ci_shape_passes(tmp_path):
 
 
 def test_default_alive_uses_a_signal_zero_and_counts_permission_denied_as_alive():
-    assert preflight.process_alive(os.getpid()) is True
-    saved = os.kill
+    if os.name == "posix":  # a real signal 0: on Windows it would be CTRL_C_EVENT and interrupt the test run
+        assert preflight.process_alive(os.getpid()) is True
+        assert preflight.process_alive(2**22 + 12345) is False
+    with Saved():
+        sys.platform = "linux"  # the POSIX branch, whatever machine runs the test
 
-    def denied(pid, sig):
-        raise PermissionError
-    os.kill = denied
-    try:
-        assert preflight.process_alive(1) is True
-    finally:
-        os.kill = saved
-    assert preflight.process_alive(2**22 + 12345) is False
+        def fake(pid, sig):
+            assert sig == 0
+            if pid == 1:
+                raise PermissionError
+            if pid != 4242:
+                raise ProcessLookupError
+        os.kill = fake
+        assert preflight.process_alive(4242) is True
+        assert preflight.process_alive(1) is True  # another user's process refuses the signal: it exists
+        assert preflight.process_alive(4243) is False
+
+
+def test_process_alive_never_signals_on_windows_even_when_called_directly():
+    """os.kill(pid, 0) on Windows is CTRL_C_EVENT: asking about the test's own pid interrupted the whole pytest run."""
+    with Saved():
+        sys.platform = "win32"
+
+        def never(pid, sig):
+            raise AssertionError("os.kill must not be called on Windows")
+        os.kill = never
+        asked = []
+        saved = perf_record_windows.is_process_alive
+        perf_record_windows.is_process_alive = lambda pid: asked.append(pid) or True
+        try:
+            assert preflight.process_alive(os.getpid()) is True
+            assert preflight.process_alive(0) is False  # a bad pid is refused before any platform call
+            perf_record_windows.is_process_alive = lambda pid: False
+            assert preflight.process_alive(os.getpid()) is False  # the engine's answer is the answer
+        finally:
+            perf_record_windows.is_process_alive = saved
+        assert asked == [os.getpid()]
 
 
 def test_record_runs_preflight_before_memory_pressure(tmp_path):

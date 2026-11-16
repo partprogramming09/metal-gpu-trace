@@ -11,10 +11,13 @@ from metal_gpu_trace import config, paths, perf_report
 
 
 def process_alive(pid):
-    """Returns True when process `pid` exists: a signal 0 (never sent on Windows, where it would end the process); a
-    process of another user, which refuses the signal, is alive."""
+    """Returns True when process `pid` exists: a signal 0 (on Windows, where it is CTRL_C_EVENT, OpenProcess asks
+    instead); a process of another user, which refuses the signal, is alive."""
     if not isinstance(pid, int) or isinstance(pid, bool) or not 1 <= pid < 2**31:  # signal 0 to pid 0 or -1 reaches a whole process group
         return False
+    if sys.platform == "win32":
+        from metal_gpu_trace import perf_record_windows
+        return perf_record_windows.is_process_alive(pid)
     try:
         os.kill(pid, 0)
     except PermissionError:
@@ -92,13 +95,7 @@ def lock_owner_alive(alive):
 
 def recording_running(alive=None):
     """Returns True when the recording lock names a live process; `alive` (a test seam) replaces the platform's check."""
-    if alive is None:
-        if sys.platform == "win32":
-            from metal_gpu_trace import perf_record_windows
-            alive = perf_record_windows.is_process_alive
-        else:
-            alive = process_alive
-    return lock_owner_alive(alive)
+    return lock_owner_alive(process_alive if alive is None else alive)
 
 
 def check(*, wine, command, seconds, environ=None, read=perf_report.read_command, alive=None):
