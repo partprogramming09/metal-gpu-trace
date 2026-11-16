@@ -5,6 +5,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+- 🛠️ A link in the runs folder is no longer followed: a summary, a table (`.csv`, `.csv.gz`) or a `.trace` that is a link is refused like a run that does not exist, by every tool, the runs resource and `perf_runs`; a link is not written through on Windows either (a runs folder may come from a clone or a download). A summary that is not UTF-8 is an error reply, not an exception.
 ## 0.27.2 — 2026-11-16
 
 (What the GPU did while it waited, who else loaded it, and what stayed allocated. Its proof is [docs/evidence/v0.27.2.md](docs/evidence/v0.27.2.md).)

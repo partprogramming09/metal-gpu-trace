@@ -76,7 +76,7 @@ def tool_perf_runs(offset=0, limit=50):
                          "gpu_ms_mean": (gpu.get("frame_gpu_ms") or {}).get("mean"),
                          "metal_mib_peak": (s.get("metal_memory_mib") or {}).get("peak"),
                          "rss_mib_max": (s.get("process_rss_mib") or {}).get("max"),
-                         "trace_kept": path.with_suffix(".trace").is_dir(), "layer": recording.layer_label(s.get("layer"))})
+                         "trace_kept": path.with_suffix(".trace").is_dir() and not path.with_suffix(".trace").is_symlink(), "layer": recording.layer_label(s.get("layer"))})
         except (paths.ToolError, *paths.MALFORMED):  # a summary still being written, or a file that is not one
             continue
     return {**paths.page(runs, offset, limit), "project": (config.PROJECT or {}).get("name")}

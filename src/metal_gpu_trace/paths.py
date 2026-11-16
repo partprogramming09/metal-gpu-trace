@@ -35,16 +35,28 @@ def run_path(run):
     if not name_ok(run):
         raise ToolError("a run name holds only letters, digits, '.', '_' and '-'; take it from perf_runs")
     path = config.OUT / f"{run}.json"
-    if path.name.casefold() in (config.BASELINES.name.casefold(), LAYOUT_FILE) or not path.exists():
+    if path.name.casefold() in (config.BASELINES.name.casefold(), LAYOUT_FILE) or path.is_symlink() or not path.exists():
         raise ToolError(f"no run {run}; perf_runs lists them")
     return path
 
 
+def read_text(path):
+    """Returns the UTF-8 text of a file in the runs folder, never through a link (opened with O_NOFOLLOW where the
+    system has it, and refused first where it does not) and without waiting on a pipe. OSError and UnicodeDecodeError are
+    the caller's."""
+    if path.is_symlink():
+        raise OSError("a link is not read")
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    with os.fdopen(fd, "r", encoding="utf-8") as f:
+        return f.read()
+
+
 def read_object(path, what):
     """Returns the JSON object in a file the recorder or the user left in the runs folder, or raises ToolError naming
-    `what` (never the path) when it cannot be read, is not JSON, is nested too deep or is not an object."""
+    `what` (never the path) when it cannot be read, is a link (a runs folder may come from a clone or a download: a
+    link could point at any file), is not JSON, is nested too deep or is not an object."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(read_text(path))
     except (ValueError, RecursionError):  # also UnicodeDecodeError
         raise ToolError(f"{what} is not valid JSON; record it again") from None
     except OSError:
@@ -57,6 +69,8 @@ def read_object(path, what):
 def write_file(path, text):
     """Writes `text` to `path` (UTF-8), replacing the file, and refuses a link instead of writing through it: a runs
     folder may come from a clone or a download. Where the system cannot refuse a link the caller checks it first."""
+    if path.is_symlink():  # where O_NOFOLLOW does not exist (Windows) the open below would write through it
+        raise ToolError(f"{path.name} cannot be written in the runs folder (is it a link?)")
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         fd = os.open(path, flags, 0o666)
@@ -70,7 +84,10 @@ def trace_path(trace):
     """Returns the .trace of a run named as perf_runs lists it, or `trace` as a path inside the readable
     directories."""
     if name_ok(trace):
-        return config.OUT / f"{trace.removesuffix('.trace')}.trace"
+        path = config.OUT / f"{trace.removesuffix('.trace')}.trace"
+        if path.is_symlink():  # a runs folder may come from a clone or a download
+            raise ToolError(f"{path.name} cannot be read")
+        return path
     return allowed(trace)
 
 

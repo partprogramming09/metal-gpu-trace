@@ -132,8 +132,8 @@ def handle(message):
             except paths.ToolError as error:  # a wrong project file: say so rather than read ./perf-runs
                 return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": str(error)}}
             try:
-                text = paths.run_path(uri[len(RUNS_URI):]).read_text(encoding="utf-8")
-            except paths.ToolError:
+                text = paths.read_text(paths.run_path(uri[len(RUNS_URI):]))
+            except (paths.ToolError, OSError, ValueError):
                 return {"jsonrpc": "2.0", "id": mid, "error": {"code": missing, "message": "Resource not found",
                                                                "data": {"uri": uri}}}
             result = {"contents": [{"uri": uri, "mimeType": "application/json", "text": text}]}
