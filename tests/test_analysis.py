@@ -685,7 +685,8 @@ def test_importing_the_server_survives_an_unusable_metal_trace_out(tmp_path):
     code = (f"import sys; sys.path.insert(0, {str(src)!r}); from metal_gpu_trace import config, project; "
             "project.apply(None, {'METAL_TRACE_OUT': " + repr(str(loop)) + "}); print('ok', bool(config.PROJECT_ERROR) or sys.version_info >= (3, 13))")
     got = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, cwd=tmp_path,
-                         env={"HOME": str(tmp_path), "PATH": os.environ.get("PATH", ""), "METAL_TRACE_OUT": str(loop)})
+                         env={"HOME": str(tmp_path), "USERPROFILE": str(tmp_path), "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+                              "PATH": os.environ.get("PATH", ""), "METAL_TRACE_OUT": str(loop)})  # Windows reads USERPROFILE
     assert got.returncode == 0 and got.stdout.strip() == "ok True", got.stderr[-300:]
 
 
