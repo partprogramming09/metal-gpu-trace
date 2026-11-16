@@ -59,10 +59,12 @@ family facts and the workload list.
 ## One request, end to end
 
 1. The client sends `tools/call` and the transport reads one JSON message.
-2. `protocol.handle` checks the era, the `_meta` and that the tool exists.
-3. The call waits in the worker queue (at most `MAX_QUEUE` waiting).
-4. The worker thread runs the tool from `registry`. Right before, it stops with the project file's error if that file is wrong (`project.check`).
+2. The transport puts the raw message in the worker queue (at most `MAX_QUEUE` waiting): `stdio.py:43`, `http_transport.py:154`. Messages that are not tool calls (`ping`, `tools/list`, notifications) skip the queue and go straight to `protocol.handle`.
+3. On the worker thread, `protocol.handle` checks the era, the `_meta` and that the tool exists.
+4. Still on the worker thread, the tool runs from `registry`. Right before, it stops with the project file's error if that file is wrong (`project.check`).
 5. `protocol` decorates the result for its era and the transport writes the reply.
+
+The [Server and transport](./server-and-transport) guide follows this path line by line.
 
 ## Where recordings live, and what reads them
 
