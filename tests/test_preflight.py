@@ -48,6 +48,7 @@ class Saved:
     """Restores what a test changed: config.OUT, config.LOCK, shutil.disk_usage and sys.platform."""
     def __enter__(self):
         self.state = config.OUT, config.LOCK, shutil.disk_usage, sys.platform, os.kill, shutil.which
+        sys.platform = "darwin"  # these tests describe the macOS shape; the Windows ones set win32 themselves
         return self
 
     def __exit__(self, *exc):
