@@ -1,6 +1,6 @@
-# metal-gpu-trace on Windows, as a WinBridge job: tests and records a BRANCH of this project without touching the
+# metal-gpu-trace on Windows, as a WinBridge job: tests (the Windows ones) and records a BRANCH of this project without touching the
 # checkout. It takes no parameters; METAL_TRACE_BRANCH (manifest env) names the branch on origin. It exports that branch
-# with `git archive` to a temporary folder, runs the test suite from there, installs it in a clean virtual environment and
+# with `git archive` to a temporary folder, runs the Windows tests from there, installs it in a clean virtual environment and
 # records drawstress in Direct3D 11 and Direct3D 12 through the same tool the MCP server calls, printing the summary's
 # `common` block. It then records two more Direct3D 11 runs and judges the second against the first with perf_check
 # (margin 0), printing the verdict and its note.
@@ -44,7 +44,8 @@ Write-Output ('windows: ' + [System.Environment]::OSVersion.VersionString)
 Write-Output ("branch: $branch commit: $commit")
 Set-Location $src -ErrorAction Stop
 Write-Output '--- test suite ---'
-& $python -I tests\run.py 2>&1 | Select-Object -Last 8 | Write-Output
+# the Windows tests, as the metal-trace-tests job runs them (the rest of the suite describes macOS)
+& $python -m pytest tests\test_perf_record_windows.py -q --tb=short -p no:cacheprovider 2>&1 | Select-Object -Last 8 | Write-Output
 $testsExit = $LASTEXITCODE
 Write-Output ('tests exit code: ' + $testsExit)
 $venv = Join-Path $work 'venv'
