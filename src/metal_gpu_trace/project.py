@@ -43,7 +43,8 @@ def load(path, home=None):
     unknown = sorted(set(data) - set(KEYS))
     if unknown:
         shown = ", ".join(repr(key[:40]) for key in unknown[:5])
-        raise paths.ToolError(f"{FILE_NAME}: unknown key {shown}; the keys are {', '.join(KEYS)}")
+        removed = "; `profile` was removed in 0.26.0, delete it" if "profile" in unknown else ""
+        raise paths.ToolError(f"{FILE_NAME}: unknown key {shown}{removed}; the keys are {', '.join(KEYS)}")
     for key in ("name", "runs"):
         if key not in data:
             raise paths.ToolError(f"{FILE_NAME}: \"{key}\" is required")
