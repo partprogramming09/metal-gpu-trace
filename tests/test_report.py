@@ -1014,7 +1014,7 @@ def test_noisy_basis_names_the_other_processes(tmp_path):
     def row(i, ms, process):
         return (f"<row><start>{i * 10_000_000}</start><duration>{ms * 1_000_000}</duration>"
                 f"<channel-name>Vertex</channel-name><frame-number>{i + 1}</frame-number>{process}"
-                f"<cmdbuffer-id>c{i}</cmdbuffer-id><encoder-id>e{i}</encoder-id></row>")
+                f"<cmdbuffer-id>c{i}</cmdbuffer-id><encoder-id>e{i}</encoder-id><start-latency>1000</start-latency></row>")
 
     def proc(pid, name):
         return f'<process fmt="{name}"><pid>{pid}</pid></process>'
@@ -1030,7 +1030,7 @@ def test_noisy_basis_names_the_other_processes(tmp_path):
 
     def run(body):
         xml = {"metal-gpu-intervals": table(("start", "duration", "channel-name", "frame-number", "process",
-                                             "cmdbuffer-id", "encoder-id"), "".join(body)),
+                                             "cmdbuffer-id", "encoder-id", "start-latency"), "".join(body)),
                "gpu-performance-state-intervals": table(("start",), "")}
 
         def fake(trace, schemas, optional=()):
@@ -1048,6 +1048,7 @@ def test_noisy_basis_names_the_other_processes(tmp_path):
 
     for raw, name in (("Google Chrome Helper (Aperitif) (80813)", "Google Chrome Helper"), ("App(Sub) (8)", "App"),
                       ("/Users/someone/bin/tool (9)", "tool"), ("C:\\Users\\someone\\game.exe (10)", "game.exe"),
+                      ("/Users/alice (work)/bin/tool (9)", "tool"), ("C:\\Program Files (x86)\\App\\a.exe (1)", "a.exe"),
                       (" (123)", ""), ("", "")):
         assert perf_report.process_name(ET.fromstring(f'<process fmt="{raw}"/>')) == name, raw
     assert perf_report.process_name(None) == ""
@@ -1059,3 +1060,4 @@ def test_noisy_basis_names_the_other_processes(tmp_path):
         {"name": "Zed", "gpu_ms": 30.0, "share": round(30 / total, 3)},
         {"name": "Google Chrome Helper", "gpu_ms": 20.0, "share": round(20 / total, 3)}], got["noisy_basis"]
     assert run(own)["noisy_basis"]["processes"] == []
+    assert run(own + [row(2 ** 63, 5, proc(7, "x (7)"))])["gpu"]["start_latency_ms"]["count"] == 60, "a sentinel frame number must not abort the summary"

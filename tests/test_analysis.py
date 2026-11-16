@@ -58,6 +58,8 @@ def test_diagnose(tmp_path):
         (tmp_path / "spilled.json").write_text(json.dumps(spilled))
         got = analysis.tool_perf_diagnose("spilled")
         assert any("derrame" in r and "8192" in r for r in got["recommendations"]), got
+        (tmp_path / "partial.json").write_text(json.dumps({**no_spans, "shader_spills": {"events": 1}}))
+        assert any("1 derrames" in r and "encoders" not in r for r in analysis.tool_perf_diagnose("partial")["recommendations"])
         (tmp_path / "nospill.json").write_text(json.dumps({**no_spans, "shader_spills": {"events": 0}}))
         assert not any("derrame" in r for r in analysis.tool_perf_diagnose("nospill")["recommendations"])
         (tmp_path / "winbusy.json").write_text(json.dumps({**busy, "template": "Windows Native Trace"}))

@@ -585,7 +585,8 @@ def process_name(process):
     """Returns a <process> value's name without its pid or sub-name: "Chrome Helper (Aperitif) (80813)" is "Chrome
     Helper", and a path keeps only its last part, so no user or folder reaches a shared summary; "" when the row names
     no process."""
-    return re.split(r"[\\/]", re.split(r"\s*\(", text(process))[0])[-1].strip()
+    path = re.sub(r"(?:\s*\([^()]*\))+$", "", text(process))  # the pid and sub-names, before any folder is cut
+    return re.split(r"\s*\(", re.split(r"[\\/]", path)[-1])[0].strip()
 
 
 def other_processes(by_name, own_ns, limit=3):
@@ -691,7 +692,7 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             channel = (row.get("channel-name").text or "?").strip() if row.get("channel-name") is not None else "?"
             frames[frame][channel] += duration / 1e6
             latency = number(row.get("start-latency"))
-            if latency is not None and 0 <= latency < 2**62:  # a sentinel or garbage is not a latency
+            if latency is not None and 0 <= latency < 2**62 and abs(frame) < 2**62:  # a sentinel is not a latency
                 latency_frames.append(frame)
                 latency_ns.append(latency)
             first_start[frame] = min(first_start.get(frame, start), start)

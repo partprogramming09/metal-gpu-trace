@@ -758,8 +758,9 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
         recommendations.append("Los tirones coinciden con un estado térmico distinto de Nominal.")
     spills = s.get("shader_spills") or {}
     if spills.get("events"):
-        recommendations.append(f"Hay {spills['events']} derrames de registros de shader ({spills['bytes']} bytes en "
-                               f"{spills['encoders']} encoders): simplificar o dividir el shader que los causa.")
+        where = f" en {spills['encoders']} encoders" if spills.get("encoders") else ""
+        recommendations.append(f"Hay {spills['events']} derrames de registros de shader ({spills.get('bytes', 0)} bytes{where}): "
+                               "simplificar o dividir el shader que los causa.")
     synced = display_synced_hz(gpu)
     if synced:
         recommendations.append(f"El FPS ({gpu['fps_estimate']}) coincide con una pantalla de {synced} Hz y los intervalos son regulares: "
