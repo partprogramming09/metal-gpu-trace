@@ -35,6 +35,13 @@ def test_load_defaults_format(tmp_path):
     assert (got["format"], got["baseline"]) == ("metal-gpu-trace", None), got
 
 
+def test_profile_key_error_says_it_was_removed_and_to_delete_it(tmp_path):
+    text = refused(write(tmp_path, {"name": "m", "runs": "r", "profile": "generic"}))
+    assert "removed in 0.26.0" in text and "delete" in text, text
+    other = refused(write(tmp_path, {"name": "m", "runs": "r", "folder": "x"}))
+    assert "0.26.0" not in other, other
+
+
 def test_profile_key_is_rejected_as_unknown(tmp_path):
     """0.25.0 accepted `profile` and ignored it; from 0.26.0 it is an unknown key (ADR-0005)."""
     text = refused(write(tmp_path, {"name": "m", "runs": "r", "profile": "generic"}))

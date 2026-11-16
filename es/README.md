@@ -181,7 +181,7 @@ El servidor lee estas variables de entorno:
 | `KEEP_TRACE` | `1` guarda el `.trace` de cada grabación, para `trace_tables`, `trace_query` o Instruments. |
 | `METAL_TRACE_ALLOW_LOCKED` | `1` graba con la pantalla bloqueada; sin él se rechaza la grabación, porque una sesión bloqueada deja los frames del programa sin el ritmo de la pantalla. |
 | `METAL_TRACE_MAX_DISK_MB` | Límite de tamaño de la carpeta de grabaciones, en MiB (un número entero de 1 o más): tras cada grabación se borran el `.trace` más antiguo, luego el `.chrome-trace` y luego las tablas por frame y de memoria hasta que quepa; nunca los resúmenes ni `baselines.json`. El `.trace` de la grabación nueva se borra el último, y su resumen dice qué se quitó (`retention`). |
-| `KEEP_RUNS` | Guarda solo las N grabaciones más recientes; nunca borra `baselines.json` (ni el `panel.json` que dejaron 0.24.0 y anteriores). |
+| `KEEP_RUNS` | Guarda solo las N grabaciones más recientes; nunca borra `baselines.json` (ni el `panel.json` que dejaron 0.24.0 y anteriores). El `.trace` de una grabación vieja no lo borra: solo `METAL_TRACE_MAX_DISK_MB` lo libera, y sin esa variable se quedan. |
 | `METAL_TRACE_LOCK` | El candado que hace que las grabaciones vayan de una en una, vaya cada una a la carpeta que vaya (de serie, `~/Library/Caches/metal-gpu-trace/recording.lock`). `perf_record.sh` lanzado a mano toma el mismo, o el que diga `PERF_LOCK`. |
 | `PERF_ENV` | Pares `NOMBRE=VALOR`, separados por espacios, que recibe el programa grabado. |
 | `PERF_INSTRUMENTS` | Instrumentos que se añaden a la plantilla Metal System Trace, separados por `;` (`xcrun xctrace list instruments` los nombra); sus tablas necesitan el `.trace`, así que va con `KEEP_TRACE=1`. |

@@ -512,6 +512,8 @@ def clean_runs(out_dir, keep_runs):
     for old in json_files[keep_runs:]:
         stem = old.stem
         for related in out_dir.glob(f"{stem}.*"):
+            if related.suffix == ".trace":  # the same rule as prune_runs.sh: only the disk quota frees a .trace
+                continue
             try:
                 related.unlink()
             except OSError:
