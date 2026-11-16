@@ -710,7 +710,7 @@ def test_read_frames_parses_a_file_once_and_follows_its_changes(tmp_path):
         csv_path.write_text("frame,start_ms,gpu_ms_total\n1,0.0,4.0\n2,16.0,4.0\n3,32.0,5.0\n")
         assert len(analysis.read_frames("r")) == 3 and len(parsed) == 2
         csv_path.write_text("frame,start_ms,gpu_ms_total\n1,0.0,9.0\n2,16.0,9.0\n3,32.0,9.0\n")  # same size, same second
-        os.utime(csv_path, ns=(csv_path.stat().st_atime_ns, csv_path.stat().st_mtime_ns + 1))
+        os.utime(csv_path, ns=(csv_path.stat().st_atime_ns, csv_path.stat().st_mtime_ns + 1000))  # NTFS keeps 100 ns
         assert analysis.read_frames("r")[0] == (1, 0.0, 9.0) and len(parsed) == 3
     finally:
         analysis._csv_rows, config.OUT = real, saved
