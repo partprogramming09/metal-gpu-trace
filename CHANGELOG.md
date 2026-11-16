@@ -3,6 +3,21 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
+## [Unreleased]
+
+### Fixed
+
+- 🛠️ `preflight.process_alive` no longer sends a signal on Windows, where `os.kill(pid, 0)` is `CTRL_C_EVENT`: asked
+  about a live pid it interrupted the whole process that called it. It asks `OpenProcess` there, as the lock check
+  already did.
+- 🛠️ A native recording on Windows no longer fails with a `NameError` when `recording` was first imported under another
+  platform: the Windows engine is imported where it is used.
+- 🛠️ Workload arguments such as Godot's `--path {dir}/project` stay one argument on Windows: the quotes cover the path
+  after `{dir}` too, where before `"C:\x"/project` split into two.
+- 🛠️ A `runs` folder with a lone surrogate in its name is refused on Windows, as macOS and Linux already did.
+- 🧪 Test changes: the PresentMon install test ignores `PRESENTMON_EXE`, and the POSIX liveness test sends no real signal
+  on Windows. They were found by running the suite on a real Windows PC.
+
 ## 0.27.0 — 2026-11-15
 
 (Memory, disk, agent guidance and thermal care. Its proof is [docs/evidence/v0.27.0.md](docs/evidence/v0.27.0.md).)
