@@ -615,6 +615,7 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
         first_start = {}
         intervals = 0
         spans = []
+        latency_frames, latency_ns = array.array("q"), array.array("q")  # start-latency of each row that has one
         for row in rows(tables["metal-gpu-intervals"]):
             if pid_of(row.get("process")) != pid:
                 continue
@@ -623,6 +624,10 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
                 continue
             channel = (row.get("channel-name").text or "?").strip() if row.get("channel-name") is not None else "?"
             frames[frame][channel] += duration / 1e6
+            latency = number(row.get("start-latency"))
+            if latency is not None and 0 <= latency < 2**62:  # a sentinel or garbage is not a latency
+                latency_frames.append(frame)
+                latency_ns.append(latency)
             first_start[frame] = min(first_start.get(frame, start), start)
             intervals += 1
             if start is not None:
@@ -641,12 +646,16 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
         totals = [sum(frames[f].values()) for f in ordered]
         starts = [first_start[f] / 1e6 for f in ordered]
         gaps = kept["gaps"]
+        left_out = set(stalled["frames"]) if stalled else set()
         summary["gpu"] = {
             "intervals": intervals,
             "frames": len(ordered),
             "frame_gpu_ms": stats(totals),
             "per_channel_ms": {c: stats([frames[f].get(c, 0.0) for f in ordered]) for c in channels},
             "frame_interval_ms": stats(gaps),
+            # how long the GPU takes to start work once it is sent; the whole run, as frames.csv does not keep it
+            "start_latency_ms": stats([ns / 1e6 for f, ns in zip(latency_frames, latency_ns)
+                                       if f not in left_out]),
             "fps_estimate": round(1000 / statistics.median(gaps), 1) if gaps else None,
         }
         if stalled:

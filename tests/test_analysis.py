@@ -1126,3 +1126,22 @@ def test_compare_accepts_skip_s_as_none_or_text(tmp_path):
             assert isinstance(got["suggested_actions"], list), skip
     finally:
         config.OUT, config.BASELINES = saved
+
+
+def test_compare_start_latency(tmp_path):
+    """perf_compare shows the change in the GPU's start latency p50, and an older summary without it gives no number
+    instead of an error."""
+    from metal_gpu_trace import analysis, config
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        def summary(latency):
+            gpu = {"frames": 300, "fps_estimate": 60.0, "frame_interval_ms": {}, "frame_gpu_ms": {}}
+            return {"gpu": {**gpu, "start_latency_ms": {"count": 9, "p50": latency}} if latency else gpu}
+        for name, latency in (("a", 1.0), ("b", 1.5), ("old", None)):
+            (tmp_path / f"{name}.json").write_text(json.dumps(summary(latency)))
+        assert analysis.tool_perf_compare("a", "b")["metrics"]["gpu_start_latency_ms_p50"] == {
+            "a": 1.0, "b": 1.5, "change": 0.5, "change_pct": 50.0}
+        got = analysis.tool_perf_compare("old", "b")["metrics"]["gpu_start_latency_ms_p50"]
+        assert got["a"] is None and got["b"] == 1.5, got
+    finally:
+        config.OUT = saved

@@ -390,7 +390,7 @@ def test_skip_start_up(tmp_path):
         assert s["gpu"]["frames"] < 400 and s["hitches"]["count"] == 1, s["hitches"]
         assert [h["frame"] for h in s["hitches"]["worst"]] == [301] and s["hitches"]["causes"] == {"shader_compile": 1}
         assert "cpu" not in s and s["metal_memory_mib"]["peak"] == 60.0 and "per_channel_ms" not in s["gpu"]
-        assert s["gpu"]["fps_estimate"] == 100.0 and s["steady"]["skip_s"] == 1.5 and "thermal_state_share" in s["steady"]["whole_run"]
+        assert s["gpu"]["fps_estimate"] == 100.0 and s["steady"]["skip_s"] == 1.5 and "thermal_state_share" in s["steady"]["whole_run"] and "gpu.start_latency_ms" in s["steady"]["whole_run"]
         win = dict(summary, device={"platform": "Windows"})
         win.pop("metal_memory_mib"), win.pop("cpu")
         (tmp_path / "w1.json").write_text(json.dumps(win))
@@ -898,3 +898,51 @@ def test_summary_has_flag_and_basis_only_when_true(tmp_path):
                 assert "noisy_basis" not in s
     finally:
         perf_report.toc_and_tables = saved
+
+
+def _summary_with_latency(tmp_path, rows):
+    """summarize() over a fake trace whose rows are (frame, start ns, start-latency text or None, pid)."""
+    def table(columns, body):
+        cols = "".join(f"<col><mnemonic>{c}</mnemonic></col>" for c in columns)
+        return f"<trace-query-result><node><schema>{cols}</schema>{body}</node></trace-query-result>"
+
+    body = "".join(f"<row><start-time>{s}</start-time><duration>2000000</duration>"
+                   "<gpu-channel-name>Vertex</gpu-channel-name>"
+                   f"<gpu-frame-number>{f}</gpu-frame-number><process><pid>{p}</pid></process>"
+                   + (f"<start-latency>{lat}</start-latency>" if lat is not None else "")
+                   + f"<id>c{i}</id><id>e{i}</id></row>" for i, (f, s, lat, p) in enumerate(rows))
+    paths = {"metal-gpu-intervals": table(("start", "duration", "channel-name", "frame-number", "process",
+                                           "start-latency", "cmdbuffer-id", "encoder-id"), body),
+             "gpu-performance-state-intervals": table(("start",), ""),
+             perf_report.MEMORY: table(("start", "current-allocated-size", "process"), "")}
+    toc = ET.fromstring('<trace-toc><run><info><target><process type="launched" pid="7" name="x"/></target>'
+                        '</info><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
+
+    def fake(trace, schemas, optional=()):
+        files = {}
+        for name, xml in paths.items():
+            files[name] = str(tmp_path / f"{name}.xml")
+            pathlib.Path(files[name]).write_text(xml)
+        return toc, files
+
+    saved = perf_report.toc_and_tables
+    perf_report.toc_and_tables = fake
+    try:
+        return perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=False)
+    finally:
+        perf_report.toc_and_tables = saved
+
+
+def test_start_latency_is_summarized_in_ms(tmp_path):
+    """gpu.start_latency_ms has the shape of stats() in ms; a row without the field, one of another process and one of
+    work that was never presented are left out; no rows at all give {"count": 0}."""
+    rows = [(1, 0, 1_000_000, 7), (2, 4_500_000, 2_000_000, 7), (3, 9_000_000, 3_000_000, 7),
+            (4, 13_500_000, None, 7), (5, 18_000_000, "", 7), (6, 22_500_000, 9_000_000, 8),
+            (7, 27_000_000, -1, 7), (8, 31_500_000, 2**70, 7)]
+    got = _summary_with_latency(tmp_path, rows)["gpu"]["start_latency_ms"]
+    assert got == {"count": 3, "mean": 2.0, "p50": 2.0, "p95": 3.0, "max": 3.0}, got
+    none = _summary_with_latency(tmp_path, [(1, 0, None, 7)])["gpu"]["start_latency_ms"]
+    assert none == {"count": 0}, none
+    stalled = [(f, st, 9_999_000_000 if f == 200 else 1_000_000, 7) for f, st, _, _, _ in stalled_spans()]
+    got = _summary_with_latency(tmp_path, stalled)
+    assert got["gpu"]["unpresented"]["frames"] == [200] and got["gpu"]["start_latency_ms"]["max"] == 1.0, got["gpu"]
