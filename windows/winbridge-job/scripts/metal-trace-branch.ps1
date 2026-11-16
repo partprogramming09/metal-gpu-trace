@@ -2,7 +2,8 @@
 # checkout. It takes no parameters; METAL_TRACE_BRANCH (manifest env) names the branch on origin. It exports that branch
 # with `git archive` to a temporary folder, runs the test suite from there, installs it in a clean virtual environment and
 # records drawstress in Direct3D 11 and Direct3D 12 through the same tool the MCP server calls, printing the summary's
-# `common` block.
+# `common` block. It then records two more Direct3D 11 runs and judges the second against the first with perf_check
+# (margin 0), printing the verdict and its note.
 #
 # WARNING: the job runner is elevated, so this runs code from that branch as an administrator. Point METAL_TRACE_BRANCH
 # only at a branch you have read, and install this job only if the checkout (METAL_TRACE_REPO) is a folder that nobody but
@@ -66,6 +67,17 @@ for api in ("d3d11", "d3d12"):
                       "fps_estimate": g.get("fps_estimate"), "common": r.get("common")}))
     if not g.get("frames"):
         status = 1
+# two more runs of the same load: one is saved as a reference, the other judged against it with margin 0 (so two equal
+# runs can leave a range that is a point), to show the note that says a one-run reference has no measured noise
+from metal_gpu_trace import analysis
+for label in ("check-a", "check-b"):
+    r = recording.tool_perf_record(label, workload="drawstress", api="d3d11", seconds=8, tier="light")
+    if not r.get("gpu", {}).get("frames"):
+        status = 1
+names = {x["run"].split("_")[0]: x["run"] for x in analysis.tool_perf_runs()["rows"]}
+analysis.tool_perf_baseline("branch-check", runs=[names["check-a"]])
+c = analysis.tool_perf_check(names["check-b"], "branch-check", margin_pct=0)
+print(json.dumps({k: c.get(k) for k in ("verdict", "margin_pct", "regressed", "improved", "note")}))
 sys.exit(status)
 '@
 # a file, not -c: Windows drops the double quotes inside a -c argument

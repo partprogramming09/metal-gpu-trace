@@ -2,6 +2,7 @@
 import json
 import os
 import pathlib
+import sys
 
 import support  # noqa: F401  (puts src/ on sys.path)
 
@@ -323,6 +324,12 @@ def test_cold_warm(tmp_path):
         (tmp_path / f"{label}_20260101-000000.json").write_text(json.dumps(summary(5 if label.endswith("first") else 1, 9.0)))
     recording.tool_perf_record = fake_record
     try:
+        if sys.platform == "win32":  # the tool reads Metal tables: macOS only
+            try:
+                experiments.tool_perf_cold_warm("w", program="x", seconds=5)
+            except paths.ToolError:
+                return
+            raise AssertionError("perf_cold_warm must refuse to run on Windows")
         real = experiments.tool_perf_cold_warm("w", program="x", seconds=5)
     finally:
         config.OUT, recording.tool_perf_record = original_out, original_record

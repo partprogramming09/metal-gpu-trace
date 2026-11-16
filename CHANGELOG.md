@@ -5,6 +5,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+- Test change (not a fix, so no icon): the `perf_cold_warm` test expects the refusal on Windows instead of calling it with a fake recording, and the `metal-trace-branch` job also records two Direct3D 11 runs and judges one against the other with `perf_check`. Found by running the suite on a real Windows PC.
+
 ## 0.27.3 — 2026-11-16
 
 (A summary both platforms write the same way, a memory breakdown, and fixes. Its proof is [docs/evidence/v0.27.3.md](docs/evidence/v0.27.3.md).)
