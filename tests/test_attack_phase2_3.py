@@ -302,9 +302,10 @@ def test_preflight_hostile_environ_only_raises_tool_error(tmp_path):
             [],
             {"PATH": 123, "TMPDIR": str(tmp_path)},
             {"PATH": kw["environ"]["PATH"], "TMPDIR": 123},
-            {"PATH": kw["environ"]["PATH"], "TMPDIR": "bad\x00tmp"},
             {"PATH": kw["environ"]["PATH"], "TMPDIR": str(tmp_path), "PERF_MIN_FREE_GB": 10},
         ]
+        if sys.platform != "win32":  # under Windows preflight does not read TMPDIR, so a bad one is not an error
+            bad_environs.append({"PATH": kw["environ"]["PATH"], "TMPDIR": "bad\x00tmp"})
         for bad_env in bad_environs:
             _assert_tool_error(lambda e=bad_env: preflight.check(**{**kw, "environ": e}), f"environ={bad_env!r}")
 
