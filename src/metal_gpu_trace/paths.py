@@ -26,7 +26,7 @@ def name_ok(name, limit=120):
     """Returns whether `name` is a string of at most `limit` bytes of letters, digits, '.', '_' and '-' (the files it
     names add a suffix, and a file name holds 255 bytes). A recording's label takes a lower limit: the run is named
     after it with the date and time added."""
-    return (isinstance(name, str) and 0 < len(name.encode(errors="replace")) <= limit
+    return (isinstance(name, str) and not name.startswith(".") and 0 < len(name.encode(errors="replace")) <= limit
             and name.replace("-", "").replace("_", "").replace(".", "").isalnum())
 
 
