@@ -5,15 +5,8 @@
 Español: [Leer trazas](../../es/guides/leer-trazas/index.md)
 
 > **In short:** a recording is the raw file a measurement leaves behind; a summary is the few numbers taken from it. These
-> seven tools open the raw file itself, so you can ask "what is in it?" without opening Instruments or Xcode. Three read
-> an Instruments `.trace`, one turns a run's frames into a timeline Perfetto can show, and three read a Metal `.gputrace`
-> capture. This page shows one example of each and says which tool to use; the other pages go deeper, one topic each.
-
-The tools: `trace_tables`, `trace_count`, `trace_query` (open a `.trace` through `xctrace`), `perf_export_trace` (a run's
-per-frame table into a file Perfetto opens) and `capture_summary`, `capture_diff`, `capture_records` (read a `.gputrace`
-with no Xcode). Not repeated here: [Summarizing and analyzing](../summarizing/index.md) (how `perf_report.py` reads the same
-`.trace` for the `<run>.json` summary), [Data and its lifecycle](../data-and-lifecycle/index.md) (which file is deleted when) and
-[Recording](../recording/index.md) (how the `.trace` is made).
+> seven tools open the raw file, so you can ask "what is in it?" without Instruments or Xcode: three read an Instruments
+> `.trace`, one turns a run's frames into a timeline Perfetto shows, three read a Metal `.gputrace`. One example of each below.
 
 ## The pages of this guide
 
@@ -42,45 +35,34 @@ with no Xcode). Not repeated here: [Summarizing and analyzing](../summarizing/in
 | **not verified** | an outside fact not checked against its source |
 | **not reproduced** | the behaviour could not be run for this guide |
 
-Lines move when the code changes: search the name, not only the number. Every number comes with its command in
-[Evidence](./evidence.md). Three limits of method (no real trace or capture in the repo, no Python run, no real `.gputrace`
-examined) are written in full at the top of that page: **no tool of this guide was run**.
+Lines move when the code changes: search the name. Every number comes with its command in [Evidence](./evidence.md), whose top
+states the three limits of method: **no tool of this guide was run** (no real trace or capture, no Python, no real `.gputrace`).
 
 ## One example first
 
-Three questions a person asks an agent. The first is evaluated on a real run of this clone; the other two are read from the
-code and its tests.
+Three questions asked of an agent. The first is evaluated on a real run of this clone; the other two come from code and tests.
 
 **1. "Show me this run in Perfetto."** The run `a2-proof-first_20261115-085621` has a per-frame table of 2045 frames (E4).
-`perf_export_trace` with that name reads that table, not the `.trace`, writes `a2-proof-first_20261115-085621.chrome-trace`
-into the runs folder and answers `{"file": "a2-proof-first_20261115-085621.chrome-trace", "frames": 2045}`. The first row of
-the table is `6,1267.79,0.0243,1.7417,11.7952,13.5612`, and the code turns it into one slice (E5):
+`perf_export_trace` reads that table, not the `.trace`, writes `a2-proof-first_20261115-085621.chrome-trace` into the runs
+folder and answers `{"file": "a2-proof-first_20261115-085621.chrome-trace", "frames": 2045}`. The first row,
+`6,1267.79,0.0243,1.7417,11.7952,13.5612`, becomes one slice (E5):
 
 ```text
 {"name":"GPU frame","ph":"X","pid":1,"tid":1,"ts":1267790,"dur":13561.2,"args":{"frame":6,"compute":0.0243,"fragment":1.7417,"vertex":11.7952}}
 ```
 
-`ts` and `dur` are in microseconds (what the Chrome trace format counts in): 1267.79 ms becomes 1 267 790 and 13.5612 ms
-becomes 13 561.2. The slice starts 1.27 s into the recording and lasts as long as the frame's GPU time. The tool was **not
-run**: E5 is the arithmetic of `traces.py:22-25` done by `awk` on the real row; the test that pins the same arithmetic on a
-two-row table is `tests/test_analysis.py:329-332`.
+`ts` and `dur` are microseconds (the Chrome trace format's unit): 1267.79 ms becomes 1 267 790 and 13.5612 ms becomes 13 561.2.
+The slice starts 1.27 s in and lasts the frame's GPU time. The tool was **not run**: E5 is the arithmetic of `traces.py:22-25`
+by `awk`; the test pinning it is `tests/test_analysis.py:329-332`.
 
 **2. "Which parts of this table are busy?"** `trace_query` with `window_ms=10` on `metal-gpu-intervals` returns one entry per
-10 ms window instead of one per row. Three rows that start at 1 ms (2 ms long), 9 ms (1 ms) and 12 ms (4 ms) give two windows:
-`{"start_ms": 0, "count": 2, "duration_ms": 3.0}` and `{"start_ms": 10, "count": 1, "duration_ms": 4.0}`. That is the example
-of `tests/test_traces.py:42-48` (not run); E6 evaluates it by hand.
+10 ms window. Rows starting at 1 ms (2 ms long), 9 ms (1 ms) and 12 ms (4 ms) give `{"start_ms": 0, "count": 2, "duration_ms": 3.0}`
+and `{"start_ms": 10, "count": 1, "duration_ms": 4.0}` (`tests/test_traces.py:42-48`, not run; E6 by hand).
 
-**3. "What did my change add to the draw calls?"** `capture_diff` on two `.gputrace` captures counts the confirmed Metal calls
-in each and says what changed. The published proof of 0.26.0 shows `drawPrimitives` 3 against 5 (delta 2) and the debug
-group `main` going from 2 draws to 4, while `shadow` is not listed because it did not change
-([proof of 0.26.0](../../evidence/v0.26.0.md#capture_diff-compares-two-captures)). That pair is **synthetic** (a byte stream
-built by a test), not a capture made by Xcode: no real capture has been read by this project's published evidence.
-
-| A reader asks | Short answer | Page |
-|---|---|---|
-| Why `KEEP_TRACE=1` for `trace_query` and not for `perf_export_trace`? | the first reads the `.trace` (deleted by default after the summary); the second reads the per-frame table that stays | [below](#the-three-ways-to-read-and-where-they-live) |
-| Why is paging through a big table slow? | every page runs `xctrace export` again | [trace_query](./trace-query.md) |
-| Can the tool say how long a draw call took in a `.gputrace`? | no: names, counts and labels, no time | [the capture tools](./capture-tools.md) |
+**3. "What did my change add to the draw calls?"** `capture_diff` on two `.gputrace` captures counts the confirmed Metal calls in
+each. The [proof of 0.26.0](../../evidence/v0.26.0.md#capture_diff-compares-two-captures) shows `drawPrimitives` 3 against 5
+(delta 2) and the debug group `main` going from 2 draws to 4; `shadow` is not listed because it did not change. That pair is
+**synthetic** (a byte stream built by a test): no real capture has been read by the project's published evidence.
 
 ## The three ways to read, and where they live
 
@@ -89,21 +71,18 @@ built by a test), not a capture made by Xcode: no real capture has been read by 
 
 | You have | Ask with | Needs `xctrace` | Needs the `.trace` kept |
 |---|---|---|---|
-| A run name, want the list of tables | `trace_tables` | yes | yes |
-| A run name, want to know which tables have rows | `trace_count` | yes | yes |
-| A run name, want the rows (or time windows) of one table | `trace_query` | yes | yes |
-| A run name, want its frames in Perfetto | `perf_export_trace` | no | no (needs the per-frame table) |
-| A `.gputrace` saved from Xcode | `capture_summary`, `capture_diff`, `capture_records` | no | not a `.trace` at all |
+| A run name: the list of tables, which have rows, or the rows (or time windows) of one | `trace_tables`, `trace_count`, `trace_query` | yes | yes (so `KEEP_TRACE=1`; every page re-exports, so big tables are slow: [trace_query](./trace-query.md)) |
+| A run name: its frames in Perfetto | `perf_export_trace` | no | no (reads the per-frame table, which stays) |
+| A `.gputrace` saved from Xcode | `capture_summary`, `capture_diff`, `capture_records` | no | not a `.trace`; names, counts, labels, no time ([capture tools](./capture-tools.md)) |
 
-`perf_runs` has a `trace_kept` flag per run (`analysis.py:79`): true when the `<run>.trace` folder exists and is not a link.
-It is the quickest way to know whether the first three rows can work for a run (**confirmed**; when a trace is kept:
-`KEEP_TRACE=1` or the `deep` tier, see the [data guide](../data-and-lifecycle/index.md)).
+`perf_runs` has a `trace_kept` flag per run (`analysis.py:79`): true when the `<run>.trace` folder exists and is not a link, so
+it tells whether the first three rows can work (**confirmed**; a trace is kept with `KEEP_TRACE=1` or the `deep` tier, see the
+[data guide](../data-and-lifecycle/index.md)).
 
 | Piece | File | What it does |
 |---|---|---|
 | The seven tools | `traces.py` | `tool_perf_export_trace` `:9`, `tool_trace_tables` `:33`, `tool_trace_query` `:92`, `tool_trace_count` `:124`, `tool_capture_summary` `:151`, `tool_capture_diff` `:160`, `tool_capture_records` `:169` |
-| Registry entries | `registry.py` | name, schema and hints (`:129`, `:159`, `:160`, `:165`, `:172`, `:173`, `:177`) |
-| Window grouping | `traces.py` | `check_window` `:42`, `windows_of` `:54` |
+| Registry entries | `registry.py` | name, schema and hints (`:129`, `:159`, `:160`, `:165`, `:172`, `:173`, `:177`); window grouping lives in `traces.py`: `check_window` `:42`, `windows_of` `:54` |
 | The `xctrace` layer | `perf_report.py` | `export` `:49`, `toc_of` `:81`, `table_xpath` `:90`, `rows` `:143`, `pid_of` `:182` (same code as the summary) |
 | The `.gputrace` reader | `gputrace_read.py` | `CALLS` `:20`, `records` `:48`, `stream_of` `:64`, `summarize` `:72`, `counts` `:100`, `diff` `:124`; also a script (`main` `:144`) |
 | Paths and paging | `paths.py` | `allowed` `:17`, `trace_path` `:83`, `page` `:94` |
@@ -114,8 +93,4 @@ It is the quickest way to know whether the first three rows can work for a run (
 
 ## See also
 
-- [Summarizing and analyzing](../summarizing/index.md): how `perf_report.py` reads the same `.trace`, and the `unpresented` rule that also shapes the per-frame table.
-- [Data and its lifecycle](../data-and-lifecycle/index.md): when a `.trace` and a `.chrome-trace` exist and what deletes them.
-- [Recording](../recording/index.md): how the `.trace` is made and why it is deleted.
-- [How it works](../how-it-works.md): which layer calls which.
-- [Proof of 0.26.0](../../evidence/v0.26.0.md#capture_diff-compares-two-captures): the published `capture_diff` example, on synthetic streams.
+[Summarizing and analyzing](../summarizing/index.md) (how `perf_report.py` reads the same `.trace` for the `<run>.json` summary; the `unpresented` rule that also shapes the per-frame table) · [Data and its lifecycle](../data-and-lifecycle/index.md) (when a `.trace` and a `.chrome-trace` exist, what deletes them) · [Recording](../recording/index.md) (how the `.trace` is made, why it is deleted) · [How it works](../how-it-works.md) (which layer calls which) · [Proof of 0.26.0](../../evidence/v0.26.0.md#capture_diff-compares-two-captures) (the published `capture_diff` example, on synthetic streams).

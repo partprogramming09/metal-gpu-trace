@@ -4,19 +4,15 @@
 
 English: [Evidence E8 to E12: the cache, the steps and the variables](../../../guides/data-and-lifecycle/evidence-cache-and-flow.md)
 
-> **En corto:** esta página guarda los comandos de solo lectura detrás de lo dicho sobre la caché, los ocho pasos de una
-> grabación y las dos variables de retención, con su salida real. Termina con la lista de lo que no se pudo reproducir
-> porque necesita una grabación o borra archivos.
+> **En corto:** los comandos de solo lectura detrás de lo dicho sobre la caché, los ocho pasos de una grabación y las dos
+> variables de retención, con su salida real, y al final lo que no se pudo reproducir porque necesita una grabación o borra archivos.
 
-Volver al [índice](./index.md). Anterior: [Evidencia E1 a E7](./evidencia-corridas.md). Misma fecha de recogida y mismo
-acortamiento de rutas que allí (2026-11-16, la carpeta personal es `~`).
+Volver al [índice](./index.md). Anterior: [Evidencia E1 a E7](./evidencia-corridas.md). Misma fecha de recogida y mismo acortamiento de rutas (2026-11-16, el home es `~`).
 
 ## E8 La caché y el candado
 
 ```text
 $ ls -a ~/Library/Caches/metal-gpu-trace
-.
-..
 bgfx-examples-1d120363981c
 bgfx-examples-320a6b3bbc11
 bgfx-examples-9c1bd6164b4a
@@ -31,16 +27,16 @@ $ du -sh ~/Library/Caches/metal-gpu-trace
 
 $ du -sh ~/Library/Caches/metal-gpu-trace/*
  97M	~/Library/Caches/metal-gpu-trace/bgfx-examples-1d120363981c
- 63M	~/Library/Caches/metal-gpu-trace/bgfx-examples-320a6b3bbc11
- 65M	~/Library/Caches/metal-gpu-trace/bgfx-examples-9c1bd6164b4a
- 79M	~/Library/Caches/metal-gpu-trace/bgfx-examples-bd41458ee01e
- 78M	~/Library/Caches/metal-gpu-trace/bgfx-examples-c5b25350c15e
- 27M	~/Library/Caches/metal-gpu-trace/drawstress-2b3b01fa2dd0
- 23M	~/Library/Caches/metal-gpu-trace/drawstress-f7e25cbb8c4a
-510M	~/Library/Caches/metal-gpu-trace/godot-a85320f08e1a
+ 63M	… bgfx-examples-320a6b3bbc11
+ 65M	… bgfx-examples-9c1bd6164b4a
+ 79M	… bgfx-examples-bd41458ee01e
+ 78M	… bgfx-examples-c5b25350c15e
+ 27M	… drawstress-2b3b01fa2dd0
+ 23M	… drawstress-f7e25cbb8c4a
+510M	… godot-a85320f08e1a
 ```
 
-No aparece ningún `recording.lock`: nada está grabando.
+(Se omiten `.` y `..`.) No aparece ningún `recording.lock`: nada está grabando.
 
 ## E9 Las versiones que fija el paquete
 
@@ -51,8 +47,7 @@ bgfx-examples 1d120363981c
 godot a85320f08e1a
 ```
 
-Tres versiones fijadas frente a ocho carpetas: `bgfx-examples-320a`, `-9c1b`, `-bd41`, `-c5b2` y `drawstress-f7e2` no
-coinciden con ninguna.
+Tres pines frente a ocho carpetas: `bgfx-examples-320a`, `-9c1b`, `-bd41`, `-c5b2` y `drawstress-f7e2` no coinciden con ningún pin.
 
 ## E10 Nada borra una carpeta de la caché
 
@@ -63,9 +58,7 @@ $ rg -n "rmtree|unlink" src/metal_gpu_trace/workloads.py
 
 ## E11 Los ocho pasos de la Figura 2
 
-Cada paso se lee de la línea que lo hace (`rg -n` en `src/metal_gpu_trace`), no de una grabación. La disposición de abajo
-es mía (paso, `archivo:línea`, la línea sin su sangría); el texto de cada línea es el que imprimió `rg`, recortado a 140
-caracteres:
+Cada paso se lee de la línea que lo hace (`rg -n` en `src/metal_gpu_trace`), no de una grabación. La disposición es mía (paso, `archivo:línea`, la línea sin sangría, recortada a 140 caracteres):
 
 ```text
 1  preflight.py:135        if recording_running(alive):
@@ -86,8 +79,7 @@ caracteres:
 8  recording.py:350        json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 ```
 
-El orden en el tiempo (el 2 antes del 7, el 5 antes del 8) sale del orden de las líneas y de las llamadas. Una corrida en
-vivo de la secuencia con marcas de tiempo **no se reprodujo**: graba.
+El orden en el tiempo (2 antes de 7, 5 antes de 8) sale del orden de las líneas y las llamadas. Una ejecución en vivo con marcas de tiempo **no se reprodujo**: graba.
 
 ## E12 Dónde aparecen las dos variables de retención
 
@@ -101,18 +93,12 @@ src/metal_gpu_trace/recording.py:338:    """Adds `layer`, the run's `context` an
 src/metal_gpu_trace/perf_record.sh:164:if [[ ${KEEP_RUNS:-} == <1-> ]]; then zsh $here/prune_runs.sh $out $KEEP_RUNS; fi
 ```
 
-Se muestran seis de las 21 líneas que imprimió `rg` (las que leen una variable o actúan según ella); cada una recortada a
-120 caracteres. Las demás solo mencionan una variable en un comentario o en una docstring.
-
-`KEEP_RUNS` se lee en `perf_record.sh:164` y en `perf_record_windows.py:922`, y actúa en `prune_runs.sh:9` (ese archivo
-nunca nombra la variable: recibe el número como `keep`). `METAL_TRACE_MAX_DISK_MB` solo se lee en `config.py:22` y actúa
-en `retention.py` por medio de `recording.py:346-347`.
+Se muestran seis de las 21 líneas que imprimió `rg` (las que leen o actúan sobre una variable), cada una recortada a 120 caracteres; el resto son comentarios o docstrings. `KEEP_RUNS` se lee en `perf_record.sh:164` y `perf_record_windows.py:922`, y actúa en `prune_runs.sh:9` (que recibe el número como `keep`). `METAL_TRACE_MAX_DISK_MB` se lee solo en `config.py:22` y actúa en `retention.py` por `recording.py:346-347`.
 
 ## Lo que no se reprodujo
 
-- Un resumen de generación 2 o 3 de una grabación real (hace falta Instruments).
+- Un resumen de generación 2 o 3 de una grabación real (necesita Instruments).
 - Un `.csv.gz` en una corrida real y su proporción de compresión.
-- Una grabación que tiene el candado, y la limpieza tras un script matado.
-- La cuota borrando archivos, `retention` apareciendo en un resumen, `trace_dropped`, y `KEEP_RUNS` borrando un `.trace`
-  (borran archivos).
+- Una grabación que tenga el candado, y la limpieza tras un script matado.
+- La cuota borrando archivos, `retention` en un resumen, `trace_dropped` y `KEEP_RUNS` borrando un `.trace` (borran archivos).
 - El listado de claves con `python3 -I -c`.

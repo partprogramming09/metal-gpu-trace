@@ -5,14 +5,8 @@
 English: [Data and its lifecycle](../../../guides/data-and-lifecycle/index.md)
 
 > **En corto:** cada grabación deja un pequeño grupo de archivos en una carpeta. Un archivo pequeño guarda los números
-> que lee un agente; los demás son los datos de los que salieron. Lo único que mantiene unido el grupo es un nombre
-> común, y dos ajustes de limpieza deciden qué se borra y cuándo. Estas páginas explican qué es cada archivo, quién lo
-> escribe, quién lo borra y qué puede fallar.
-
-Esta guía sigue los datos de una grabación desde que se pide hasta que se borra. No repite
-[How it works](../../../guides/how-it-works.md) (qué capa llama a cuál); amplía la parte que dice dónde viven las
-grabaciones. Es la versión en español de la guía en inglés: mismo contenido, mismos diagramas y la misma evidencia
-(los comandos y sus salidas no se traducen).
+> que lee un agente; los demás son los datos de los que salieron. Solo un nombre común mantiene unido el grupo, y dos
+> ajustes de limpieza deciden qué se borra y cuándo. Esta guía sigue una grabación desde que se pide hasta que se borra; las capas están en [How it works](../../../guides/how-it-works.md). Es la versión en español de la guía en inglés: mismo contenido, mismos diagramas y misma evidencia (comandos y salidas no se traducen).
 
 ## Cómo leer las etiquetas
 
@@ -21,48 +15,37 @@ grabaciones. Es la versión en español de la guía en inglés: mismo contenido,
 | **confirmado** | Leído con `rg` o `sed` el 2026-11-16 contra el árbol de trabajo (la 0.27.2 más las entradas `[Unreleased]` de `CHANGELOG.md`), con `archivo:línea` |
 | **probable** | Leído en el código, no ejecutado aquí |
 | **especulación** | Una conjetura sobre el porqué |
-| **no reproducido** | El comando no se pudo correr aquí (la página de evidencia dice por qué) |
+| **no reproducido** | No se pudo correr aquí (la página de evidencia dice por qué) |
 
-Las líneas se mueven cuando cambia el código: busca el nombre, no solo el número. Cada cifra viene con el comando que la
-produjo, en las dos páginas de evidencia ([E1 a E7](./evidencia-corridas.md), [E8 a E12](./evidencia-cache-y-flujo.md)).
+Las líneas se mueven cuando cambia el código: busca el nombre. Cada cifra viene con su comando en las páginas de evidencia ([E1 a E7](./evidencia-corridas.md), [E8 a E12](./evidencia-cache-y-flujo.md)).
 
 ## Un ejemplo primero
 
-Supón que un agente graba un programa durante 20 segundos con la etiqueta `mygame`. Unos minutos después la carpeta
-de grabaciones contiene archivos como estos (una carpeta real de otra grabación del mismo tipo, recortada, sin su
-dueño y con el nombre cambiado; el comando es [E1](./evidencia-corridas.md#e1-los-archivos-que-deja-una-corrida)):
+Un agente graba un programa durante 20 segundos con la etiqueta `mygame`. La carpeta de grabaciones contiene entonces archivos como estos (una carpeta real de otra grabación del mismo tipo, recortada; comando: [E1](./evidencia-corridas.md#e1-los-archivos-que-deja-una-corrida)):
 
 ```text
 baselines.json
-probe-d3d12_20261018-003026.json
-v070-d3d12_20261018-021158.frames.csv
 v070-d3d12_20261018-021158.json
-v070-d3d12_20261018-021158.metal_memory.csv
 v070-d3d12_20261018-021158.rss.csv
 v070-d3d12_20261018-021158.trace          <- una carpeta, 259 MiB
 ```
 
-Todo lo que pertenece a una grabación comparte un **stem** (el prefijo común del nombre): la etiqueta, un guion bajo y
-la hora de inicio (`<label>_<YYYYMMDD-HHMMSS>`, `perf_record.sh:26`). El stem es lo único que une los archivos: no hay
-base de datos ni índice. El `.json` pequeño es el **resumen** (los números que lee un agente); los demás archivos son
-los datos con que se calculó, y el `.trace` es la grabación cruda de Instruments, que ocupa casi todo el tamaño de la
-carpeta ([E2](./evidencia-corridas.md#e2-tamano): 259 MiB de 259 MiB).
+Los archivos de una grabación comparten un **stem** (el prefijo común del nombre): la etiqueta, un guion bajo y la hora de inicio (`<label>_<YYYYMMDD-HHMMSS>`, `perf_record.sh:26`). No hay base de datos ni índice. El `.json` pequeño es el **resumen** (lo que lee un agente); el `.trace` es la grabación cruda de Instruments y ocupa casi toda la carpeta ([E2](./evidencia-corridas.md#e2-tamano): 259 MiB de 259 MiB).
 
 ## Las páginas
 
 | Página | Responde |
 |---|---|
-| [Por qué los datos tienen esta forma](./por-que-esta-forma.md) | Por qué un JSON pequeño más archivos hermanos, sin base de datos, con dos ajustes de limpieza |
-| [Archivos en disco](./archivos-en-disco.md) | Dónde vive cada carpeta, qué deja una corrida, las tablas y los muestreadores (Figura 1) |
-| [El resumen, clave por clave](./claves-del-resumen.md) | Qué claves hay, cuáles siempre, cuáles solo bajo una condición, las tres generaciones |
+| [Por qué los datos tienen esta forma](./por-que-esta-forma.md) | JSON pequeño más archivos hermanos, sin base de datos, dos ajustes de limpieza |
+| [Archivos en disco](./archivos-en-disco.md) | Dónde vive cada carpeta, qué deja una corrida, tablas y muestreadores (Figura 1) |
+| [El resumen, clave por clave](./claves-del-resumen.md) | Qué claves hay, cuáles siempre, cuáles bajo una condición, las tres generaciones |
 | [El archivo de proyecto, `config.py` y `paths.py`](./proyecto-y-configuracion.md) | El archivo de proyecto, la marca, las líneas base, los ajustes, las guardas de rutas |
 | [Retención](./retencion.md) | `KEEP_RUNS` frente a `METAL_TRACE_MAX_DISK_MB`, y qué sobrevive |
 | [La caché y el candado](./cache-y-candado.md) | La caché de programas de prueba y el candado de una grabación a la vez |
 | [De una grabación a disco](./de-grabacion-a-disco.md) | Los ocho pasos de una grabación en macOS (Figura 2) |
 | [Cuando falla](./cuando-falla.md) | Qué queda en disco tras cada fallo y quién lo limpia |
 | [Límites conocidos y tocarlo sin romperlo](./limites.md) | Los 11 límites conocidos y cómo cambiar esta zona con seguridad |
-| [Evidencia E1 a E7](./evidencia-corridas.md) | Los archivos, tamaños, claves, columnas, el patrón del stem, las líneas base |
-| [Evidencia E8 a E12](./evidencia-cache-y-flujo.md) | La caché, las versiones fijadas, los ocho pasos, las variables, lo no reproducido |
+| Evidencia: [E1 a E7](./evidencia-corridas.md), [E8 a E12](./evidencia-cache-y-flujo.md) | Archivos, tamaños, claves, columnas, el patrón del stem, líneas base; la caché, versiones fijadas, los ocho pasos, variables, lo no reproducido |
 
 ## Véase también
 

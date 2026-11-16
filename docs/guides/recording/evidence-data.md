@@ -4,9 +4,9 @@
 
 Español: [Evidencia: datos](../../es/guides/grabar/evidencia-datos.md)
 
-**In short:** this page has the commands, with their real output, behind the test programs (their sizes, hashes and the
-files they hold), what the download cache contained on the machine checked, and the GPU families file (E4, E5, E7). The
-other checks (E1, E2, E3, E6, E8, E9, E10) and what was not reproduced are in [Evidence](./evidence.md).
+**In short:** this page has the commands, with their real output, behind the test programs (sizes, hashes, the files they
+hold), what the download cache contained on the machine checked, and the GPU families file (E4, E5, E7). The other checks
+(E1, E2, E3, E6, E8, E9, E10) and what was not reproduced are in [Evidence](./evidence.md).
 
 Collected on 2026-11-16 on an Apple silicon Mac. All commands only read. Paths are shortened: the home folder is `~`.
 Nothing here is the output of a recording or a download.
@@ -36,17 +36,14 @@ d3d11 {"program":"drawstress.exe","args":"--d3d11","wine":true}
 d3d12 {"program":"drawstress.exe","args":"--d3d12","wine":true}
 ```
 
-(The URL's host and project are cut by `.[7:]`; the full URL is
-`https://github.com/<project>/releases/download/<tag>/<file>`.) The sizes are the ones the code uses as
-`--max-filesize`. A `curl` of these URLs, and a `shasum` of what is published, were **not reproduced**. Used by
-[The test programs](./test-programs.md).
+`.[7:]` cuts the URL's host and project; the full URL is `https://github.com/<project>/releases/download/<tag>/<file>`.
+The sizes are the ones the code uses as `--max-filesize`. A `curl` of these URLs and a `shasum` of what is published were
+**not reproduced**. Used by [The test programs](./test-programs.md).
 
 ## E5 What the cache holds, against the pins
 
 ```text
-$ ls -a ~/Library/Caches/metal-gpu-trace
-.
-..
+$ ls ~/Library/Caches/metal-gpu-trace
 bgfx-examples-1d120363981c
 bgfx-examples-320a6b3bbc11
 bgfx-examples-9c1bd6164b4a
@@ -59,7 +56,6 @@ godot-a85320f08e1a
 $ du -sh ~/Library/Caches/metal-gpu-trace
 942M	~/Library/Caches/metal-gpu-trace
 
-$ cd ~/Library/Caches/metal-gpu-trace
 $ ls -1 drawstress-2b3b01fa2dd0/drawstress
 BUILD.txt
 LICENSE-bgfx
@@ -68,15 +64,11 @@ drawstress
 drawstress-x64
 drawstress.exe
 
-$ ls -1 godot-a85320f08e1a/godot godot-a85320f08e1a/godot/bin
-godot-a85320f08e1a/godot:
+$ ls -1 godot-a85320f08e1a/godot
 BUILD.txt
 bin
 project
-
-godot-a85320f08e1a/godot/bin:
-mac
-win
+… recortado (bin holds `mac` and `win`)
 
 $ sed -n 2,6p drawstress-2b3b01fa2dd0/drawstress/BUILD.txt
 GENie f7055e309a5c2bc28d7abd35960e14b9864fc5ea
@@ -86,9 +78,9 @@ bimg 671fe06dd7012a1ab85aa931019ed16112909756
 llvm-mingw 20260908 ucrt macos-universal
 ```
 
-The three folder names that match a pin in E4 (`bgfx-examples-1d120363981c`, `drawstress-2b3b01fa2dd0`,
-`godot-a85320f08e1a`) are the current ones; the other five do not. No `recording.lock` is in the folder: nothing is
-recording. The folder names are the first 12 characters of the hash (`workloads.py:22`).
+The three folder names matching a pin in E4 (`bgfx-examples-1d120363981c`, `drawstress-2b3b01fa2dd0`,
+`godot-a85320f08e1a`) are the current ones; the other five do not. No `recording.lock` is in the folder (`ls -a`): nothing
+is recording. Folder names are the first 12 characters of the hash (`workloads.py:22`).
 
 ## E7 What the GPU families file holds
 
@@ -110,18 +102,13 @@ $ jq -r '.sources.feature_set_tables_date' src/metal_gpu_trace/data/apple-gpu-fa
 
 $ rg -n "FAMILIES|WORKLOADS" src/metal_gpu_trace --glob '*.py' | cut -c1-120
 src/metal_gpu_trace/workloads.py:19:    if name not in config.WORKLOADS:
-src/metal_gpu_trace/workloads.py:21:    entry = config.WORKLOADS[name]
-src/metal_gpu_trace/workloads.py:105:    for name, entry in config.WORKLOADS.items():
 src/metal_gpu_trace/traces.py:180:    for key, family in config.FAMILIES["families"].items():
 src/metal_gpu_trace/traces.py:193:        raise paths.ToolError(f"unknown family or chip {name!r}; try one of {', '.join
-src/metal_gpu_trace/traces.py:195:    return {"family": key, **config.FAMILIES["families"][key], "same_on_all": config.F
-src/metal_gpu_trace/traces.py:196:            "footnotes": config.FAMILIES["footnotes"], "guards": config.FAMILIES["guards"], "sources": config.FAMILIES["sources"]}
 src/metal_gpu_trace/registry.py:12:RESOURCES = {"metal-trace://gpu-families": ("Apple GPU families", config.FAMILIES["ab
-src/metal_gpu_trace/registry.py:15:    for key in config.FAMILIES["families"]}
 src/metal_gpu_trace/config.py:35:FAMILIES = json.loads((PACKAGE_DIR / "data" / "apple-gpu-families.json").read_text(enco
 src/metal_gpu_trace/config.py:36:WORKLOADS = json.loads((PACKAGE_DIR / "data" / "workloads.json").read_text(encoding="ut
+… recortado (workloads.py:21, :105; traces.py:195-196; registry.py:15)
 ```
 
-The `rg` output has the readers of the two files: `workloads.py` reads `WORKLOADS`, `traces.py` and `registry.py` read
-`FAMILIES`, and recording code reads neither (the `rg` finds no `FAMILIES` in `recording.py` or `preflight.py`). Used by
-[The data files](./data-files.md).
+`workloads.py` reads `WORKLOADS`, `traces.py` and `registry.py` read `FAMILIES`, and recording code reads neither (the
+`rg` finds no `FAMILIES` in `recording.py` or `preflight.py`). Used by [The data files](./data-files.md).

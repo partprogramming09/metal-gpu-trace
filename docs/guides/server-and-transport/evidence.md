@@ -4,14 +4,9 @@
 
 Español: [Evidencia](../../es/guides/servidor-y-transporte/evidencia.md) · [Index](./index.md)
 
-**In short:** every number in this guide comes from a command listed here, with its real output. All were read-only
-searches over the code and over the recorded test replies; the server itself was never started for this guide, and the
-last section lists what therefore was not reproduced.
+**In short:** every number in this guide comes from a command listed here, with its real output. All were read-only searches over the code and the recorded test replies; the server was never started, and the last section lists what was not reproduced.
 
-Collected on 2026-11-16 on an Apple silicon Mac. All commands only read. The session that collected them could run
-read-only commands (`rg`, `sed`, `jq`), not Python or the server, so nothing below is the output of a request sent to a
-live server: the replies in E9 are the ones `tests/golden/protocol.json` holds, which `test_golden_protocol` records by
-calling `protocol.handle` and compares on every run.
+Collected on 2026-11-16 on an Apple silicon Mac. The session could run only read-only commands (`rg`, `sed`, `jq`), not Python or the server: the replies in E9 are the ones `tests/golden/protocol.json` holds, which `test_golden_protocol` records by calling `protocol.handle` and compares on every run.
 
 ## E1 Every status the HTTP handler answers, with its line
 
@@ -28,9 +23,7 @@ $ rg -n "self\.reply\((404|403|401|413|405|202)|self\.reply\(400" src/metal_gpu_
 174:            self.reply(405)  # no event stream: this endpoint only answers POST
 ```
 
-The order of the line numbers (120, 122, 124, 129, 133) is the order of the checks in [Figure 2](./http.md). The 200 of a call is at
-`:162` and `reply` itself at `:95`. Sending a request to see each status was **not reproduced**; `tests/test_server.py:315-323`
-asserts 401, 403, 405, 404 and 202 (see the E8 list).
+The line order (120, 122, 124, 129, 133) is the order of the checks in [Figure 2](./http.md). The 200 of a call is at `:162`, `reply` at `:95`. Sending a request to see each status was **not reproduced**; `tests/test_server.py:315-323` asserts 401, 403, 405, 404 and 202 (E8).
 
 ## E2 What `check_headers` refuses, and with which code
 
@@ -45,8 +38,7 @@ $ rg -n "refuse\(|return 400" src/metal_gpu_trace/http_transport.py | rg -v "def
 81:        return refuse(400, -32020, f"Header mismatch: Mcp-Name does not match params.{NAMED[method]}")
 ```
 
-Seven refusals, one per row of the `check_headers` table in [HTTP](./http.md) (the first Old-era row and the two let-through rows return
-`None` and are not here). Line 77 is the `-32022` of `protocol.version_error` (`protocol.py:52-55`).
+Seven refusals, one per refusing row of the `check_headers` table in [HTTP](./http.md) (the let-through rows return `None`). Line 77 is the `-32022` of `protocol.version_error` (`protocol.py:52-55`).
 
 ## E3 The limits the server applies
 
@@ -62,9 +54,7 @@ $ rg -n "^POLL_S" src/metal_gpu_trace/http_transport.py | cut -c1-40
 13:POLL_S = 0.5  # how often a modern PO
 ```
 
-(The second command is cut at 40 characters by `cut`.) These are the numbers the guide uses: 40 000 characters per result,
-64 calls waiting, a token of at least 16, a body of at most 1 000 000 bytes, 15 s to send a request and 0.5 s between looks for
-a client that left.
+The second line is cut at 40 characters by `cut`. Numbers used: 40 000 characters per result, 64 calls waiting, a token of at least 16, a body of at most 1 000 000 bytes, 15 s to send a request, 0.5 s between looks for a client that left.
 
 ## E4 How many tools, how many write, which ask the person
 
@@ -82,8 +72,7 @@ $ jq -c '.[2].result.tools|map(select(._meta))|map([.name,._meta])' tests/golden
 [["workload_fetch",{"anthropic/requiresUserInteraction":true}],["presentmon_install",{"anthropic/requiresUserInteraction":true}]]
 ```
 
-The first command counts the rows of `TOOLS` by their shape (26); the other three read the `tools/list` reply that the test
-recorded (`tests/golden/protocol.json`, third message), not a live server.
+The first command counts the rows of `TOOLS` (26); the others read the `tools/list` reply the test recorded (third message), not a live server.
 
 ## E5 How the command line is read
 
@@ -96,14 +85,12 @@ $ rg -n "sys\.argv" src/metal_gpu_trace/metal_trace_mcp.py | cut -c1-120
 90:            port = int(sys.argv[3]) if sys.argv[2:3] == ["--port"] else 8765
 
 $ rg -n "METAL_TRACE_TOKEN|MIN_TOKEN" src/metal_gpu_trace/http_transport.py | cut -c1-150
-183:    """Serves the MCP endpoint over HTTP on 127.0.0.1 only, until interrupted. METAL_TRACE_TOKEN (at least MIN_TOKEN
 186:    token = os.environ.get("METAL_TRACE_TOKEN", "")
 187:    if len(token) < config.MIN_TOKEN:
 188:        print(f"metal-gpu-trace: set METAL_TRACE_TOKEN to a secret of at least {config.MIN_TOKEN} characters", file=sys.stderr)
 ```
 
-Only `--port` is looked at after `--http` ([limit 4](./limits.md)). The value of the variable is read, never printed: the token is not shown
-anywhere in this guide.
+Only `--port` is looked at after `--http` ([limit 4](./limits.md)). The variable's value is read, never printed. … recortado (line 183, the docstring).
 
 ## E6 Every place that writes a log line
 
@@ -118,8 +105,7 @@ src/metal_gpu_trace/worker.py:74:            logs.log(f"reply to {message.get('i
 src/metal_gpu_trace/worker.py:171:    logs.log(f"{name} {'error' if result.get('isError') else 'ok'} in {time.monotonic() - started:.1f} s")
 ```
 
-Seven sites. None interpolates an argument, a path, a label or a token; the only client text is the request id at
-`worker.py:74`. `logs.py:8` compares `METAL_TRACE_LOG` with `"off"` exactly.
+Seven sites; none interpolates an argument, path, label or token (the only client text is the request id at `worker.py:74`). `logs.py:8` compares `METAL_TRACE_LOG` with `"off"` exactly.
 
 ## E7 What the standard library does under `ThreadingHTTPServer`
 
@@ -129,34 +115,21 @@ $ rg -n "daemon_threads|protocol_version = \"" <Command Line Tools>/.../python3.
 623:    protocol_version = "HTTP/1.0"
 ```
 
-The path is shortened. It is the Python 3.9 that the macOS command line tools ship, the floor the project supports
-([ADR-0003](../../adr/0003-python-3-9-floor.md)); the same lines in another Python version were not read.
+Path shortened. It is the Python 3.9 of the macOS command line tools, the project's floor ([ADR-0003](../../adr/0003-python-3-9-floor.md)); other versions were not read.
 
 ## E8 The tests that pin the behaviour described here
 
 ```text
 $ rg -n "def test_http|def test_queue|def test_cancel|def test_progress|def test_golden|def test_discover" tests/test_server.py | cut -c1-90
-178:def test_progress_and_cancel(tmp_path):
-276:def test_http(tmp_path):
-354:def test_queue(tmp_path):
-473:def test_http_timeout(tmp_path):
-525:def test_golden_protocol(tmp_path):
-586:def test_discover(tmp_path):
-718:def test_cancel_sends_nothing(tmp_path):
-729:def test_cancel_running_sends_nothing(tmp_path):
-799:def test_http_legacy_cancel_keeps_reply(tmp_path):
-817:def test_http_close_cancels(tmp_path):
-838:def test_http_legacy_headers(tmp_path):
-847:def test_http_modern_headers(tmp_path):
-893:def test_http_delete_is_405(tmp_path):
-898:def test_http_notification_202_empty(tmp_path):
-914:def test_http_cancel_hits_its_own_call():
-970:def test_cancel_item_takes_a_queued_call_out():
-1031:def test_http_unreadable_body_is_a_parse_error(tmp_path):
-1067:def test_http_reply_broken_pipe():
-1097:def test_http_modern_notification_without_meta(tmp_path):
-1107:def test_http_close_spares_another_client_with_the_same_id(tmp_path):
-1165:def test_http_modern_cancel_notification_cancels_nothing(tmp_path):
+178:def test_progress_and_cancel(tmp_path)
+276:def test_http(tmp_path)
+354:def test_queue(tmp_path)
+473:def test_http_timeout(tmp_path)
+525:def test_golden_protocol(tmp_path)
+586:def test_discover(tmp_path)
+718:def test_cancel_sends_nothing(tmp_path)
+729:def test_cancel_running_sends_nothing(tmp_path)
+… recortado: 799, 817, 838, 847, 893, 898, 914, 970, 1031, 1067, 1097, 1107 and 1165 (the same pattern; most cited with their line in HTTP and Worker)
 
 $ sed -n 315,323p tests/test_server.py | cut -c1-110
         assert post(ping, {"Authorization": "Bearer nope"})[0] == 401
@@ -170,9 +143,7 @@ $ sed -n 315,323p tests/test_server.py | cut -c1-110
         assert post({"jsonrpc": "2.0", "method": "notifications/initialized"}) == (202, None)
 ```
 
-These are the assertions of `test_http` for 401, 403, 405, 404 and 202. They were **not run** for this guide. The same
-file's `test_http` also asserts that a start without a token, and with the token `short`, returns exit status 2
-(`tests/test_server.py:289-291`).
+These are the assertions of `test_http` for 401, 403, 405, 404 and 202; **not run** for this guide. It also asserts that a start without a token, and with the token `short`, returns exit status 2 (`tests/test_server.py:289-291`).
 
 ## E9 What the server answers, as the tests recorded it
 
@@ -198,22 +169,13 @@ $ jq -c '[(.[3].result.resources|length), (.[4].result.resourceTemplates|length)
 [5,1,["compare-layer","diagnose-stutter","bisect-regression"]]
 ```
 
-How to read it. The first reply (message 0) asked for `2025-06-18` and got it; the second (message 1) asked for `1999-01-01`
-and got the newest old version, `2025-11-25`. In the list of errors, message 7 is `resources/read` of a missing run in the
-old era (`-32002`) and message 16 is the same in the modern era (`-32602`); 17 is `ping` in the modern era; 18 an unsupported
-version; 19 a modern request whose `_meta` lacks the version and capabilities. Messages 12 to 14 are `server/discover`,
-`tools/list` and a `tools/call` in the modern era: the first two say they may be cached for an hour (3 600 000 ms, public); the
-call says nothing, because a result is not cacheable. Message 3 lists five resources, message 4 one template (the recordings)
-and message 5 three prompts.
+Message 0 asked for `2025-06-18` and got it; message 1 asked for `1999-01-01` and got the newest old version, `2025-11-25`. Errors: 7 is `resources/read` of a missing run in the old era (`-32002`), 16 the same in the modern era (`-32602`), 17 is modern `ping`, 18 an unsupported version, 19 a modern request whose `_meta` lacks the version and capabilities. Messages 12 to 14 are `server/discover`, `tools/list` and a `tools/call` in the modern era: the first two may be cached for an hour (3 600 000 ms, public); the call says nothing, as a result is not cacheable. Message 3 lists five resources, 4 one template (the recordings), 5 three prompts.
 
 ## What was not reproduced
 
-- Starting the server, over stdio or HTTP, and any request sent to it: `initialize` and `tools/list` by stdio with one JSON
-  line, the same by HTTP with `curl` and a test token, and the three refusals live (404, 403, 401). E1 and E8 give the lines
-  that produce them and the tests that pin them; E9 gives the replies as recorded by the tests.
-- That `tests/test_architecture.py` and the rest of the suite are green: no test was run for this guide.
-- A cancel on a real recording, over stdio or HTTP (it needs a recording, [Recording](../recording/index.md)).
-- Invalid UTF-8 on stdin, a port that is in use or out of range, a chunked body, and a `PUT` or `HEAD` (limits 2, 4 and 8, and the
-  row 0 note in [HTTP](./http.md)): read from the code, not run.
-- The official MCP SDK as a client (`tests/conformance/`): it needs the SDK and was not run.
+- Starting the server, over stdio or HTTP, and any request to it: `initialize` and `tools/list` by stdio and by HTTP with `curl` and a test token, and the three refusals live (404, 403, 401). E1 and E8 give the lines and tests; E9 the recorded replies.
+- That `tests/test_architecture.py` and the rest of the suite are green: no test was run.
+- A cancel on a real recording, over stdio or HTTP (needs a recording, [Recording](../recording/index.md)).
+- Invalid UTF-8 on stdin, a port in use or out of range, a chunked body, a `PUT` or `HEAD` (limits 2, 4 and 8, and the row 0 note in [HTTP](./http.md)): read, not run.
+- The official MCP SDK as a client (`tests/conformance/`): needs the SDK, not run.
 - Where a client shows the server's stderr.

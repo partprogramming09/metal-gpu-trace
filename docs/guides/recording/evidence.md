@@ -10,9 +10,8 @@ E8, E9, E10), with their real output, and ends with what was **not** reproduced.
 (E4, E5, E7) are in [Evidence: data files](./evidence-data.md).
 
 Collected on 2026-11-16 on an Apple silicon Mac. All commands only read. Paths are shortened: the home folder is `~`. The
-session that collected them could run read-only commands (`rg`, `sed`, `jq`, `ls`, `du`), not Python or the scripts, so
-nothing below is the output of a recording or of a check run live: what a check *says* is read from the line that raises
-it.
+session could run read-only commands (`rg`, `sed`, `jq`, `ls`, `du`), not Python or the scripts, so nothing below is the
+output of a recording or of a check run live: what a check *says* is read from the line that raises it.
 
 ## E1 Every message preflight can raise, with its line
 
@@ -30,10 +29,9 @@ $ rg -n "raise paths.ToolError" src/metal_gpu_trace/preflight.py | cut -c1-175
 136:        raise paths.ToolError("another recording is running; one runs at a time. If none is, remove the lock folder "
 ```
 
-Each line is trimmed to 175 characters by `cut`. The order of the line numbers (108 before 116 before 121 before 130
-before 133 before 136) is the order the checks run. Running `preflight.check` itself, with a stub for each failure, was
-**not reproduced**; `tests/test_preflight.py` has one test per failure (`:65` to `:162`), not run for this guide.
-Used by [Preflight](./preflight.md).
+`cut` trims each line to 175 characters. The line numbers in order (108, 116, 121, 130, 133, 136) are the order the checks
+run. `preflight.check` itself with a stub per failure was **not reproduced**; `tests/test_preflight.py` has one test per
+failure (`:65` to `:162`), not run. Used by [Preflight](./preflight.md).
 
 ## E2 What the script itself refuses, and with which exit code
 
@@ -47,14 +45,13 @@ $ rg -n "exit [0-9]+|exit \$\{" src/metal_gpu_trace/perf_record.sh | cut -c1-170
 24:  [[ -n $pid ]] && kill -0 $pid 2>/dev/null || { echo "no running process matches $1" >&2; exit 2; }
 37:  (( free >= need )) || { echo "not enough free disk on $dir: $free GB free, $need GB needed (PERF_MIN_FREE_GB overrides)" >&2; exit 4; }
 49:  exit 3
-55:  trap 'exit 130' INT TERM
-74:trap 'rm -rf $out/$name.*(N); exit 143' TERM
+… recortado (lines 55 `trap 'exit 130' INT TERM` and 74 `trap 'rm -rf $out/$name.*(N); exit 143' TERM`)
 156:[ -d $out/$name.trace ] || { echo "no recording at $out/$name.trace" >&2; exit 1; }
 ```
 
-(The lock message is the `echo` of the line before 49, `perf_record.sh:48`.) Lines 12, 37, 48 and 156 print a path or a
-folder; 13 and 18 print only the file name, which a test asserts (`tests/test_recording.py:565`,
-[limit 1](./limits.md)). Running the script with a bad argument was **not reproduced**.
+The lock message is the `echo` of the line before 49, `perf_record.sh:48`. Lines 12, 37, 48 and 156 print a path or
+folder; 13 and 18 print only the file name, which a test asserts (`tests/test_recording.py:565`, [limit 1](./limits.md)).
+Running the script with a bad argument was **not reproduced**.
 
 ## E3 The numbers: deadline and disk, by the formulas of the code
 
@@ -64,9 +61,8 @@ $ jq -n -c '{deadline_s:([20,30,60]|map(.*15+180)), deadline_counters_s:([20,30,
 ```
 
 The formulas are `seconds × 15 + 180` (`recording.py:269`, 55 with counters) and `2 + (seconds × 8 + 9) / 10` in
-integer division (`preflight.py:50`). They reproduce the figures the server states: 630 s for 30 s of Wine, and "26 GB
-for 30 s, 50 GB for 60 s" (`metal_trace_mcp.py:27-28`). These are the code's formulas evaluated by `jq`, not a
-measurement of a real recording.
+integer division (`preflight.py:50`). They reproduce what the server states: 630 s for 30 s of Wine, and "26 GB for 30
+s, 50 GB for 60 s" (`metal_trace_mcp.py:27-28`). These are the code's formulas evaluated by `jq`, not a measurement.
 
 ## E6 Where the server sets the script's environment
 
@@ -79,7 +75,7 @@ $ rg -n 'env\["|PERF_OUT=|PERF_LOCK=|PERF_PARENT_PID=|PERF_ENV=' src/metal_gpu_t
 367:        env["PERF_PREFIX"] = BACKGROUND_PREFIX
 369:        env["PERF_INSTRUMENTS"] = ";".join(filter(None, [os.environ.get("PERF_INSTRUMENTS", ""), "Metal GPU Counters"]))
 370:    layer = layer or layer_of(wine, prefix, env["PERF_ENV"])
-377:                label, int(seconds), wine, prefix, workdir, command, env["PERF_ENV"],
+… recortado (377: the call into the Windows engine)
 ```
 
 Used by [The macOS journey, step 3](./macos-journey.md#step-3-the-environment-the-script-gets).
@@ -93,68 +89,52 @@ $ rg -n '"source": |if entries:|elif pm_intervals|elif dwm_samples' src/metal_gp
 819:        elif dwm_samples:
 859:        if entries:
 876:            "source": "drawstress-log" if entries else "presentmon" if pm_intervals else "dwm-composition",
-878:        if entries:
+… recortado (878: another `if entries:`)
 ```
 
-(The closing `else` at line 830 is a bare keyword that this pattern does not match; it is read with `sed -n 830,844p`,
-which shows the two `no frame data` errors.)
-
-The chain `if entries` / `elif pm_intervals` / `elif dwm_samples` / `else` (line 830) is the order of the table in
-[The Windows engine](./windows-engine.md#the-three-sources-of-frames-and-which-one-wins); line 859 is the one that nulls
-the frame-level pacing numbers for the log. Running an engine recording was **not reproduced** (no Windows machine
-here).
+The closing `else` at line 830 is a bare keyword this pattern does not match; `sed -n 830,844p` shows the two `no frame
+data` errors. The chain is the order of the table in
+[The Windows engine](./windows-engine.md#the-three-sources-of-frames-and-which-one-wins); line 859 nulls the
+frame-level pacing numbers for the log. An engine recording was **not reproduced** (no Windows machine).
 
 ## E9 The Windows lock and cleanup lines
 
 ```text
 $ rg -n "lock_path|FileExistsError|is_process_alive" src/metal_gpu_trace/perf_record_windows.py
 332:def is_process_alive(pid):
-394:                if pid and not is_process_alive(pid):
-555:                   cancelled=None, progress=None, lock_path=None):
 574:    lock_path = pathlib.Path(lock_path) if lock_path is not None else out_dir / ".recording"
-575:    lock_path.parent.mkdir(parents=True, exist_ok=True)
 579:            lock_path.mkdir(exist_ok=False)
-580:            (lock_path / "pid").write_text(str(os.getpid()), encoding="utf-8")
 583:        except FileExistsError:
-584:            owner = lock_path / "pid"
 587:                stale = not is_process_alive(int(owner.read_text(encoding="utf-8").strip()))
 593:                    lock_path.rmdir()
 597:            raise RuntimeError(f"another recording is running ({lock_path}); remove it if none is") from None
 942:        if lock_acquired and lock_path.exists():
-944:                (lock_path / "pid").unlink(missing_ok=True)
 945:                lock_path.rmdir()
+… recortado (394, 555, 575, 580, 584, 944)
 ```
 
-Lines 590-596 are the whole takeover: remove the `pid`, `rmdir`, try again. There is no second lock around them, which is
-[limit 3](./limits.md).
+Lines 590-596 are the whole takeover: remove the `pid`, `rmdir`, try again, with no second lock: [limit 3](./limits.md).
 
 ## E10 PresentMon: where the pin and the search live
 
 ```text
 $ rg -n "find_presentmon|PRESENTMON_EXE|presentmon_dir|PRESENTMON\[" src/metal_gpu_trace/perf_record_windows.py src/metal_gpu_trace/workloads.py | cut -c1-140
-src/metal_gpu_trace/workloads.py:194:    target_dir = perf_record_windows.presentmon_dir()
-src/metal_gpu_trace/workloads.py:195:    target = target_dir / f"PresentMon-{PRESENTMON['version']}-x64.exe"
 src/metal_gpu_trace/workloads.py:196:    if target.is_file() and file_id(target)["sha256"] == PRESENTMON["sha256"]:
-src/metal_gpu_trace/workloads.py:197:        return {"installed": False, "path": str(target), "version": PRESENTMON["version"]}
 src/metal_gpu_trace/workloads.py:201:        download(PRESENTMON["url"], part, PRESENTMON["bytes"] * 2)
 src/metal_gpu_trace/workloads.py:202:        if file_id(part)["sha256"] != PRESENTMON["sha256"]:
-src/metal_gpu_trace/workloads.py:205:    return {"installed": True, "path": str(target), "version": PRESENTMON["version"], "bytes": PRESENTM
-src/metal_gpu_trace/perf_record_windows.py:415:def presentmon_dir():
+… recortado (workloads.py:194-195, 197, 205)
 src/metal_gpu_trace/perf_record_windows.py:420:def find_presentmon():
-src/metal_gpu_trace/perf_record_windows.py:421:    """Returns the path of Intel's PresentMon console application, or None: $PRESENTMON_EXE, 
 src/metal_gpu_trace/perf_record_windows.py:424:    explicit = os.environ.get("PRESENTMON_EXE")
 src/metal_gpu_trace/perf_record_windows.py:427:    cache = presentmon_dir()
 src/metal_gpu_trace/perf_record_windows.py:649:        presentmon_exe = find_presentmon()
 ```
 
-The hash is compared in `workloads.py:196` and `:202` (install) and nowhere in `find_presentmon` (`:420-430`):
-[limit 4](./limits.md).
+The hash is compared in `workloads.py:196` and `:202` (install) and nowhere in `find_presentmon` (`:420-430`): [limit 4](./limits.md).
 
 ## What was not reproduced
 
 - Any recording, macOS or Windows (needs Instruments, a Windows machine and GPU time), and so every timing of the guide.
-- `preflight.check` itself, with a failing input, and each message as printed live (the messages are read from the
-  source, E1, and pinned by tests that were not run).
+- `preflight.check` itself, with a failing input, and each message printed live (read from the source, E1, and pinned by tests not run).
 - `perf_record.sh` or `perf_record_windows.py` with bad arguments, including their usage lines.
 - A download: `workload_fetch`, `presentmon_install`, and a `shasum` of what the project's releases publish today.
 - A partial `.trace` from an interrupted Instruments, and the cancel of a Windows recording.

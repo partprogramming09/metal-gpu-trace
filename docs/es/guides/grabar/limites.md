@@ -4,10 +4,9 @@
 
 English: [Known limits](../../../guides/recording/limits.md)
 
-**En corto:** esta es la lista de cosas que la grabación hace hoy y que un lector podría no esperar: algunos mensajes de
-error muestran una ruta local, el README y el código no coinciden en el plazo, y algunos detalles de Windows son más
-toscos que en macOS. Cada elemento dice dónde está en el código y qué tan seguros estamos. Esta guía no arregla nada:
-cada elemento es un límite del comportamiento de hoy, escrito.
+**En corto:** cosas que la grabación hace hoy y que un lector podría no esperar: algunos mensajes de error muestran una
+ruta local, el README y el código no coinciden en el plazo, algunos detalles de Windows son más toscos que en macOS.
+Cada elemento dice dónde está en el código y qué tan seguros estamos; esta guía no arregla ninguno.
 
 | # | Límite | Dónde | Estado |
 |---|---|---|---|

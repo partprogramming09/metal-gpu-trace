@@ -4,19 +4,15 @@
 
 Español: [Evidencia E8 a E12: la caché, los pasos y las variables](../../es/guides/datos-y-su-ciclo-de-vida/evidencia-cache-y-flujo.md)
 
-> **In short:** this page holds the read-only commands behind the claims about the cache, the eight recording steps and
-> the two retention variables, with their real output. It ends with the list of things that could not be reproduced
-> because they need a recording or delete files.
+> **In short:** the read-only commands behind the claims about the cache, the eight recording steps and the two
+> retention variables, with real output, ending with what could not be reproduced because it needs a recording or deletes files.
 
-Back to the [index](./index.md). Previous: [Evidence E1 to E7](./evidence-runs.md). Same collection date and path
-shortening as there (2026-11-16, home folder is `~`).
+Back to the [index](./index.md). Previous: [Evidence E1 to E7](./evidence-runs.md). Same collection date and path shortening (2026-11-16, home is `~`).
 
 ## E8 The cache and the lock
 
 ```text
 $ ls -a ~/Library/Caches/metal-gpu-trace
-.
-..
 bgfx-examples-1d120363981c
 bgfx-examples-320a6b3bbc11
 bgfx-examples-9c1bd6164b4a
@@ -31,16 +27,16 @@ $ du -sh ~/Library/Caches/metal-gpu-trace
 
 $ du -sh ~/Library/Caches/metal-gpu-trace/*
  97M	~/Library/Caches/metal-gpu-trace/bgfx-examples-1d120363981c
- 63M	~/Library/Caches/metal-gpu-trace/bgfx-examples-320a6b3bbc11
- 65M	~/Library/Caches/metal-gpu-trace/bgfx-examples-9c1bd6164b4a
- 79M	~/Library/Caches/metal-gpu-trace/bgfx-examples-bd41458ee01e
- 78M	~/Library/Caches/metal-gpu-trace/bgfx-examples-c5b25350c15e
- 27M	~/Library/Caches/metal-gpu-trace/drawstress-2b3b01fa2dd0
- 23M	~/Library/Caches/metal-gpu-trace/drawstress-f7e25cbb8c4a
-510M	~/Library/Caches/metal-gpu-trace/godot-a85320f08e1a
+ 63M	… bgfx-examples-320a6b3bbc11
+ 65M	… bgfx-examples-9c1bd6164b4a
+ 79M	… bgfx-examples-bd41458ee01e
+ 78M	… bgfx-examples-c5b25350c15e
+ 27M	… drawstress-2b3b01fa2dd0
+ 23M	… drawstress-f7e25cbb8c4a
+510M	… godot-a85320f08e1a
 ```
 
-No `recording.lock` is listed: nothing is recording.
+(`.` and `..` omitted.) No `recording.lock` is listed: nothing is recording.
 
 ## E9 The versions the package pins
 
@@ -51,8 +47,7 @@ bgfx-examples 1d120363981c
 godot a85320f08e1a
 ```
 
-Three pinned versions against eight folders: `bgfx-examples-320a`, `-9c1b`, `-bd41`, `-c5b2` and `drawstress-f7e2` match no
-pin.
+Three pins against eight folders: `bgfx-examples-320a`, `-9c1b`, `-bd41`, `-c5b2` and `drawstress-f7e2` match no pin.
 
 ## E10 Nothing deletes a cache folder
 
@@ -63,9 +58,7 @@ $ rg -n "rmtree|unlink" src/metal_gpu_trace/workloads.py
 
 ## E11 The eight steps of Figure 2
 
-Each step is read from the line that does it (`rg -n` in `src/metal_gpu_trace`), not from a recording. The layout below
-is mine (step, `file:line`, the line without its indentation); the text of each line is as `rg` printed it, trimmed to
-140 characters:
+Each step is read from the line that does it (`rg -n` in `src/metal_gpu_trace`), not from a recording. The layout is mine (step, `file:line`, the line without indentation, trimmed to 140 characters):
 
 ```text
 1  preflight.py:135        if recording_running(alive):
@@ -86,8 +79,7 @@ is mine (step, `file:line`, the line without its indentation); the text of each 
 8  recording.py:350        json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 ```
 
-The order in time (2 before 7, 5 before 8) comes from the order of the lines and the calls. A live run of the sequence
-with timestamps was **not reproduced**: it records.
+The order in time (2 before 7, 5 before 8) comes from the order of lines and calls. A live run with timestamps was **not reproduced**: it records.
 
 ## E12 Where the two retention variables appear
 
@@ -101,18 +93,12 @@ src/metal_gpu_trace/recording.py:338:    """Adds `layer`, the run's `context` an
 src/metal_gpu_trace/perf_record.sh:164:if [[ ${KEEP_RUNS:-} == <1-> ]]; then zsh $here/prune_runs.sh $out $KEEP_RUNS; fi
 ```
 
-Six of the 21 lines `rg` printed are shown (the ones that read or act on a variable); each is trimmed to 120
-characters. The rest only mention a variable in a comment or a docstring.
-
-`KEEP_RUNS` is read in `perf_record.sh:164` and in `perf_record_windows.py:922`, and acts in `prune_runs.sh:9` (that file
-never names the variable: it receives the number as `keep`). `METAL_TRACE_MAX_DISK_MB` is read only in `config.py:22` and
-acts in `retention.py` through `recording.py:346-347`.
+Six of the 21 lines `rg` printed are shown (those that read or act on a variable), each trimmed to 120 characters; the rest are comments or docstrings. `KEEP_RUNS` is read in `perf_record.sh:164` and `perf_record_windows.py:922`, and acts in `prune_runs.sh:9` (which receives the number as `keep`). `METAL_TRACE_MAX_DISK_MB` is read only in `config.py:22` and acts in `retention.py` through `recording.py:346-347`.
 
 ## What was not reproduced
 
 - A generation 2 or 3 summary of a real recording (needs Instruments).
 - A `.csv.gz` on a real run and its compression ratio.
 - A recording holding the lock, and the cleanup after a killed script.
-- The quota removing files, `retention` appearing in a summary, `trace_dropped`, and `KEEP_RUNS` removing a `.trace`
-  (they delete files).
+- The quota removing files, `retention` in a summary, `trace_dropped`, and `KEEP_RUNS` removing a `.trace` (they delete files).
 - The listing of keys with `python3 -I -c`.

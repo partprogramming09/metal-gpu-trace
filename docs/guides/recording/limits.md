@@ -4,10 +4,9 @@
 
 Español: [Límites conocidos](../../es/guides/grabar/limites.md)
 
-**In short:** this is the list of things recording does today that a reader might not expect: a few error messages show a
-local path, the README and the code disagree on the deadline, and some Windows details are rougher than on macOS. Each
-item says where it is in the code and how sure we are. Nothing here is fixed by this guide: each item is a limit of
-today's behaviour, written down.
+**In short:** things recording does today that a reader might not expect: a few error messages show a local path, the
+README and the code disagree on the deadline, some Windows details are rougher than on macOS. Each item says where it
+is in the code and how sure we are; none is fixed by this guide.
 
 | # | Limit | Where | Status |
 |---|---|---|---|
