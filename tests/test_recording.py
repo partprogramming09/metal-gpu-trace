@@ -792,6 +792,14 @@ def test_prune_keeps_baselines_and_panel_layout(tmp_path):
     assert sorted(p.name for p in out.iterdir()) == ["baselines.json", "new.json", "panel.json"]
 
 
+def test_windows_prune_never_removes_a_trace(tmp_path):
+    from metal_gpu_trace import perf_record_windows
+    out = prune_folder(tmp_path)
+    (out / "old.trace").write_text("x")
+    perf_record_windows.clean_runs(out, 1)
+    assert (out / "old.trace").exists() and not (out / "old.json").exists()
+
+
 def test_windows_prune_keeps_baselines_and_panel_layout(tmp_path):
     from metal_gpu_trace import perf_record_windows
     out = prune_folder(tmp_path)
@@ -1106,6 +1114,22 @@ def test_keep_runs_still_removes_old_tables(tmp_path):
         os.utime(out / name, (1_000_000 + age * 100, 1_000_000 + age * 100))
     subprocess.run(["zsh", str(PKG / "prune_runs.sh"), str(out), "1"], check=True)
     assert sorted(p.name for p in out.iterdir()) == ["new.json"]
+
+
+@macos_only
+def test_keep_runs_never_removes_a_trace(tmp_path):
+    """ADR-0006: KEEP_RUNS never prunes a .trace (only the disk quota frees it); the rest of the older run goes."""
+    out = tmp_path / "runs"
+    out.mkdir()
+    for age, name in enumerate(("baselines.json", "old.json", "old.frames.csv.gz", "old.chrome-trace", "old.trace", "new.json", "new.trace")):
+        if name.endswith(".trace"):
+            (out / name).mkdir()
+            (out / name / "form.template").write_text("x")
+        else:
+            (out / name).write_text("{}")
+        os.utime(out / name, (1_000_000 + age * 100, 1_000_000 + age * 100))
+    subprocess.run(["zsh", str(PKG / "prune_runs.sh"), str(out), "1"], check=True)
+    assert sorted(p.name for p in out.iterdir()) == ["baselines.json", "new.json", "new.trace", "old.trace"]
 
 
 @macos_only

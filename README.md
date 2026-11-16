@@ -141,7 +141,7 @@ to compare.
 ## Disk use
 
 Each recording keeps a JSON summary and three CSVs, about 2 MB for 10 s (most of it the Metal memory samples). The
-`.trace` (tens to hundreds of MB) is deleted unless `KEEP_TRACE=1`. `KEEP_RUNS=N` keeps only the newest N recordings. `PERF_MEMORY=0` skips the Metal memory table, the slowest to read:
+`.trace` (tens to hundreds of MB) is deleted unless `KEEP_TRACE=1`. `KEEP_RUNS=N` keeps only the newest N recordings (an older one's `.trace` is not removed by it). `PERF_MEMORY=0` skips the Metal memory table, the slowest to read:
 the summary then has no `metal_memory_mib` and there is no memory CSV (41 % faster to summarize a 626 MB trace).
 The MCP tools `perf_record` and `perf_baseline_record` offer the same as `memory=false`.
 
@@ -173,7 +173,7 @@ The server reads these environment variables:
 | `KEEP_TRACE` | `1` keeps each recording's `.trace`, for `trace_tables`, `trace_query` or Instruments. |
 | `METAL_TRACE_ALLOW_LOCKED` | `1` records with the screen locked; without it a recording is refused, because a locked session leaves the program's frames unpaced by the display. |
 | `METAL_TRACE_MAX_DISK_MB` | Size limit of the runs folder, in MiB (a whole number of 1 or more): after each recording the oldest `.trace`, then `.chrome-trace`, then per-frame and memory tables are removed until it fits; summaries and `baselines.json` never. The new recording's `.trace` goes last, and its summary says what was removed (`retention`). |
-| `KEEP_RUNS` | Keeps only the newest N recordings; `baselines.json` is never removed (nor is the `panel.json` that 0.24.0 and older left). |
+| `KEEP_RUNS` | Keeps only the newest N recordings; `baselines.json` is never removed (nor is the `panel.json` that 0.24.0 and older left). An older recording's `.trace` is never removed by it: only `METAL_TRACE_MAX_DISK_MB` frees one, and without that variable they stay. |
 | `METAL_TRACE_LOCK` | The lock that keeps recordings one at a time, whatever folder each goes to (default `~/Library/Caches/metal-gpu-trace/recording.lock`). `perf_record.sh` run by hand takes the same one, or the one `PERF_LOCK` names. |
 | `PERF_ENV` | `NAME=VALUE` pairs, separated by spaces, set for the recorded program. |
 | `PERF_INSTRUMENTS` | Instruments added to the Metal System Trace template, separated by `;` (`xcrun xctrace list instruments` names them); their tables need the `.trace`, so pair it with `KEEP_TRACE=1`. |

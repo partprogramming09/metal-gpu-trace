@@ -430,7 +430,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
             if not (keep and path.suffix == ".trace"):
                 shutil.rmtree(path) if path.is_dir() else path.unlink()
         ended = (summary.get("process") or {}).get("termination-reason") or "unknown"
-        kept = f"; {run}.trace is kept (METAL_TRACE_MAX_DISK_MB prunes it at the next recording, KEEP_RUNS does not)" if keep and (config.OUT / f"{run}.trace").exists() else ""
+        kept = f"; {run}.trace is kept (KEEP_RUNS does not remove it; METAL_TRACE_MAX_DISK_MB, when set, prunes it at the next recording)" if keep and (config.OUT / f"{run}.trace").exists() else ""
         raise paths.ToolError(f"the program did no GPU work: it ended ({ended}) after {summary.get('duration_s', 0):.1f} s "
                               f"of recording, and its summary was not saved{kept}; check that it starts (under Wine: "
                               "the Wine build, the prefix and the program's own log)")
