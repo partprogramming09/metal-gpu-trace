@@ -71,28 +71,25 @@ run before calling a difference real.
 
 ## What's new
 
-Version 0.26.0. Each item links to the command that was run and its real output. 🧪 means experimental: it works on
-what was tried, but one part was not checked end to end, and the proof says which.
+Version 0.27.0. Each item links to the command that was run and its real output.
 
-- 🔍 **Time windows in `trace_query`.** Add `window_ms` and a long table (tens of thousands of rows) comes back as one
-  line per time window, with a count and the summed duration, instead of rows cut off in the middle. In a real run,
-  19 710 rows became 31 windows of 1 s. [Proof](docs/evidence/v0.26.0.md#trace_query-with-window_ms)
-- ✨ **Where a run came from.** Each new summary now says which commit of your code it measured, whether that code had
-  uncommitted changes, and which Instruments version recorded it. `perf_compare` says whether two runs share it. No
-  branch name, path or machine name. [Proof](docs/evidence/v0.26.0.md#run-context-commit-and-instruments-version)
-- 🧪 **`diagnose-stutter` prompt.** A ready-made request for your agent: record a program twice, tell stutter that only
-  happens the first time (shaders compiling) from stutter that keeps happening, and quote only numbers the tools
-  return. [Proof](docs/evidence/v0.26.0.md#the-diagnose-stutter-prompt)
-- 🧪 **`bisect-regression` prompt.** A ready-made request for your agent: find the commit that made a program slower
-  with `git bisect`, recording and checking against a baseline at each step. The server runs no command; your agent
-  does, with its own permissions. [Proof](docs/evidence/v0.26.0.md#the-bisect-regression-prompt)
-- 🧪 **`capture_diff`.** Compares two `.gputrace` captures and says which Metal calls a change added or removed, in
-  total and per debug group, without Xcode. Proven on synthetic captures only.
-  [Proof](docs/evidence/v0.26.0.md#capture_diff-compares-two-captures)
+- 🛡️ **A recording that cannot work is refused at once.** Before anything starts, `perf_record` checks the program, Wine,
+  `xcrun`, free disk, the recording lock and a locked screen, and says what to do. In a real run the three refusals took
+  0.0 to 0.04 s and created no file. [Proof](docs/evidence/v0.27.0.md#a-recording-that-cannot-work-is-refused-before-it-starts)
+- 🛡️ **The runs folder stays small.** Per-frame and Metal memory tables are written compressed (2.3 and 5.7 times
+  smaller on a real run), and `METAL_TRACE_MAX_DISK_MB` removes the oldest `.trace` first: a folder of 101 296 KiB went
+  down to 300 KiB, with the summaries and tables kept. [Proof](docs/evidence/v0.27.0.md#the-runs-folder-compressed-tables-and-a-size-limit)
+- ⚡ **Big traces no longer need gigabytes to read.** On a real trace, a table of 3 million rows peaked at 196 MiB instead
+  of 5.5 GiB, with the same rows; one of 1.5 million rows, at 304 MiB. [Proof](docs/evidence/v0.27.0.md#reading-a-big-table-takes-a-fraction-of-the-memory)
+- ✨ **`tier`: `light`, `standard` or `deep`.** `light` skips the Metal memory table and the counters, to iterate; `deep`
+  also records GPU counters and keeps the `.trace`. `perf_compare` says when two runs used different tiers.
+  [Proof](docs/evidence/v0.27.0.md#tier-light-standard-and-deep)
+- 🩺 **Next steps, and a cooler Mac.** `perf_diagnose` and `perf_compare` return `suggested_actions` for your agent;
+  `cooldown_s` rests between recordings (20.1 s measured); `noisy_environment` says another process was loading the GPU
+  (34.4 points in a real run). [Proof](docs/evidence/v0.27.0.md#next-actions-noisy-environment-and-cooldown)
 
-Incompatible change: the `profile` key of `metal-gpu-trace.json` is gone (it did nothing since the panel was removed in
-0.25.0), so a file that still has it is refused and the error names the key. Delete the line. Details in the
-[changelog](CHANGELOG.md).
+Changed behaviour: a locked screen now refuses a recording instead of only warning afterwards
+(`METAL_TRACE_ALLOW_LOCKED=1` records anyway). Details in the [changelog](CHANGELOG.md).
 
 ## For developers
 
