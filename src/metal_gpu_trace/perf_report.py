@@ -34,7 +34,8 @@ MEMORY = "metal-current-allocated-size"
 TABLES = ("metal-gpu-intervals", MEMORY, "gpu-performance-state-intervals")
 # read only when the trace has it: without it encoders go without labels
 OPTIONAL = ("metal-application-encoders-list", "graphics-compiler-activity-intervals", "device-thermal-state-intervals",
-            "ProcessCPUUsage", "metal-resource-allocations", "metal-command-buffer-error")
+            "ProcessCPUUsage", "metal-resource-allocations", "metal-command-buffer-error",
+            "graphics-compiler-spill-events")
 # each xctrace export keeps a temporary store of gigabytes on a big trace: two at a time bound the disk it needs
 EXPORT_WORKERS = 2
 # Metal GPU Counters (PERF_INSTRUMENTS): about 450 000 samples and 64 MB of XML per recorded second, so its export may take minutes
@@ -449,19 +450,40 @@ def memory_trend(allocated):
     return round(sum((t - mx) * (s - my) for t, s in half) / sxx * 60000 / 2**20, 2) if sxx else None
 
 
+# the memory modes a resource allocation's label can name
+RESOURCE_MODES = ("Shared", "Private", "Managed", "Memoryless")
+
+
 def resource_summary(table_rows, pid, frames):
     """Summarizes the Metal resource allocation events of process `pid` from the rows of `metal-resource-allocations`:
     `events` and `mib` allocated (a running total, not memory in use: a drawable's texture each frame counts), `per_frame`, `by_type` (buffer, texture...), `after_3s` (events after the first 3 s of
-    the trace, the start-up) and `per_second` counts from second 0. Deallocations and other processes are left out;
-    {"events": 0} when there are none."""
+    the trace, the start-up) and `per_second` counts from second 0. `live` is what was allocated and not freed by the
+    end (a lower bound: what was allocated before the recording does not show), by `by_mode` (Shared, Private...,
+    "unknown" when the label has none) and `by_type`; `freed` what was allocated here and freed, and
+    `freed_before_recording` the deallocations whose allocation is not in the recording. Pairs by resource-id; an empty
+    id is ignored and a repeated one replaces the earlier. Other processes are left out; {"events": 0} when there are
+    no allocations."""
     events, total, after, after_bytes, by_type, per_second = 0, 0, 0, 0, {}, collections.Counter()
+    live, freed, freed_bytes, early = {}, 0, 0, 0  # resource-id -> (mode, type, size)
     for row in table_rows:
         when, size = number(row.get("timestamp")), number(row.get("resource-size")) or 0
-        if pid_of(row.get("process")) != pid or text(row.get("event-type")) != "Allocation" or when is None:
+        if pid_of(row.get("process")) != pid or when is None:
             continue
+        event, rid, kind_name = text(row.get("event-type")), text(row.get("resource-id")), text(row.get("resource-type")) or "other"
+        if event == "Deallocation" and rid:
+            gone = live.pop(rid, None)
+            if gone:
+                freed, freed_bytes = freed + 1, freed_bytes + gone[2]
+            else:
+                early += 1
+        if event != "Allocation":
+            continue
+        if rid:
+            label = text(row.get("event-label"))
+            live[rid] = (next((m for m in RESOURCE_MODES if m in label), "unknown"), kind_name, size)
         events += 1
         total += size
-        kind = by_type.setdefault(text(row.get("resource-type")) or "other", [0, 0])
+        kind = by_type.setdefault(kind_name, [0, 0])
         kind[0] += 1
         kind[1] += size
         per_second[when // 1_000_000_000] += 1
@@ -471,10 +493,33 @@ def resource_summary(table_rows, pid, frames):
     if not events:
         return {"events": 0}
     mib = lambda n: round(n / 2 ** 20, 1)
-    return {"events": events, "mib": mib(total), "per_frame": round(events / frames, 2) if frames else None,
+    groups = {"by_mode": collections.defaultdict(lambda: [0, 0]), "by_type": collections.defaultdict(lambda: [0, 0])}
+    for mode, kind_name, size in live.values():
+        for group, key in (("by_mode", mode), ("by_type", kind_name)):
+            groups[group][key][0] += 1
+            groups[group][key][1] += size
+    return {"events": events,
+            "live": {"count": len(live), "mib": mib(sum(v[2] for v in live.values())),
+                     **{g: {k: {"count": v[0], "mib": mib(v[1])} for k, v in sorted(d.items())} for g, d in groups.items()}},
+            "freed": {"count": freed, "mib": mib(freed_bytes)}, "freed_before_recording": early, "mib": mib(total), "per_frame": round(events / frames, 2) if frames else None,
             "by_type": {k: {"count": v[0], "mib": mib(v[1])} for k, v in sorted(by_type.items())},
             "after_3s": {"count": after, "mib": mib(after_bytes)},
             "per_second": [per_second[s] for s in range(max(per_second) + 1)]}
+
+
+def spill_summary(table_rows, pid):
+    """Counts the shader register spills of process `pid` from the rows of `graphics-compiler-spill-events`: `events`,
+    `bytes` spilled and the distinct `encoders` (rows without an encoder-id are not counted as one). {"events": 0}
+    when the program has no row."""
+    events, spilled, encoders = 0, 0, set()
+    for row in table_rows:
+        if pid_of(row.get("process")) != pid:
+            continue
+        events += 1
+        spilled += number(row.get("spilled-bytes")) or 0
+        if text(row.get("encoder-id")):
+            encoders.add(text(row.get("encoder-id")))
+    return {"events": events, "bytes": spilled, "encoders": len(encoders)} if events else {"events": 0}
 
 
 def agx_summary(path):
@@ -534,6 +579,15 @@ def noisy_environment(activity, idle):
     external = round(device - busy, 1)
     return {"flag": external >= NOISY_EXTERNAL_PCT, "gpu_device_pct_mean": device, "process_busy_pct": busy,
             "external_pct": external}
+
+
+def other_processes(by_pid, own_ns):
+    """Returns how many other processes used the GPU, their GPU ms and their `share` of all GPU time, the program's own
+    `own_ns` included: {count, gpu_ms, share}. `by_pid` maps a pid to its GPU ns. No name is kept, so no program the
+    person runs reaches a summary that is shared. As the channels run in parallel, the times can add up to more than
+    the recording lasted."""
+    other, total = sum(by_pid.values()), own_ns + sum(by_pid.values())
+    return {"count": len(by_pid), "gpu_ms": round(other / 1e6, 3), "share": round(other / total, 3) if total else 0.0}
 
 
 def read_command(argv, env=None):
@@ -615,14 +669,24 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
         first_start = {}
         intervals = 0
         spans = []
+        latency_frames, latency_ns = array.array("q"), array.array("q")  # start-latency of each row that has one
+        by_process, own_ns = collections.Counter(), 0  # GPU ns of every other process, by pid, and of the program
         for row in rows(tables["metal-gpu-intervals"]):
             if pid_of(row.get("process")) != pid:
+                other_pid, other = pid_of(row.get("process")), number(row.get("duration"))
+                if other_pid is not None and other and other > 0:
+                    by_process[other_pid] += other
                 continue
+            own_ns += number(row.get("duration")) or 0
             frame, start, duration = number(row.get("frame-number")), number(row.get("start")), number(row.get("duration"))
             if frame is None or duration is None:
                 continue
             channel = (row.get("channel-name").text or "?").strip() if row.get("channel-name") is not None else "?"
             frames[frame][channel] += duration / 1e6
+            latency = number(row.get("start-latency"))
+            if latency is not None and 0 <= latency < 2**62 and abs(frame) < 2**62:  # a sentinel is not a latency
+                latency_frames.append(frame)
+                latency_ns.append(latency)
             first_start[frame] = min(first_start.get(frame, start), start)
             intervals += 1
             if start is not None:
@@ -641,12 +705,16 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
         totals = [sum(frames[f].values()) for f in ordered]
         starts = [first_start[f] / 1e6 for f in ordered]
         gaps = kept["gaps"]
+        left_out = set(stalled["frames"]) if stalled else set()
         summary["gpu"] = {
             "intervals": intervals,
             "frames": len(ordered),
             "frame_gpu_ms": stats(totals),
             "per_channel_ms": {c: stats([frames[f].get(c, 0.0) for f in ordered]) for c in channels},
             "frame_interval_ms": stats(gaps),
+            # how long the GPU takes to start work once it is sent; the whole run, as frames.csv does not keep it
+            "start_latency_ms": stats([ns / 1e6 for f, ns in zip(latency_frames, latency_ns)
+                                       if f not in left_out]),
             "fps_estimate": round(1000 / statistics.median(gaps), 1) if gaps else None,
         }
         if stalled:
@@ -691,6 +759,7 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             summary["noisy_environment"] = noisy["flag"]
             if noisy["flag"]:
                 summary["noisy_basis"] = {k: noisy[k] for k in ("gpu_device_pct_mean", "process_busy_pct", "external_pct")}
+                summary["noisy_basis"]["other_processes"] = other_processes(by_process, own_ns)
 
         # the GPU's clock states over the recording, as a share of time
         states = collections.Counter()
@@ -731,6 +800,8 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             allocations = resource_summary(rows(tables["metal-resource-allocations"]), pid, len(frames))
             if allocations["events"]:
                 summary["resource_allocations"] = allocations
+        if "graphics-compiler-spill-events" in tables:
+            summary["shader_spills"] = spill_summary(rows(tables["graphics-compiler-spill-events"]), pid)
         if "metal-command-buffer-error" in tables:
             summary["command_buffer_errors"] = sum(1 for _ in rows(tables["metal-command-buffer-error"]))
         log = out / f"{label}.validation.log"

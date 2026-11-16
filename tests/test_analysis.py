@@ -54,6 +54,14 @@ def test_diagnose(tmp_path):
         (tmp_path / "calm.json").write_text(json.dumps(calm))
         got = analysis.tool_perf_diagnose("calm")
         assert not any("recuper" in r or "dividió" in r for r in got["recommendations"]), got
+        spilled = {**no_spans, "shader_spills": {"events": 4, "bytes": 8192, "encoders": 2}}
+        (tmp_path / "spilled.json").write_text(json.dumps(spilled))
+        got = analysis.tool_perf_diagnose("spilled")
+        assert any("derrame" in r and "8192" in r for r in got["recommendations"]), got
+        (tmp_path / "partial.json").write_text(json.dumps({**no_spans, "shader_spills": {"events": 1}}))
+        assert any("1 derrames" in r and "encoders" not in r for r in analysis.tool_perf_diagnose("partial")["recommendations"])
+        (tmp_path / "nospill.json").write_text(json.dumps({**no_spans, "shader_spills": {"events": 0}}))
+        assert not any("derrame" in r for r in analysis.tool_perf_diagnose("nospill")["recommendations"])
         (tmp_path / "winbusy.json").write_text(json.dumps({**busy, "template": "Windows Native Trace"}))
         assert any("FlipQueueSize" in r for r in analysis.tool_perf_diagnose("winbusy")["recommendations"])
         assert not analysis.tool_perf_diagnose("new", min_encoders=8)["too_many_short_encoders"]
@@ -1126,3 +1134,22 @@ def test_compare_accepts_skip_s_as_none_or_text(tmp_path):
             assert isinstance(got["suggested_actions"], list), skip
     finally:
         config.OUT, config.BASELINES = saved
+
+
+def test_compare_start_latency(tmp_path):
+    """perf_compare shows the change in the GPU's start latency p50, and an older summary without it gives no number
+    instead of an error."""
+    from metal_gpu_trace import analysis, config
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        def summary(latency):
+            gpu = {"frames": 300, "fps_estimate": 60.0, "frame_interval_ms": {}, "frame_gpu_ms": {}}
+            return {"gpu": {**gpu, "start_latency_ms": {"count": 9, "p50": latency}} if latency else gpu}
+        for name, latency in (("a", 1.0), ("b", 1.5), ("old", None)):
+            (tmp_path / f"{name}.json").write_text(json.dumps(summary(latency)))
+        assert analysis.tool_perf_compare("a", "b")["metrics"]["gpu_start_latency_ms_p50"] == {
+            "a": 1.0, "b": 1.5, "change": 0.5, "change_pct": 50.0}
+        got = analysis.tool_perf_compare("old", "b")["metrics"]["gpu_start_latency_ms_p50"]
+        assert got["a"] is None and got["b"] == 1.5, got
+    finally:
+        config.OUT = saved

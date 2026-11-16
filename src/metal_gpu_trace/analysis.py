@@ -157,6 +157,7 @@ def compare_summaries(sa, sb, a, b, short_us=25):
         "gpu_ms_mean": lambda s: s["gpu"]["frame_gpu_ms"].get("mean"),
         "gpu_ms_p95": lambda s: s["gpu"]["frame_gpu_ms"].get("p95"),
         "frame_interval_ms_p95": lambda s: s["gpu"]["frame_interval_ms"].get("p95"),
+        "gpu_start_latency_ms_p50": lambda s: (s["gpu"].get("start_latency_ms") or {}).get("p50"),
         "metal_mib_peak": lambda s: s.get("metal_memory_mib", {}).get("peak"),
         "rss_mib_max": lambda s: s.get("process_rss_mib", {}).get("max"),
     }
@@ -572,7 +573,7 @@ def steady_summary(run, skip_s=0):
     s.pop("metal_memory_mib", None)
     if memory:
         s["metal_memory_mib"] = {"peak": round(max(memory), 2), "samples": len(memory)}
-    s["steady"] = {"skip_s": skip, "whole_run": ["thermal_state_share", "process_rss_mib", "encoders", "gpu_idle", "gpu_counters"]}
+    s["steady"] = {"skip_s": skip, "whole_run": ["gpu.start_latency_ms", "thermal_state_share", "process_rss_mib", "encoders", "gpu_idle", "gpu_counters"]}
     return s
 
 
@@ -755,6 +756,11 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
         recommendations.append("Los tirones coinciden con crecimiento de memoria Metal: revisar cargas de recursos en medio de la partida.")
     elif top_cause == "thermal":
         recommendations.append("Los tirones coinciden con un estado térmico distinto de Nominal.")
+    spills = s.get("shader_spills") or {}
+    if spills.get("events"):
+        where = f" en {spills['encoders']} encoders" if spills.get("encoders") else ""
+        recommendations.append(f"Hay {spills['events']} derrames de registros de shader ({spills.get('bytes', 0)} bytes{where}): "
+                               "simplificar o dividir el shader que los causa.")
     synced = display_synced_hz(gpu)
     if synced:
         recommendations.append(f"El FPS ({gpu['fps_estimate']}) coincide con una pantalla de {synced} Hz y los intervalos son regulares: "

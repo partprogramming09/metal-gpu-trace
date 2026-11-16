@@ -126,7 +126,8 @@ def test_report(tmp_path):
         perf_report.subprocess.run = saved_run
     toc = ET.fromstring('<trace-toc><run><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
     assert perf_report.missing_tables(toc) == ["ProcessCPUUsage", "device-thermal-state-intervals", "gpu-performance-state-intervals",
-                                               "graphics-compiler-activity-intervals", "metal-application-encoders-list",
+                                               "graphics-compiler-activity-intervals", "graphics-compiler-spill-events",
+                                               "metal-application-encoders-list",
                                                "metal-command-buffer-error", "metal-current-allocated-size",
                                                "metal-resource-allocations"]
     try:
@@ -289,6 +290,60 @@ def test_resource_summary(tmp_path):
     assert perf_report.resource_summary(rows, 99, frames=50) == {"events": 0}
     assert perf_report.resource_summary(rows, 7, frames=0)["per_frame"] is None
 
+def test_resource_summary_live_and_freed():
+    """resource_allocations says what is still allocated at the end, by mode and type, what was freed and how many
+    deallocations had no allocation in the recording; an empty resource-id is ignored, a repeated id replaces the
+    earlier one, and other processes do not count."""
+    def cell(text):
+        el = ET.Element("v")
+        el.text = text
+        return el
+
+    def row(pid, t_ms, size, rid, kind="Buffer", event="Allocation", label=""):
+        process = ET.Element("process")
+        ET.SubElement(process, "pid", {"fmt": str(pid)})
+        return {"process": process, "timestamp": cell(str(t_ms * 1_000_000)), "resource-size": cell(str(size)),
+                "resource-type": cell(kind), "event-type": cell(event), "resource-id": cell(rid),
+                "event-label": cell(label)}
+    mib = 1 << 20
+    rows = [row(7, 10, mib, "1", label="Shared"), row(7, 20, 2 * mib, "2", "Texture"),
+            row(7, 30, mib, "3", label="Private"), row(7, 40, mib, "3", event="Deallocation"),
+            row(7, 50, mib, "99", event="Deallocation"), row(7, 60, mib, "4", label="Shared"),
+            row(7, 70, 2 * mib, "4", label="Managed"), row(7, 80, mib, ""), row(8, 90, 1 << 30, "5", label="Shared"),
+            row(8, 95, mib, "1", event="Deallocation"), row(7, 99, mib, "", event="Deallocation")]
+    got = perf_report.resource_summary(rows, 7, frames=10)
+    assert got["live"] == {"count": 3, "mib": 5.0,
+                           "by_mode": {"Managed": {"count": 1, "mib": 2.0}, "Shared": {"count": 1, "mib": 1.0},
+                                       "unknown": {"count": 1, "mib": 2.0}},
+                           "by_type": {"Buffer": {"count": 2, "mib": 3.0}, "Texture": {"count": 1, "mib": 2.0}}}, got["live"]
+    assert got["freed"] == {"count": 1, "mib": 1.0} and got["freed_before_recording"] == 1, got
+    assert perf_report.resource_summary([r for r in rows if r["event-type"].text == "Deallocation"], 7, 10) == {"events": 0}
+    assert perf_report.resource_summary([], 7, 10) == {"events": 0}
+    pairs = [row(7, t, mib, str(t), event=e) for t in range(2000) for e in ("Allocation", "Deallocation")]
+    pairs.append(row(7, 5000, mib, "m", label="Memoryless"))
+    got = perf_report.resource_summary(pairs, 7, 10)
+    assert got["live"]["count"] == 1 and got["live"]["by_mode"] == {"Memoryless": {"count": 1, "mib": 1.0}}, got["live"]
+    assert got["freed"]["count"] == 2000, got["freed"]
+
+
+def test_spill_summary():
+    """shader_spills counts the spill events of the recorded program, their bytes and the distinct encoders; rows of
+    other processes do not count, and a table with no row of the program gives {"events": 0}."""
+    def cell(text):
+        el = ET.Element("v")
+        el.text = text
+        return el
+
+    def row(pid, encoder, size):
+        process = ET.Element("process")
+        ET.SubElement(process, "pid", {"fmt": str(pid)})
+        return {"process": process, "encoder-id": cell(encoder), "spilled-bytes": cell(str(size))}
+    rows = [row(7, "a", 4096), row(7, "a", 1024), row(7, "b", 512), row(8, "c", 1 << 20), row(7, "", "x")]
+    assert perf_report.spill_summary(rows, 7) == {"events": 4, "bytes": 5632, "encoders": 2}
+    assert perf_report.spill_summary(rows, 9) == {"events": 0}
+    assert perf_report.spill_summary([], 7) == {"events": 0}
+
+
 def test_gpu_activity(tmp_path):
     """agx_summary() reads the per-second AGX sample: utilization stats, the growth of split scenes and of the recovery
     count, and it tolerates empty cells and a missing column."""
@@ -390,7 +445,7 @@ def test_skip_start_up(tmp_path):
         assert s["gpu"]["frames"] < 400 and s["hitches"]["count"] == 1, s["hitches"]
         assert [h["frame"] for h in s["hitches"]["worst"]] == [301] and s["hitches"]["causes"] == {"shader_compile": 1}
         assert "cpu" not in s and s["metal_memory_mib"]["peak"] == 60.0 and "per_channel_ms" not in s["gpu"]
-        assert s["gpu"]["fps_estimate"] == 100.0 and s["steady"]["skip_s"] == 1.5 and "thermal_state_share" in s["steady"]["whole_run"]
+        assert s["gpu"]["fps_estimate"] == 100.0 and s["steady"]["skip_s"] == 1.5 and "thermal_state_share" in s["steady"]["whole_run"] and "gpu.start_latency_ms" in s["steady"]["whole_run"]
         win = dict(summary, device={"platform": "Windows"})
         win.pop("metal_memory_mib"), win.pop("cpu")
         (tmp_path / "w1.json").write_text(json.dumps(win))
@@ -893,8 +948,109 @@ def test_summary_has_flag_and_basis_only_when_true(tmp_path):
             assert s["noisy_environment"] is flag, (device, s.get("noisy_environment"))
             if flag:
                 assert s["noisy_basis"] == {"gpu_device_pct_mean": device, "process_busy_pct": process_busy,
-                                            "external_pct": round(device - process_busy, 1)}, s["noisy_basis"]
+                                            "external_pct": round(device - process_busy, 1),
+                                            "other_processes": {"count": 0, "gpu_ms": 0.0, "share": 0.0}}, s["noisy_basis"]
             else:
                 assert "noisy_basis" not in s
     finally:
         perf_report.toc_and_tables = saved
+
+
+def _summary_with_latency(tmp_path, rows):
+    """summarize() over a fake trace whose rows are (frame, start ns, start-latency text or None, pid)."""
+    def table(columns, body):
+        cols = "".join(f"<col><mnemonic>{c}</mnemonic></col>" for c in columns)
+        return f"<trace-query-result><node><schema>{cols}</schema>{body}</node></trace-query-result>"
+
+    body = "".join(f"<row><start-time>{s}</start-time><duration>2000000</duration>"
+                   "<gpu-channel-name>Vertex</gpu-channel-name>"
+                   f"<gpu-frame-number>{f}</gpu-frame-number><process><pid>{p}</pid></process>"
+                   + (f"<start-latency>{lat}</start-latency>" if lat is not None else "")
+                   + f"<id>c{i}</id><id>e{i}</id></row>" for i, (f, s, lat, p) in enumerate(rows))
+    paths = {"metal-gpu-intervals": table(("start", "duration", "channel-name", "frame-number", "process",
+                                           "start-latency", "cmdbuffer-id", "encoder-id"), body),
+             "gpu-performance-state-intervals": table(("start",), ""),
+             perf_report.MEMORY: table(("start", "current-allocated-size", "process"), "")}
+    toc = ET.fromstring('<trace-toc><run><info><target><process type="launched" pid="7" name="x"/></target>'
+                        '</info><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
+
+    def fake(trace, schemas, optional=()):
+        files = {}
+        for name, xml in paths.items():
+            files[name] = str(tmp_path / f"{name}.xml")
+            pathlib.Path(files[name]).write_text(xml)
+        return toc, files
+
+    saved = perf_report.toc_and_tables
+    perf_report.toc_and_tables = fake
+    try:
+        return perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=False)
+    finally:
+        perf_report.toc_and_tables = saved
+
+
+def test_start_latency_is_summarized_in_ms(tmp_path):
+    """gpu.start_latency_ms has the shape of stats() in ms; a row without the field, one of another process and one of
+    work that was never presented are left out; no rows at all give {"count": 0}."""
+    rows = [(1, 0, 1_000_000, 7), (2, 4_500_000, 2_000_000, 7), (3, 9_000_000, 3_000_000, 7),
+            (4, 13_500_000, None, 7), (5, 18_000_000, "", 7), (6, 22_500_000, 9_000_000, 8),
+            (7, 27_000_000, -1, 7), (8, 31_500_000, 2**70, 7)]
+    got = _summary_with_latency(tmp_path, rows)["gpu"]["start_latency_ms"]
+    assert got == {"count": 3, "mean": 2.0, "p50": 2.0, "p95": 3.0, "max": 3.0}, got
+    none = _summary_with_latency(tmp_path, [(1, 0, None, 7)])["gpu"]["start_latency_ms"]
+    assert none == {"count": 0}, none
+    stalled = [(f, st, 9_999_000_000 if f == 200 else 1_000_000, 7) for f, st, _, _, _ in stalled_spans()]
+    got = _summary_with_latency(tmp_path, stalled)
+    assert got["gpu"]["unpresented"]["frames"] == [200] and got["gpu"]["start_latency_ms"]["max"] == 1.0, got["gpu"]
+
+
+def test_noisy_basis_counts_the_other_processes(tmp_path):
+    """With noisy_environment true, noisy_basis.other_processes says how many other processes used the GPU, their GPU ms
+    and their share of all GPU time, and never a name: the program itself, a row without a process and a zero duration
+    are left out, and a flag without other processes gives zeros."""
+    def table(columns, body):
+        cols = "".join(f"<col><mnemonic>{c}</mnemonic></col>" for c in columns)
+        return f"<trace-query-result><node><schema>{cols}</schema>{body}</node></trace-query-result>"
+
+    def row(i, ms, process):
+        return (f"<row><start>{i * 10_000_000}</start><duration>{ms * 1_000_000}</duration>"
+                f"<channel-name>Vertex</channel-name><frame-number>{i + 1}</frame-number>{process}"
+                f"<cmdbuffer-id>c{i}</cmdbuffer-id><encoder-id>e{i}</encoder-id><start-latency>1000</start-latency></row>")
+
+    def proc(pid, name):
+        return f'<process fmt="{name}"><pid>{pid}</pid></process>'
+
+    own = [row(i, 4, proc(7, "x (7)")) for i in range(60)]
+    others = [row(100, 10, proc(8, "Google Chrome Helper (Aperitif) (80813)")),
+              row(101, 10, proc(9, "Google Chrome Helper (80814)")), row(102, 40, proc(10, "WindowServer (160)")),
+              row(103, 30, proc(11, "Zed (11)")), row(104, 5, proc(12, "Tiny (12)")), row(105, 50, "<sentinel/>"),
+              row(106, 0, proc(13, "Idle (13)"))]
+    toc = ET.fromstring('<trace-toc><run><info><target><process type="launched" pid="7" name="x"/></target>'
+                        '</info><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
+    (tmp_path / "x.agx.csv").write_text("device_pct,renderer_pct,tiler_pct\n" + "100,1,1\n" * 3)
+
+    def run(body):
+        xml = {"metal-gpu-intervals": table(("start", "duration", "channel-name", "frame-number", "process",
+                                             "cmdbuffer-id", "encoder-id", "start-latency"), "".join(body)),
+               "gpu-performance-state-intervals": table(("start",), "")}
+
+        def fake(trace, schemas, optional=()):
+            files = {}
+            for name, text in xml.items():
+                files[name] = str(tmp_path / f"{name}.xml")
+                pathlib.Path(files[name]).write_text(text)
+            return toc, files
+        saved = perf_report.toc_and_tables
+        perf_report.toc_and_tables = fake
+        try:
+            return perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=False)
+        finally:
+            perf_report.toc_and_tables = saved
+
+    total = 60 * 4 + 10 + 10 + 40 + 30 + 5  # the row without a process and the one with no duration are not counted
+    got = run(own + others)
+    assert got["noisy_environment"] is True, got.get("noisy_environment")
+    assert got["noisy_basis"]["other_processes"] == {"count": 5, "gpu_ms": 95.0, "share": round(95 / total, 3)}, got["noisy_basis"]
+    assert "Chrome" not in json.dumps(got) and "WindowServer" not in json.dumps(got), "no process name reaches a summary"
+    assert run(own)["noisy_basis"]["other_processes"] == {"count": 0, "gpu_ms": 0.0, "share": 0.0}
+    assert run(own + [row(2 ** 63, 5, proc(7, "x (7)"))])["gpu"]["start_latency_ms"]["count"] == 60, "a sentinel frame number must not abort the summary"

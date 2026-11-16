@@ -71,7 +71,20 @@ run before calling a difference real.
 
 ## What's new
 
-Version 0.27.0. Each item links to the command that was run and its real output.
+Version 0.27.2. Each item links to the command that was run and its real output.
+
+- 🔍 **How long the GPU takes to start.** `gpu.start_latency_ms` gives the count, mean, median, p95 and max of the time
+  between the work being submitted and the GPU starting it; `perf_compare` compares the median. On a real run it was
+  0.53 ms, the same as a hand count over the table. [Proof](docs/evidence/v0.27.2.md#how-long-the-gpu-takes-to-start)
+- 🩺 **How much of the GPU is not yours.** When `noisy_environment` is true, `noisy_basis.other_processes` gives how many
+  other processes used the GPU, their GPU time and share (3 processes, 52.6 % in a real run), and no names.
+  [Proof](docs/evidence/v0.27.2.md#how-many-other-processes-load-the-gpu)
+- ⚡ **What stayed allocated.** `resource_allocations.live` says what was still allocated at the end, by mode and type
+  (66 resources, 84.8 MiB in a real run, matching a hand count), a lower bound. [Proof](docs/evidence/v0.27.2.md#what-is-still-allocated-at-the-end)
+- 🧪 **Shader register spills** (experimental). `shader_spills` and a `perf_diagnose` line. A real run had none; the
+  positive case was tested only with synthetic rows. [Proof](docs/evidence/v0.27.2.md#shader-register-spills)
+
+Version 0.27.0, still current:
 
 - 🛡️ **A recording that cannot work is refused at once.** Before anything starts, `perf_record` checks the program, Wine,
   `xcrun`, free disk, the recording lock and a locked screen, and says what to do. In a real run the three refusals took
@@ -339,7 +352,7 @@ unchanged in the second run.
 
 - A summary says where it ran and what the GPU did: `machine` (chip, cores, RAM, macOS, `screen_locked`), `gpu_activity`
   (utilization of the device, renderer and tiler, split scenes, GPU recoveries: it covers the whole GPU, not only the
-  program), `resource_allocations` (allocation events per frame, by type; a running total, not memory in use) and
+  program), `resource_allocations` (allocation events per frame, by type; `live` is what was still allocated at the end, by mode and type, a lower bound as anything allocated before the recording does not show; `freed` and `freed_before_recording`) and
   `command_buffer_errors`.
 - A locked Mac session leaves native Metal windows unpaced: 3 000 to 4 000 FPS against 120 with vsync, on the same
   examples. Record with the Mac unlocked; `perf_compare` returns `screen` when one run was recorded locked and the other not.
