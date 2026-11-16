@@ -107,6 +107,8 @@ ningún sitio de esta guía.
 
 ## E6 Cada sitio que escribe una línea de log
 
+Medido antes de 24490ec, así que los números de `stdio.py` de abajo son los antiguos (la línea del error interno de stdio es `stdio.py:53` ahora, tras c4b4a7c).
+
 ```text
 $ rg -n "logs\.log" src/metal_gpu_trace | cut -c1-140
 src/metal_gpu_trace/stdio.py:49:            logs.log(f"internal error {type(error).__name__}")
@@ -213,7 +215,7 @@ caché. El mensaje 3 lista cinco recursos, el 4 una plantilla (las grabaciones) 
   dan las líneas que las producen y las pruebas que las fijan; E9 da las respuestas tal como las grabaron las pruebas.
 - Que `tests/test_architecture.py` y el resto de la batería estén en verde: no se ejecutó ninguna prueba para esta guía.
 - Una cancelación sobre una grabación real, por stdio o por HTTP (hace falta una grabación, [Grabar](../grabar/index.md)).
-- UTF-8 inválido en stdin, un puerto en uso o fuera de rango, un cuerpo `chunked`, y un `PUT` o `HEAD` (límites 2, 4 y 8, y
+- UTF-8 inválido en stdin (el caso se leyó tal como estaba antes de 24490ec; se arregló en c4b4a7c, límite 2, y su prueba no se ejecutó aquí), un puerto en uso o fuera de rango, un cuerpo `chunked`, y un `PUT` o `HEAD` (límites 2, 4 y 8, y
   la nota de la fila 0 en [HTTP](./http.md)): leídos en el código, no ejecutados.
 - El SDK oficial de MCP como cliente (`tests/conformance/`): necesita el SDK y no se ejecutó.
 - A dónde muestra un cliente el stderr del servidor.

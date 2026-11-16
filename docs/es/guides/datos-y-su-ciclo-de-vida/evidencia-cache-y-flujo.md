@@ -93,12 +93,12 @@ src/metal_gpu_trace/recording.py:338:    """Adds `layer`, the run's `context` an
 src/metal_gpu_trace/perf_record.sh:164:if [[ ${KEEP_RUNS:-} == <1-> ]]; then zsh $here/prune_runs.sh $out $KEEP_RUNS; fi
 ```
 
-Se muestran seis de las 21 líneas que imprimió `rg` (las que leen o actúan sobre una variable), cada una recortada a 120 caracteres; el resto son comentarios o docstrings. `KEEP_RUNS` se lee en `perf_record.sh:164` y `perf_record_windows.py:922`, y actúa en `prune_runs.sh:9` (que recibe el número como `keep`). `METAL_TRACE_MAX_DISK_MB` se lee solo en `config.py:22` y actúa en `retention.py` por `recording.py:346-347`.
+Se muestran seis de las 21 líneas que imprimió `rg` (las que leen o actúan sobre una variable), cada una recortada a 120 caracteres; el resto son comentarios o docstrings. Esta salida es de antes de 24490ec: desde entonces `KEEP_RUNS` se lee en `perf_record_windows.py:924` y actúa en `prune_runs.sh:10` (que recibe el número como `keep`). En la medición se leía en `perf_record.sh:164` y `perf_record_windows.py:922`, y actuaba en `prune_runs.sh:9`. `METAL_TRACE_MAX_DISK_MB` se lee solo en `config.py:22` y actúa en `retention.py` por `recording.py:346-347`.
 
 ## Lo que no se reprodujo
 
 - Un resumen de generación 2 o 3 de una grabación real (necesita Instruments).
 - Un `.csv.gz` en una corrida real y su proporción de compresión.
 - Una grabación que tenga el candado, y la limpieza tras un script matado.
-- La cuota borrando archivos, `retention` en un resumen, `trace_dropped` y `KEEP_RUNS` borrando un `.trace` (borran archivos).
+- La cuota borrando archivos, `retention` en un resumen, `trace_dropped` y `KEEP_RUNS` borrando archivos (borran archivos, así que no se ejecutó ninguno; la parte del `.trace` está en E6).
 - El listado de claves con `python3 -I -c`.

@@ -100,7 +100,7 @@ v070-d3d12_20261018-021158.rss.csv
 v070-d3d12_20261018-021158.trace
 ```
 
-This is the glob `${old:r}.*` that `prune_runs.sh:9` expands for an old run's stem (`${old:r}` is the `.json` name without `.json`); it includes the `.trace`. Limit 6 rests on this output; `rm -rf` itself was **not reproduced** (a deletion).
+This is the glob `${old:r}.*` that `prune_runs.sh` expanded for an old run's stem at the time of the measurement, before 24490ec (`${old:r}` is the `.json` name without `.json`); it includes the `.trace`. Since 24490ec the script expands `${old:r}.*~*.trace` (`prune_runs.sh:10`), which leaves the `.trace` out. Limit 6 rested on this output; `rm -rf` itself was **not reproduced** (a deletion).
 
 ## E7 The baselines file
 

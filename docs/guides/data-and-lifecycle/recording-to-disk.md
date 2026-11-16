@@ -21,7 +21,7 @@ Numbers are those of the figure; proof in [E11](./evidence-cache-and-flow.md#e11
 | 3 | **Samplers and Instruments write** | Two background loops write `.rss.csv` and `.agx.csv` once a second while `xctrace` writes the `.trace` |
 | 4 | **The script starts the report** | `python3 -I perf_report.py <trace> --label <stem> --out <folder>` |
 | 5 | **The report writes the tables, then a first summary** | Memory table (`perf_report.py:745`), frames table (`:831`), then the `.json` (`:836`) |
-| 6 | **The script deletes the `.trace`** | Unless `KEEP_TRACE=1`; then applies `KEEP_RUNS` if set |
+| 6 | **The script deletes the `.trace`** | Unless `KEEP_TRACE=1`; then applies `KEEP_RUNS` if set (it removes the older runs' other files, never their `.trace`; see [Retention](./retention.md)) |
 | 7 | **The script frees the lock** | When it exits |
 | 8 | **The server finishes** | `recording.finish` adds `layer`, `context`, `tier`, applies the disk limit if no other recording runs, and **rewrites** the `.json` |
 

@@ -85,7 +85,7 @@ $ jq -n --slurpfile a a2-proof-first_20261115-085621.json --slurpfile b a2-proof
 {"fps_floor_with_3pct_margin":102.238,"run_fps":102.1,"verdict":"worse","gpu_ms_ceiling":6.1151100000000005,"run_gpu_ms":5.86}
 ```
 
-`perf_compare` would give the first block (plus an `unpresented` entry naming `b`, and no `too_short`: 153 is not under 100). For `perf_check` against a reference made only of the first run, FPS is under the floor (102.1 < 102.238), so the verdict would be `regressed`; GPU ms per frame (5.86 under 6.115) and the encoder counts (both runs have p50 2 and 1, from the summaries' `encoders`) are `same`. That reference has `spread_pct` 0: this is [limit 8](./limits.md) and why `perf_baseline` wants several runs. The results are **probable** (code read, not run).
+`perf_compare` would give the first block (plus an `unpresented` entry naming `b`, and no `too_short`: 153 is not under 100). For `perf_check` against a reference made only of the first run, FPS is under the floor (102.1 < 102.238), so the verdict would be `regressed`; GPU ms per frame (5.86 under 6.115) and the encoder counts (both runs have p50 2 and 1, from the summaries' `encoders`) are `same`. That reference has `spread_pct` 0: this is [limit 8](./limits.md) and why `perf_baseline` wants several runs. The results are **probable** (code read, not run). Measured before 53f742b, when `perf_check` had no `note`; since then this one-run case adds one (`analysis.py:378-380`), and the verdict does not change.
 
 ## E7 `missing_tables`, noise and diagnosis by hand {#e7}
 

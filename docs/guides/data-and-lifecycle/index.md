@@ -44,7 +44,7 @@ Files of one recording share a **stem** (the common start of the file name): the
 | [The cache and the lock](./cache-and-lock.md) | The test-program cache and the one-recording-at-a-time lock |
 | [From a recording to disk](./recording-to-disk.md) | The eight steps of a macOS recording (Figure 2) |
 | [When it fails](./when-it-fails.md) | What stays on disk after each failure, and who cleans it |
-| [Known limits and touching it](./limits.md) | The 11 known limits and how to change this area safely |
+| [Known limits and touching it](./limits.md) | The 11 known limits (9 open, 2 fixed on 2026-11-16) and how to change this area safely |
 | Evidence: [E1 to E7](./evidence-runs.md), [E8 to E12](./evidence-cache-and-flow.md) | Files, sizes, keys, columns, the stem glob, baselines; the cache, pins, the eight steps, variables, what was not reproduced |
 
 ## See also

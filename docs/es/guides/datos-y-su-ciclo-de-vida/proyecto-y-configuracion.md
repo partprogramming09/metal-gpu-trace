@@ -15,7 +15,7 @@ Volver al [índice](./index.md). Ejemplo: el archivo de proyecto `{"name": "myga
 
 | Pieza | Regla | Dónde |
 |---|---|---|
-| Claves | `name` y `runs` (obligatorias), `baseline`, `format`; cualquier otra clave se rechaza por su nombre (también un `profile` sobrante, quitado en la 0.26.0 según `CHANGELOG.md`: límite conocido 1) | `project.py:15`, `:43-46` |
+| Claves | `name` y `runs` (obligatorias), `baseline`, `format`; cualquier otra clave se rechaza por su nombre (también un `profile` sobrante, quitado en la 0.26.0 según `CHANGELOG.md`; el error dice que lo borres cuando `profile` está entre las cinco primeras claves desconocidas que lista: límite conocido 1) | `project.py:15`, `:43-47` |
 | Carpeta `runs` | Debe ser nueva, vacía (la basura como `.DS_Store` no cuenta) o llevar la marca; una marca con otro nombre de proyecto la rechaza. Se comprueba a fondo porque `KEEP_RUNS` borra archivos allí | `project.py:3-5`, `:17`, `:94-105` |
 | `project.apply` | Apunta `config.OUT`, `config.READ[0]` y `config.BASELINES` a esa carpeta y escribe la marca | `project.py:162-189`, `:192-201` |
 

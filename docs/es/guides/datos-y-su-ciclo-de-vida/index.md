@@ -44,7 +44,7 @@ Los archivos de una grabación comparten un **stem** (el prefijo común del nomb
 | [La caché y el candado](./cache-y-candado.md) | La caché de programas de prueba y el candado de una grabación a la vez |
 | [De una grabación a disco](./de-grabacion-a-disco.md) | Los ocho pasos de una grabación en macOS (Figura 2) |
 | [Cuando falla](./cuando-falla.md) | Qué queda en disco tras cada fallo y quién lo limpia |
-| [Límites conocidos y tocarlo sin romperlo](./limites.md) | Los 11 límites conocidos y cómo cambiar esta zona con seguridad |
+| [Límites conocidos y tocarlo sin romperlo](./limites.md) | Los 11 límites conocidos (9 abiertos, 2 arreglados el 2026-11-16) y cómo cambiar esta zona con seguridad |
 | Evidencia: [E1 a E7](./evidencia-corridas.md), [E8 a E12](./evidencia-cache-y-flujo.md) | Archivos, tamaños, claves, columnas, el patrón del stem, líneas base; la caché, versiones fijadas, los ocho pasos, variables, lo no reproducido |
 
 ## Véase también

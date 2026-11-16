@@ -94,6 +94,8 @@ Only `--port` is looked at after `--http` ([limit 4](./limits.md)). The variable
 
 ## E6 Every place that writes a log line
 
+At the time of the measurement, before 24490ec, so the `stdio.py` line numbers below are the old ones (the stdio internal-error line is `stdio.py:53` now, after c4b4a7c).
+
 ```text
 $ rg -n "logs\.log" src/metal_gpu_trace | cut -c1-140
 src/metal_gpu_trace/stdio.py:49:            logs.log(f"internal error {type(error).__name__}")
@@ -176,6 +178,6 @@ Message 0 asked for `2025-06-18` and got it; message 1 asked for `1999-01-01` an
 - Starting the server, over stdio or HTTP, and any request to it: `initialize` and `tools/list` by stdio and by HTTP with `curl` and a test token, and the three refusals live (404, 403, 401). E1 and E8 give the lines and tests; E9 the recorded replies.
 - That `tests/test_architecture.py` and the rest of the suite are green: no test was run.
 - A cancel on a real recording, over stdio or HTTP (needs a recording, [Recording](../recording/index.md)).
-- Invalid UTF-8 on stdin, a port in use or out of range, a chunked body, a `PUT` or `HEAD` (limits 2, 4 and 8, and the row 0 note in [HTTP](./http.md)): read, not run.
+- Invalid UTF-8 on stdin, a port in use or out of range, a chunked body, a `PUT` or `HEAD` (limits 2, 4 and 8, and the row 0 note in [HTTP](./http.md)): read, not run. The stdin case was read as it was at the time of the measurement, before 24490ec; it was fixed in c4b4a7c (limit 2), and its test was not run here.
 - The official MCP SDK as a client (`tests/conformance/`): needs the SDK, not run.
 - Where a client shows the server's stderr.

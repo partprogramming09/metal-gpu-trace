@@ -49,7 +49,7 @@
     <div class="diagram-container">
       <svg viewBox="0 0 1000 830" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="data-files-per-run-title data-files-per-run-desc">
         <title id="data-files-per-run-title">Files of one run and what each pruning removes</title>
-        <desc id="data-files-per-run-desc">A matrix with one row per kind of file in the runs folder and four columns: who writes it, what happens to it at the end of a run, what KEEP_RUNS does to it and what METAL_TRACE_MAX_DISK_MB does to it. Shaded cells are where a file can be removed; the summary json is removed only by KEEP_RUNS, and baselines.json and the folder mark are never removed.</desc>
+        <desc id="data-files-per-run-desc">A matrix with one row per kind of file in the runs folder and four columns: who writes it, what happens to it at the end of a run, what KEEP_RUNS does to it and what METAL_TRACE_MAX_DISK_MB does to it. Shaded cells are where a file can be removed; the summary json is removed only by KEEP_RUNS, the .trace only by the quota, and baselines.json and the folder mark are never removed.</desc>
 
         <rect width="100%" height="100%" fill="#f5f5f5"/>
 
@@ -74,7 +74,6 @@
 
         <!-- shaded cells: removable here -->
         <g fill="rgba(191,69,32,0.08)">
-          <rect x="618" y="87" width="176" height="70"/>
           <rect x="798" y="87" width="176" height="70"/>
           <rect x="618" y="239" width="176" height="70"/>
           <rect x="798" y="239" width="176" height="70"/>
@@ -94,7 +93,8 @@
           <text x="444" y="108">deleted, unless</text>
           <text x="444" y="128">KEEP_TRACE=1</text>
           <text x="444" y="148">or deep</text>
-          <text x="624" y="128">goes with run</text>
+          <text x="624" y="118">kept: KEEP_RUNS</text>
+          <text x="624" y="138">never removes it</text>
           <text x="804" y="118">1st; the current</text>
           <text x="804" y="138">run: last</text>
 

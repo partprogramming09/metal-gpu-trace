@@ -22,13 +22,13 @@ There is no `--stdio` flag: stdio is what is left (see [limit 4](./limits.md)).
 
 ## stdio
 
-`serve_stdio` (`stdio.py:25-53`) is the whole transport:
+`serve_stdio` (`stdio.py:25-57`) is the whole transport:
 
-- Switches stdin and stdout to UTF-8 (`:27-29`), so encoding does not depend on the launcher's language settings.
-- Reads `sys.stdin` line by line until the client closes it (`:30`); empty lines are skipped (`:31-32`).
-- Each line is JSON, sorted into three kinds: `notifications/cancelled` goes to `worker.cancel_call` with the request id (`:35-37`); a `tools/call` with a text or number id is registered (`worker.CALLS[id] = Event()`) and queued (`:38-44`); everything else is answered at once by `protocol.handle` (`:45`), in the reading thread.
-- A line that is not JSON gets `-32700 parse error`, `id: null` (`:46-47`). Any other exception from `protocol.handle` is logged as `internal error <ExceptionName>` and answered `-32603 internal error` (`:48-50`): one bad message cannot stop the server.
-- When stdin closes, `worker.stop_worker()` runs (`:53`): queued calls finish, then the thread ends ([limit 3](./limits.md)).
+- Switches stdout to UTF-8 (`:27-28`) and reads stdin as bytes, decoding each line as UTF-8 (`:29-34`), so encoding does not depend on the launcher's language settings. A line that is not UTF-8 gets `-32700` and the server keeps going.
+- Reads stdin line by line until the client closes it (`:29`); empty lines are skipped (`:35-36`).
+- Each line is JSON, sorted into three kinds: `notifications/cancelled` goes to `worker.cancel_call` with the request id (`:39-41`); a `tools/call` with a text or number id is registered (`worker.CALLS[id] = Event()`) and queued (`:42-48`); everything else is answered at once by `protocol.handle` (`:49`), in the reading thread.
+- A line that is not JSON gets `-32700 parse error`, `id: null` (`:50-51`). Any other exception from `protocol.handle` is logged as `internal error <ExceptionName>` and answered `-32603 internal error` (`:52-54`): one bad message cannot stop the server.
+- When stdin closes, `worker.stop_worker()` runs (`:57`): queued calls finish, then the thread ends ([limit 3](./limits.md)).
 - `send` writes one JSON line under a lock, so the reader answering a `ping` and the worker sending progress never interleave bytes (`:9`, `:12-16`).
 
 ## HTTP

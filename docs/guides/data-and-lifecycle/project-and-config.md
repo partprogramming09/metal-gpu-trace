@@ -15,7 +15,7 @@ Back to the [index](./index.md). Example: the project file `{"name": "mygame", "
 
 | Piece | Rule | Where |
 |---|---|---|
-| Keys | `name` and `runs` (required), `baseline`, `format`; any other key is refused by name (also a leftover `profile`, removed in 0.26.0 per `CHANGELOG.md`: known limit 1) | `project.py:15`, `:43-46` |
+| Keys | `name` and `runs` (required), `baseline`, `format`; any other key is refused by name (also a leftover `profile`, removed in 0.26.0 per `CHANGELOG.md`; the error says to delete it when `profile` is among the first five unknown keys it lists: known limit 1) | `project.py:15`, `:43-47` |
 | `runs` folder | Must be new, empty (litter such as `.DS_Store` does not count) or carry the mark; a mark with another project's name refuses it. Checked hard because `KEEP_RUNS` deletes files there | `project.py:3-5`, `:17`, `:94-105` |
 | `project.apply` | Points `config.OUT`, `config.READ[0]`, `config.BASELINES` at that folder and writes the mark | `project.py:162-189`, `:192-201` |
 

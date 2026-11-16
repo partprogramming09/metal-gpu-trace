@@ -100,7 +100,7 @@ v070-d3d12_20261018-021158.rss.csv
 v070-d3d12_20261018-021158.trace
 ```
 
-Es el patrón `${old:r}.*` que `prune_runs.sh:9` expande para el stem de una corrida vieja (`${old:r}` es el nombre del `.json` sin `.json`); incluye el `.trace`. El límite 6 se apoya en esta salida; el `rm -rf` mismo **no se reprodujo** (es un borrado).
+Es el patrón `${old:r}.*` que `prune_runs.sh` expandía para el stem de una corrida vieja en el momento de la medición, antes de 24490ec (`${old:r}` es el nombre del `.json` sin `.json`); incluía el `.trace`. Desde 24490ec el script expande `${old:r}.*~*.trace` (`prune_runs.sh:10`), que deja el `.trace` fuera. El límite 6 se apoyaba en esta salida; el `rm -rf` mismo **no se reprodujo** (es un borrado).
 
 ## E7 El archivo de líneas base
 

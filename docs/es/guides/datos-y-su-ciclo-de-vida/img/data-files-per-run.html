@@ -59,7 +59,7 @@
     <div class="diagram-container">
       <svg viewBox="0 0 1000 704" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="data-files-per-run-title data-files-per-run-desc">
         <title id="data-files-per-run-title">Archivos de una corrida y lo que borra cada poda</title>
-        <desc id="data-files-per-run-desc">Tabla con una fila por tipo de archivo de una corrida y cuatro columnas: quién lo escribe, qué pasa al terminar la corrida, qué hace KEEP_RUNS y qué hace METAL_TRACE_MAX_DISK_MB. Las celdas sombreadas son las que pueden borrar el archivo; el resumen .json solo lo borra KEEP_RUNS, y baselines.json y la marca de la carpeta nunca se borran.</desc>
+        <desc id="data-files-per-run-desc">Tabla con una fila por tipo de archivo de una corrida y cuatro columnas: quién lo escribe, qué pasa al terminar la corrida, qué hace KEEP_RUNS y qué hace METAL_TRACE_MAX_DISK_MB. Las celdas sombreadas son las que pueden borrar el archivo; el resumen .json solo lo borra KEEP_RUNS, el .trace solo la cuota, y baselines.json y la marca de la carpeta nunca se borran.</desc>
         <rect width="100%" height="100%" fill="#f5f5f5"/>
 
         <!-- cabecera -->
@@ -79,7 +79,6 @@
         <!-- sombreado: el archivo puede borrarse en esa celda -->
         <g fill="rgba(45,49,66,0.08)">
           <rect x="464" y="164" width="184" height="48"/>
-          <rect x="664" y="164" width="128" height="48"/>
           <rect x="808" y="164" width="168" height="48"/>
           <rect x="664" y="276" width="128" height="72"/>
           <rect x="808" y="276" width="168" height="72"/>
@@ -108,8 +107,8 @@
           <text x="264" y="193" font-family="Geist Mono, monospace">xctrace</text>
           <text x="472" y="183" font-family="Geist, system-ui, sans-serif">Se borra, salvo</text>
           <text x="472" y="203" font-family="Geist Mono, monospace">KEEP_TRACE=1</text>
-          <text x="672" y="183" font-family="Geist, system-ui, sans-serif">Con su</text>
-          <text x="672" y="203" font-family="Geist, system-ui, sans-serif">corrida</text>
+          <text x="672" y="183" font-family="Geist, system-ui, sans-serif">No lo borra</text>
+          <text x="672" y="203" font-family="Geist Mono, monospace">KEEP_RUNS</text>
           <text x="816" y="183" font-family="Geist, system-ui, sans-serif">1.º en la</text>
           <text x="816" y="203" font-family="Geist, system-ui, sans-serif">cuota</text>
         </g>

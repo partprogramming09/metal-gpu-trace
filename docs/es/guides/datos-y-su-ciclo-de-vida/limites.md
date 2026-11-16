@@ -4,22 +4,23 @@
 
 English: [Known limits and touching it without breaking it](../../../guides/data-and-lifecycle/limits.md)
 
-> **En corto:** once comportamientos sorprendentes del código de hoy, anotados y no arreglados, seguidos de las reglas
-> para cambiar la zona de datos sin romper grabaciones antiguas, la limpieza o la privacidad de los resúmenes compartidos.
+> **En corto:** once comportamientos sorprendentes del código de hoy. Nueve siguen abiertos y anotados; dos (los límites 1
+> y 6) se arreglaron el 2026-11-16 y siguen listados con sus commits. Después vienen las reglas para cambiar la zona de
+> datos sin romper grabaciones antiguas, la limpieza o la privacidad de los resúmenes compartidos.
 
-Volver al [índice](./index.md). Ejemplo: el límite 6 significa que `KEEP_RUNS=2` también puede borrar el `.trace` grande de una corrida vieja, aunque el [ADR-0006](../../../adr/0006-compressed-tables-and-disk-quota.md) diga que nunca poda un `.trace` conservado.
+Volver al [índice](./index.md). Ejemplo: el límite 6 era que `KEEP_RUNS=2` borraba el `.trace` grande de una corrida vieja, aunque el [ADR-0006](../../../adr/0006-compressed-tables-and-disk-quota.md) diga que nunca poda un `.trace` conservado; el arreglo (24490ec) hace que el código cumpla el ADR.
 
 ## Límites conocidos
 
 | # | Límite | Dónde | Estado |
 |---|---|---|---|
-| 1 | Una clave `profile` en un archivo de proyecto se rechaza: es el contrato desde la 0.26.0 (figura como quitada en `CHANGELOG.md`), así que un archivo que aún la tenga debe quitarla | `project.py:43-46` | Confirmado; si volver a aceptarla sigue abierto |
+| 1 | Una clave `profile` en un archivo de proyecto sigue rechazándose: es el contrato desde la 0.26.0 (figura como quitada en `CHANGELOG.md`). El error ahora dice que se quitó y que la borres, pero solo cuando `profile` está entre las cinco primeras claves desconocidas que lista (9b66165) | `project.py:43-47` | Arreglado el 2026-11-16 (commits 2720b23, 9b66165); si volver a aceptarla sigue abierto |
 | 2 | Los archivos `.presentmon.csv` nunca cuentan para la cuota y esta nunca los borra | `retention.py:43` | Confirmado |
 | 3 | La caché no tiene limpieza; 5 de sus 8 carpetas son versiones fijadas antiguas (308 MiB) | `workloads.py:22`, E8-E10 | Confirmado |
 | 4 | Un resumen cuyo `.trace` ya no está es normal: `trace` es solo el nombre y el archivo se borra por defecto; `perf_runs` informa `trace_kept` | `perf_report.py:650`, `perf_record.sh:163`, `analysis.py:79`, E5 | Confirmado |
 | 5 | `panel.json` se sigue omitiendo en todas partes aunque el panel ya no existe | `paths.py:10`, `retention.py:7`, `prune_runs.sh:3` y `:9`, `perf_record_windows.py:508`, `analysis.py:52` | Confirmado; el comentario dice «drop this in a later version» |
-| 6 | `KEEP_RUNS` borra el `.trace` de una corrida vieja, porque `${old:r}.*` abarca `<run>.trace`. El [ADR-0006](../../../adr/0006-compressed-tables-and-disk-quota.md) dice que «never prunes a kept `.trace`», cierto solo de un `.trace` sin `.json` | `prune_runs.sh:9`, E6 | Patrón confirmado (E6); el borrado no se reprodujo |
-| 7 | Un `.trace` sin `.json` (sin trabajo de GPU, `deep` o `KEEP_TRACE=1`) nunca lo ve `KEEP_RUNS`; solo la cuota lo borra | `recording.py:427-433`, `prune_runs.sh:9` | Confirmado por el código |
+| 6 | `KEEP_RUNS` borraba el `.trace` de una corrida vieja, porque `${old:r}.*` abarcaba `<run>.trace`, contra el [ADR-0006](../../../adr/0006-compressed-tables-and-disk-quota.md) («never prunes a kept `.trace`»). Ahora el patrón excluye `*.trace` y el `clean_runs` de Windows lo salta; solo `METAL_TRACE_MAX_DISK_MB` libera un `.trace` | `prune_runs.sh:10`, `perf_record_windows.py:515` | Arreglado el 2026-11-16 (commit 24490ec). E6 midió el patrón antiguo, antes de 24490ec |
+| 7 | Un `.trace` sin `.json` nunca lo cuenta `KEEP_RUNS`, así que tampoco lo borra: una grabación sin trabajo de GPU, con `deep` o `KEEP_TRACE=1`, y una corrida vieja cuyo `.json` ya quitó `KEEP_RUNS`. `perf_runs` no lo lista. Solo `METAL_TRACE_MAX_DISK_MB` lo borra; con esa variable sin fijar (por defecto) se queda en disco | `recording.py:427-433`, `prune_runs.sh:10` | Confirmado por el código |
 | 8 | El límite de disco puede ser inalcanzable y no dice nada | `retention.py:65-80`, `recording.py:348` | Confirmado por el código |
 | 9 | El resumen se reescribe con una escritura no atómica | `perf_report.py:836`, `recording.py:350` | Confirmado por el código |
 | 10 | Una grabación a mano y otra del servidor usan carpetas distintas por defecto | `config.py:16`, `perf_record.sh:28-29` | Confirmado |

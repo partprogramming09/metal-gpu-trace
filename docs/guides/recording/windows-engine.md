@@ -52,7 +52,7 @@ several frames is dropped, not split into equal parts (`:403-407`), so it never 
 | 4 | **The loop** | Once per second: sample the working set (`rss.csv`), check the deadline and cancel flag, stop early if the program exited by itself. Progress every 5 s | `:673-705` |
 | 5 | **Stop** | Stop the DWM thread; wait up to 15 s for PresentMon, killing it if it does not stop; on cancel or overrun, kill the program tree, delete every file starting with the run's name and raise `the recording was cancelled; nothing was saved` or `the recording took over N s and was stopped; nothing was saved` (`:744-746`). If the recording completed and the program is still alive, terminate it, then kill its tree | `:707-757` |
 | 6 | **Which frames** | The table above | `:759-844` |
-| 7 | **Write** | The `frames.csv.gz` table, the statistics (pacing numbers from `perf_report.frame_pacing`, the function macOS uses, `:489`), the summary, the `common` block, the `.json`, and `KEEP_RUNS` through its own `clean_runs` (`:503-518`, `:921-924`) | `:846-927` |
+| 7 | **Write** | The `frames.csv.gz` table, the statistics (pacing numbers from `perf_report.frame_pacing`, the function macOS uses, `:489`), the summary, the `common` block, the `.json`, and `KEEP_RUNS` through its own `clean_runs` (`:503-521`, `:924-926`; it skips the `.trace`) | `:846-927` |
 | 8 | **Finish** | Back in `record_run`, `finish` adds `layer`, `context`, `tier` and the disk limit | `recording.py:385` |
 
 A `finally` runs whenever the recording did not succeed: it stops the DWM thread and PresentMon, kills the program it

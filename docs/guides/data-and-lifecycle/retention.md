@@ -5,27 +5,27 @@
 Español: [Retención: dos mecanismos que no se mezclan](../../es/guides/datos-y-su-ciclo-de-vida/retencion.md)
 
 > **In short:** two look-alike settings stop the runs folder from growing forever. One keeps the newest N recordings and
-> deletes older ones whole. The other keeps the folder under a size and deletes only heavy files, oldest first, so the
-> small numbers survive. If the size cannot be reached it says nothing.
+> deletes the summaries and tables of older ones, never their big `.trace`. The other keeps the folder under a size and
+> deletes only heavy files, oldest first, so the small numbers survive. If the size cannot be reached it says nothing.
 
-Back to the [index](./index.md). Example: three recordings of 259 MiB; `KEEP_RUNS=2` removes the oldest entirely, while `METAL_TRACE_MAX_DISK_MB=600` removes only its `.trace` and leaves its summary (worked table below).
+Back to the [index](./index.md). Example: three recordings of 259 MiB; `KEEP_RUNS=2` removes the oldest one's summary and tables but keeps its 259 MiB `.trace`, while `METAL_TRACE_MAX_DISK_MB=600` removes only that `.trace` and leaves its summary (worked table below).
 
 | | `KEEP_RUNS=N` | `METAL_TRACE_MAX_DISK_MB=M` |
 |---|---|---|
 | Counts | Runs (by modification time of their `.json`) | Bytes (MiB) of the whole top level of the folder |
-| Runs in | `perf_record.sh:164` calls `prune_runs.sh`; the deletion is `prune_runs.sh:9` | `recording.finish` (`recording.py:346`) calls `retention.prune_to_quota` (`retention.py:46`) |
-| Read from | The process environment, by the script and the Windows engine (`perf_record_windows.py:922`); the server passes its own on (`recording.py:360`) | `config.py:22`, at server start and every `config.reload` |
-| Deletes | Every file of each run older than the newest N: `${old:r}.*` (`prune_runs.sh:9`): `.json`, tables, samplers, `.chrome-trace`, `.trace` | Only heavy files: `.trace`, then `.chrome-trace`, then tables (`retention.py:8-10`, `:37-42`) |
-| Never deletes | `baselines.json`, `panel.json` (`prune_runs.sh:9`), the mark (not a `.json` stem) | A `.json`, samplers, `baselines.json`, the mark, `.presentmon.csv` (`retention.py:43`) |
+| Runs in | `perf_record.sh:164` calls `prune_runs.sh`; the deletion is `prune_runs.sh:10` | `recording.finish` (`recording.py:346`) calls `retention.prune_to_quota` (`retention.py:46`) |
+| Read from | The process environment, by the script and the Windows engine (`perf_record_windows.py:924`); the server passes its own on (`recording.py:360`) | `config.py:22`, at server start and every `config.reload` |
+| Deletes | Every file of each run older than the newest N except its `.trace`: `${old:r}.*~*.trace` (`prune_runs.sh:10`): `.json`, tables, samplers, `.chrome-trace` | Only heavy files: `.trace`, then `.chrome-trace`, then tables (`retention.py:8-10`, `:37-42`) |
+| Never deletes | `baselines.json`, `panel.json` (`prune_runs.sh:10`), the mark (not a `.json` stem), a `.trace` (`prune_runs.sh:10`, `perf_record_windows.py:515`) | A `.json`, samplers, `baselines.json`, the mark, `.presentmon.csv` (`retention.py:43`) |
 | Order | Newest N survive | Oldest first inside each kind; kinds in the order above; the current run's `.trace` last |
-| Skipped when | `KEEP_RUNS` is not a whole number of 1 or more (`perf_record.sh:164`); `prune_runs.sh` exits with 2 on a bad value (`prune_runs.sh:8`) | Limit unset or invalid; another recording running (`recording.py:346`) |
+| Skipped when | `KEEP_RUNS` is not a whole number of 1 or more (`perf_record.sh:164`); `prune_runs.sh` exits with 2 on a bad value (`prune_runs.sh:9`) | Limit unset or invalid; another recording running (`recording.py:346`) |
 | Tells you | Nothing | `retention` in the summary of the recording that triggered it, if a file went |
 
 Figure 1 on [Files on disk](./files-on-disk.md#what-a-recording-leaves-on-disk) shows the same split per file kind.
 
 ## How `KEEP_RUNS` decides
 
-`prune_runs.sh:9` lists the folder's `.json` files except `baselines.json` and `panel.json`, newest first (zsh qualifier `om`), takes from position `keep + 1` on, and removes every file with the same stem. A run is therefore a `.json`: a `.trace` with no `.json` is never seen ([When it fails](./when-it-fails.md), known limit 7). `test_keep_runs_still_removes_old_tables` (`tests/test_recording.py:1101`) pins the removal of compressed tables. On Windows `clean_runs` (`perf_record_windows.py:503-518`) does the same in Python with `unlink`, a second implementation (confirmed: no shared code).
+`prune_runs.sh:10` lists the folder's `.json` files except `baselines.json` and `panel.json`, newest first (zsh qualifier `om`), takes from position `keep + 1` on, and removes every file with the same stem **except a `.trace`**, which only the disk quota frees ([ADR-0006](../../adr/0006-compressed-tables-and-disk-quota.md)). A run is found by its `.json`, so a `.trace` left with no `.json` is never counted again and stays on disk ([When it fails](./when-it-fails.md), known limit 7). `test_keep_runs_still_removes_old_tables` (`tests/test_recording.py:1108`) pins the removal of compressed tables, and `test_keep_runs_never_removes_a_trace` (`:1120`) pins the `.trace`. On Windows `clean_runs` (`perf_record_windows.py:503-521`) does the same in Python with `unlink`, skipping `.trace` (`:515`), a second implementation (confirmed: no shared code).
 
 ## How the quota decides
 
@@ -47,7 +47,7 @@ Three `deep` runs A (oldest), B and C (just recorded), each with a 259 MiB `.tra
 | 300 | A's `.trace`, then B's (total 260 MiB) | Only C has a `.trace` |
 | 200 | A's and B's `.trace`, then A's and B's tables, then C's `.trace` (`trace_dropped: true`) | The three summaries, C's tables and the samplers, about 1 MiB |
 
-With `KEEP_RUNS=2` the same runs lose **all** of A (summary included) and keep B and C complete; with both settings the script prunes first (`KEEP_RUNS`, end of `perf_record.sh`) and the quota runs after, on what is left. Read from the code and `kind_of`'s rules; **not reproduced**: no real folder here was ever over a limit, and deleting is not a read-only check. `tests/test_retention.py` exists for it (not run for this page).
+With `KEEP_RUNS=2` A loses its summary and tables but keeps its 259 MiB `.trace`, which `perf_runs` no longer lists because it has no `.json`; B and C keep everything. With both settings the script prunes first (`KEEP_RUNS`, end of `perf_record.sh`) and the quota runs after, on what is left: A's `.trace` is then the oldest candidate, so the rows above apply to it. Read from the code and `kind_of`'s rules; **not reproduced**: no real folder here was ever over a limit, and deleting is not a read-only check. `tests/test_retention.py` exists for it (not run for this page).
 
 ## Where the limit cannot be met
 

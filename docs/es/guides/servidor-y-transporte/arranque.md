@@ -22,13 +22,13 @@ No existe un parámetro `--stdio`: stdio es lo que queda (véase el [límite 4](
 
 ## stdio
 
-`serve_stdio` (`stdio.py:25-53`) es todo el transporte:
+`serve_stdio` (`stdio.py:25-57`) es todo el transporte:
 
-- Cambia stdin y stdout a UTF-8 (`:27-29`), para que la codificación no dependa de los ajustes de idioma de quien lo lanzó.
-- Lee `sys.stdin` línea a línea hasta que el cliente lo cierra (`:30`); las líneas vacías se saltan (`:31-32`).
-- Cada línea es JSON, clasificada en tres clases: `notifications/cancelled` va a `worker.cancel_call` con el id de petición (`:35-37`); un `tools/call` con id de texto o número se registra (`worker.CALLS[id] = Event()`) y se encola (`:38-44`); todo lo demás lo responde `protocol.handle` en el acto (`:45`), en el hilo que lee.
-- Una línea que no es JSON recibe `-32700 parse error`, `id: null` (`:46-47`). Cualquier otra excepción de `protocol.handle` se registra como `internal error <NombreDeExcepción>` y se responde `-32603 internal error` (`:48-50`): un mensaje malo no detiene el servidor.
-- Cuando stdin se cierra corre `worker.stop_worker()` (`:53`): las llamadas encoladas terminan y luego el hilo acaba ([límite 3](./limites.md)).
+- Cambia stdout a UTF-8 (`:27-28`) y lee stdin como bytes, decodificando cada línea como UTF-8 (`:29-34`), para que la codificación no dependa de los ajustes de idioma de quien lo lanzó. Una línea que no es UTF-8 recibe `-32700` y el servidor sigue.
+- Lee stdin línea a línea hasta que el cliente lo cierra (`:29`); las líneas vacías se saltan (`:35-36`).
+- Cada línea es JSON, clasificada en tres clases: `notifications/cancelled` va a `worker.cancel_call` con el id de petición (`:39-41`); un `tools/call` con id de texto o número se registra (`worker.CALLS[id] = Event()`) y se encola (`:42-48`); todo lo demás lo responde `protocol.handle` en el acto (`:49`), en el hilo que lee.
+- Una línea que no es JSON recibe `-32700 parse error`, `id: null` (`:50-51`). Cualquier otra excepción de `protocol.handle` se registra como `internal error <NombreDeExcepción>` y se responde `-32603 internal error` (`:52-54`): un mensaje malo no detiene el servidor.
+- Cuando stdin se cierra corre `worker.stop_worker()` (`:57`): las llamadas encoladas terminan y luego el hilo acaba ([límite 3](./limites.md)).
 - `send` escribe una línea JSON bajo un candado, así que el lector que responde un `ping` y el worker que envía progreso nunca mezclan bytes (`:9`, `:12-16`).
 
 ## HTTP

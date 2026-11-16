@@ -21,7 +21,7 @@ Los números son los de la figura; la prueba en [E11](./evidencia-cache-y-flujo.
 | 3 | **Muestreadores e Instruments escriben** | Dos bucles de fondo escriben `.rss.csv` y `.agx.csv` una vez por segundo mientras `xctrace` escribe el `.trace` |
 | 4 | **El script lanza el informe** | `python3 -I perf_report.py <trace> --label <stem> --out <folder>` |
 | 5 | **El informe escribe las tablas y luego un primer resumen** | Tabla de memoria (`perf_report.py:745`), de fotogramas (`:831`), luego el `.json` (`:836`) |
-| 6 | **El script borra el `.trace`** | Salvo con `KEEP_TRACE=1`; luego aplica `KEEP_RUNS` si está fijado |
+| 6 | **El script borra el `.trace`** | Salvo con `KEEP_TRACE=1`; luego aplica `KEEP_RUNS` si está fijado (quita los demás archivos de las corridas viejas, nunca su `.trace`; ver [Retención](./retencion.md)) |
 | 7 | **El script suelta el candado** | Al salir |
 | 8 | **El servidor termina** | `recording.finish` añade `layer`, `context`, `tier`, aplica el límite de disco si no corre otra grabación y **reescribe** el `.json` |
 

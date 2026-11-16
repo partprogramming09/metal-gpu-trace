@@ -41,7 +41,7 @@ The two defaults for the runs folder differ: a server recording and a hand recor
 
 Files that exist only while recording: `<run>.validation.log` (Metal validation on; removed at `perf_record.sh:161`) and leftovers of an interrupted table write (`<table>.csv.gz.<hex>.tmp`, see [When it fails](./when-it-fails.md)).
 
-![A table with one row per kind of file in a run and four columns: who writes it, what happens at the end of a run, what KEEP_RUNS does and what METAL_TRACE_MAX_DISK_MB does. Only KEEP_RUNS ever removes a summary; baselines.json and the folder mark are never removed.](./img/data-files-per-run.png)
+![A table with one row per kind of file in a run and four columns: who writes it, what happens at the end of a run, what KEEP_RUNS does and what METAL_TRACE_MAX_DISK_MB does. Only KEEP_RUNS ever removes a summary, and only the quota removes a .trace; baselines.json and the folder mark are never removed.](./img/data-files-per-run.png)
 *Figure 1. The files of one run and what each pruning removes. HTML source: `docs/guides/data-and-lifecycle/img/data-files-per-run.html`.*
 
 ## The tables and the samplers

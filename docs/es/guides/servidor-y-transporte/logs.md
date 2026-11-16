@@ -14,7 +14,7 @@ El docstring y el README dicen "the one stderr line per tool call"; el código t
 |---|---|---|
 | `metal-trace: <herramienta> ok in <s> s` o `... error in <s> s` | Terminó una llamada (`error` = un resultado `isError`) | `worker.py:171` |
 | `metal-trace: serving http://127.0.0.1:<puerto>/mcp` | Arrancó HTTP | `http_transport.py:191` |
-| `metal-trace: internal error <NombreDeExcepción>` | Excepción en `protocol.handle` (lector stdio, manejador HTTP) o `protocol.answer` (worker) | `stdio.py:49`, `http_transport.py:166`, `protocol.py:196` |
+| `metal-trace: internal error <NombreDeExcepción>` | Excepción en `protocol.handle` (lector stdio, manejador HTTP) o `protocol.answer` (worker) | `stdio.py:53`, `http_transport.py:166`, `protocol.py:196` |
 | `metal-trace: reply to <id> failed: <NombreDeExcepción>` | El worker no pudo escribir una respuesta | `worker.py:74` |
 | `metal-trace: client closed the connection` | HTTP: el cliente se fue durante la escritura | `http_transport.py:106` |
 

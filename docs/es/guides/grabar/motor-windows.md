@@ -52,7 +52,7 @@ consecutivos: un salto de varios fotogramas se descarta, no se reparte en partes
 | 4 | **El bucle** | Una vez por segundo: toma una muestra del working set (`rss.csv`), mira el plazo y la señal de cancelar, y se detiene antes si el programa terminó solo. Progreso cada 5 s | `:673-705` |
 | 5 | **Detener** | Detiene el hilo de DWM; espera hasta 15 s a PresentMon y lo mata si no se detiene; al cancelar o pasarse del plazo, mata el árbol del programa, borra todo archivo que empiece por el nombre de la corrida y lanza `the recording was cancelled; nothing was saved` o `the recording took over N s and was stopped; nothing was saved` (`:744-746`). Si la grabación terminó y el programa sigue vivo, lo termina, y luego mata su árbol | `:707-757` |
 | 6 | **Qué fotogramas** | La tabla de arriba | `:759-844` |
-| 7 | **Escribir** | La tabla `frames.csv.gz`, las estadísticas (números de ritmo de `perf_report.frame_pacing`, la función que usa macOS, `:489`), el resumen, el bloque `common`, el `.json`, y `KEEP_RUNS` con su propio `clean_runs` (`:503-518`, `:921-924`) | `:846-927` |
+| 7 | **Escribir** | La tabla `frames.csv.gz`, las estadísticas (números de ritmo de `perf_report.frame_pacing`, la función que usa macOS, `:489`), el resumen, el bloque `common`, el `.json`, y `KEEP_RUNS` con su propio `clean_runs` (`:503-521`, `:924-926`; salta el `.trace`) | `:846-927` |
 | 8 | **Terminar** | De vuelta en `record_run`, `finish` añade `layer`, `context`, `tier` y el límite de disco | `recording.py:385` |
 
 Un `finally` corre siempre que la grabación no tuvo éxito: detiene el hilo de DWM y PresentMon, mata el programa que

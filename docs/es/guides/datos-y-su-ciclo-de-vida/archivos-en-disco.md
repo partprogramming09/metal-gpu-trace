@@ -41,7 +41,7 @@ Los dos valores por defecto de la carpeta de corridas difieren: una grabación d
 
 Archivos que existen solo mientras graba: `<run>.validation.log` (con validación de Metal; se borra en `perf_record.sh:161`) y restos de una escritura de tabla interrumpida (`<table>.csv.gz.<hex>.tmp`, ver [Cuando falla](./cuando-falla.md)).
 
-![Una tabla con una fila por tipo de archivo de una corrida y cuatro columnas: quién lo escribe, qué pasa al final de una corrida, qué hace KEEP_RUNS y qué hace METAL_TRACE_MAX_DISK_MB. Solo KEEP_RUNS borra alguna vez un resumen; baselines.json y la marca de la carpeta no se borran nunca.](./img/data-files-per-run.png)
+![Una tabla con una fila por tipo de archivo de una corrida y cuatro columnas: quién lo escribe, qué pasa al final de una corrida, qué hace KEEP_RUNS y qué hace METAL_TRACE_MAX_DISK_MB. Solo KEEP_RUNS borra alguna vez un resumen, y solo la cuota borra un .trace; baselines.json y la marca de la carpeta no se borran nunca.](./img/data-files-per-run.png)
 *Figura 1. Los archivos de una corrida y qué borra cada poda. Fuente HTML: `docs/es/guides/datos-y-su-ciclo-de-vida/img/data-files-per-run.html`.*
 
 ## Las tablas y los muestreadores

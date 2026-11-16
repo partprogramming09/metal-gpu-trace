@@ -87,7 +87,7 @@ $ jq -n --slurpfile a a2-proof-first_20261115-085621.json --slurpfile b a2-proof
 {"fps_floor_with_3pct_margin":102.238,"run_fps":102.1,"verdict":"worse","gpu_ms_ceiling":6.1151100000000005,"run_gpu_ms":5.86}
 ```
 
-`perf_compare` daría el primer bloque (más una entrada `unpresented` que nombra a `b`, y ningún `too_short`: 153 no es menos de 100). Para `perf_check` contra una referencia hecha solo de la primera corrida, los FPS están bajo el suelo (102.1 < 102.238), así que el veredicto sería `regressed`; los ms de GPU por fotograma (5.86 bajo 6.115) y las cuentas de encoders (ambas corridas tienen p50 2 y 1, de los `encoders` de los resúmenes) son `same`. Esa referencia tiene `spread_pct` 0: es el [límite 8](./limites.md) y la razón de que `perf_baseline` pida varias corridas. Los resultados son **probables** (código leído, no ejecutado).
+`perf_compare` daría el primer bloque (más una entrada `unpresented` que nombra a `b`, y ningún `too_short`: 153 no es menos de 100). Para `perf_check` contra una referencia hecha solo de la primera corrida, los FPS están bajo el suelo (102.1 < 102.238), así que el veredicto sería `regressed`; los ms de GPU por fotograma (5.86 bajo 6.115) y las cuentas de encoders (ambas corridas tienen p50 2 y 1, de los `encoders` de los resúmenes) son `same`. Esa referencia tiene `spread_pct` 0: es el [límite 8](./limites.md) y la razón de que `perf_baseline` pida varias corridas. Los resultados son **probables** (código leído, no ejecutado). Medido antes de 53f742b, cuando `perf_check` no tenía `note`; desde entonces este caso de una sola corrida añade uno (`analysis.py:378-380`), y el veredicto no cambia.
 
 ## E7 `missing_tables`, ruido y diagnóstico a mano {#e7}
 
