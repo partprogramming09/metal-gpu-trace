@@ -11,7 +11,7 @@ export default defineConfig({
   description: descripcion,
   cleanUrls: true,
   // Plans and internal notes are never published; templates are copied, not published; README.md is the index for people browsing the repository
-  srcExclude: ['README.md', 'plans/**', 'estado.md', 'research/**', 'guides/_plantilla-*.md', 'adr/_plantilla.md', 'fallos/_plantilla.md'],
+  srcExclude: ['README.md', 'plans/**', 'estado.md', 'research/**'],
   lastUpdated: true,
   head: [
     ['meta', { property: 'og:title', content: titulo }],
