@@ -27,9 +27,11 @@ export default defineConfig({
       '/guides/': [{ text: 'Guides', items: [
         { text: 'What this is about', link: '/guides/' },
         { text: 'Data and its lifecycle', link: '/guides/data-and-lifecycle' },
+        { text: 'Recording', link: '/guides/recording' },
       ] }],
       '/es/guides/': [{ text: 'Guías (español)', items: [
         { text: 'Datos y su ciclo de vida', link: '/es/guides/datos-y-su-ciclo-de-vida' },
+        { text: 'Grabar', link: '/es/guides/grabar' },
       ] }],
     },
     search: {

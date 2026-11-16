@@ -18,5 +18,7 @@ ADR status: proposed · accepted · rejected · superseded by NNNN.
 | [guides/run-from-a-clone.md](guides/run-from-a-clone.md) | Commands to run the server, the scripts and the checks from a clone |
 | [guides/data-and-lifecycle.md](guides/data-and-lifecycle.md) | What a recording leaves on disk, the summary key by key, the two retention settings, the cache and the lock |
 | [es/guides/datos-y-su-ciclo-de-vida.md](es/guides/datos-y-su-ciclo-de-vida.md) | The same guide in Spanish |
+| [guides/recording.md](guides/recording.md) | The path of one recording, why one at a time and 30 s under Wine, what preflight checks and says, the test programs and their pins, the Windows engine, what happens when it fails |
+| [es/guides/grabar.md](es/guides/grabar.md) | The same guide in Spanish |
 | [../tests/golden/README.md](../tests/golden/README.md) | What the golden files pin and how to re-record them |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) · [../SECURITY.md](../SECURITY.md) | How to send a change · how to report a vulnerability |
