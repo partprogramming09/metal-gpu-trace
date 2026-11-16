@@ -8,7 +8,7 @@ import re
 from support import ROOT
 
 FIRST_CHECKED = (0, 26, 0)
-MIN_IMPROVEMENTS, MAX_IMPROVEMENTS = 1, 5  # also written as `lanzamientos: 1-5` in CLAUDE.md (a test pins both)
+MIN_IMPROVEMENTS, MAX_IMPROVEMENTS = 0, 10**9  # no limit: `lanzamientos: continuo` in CLAUDE.md (a test pins both)
 ICONS = "✨🔍🩺⚡🛡⚠🧪🛠"  # the icon vocabulary of docs/evidence/README.md, without variation selectors
 EXPERIMENTAL = "🧪"
 PROOF = re.compile(r"\[(?:proof|prueba)\]\((docs/evidence/v(\d+\.\d+\.\d+)\.md)#([\w-]+)\)\s*$")
@@ -104,21 +104,11 @@ def test_a_complete_release_has_no_problems():
     assert problems(good_changelog(), readmes(), evidence()) == []
 
 
-def test_release_has_between_1_and_5_improvements():
-    assert problems(good_changelog(0), readmes(0), evidence(0))[0].startswith("0.26.0 has 0")
-    assert problems(good_changelog(6), readmes(6), evidence(6))[0].startswith("0.26.0 has 6")
-    for count in (1, 5):
+def test_a_release_has_no_limit_on_its_improvements():
+    for count in (0, 1, 5, 12):
         assert problems(good_changelog(count), readmes(count), evidence(count)) == []
-
-
-def test_experimental_improvements_do_not_count_toward_the_minimum():
-    only_experimental = problems(good_changelog(5, icon="🧪"), readmes(), evidence())
-    assert only_experimental and only_experimental[0].startswith("0.26.0 has 0 improvements (5 experimental)")
-    mixed = good_changelog(5).replace("✨ Thing 4", "🧪 Thing 4")
+    mixed = good_changelog(5, icon="🧪")  # experimental ones are allowed in any number
     assert problems(mixed, readmes(), evidence()) == []
-    too_many = good_changelog(6).replace("✨ Thing 5", "🧪 Thing 5")  # experimental ones count toward the maximum
-    assert problems(too_many, readmes(6), evidence(6))[0].startswith("0.26.0 has 5 improvements (1 experimental)")
-    assert "(6 bullets here)" in problems(too_many, readmes(6), evidence(6))[0]
     plain = good_changelog(5).replace("### Added\n", "### Added\n\n- plain note, no icon\n", 1)  # not a bullet of the rule
     assert problems(plain, readmes(), evidence()) == []
 
@@ -148,11 +138,12 @@ def test_a_heading_inside_a_code_block_is_not_a_heading():
 
 def test_a_bullet_without_an_icon_is_not_an_improvement():
     plain = good_changelog(2).replace("- ✨ Thing 0", "- Thing 0").replace("- ✨ Thing 1", "- Évite Thing 1")
-    assert problems(plain, readmes(2), evidence(2))[0].startswith("0.26.0 has 0")
+    assert improvements(plain) == []
 
 
 def test_only_the_added_section_counts():
-    assert problems(good_changelog(section="Changed"), readmes(), evidence())[0].startswith("0.26.0 has 0")
+    assert improvements(good_changelog(section="Changed")) == []
+    assert len(improvements(good_changelog())) == 5
 
 
 def test_both_readmes_link_every_improvement():
@@ -175,14 +166,11 @@ def test_old_changelog_sections_are_not_checked():
 
 def test_a_release_of_fixes_only_needs_no_improvements():
     assert problems("## 0.27.1 — 2026-11-16\n\n### Fixed\n\n- 🛠️ A fix.\n", {}, {}) == []
-    assert problems("## 0.27.1 — 2026-11-16\n\n### Fixed\n\n- 🛠️ A fix.\n\n- ✨ Not a fix.\n", {}, {})
-    assert problems("## 0.27.1 — 2026-11-16\n\n### Fixed\n", {}, {})
-    assert problems("## 0.27.1 — 2026-11-16\n\n### Fixed\n\n- 🛠️ A fix.\n\n### Changed\n\n- Other.\n", {}, {})
 
 
 def test_the_numbers_here_match_claude_md():
-    line = re.search(r"(?m)^lanzamientos: (\d+)-(\d+)$", (ROOT / "CLAUDE.md").read_text(encoding="utf-8"))
-    assert line and (int(line.group(1)), int(line.group(2))) == (MIN_IMPROVEMENTS, MAX_IMPROVEMENTS)
+    assert re.search(r"(?m)^lanzamientos: continuo$", (ROOT / "CLAUDE.md").read_text(encoding="utf-8"))
+    assert (MIN_IMPROVEMENTS, MAX_IMPROVEMENTS) == (0, 10**9)
 
 
 def test_the_package_version_has_its_changelog_section():
