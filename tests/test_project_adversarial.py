@@ -90,6 +90,20 @@ def test_load_refuses_lone_surrogates_everywhere(tmp_path):
         refused(write(tmp_path, body))
 
 
+def test_a_lone_surrogate_in_runs_is_refused_even_when_the_filesystem_takes_it(tmp_path):
+    """Windows accepts a lone surrogate as a folder name (macOS and Linux refuse it): the check must not rely on that."""
+    saved = project.checked
+    project.checked = lambda *args: tmp_path / "taken"  # what a filesystem that takes the name does
+    try:
+        try:
+            project.runs_folder("\ud800", tmp_path, tmp_path, "m")
+        except paths.ToolError:
+            return
+        raise AssertionError("a lone surrogate in \"runs\" must be refused")
+    finally:
+        project.checked = saved
+
+
 def test_load_refuses_path_characters_in_name_and_baseline(tmp_path):
     for field in ("name", "baseline"):
         for value in ("..", ".", "a/b", "a\\b", "../x", "/", "a∕b", "a／b", "a b", "a\tb", "a\nb", "",
