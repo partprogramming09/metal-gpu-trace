@@ -818,3 +818,53 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
             "display_synced_hz": synced, "gpu_idle": s.get("gpu_idle"), "gpu_activity": s.get("gpu_activity"), "by_label": encoders["by_label"],
             "too_short": frames < 100, **({"unpresented": stalled} if stalled else {}),
             "suggested_actions": suggested_actions(s, run, 0, lambda: _frames_or_none(run))}
+
+
+@reads_recordings
+def tool_perf_memory_breakdown(run, top=10):
+    """Breaks down the Metal resource allocations of a saved recording by type (texture, buffer, heap...), from its
+    summary and without reading the trace: for each type what was allocated (`count`, `mib`, `mean_mib`), what is
+    still live at the end, `live_share_pct` and `gone` (allocated and not live). A small live share of a large
+    allocated size is churn: resources created and dropped again, the pattern behind a memory spike or a stall. Also
+    the totals, the live memory by mode (Private, Shared...), what was freed, `allocated_mib_per_live_mib` (how many
+    times over the live memory was allocated), `events_per_s_after_3s` (the allocation rate once the start-up is over)
+    and the peak Metal memory. `top` keeps that many types, the largest allocated first. Needs a recording with the
+    resource table (a Metal one, not at tier light)."""
+    if type(top) is not int or top < 1:
+        raise paths.ToolError("top is a whole number of 1 or more")
+    s = paths.read_object(paths.run_path(run), f"{run}.json")
+    found = s.get("resource_allocations")
+    if not found or not found.get("events"):
+        windows = (s.get("device") or {}).get("platform") == "Windows"
+        raise paths.ToolError(f"{run} has no resource allocations: " + (
+            "a Windows recording has no Metal resource table" if windows else
+            "record it again with the Metal resource allocation table (not at tier light)"))
+    live = found.get("live")  # absent in a run recorded before 0.27.0: unknown, not zero
+    good = lambda v: type(v) in (int, float) and math.isfinite(v) and v >= 0  # not a bool, NaN or negative size
+    sizes = [found["events"], found["mib"], *(v for t in found["by_type"].values() for v in (t["count"], t["mib"])),
+             *((live["count"], live["mib"], *(v for t in live["by_type"].values() for v in (t["count"], t["mib"])))
+               if live else ())]
+    if not all(good(v) for v in sizes) or not isinstance(found.get("per_second", []), list):
+        raise TypeError("resource_allocations holds a number that cannot be a count or a size")  # reads_recordings
+    live_types = (live or {}).get("by_type") or {}
+    types = []
+    for name, got in sorted(found["by_type"].items(), key=lambda kv: -kv[1]["mib"])[:top]:
+        here = (live_types.get(name) or {"count": 0, "mib": 0.0}) if live else None
+        types.append({"type": name,
+                      "allocated": {"count": got["count"], "mib": got["mib"],
+                                    "mean_mib": round(got["mib"] / got["count"], 3) if got["count"] else None},
+                      "live": {"count": here["count"], "mib": here["mib"]} if here else None,
+                      "live_share_pct": round(100 * here["mib"] / got["mib"], 1) if here and got["mib"] else None,
+                      "gone": max(got["count"] - here["count"], 0) if here else None})
+    after, seconds = found.get("after_3s") or {}, len(found.get("per_second") or []) - 3
+    return {"run": run, "events": found["events"], "allocated_mib": found["mib"], "per_frame": found.get("per_frame"),
+            "types": types,
+            "live": {"count": live.get("count"), "mib": live.get("mib"), "by_mode": live.get("by_mode") or {}} if live else None,
+            "freed": found.get("freed"), "freed_before_recording": found.get("freed_before_recording"),
+            "allocated_mib_per_live_mib": round(found["mib"] / live["mib"], 2) if live and live.get("mib") else None,
+            "events_per_s_after_3s": round(after["count"] / seconds, 1) if after.get("count") is not None and seconds > 0 else None,
+            "peak_metal_mib": (s.get("metal_memory_mib") or {}).get("peak"),
+            "how_to_read": ("live is a lower bound (what was allocated before the recording does not show); a type with a "
+                           "large allocated size and a small live share is created and dropped over and over; events "
+                           "without a resource id are never counted as live, so `gone` can include them" if live else
+                           "this recording predates the live numbers: record it again to see what stayed allocated")}

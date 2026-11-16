@@ -975,6 +975,118 @@ def test_common_survives_hostile_fields():
     assert analysis.memory_pressure_change(unmeasured, ok) is None  # not measured is not measured differently
 
 
+def _allocations():
+    """The `resource_allocations` of a summary: 1 000 events over 10 s, textures the largest and mostly recycled."""
+    return {"events": 1000, "mib": 800.0, "per_frame": 2.5,
+            "by_type": {"Buffer": {"count": 600, "mib": 100.0}, "Texture": {"count": 380, "mib": 690.0},
+                        "Heap": {"count": 20, "mib": 10.0}},
+            "live": {"count": 60, "mib": 120.0, "by_mode": {"Private": {"count": 40, "mib": 100.0}, "Shared": {"count": 20, "mib": 20.0}},
+                     "by_type": {"Buffer": {"count": 40, "mib": 20.0}, "Texture": {"count": 15, "mib": 95.0},
+                                 "Heap": {"count": 5, "mib": 5.0}}},
+            "freed": {"count": 900, "mib": 650.0}, "freed_before_recording": 3,
+            "after_3s": {"count": 700, "mib": 500.0}, "per_second": [100] * 10}
+
+
+def test_memory_breakdown_groups_allocations_by_type(tmp_path):
+    """perf_memory_breakdown answers from the saved summary, no trace: each type's allocated and live size, how much of
+    what was allocated is still live (a low share is churn) and the allocation rate after the start-up."""
+    from metal_gpu_trace import analysis, config
+    (tmp_path / "m.json").write_text(json.dumps({"resource_allocations": _allocations(), "metal_memory_mib": {"peak": 140.0}}))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        got = analysis.tool_perf_memory_breakdown("m")
+        assert [t["type"] for t in got["types"]] == ["Texture", "Buffer", "Heap"], got["types"]  # largest allocated first
+        texture = got["types"][0]
+        assert texture["allocated"] == {"count": 380, "mib": 690.0, "mean_mib": 1.816}, texture
+        assert texture["live"] == {"count": 15, "mib": 95.0} and texture["live_share_pct"] == 13.8, texture
+        assert texture["gone"] == 365  # allocated and no longer live
+        assert got["live"]["count"] == 60 and got["live"]["by_mode"]["Private"]["mib"] == 100.0
+        assert got["freed"] == {"count": 900, "mib": 650.0} and got["freed_before_recording"] == 3
+        assert got["allocated_mib_per_live_mib"] == 6.67 and got["peak_metal_mib"] == 140.0
+        assert got["events_per_s_after_3s"] == 100.0, got  # 700 events over the 7 s after the third
+        assert [t["type"] for t in analysis.tool_perf_memory_breakdown("m", top=1)["types"]] == ["Texture"]
+        assert got["how_to_read"]
+    finally:
+        config.OUT = saved
+
+
+def test_memory_breakdown_of_a_run_without_live_numbers(tmp_path):
+    """A run recorded before `live` existed (found on a real one): what is live is unknown, never zero."""
+    from metal_gpu_trace import analysis, config
+    old = {k: v for k, v in _allocations().items() if k not in ("live", "freed", "freed_before_recording")}
+    (tmp_path / "old.json").write_text(json.dumps({"resource_allocations": old}))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        got = analysis.tool_perf_memory_breakdown("old")
+        assert got["live"] is None and got["allocated_mib_per_live_mib"] is None and got["freed"] is None, got
+        for t in got["types"]:
+            assert t["live"] is None and t["live_share_pct"] is None and t["gone"] is None, t
+        assert got["types"][0]["allocated"]["count"] == 380 and "record" in got["how_to_read"]
+    finally:
+        config.OUT = saved
+
+
+def test_memory_breakdown_refuses_numbers_that_cannot_be_right(tmp_path):
+    """NaN, a negative size, a boolean or a `per_second` that is not a list never reach the client as numbers."""
+    from metal_gpu_trace import analysis, config, paths
+    def run(**changes):
+        found = _allocations()
+        found.update(changes)
+        return {"resource_allocations": found}
+    nan = float("nan")
+    bad = {"nan": run(mib=nan), "inf": run(mib=float("inf")), "negative": run(mib=-5.0), "bool": run(events=True),
+           "type_nan": run(by_type={"Buffer": {"count": 1, "mib": nan}}),
+           "type_negative": run(by_type={"Buffer": {"count": -1, "mib": 1.0}}),
+           "live_nan": run(live={"count": 1, "mib": nan, "by_type": {}}),
+           "per_second_text": run(per_second="abcdef"), "per_second_map": run(per_second={"0": 1})}
+    for name, body in bad.items():
+        (tmp_path / f"{name}.json").write_text(json.dumps(body))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        for name in bad:
+            try:
+                analysis.tool_perf_memory_breakdown(name)
+            except paths.ToolError as error:
+                assert "not in the form" in str(error), (name, str(error))
+            else:
+                raise AssertionError(f"{name} should be a ToolError")
+        # edges that are valid: a start-up shorter than 3 s has no later rate; a type of zero resources has no mean
+        (tmp_path / "short.json").write_text(json.dumps(run(per_second=[5, 5, 5],
+                                                            by_type={"Buffer": {"count": 0, "mib": 0.0}})))
+        got = analysis.tool_perf_memory_breakdown("short")
+        assert got["events_per_s_after_3s"] is None and got["types"][0]["allocated"]["mean_mib"] is None, got
+    finally:
+        config.OUT = saved
+
+
+def test_memory_breakdown_says_why_it_cannot(tmp_path):
+    """A run without allocation events is a ToolError that says what to record; odd fields never become a crash."""
+    from metal_gpu_trace import analysis, config, paths
+    for name, body in (("none", {"gpu": {}}), ("zero", {"resource_allocations": {"events": 0}}),
+                       ("win", {"device": {"platform": "Windows"}, "gpu": {}}),
+                       ("odd", {"resource_allocations": {"events": 5, "by_type": [1]}})):
+        (tmp_path / f"{name}.json").write_text(json.dumps(body))
+    saved, config.OUT = config.OUT, tmp_path
+    try:
+        for name, why in (("none", "no resource allocations"), ("zero", "no resource allocations"), ("win", "Windows"),
+                          ("odd", "not in the form")):
+            try:
+                analysis.tool_perf_memory_breakdown(name)
+            except paths.ToolError as error:
+                assert why in str(error), (name, str(error))
+            else:
+                raise AssertionError(f"{name} should be a ToolError")
+        for bad in (0, -1, "x"):
+            try:
+                analysis.tool_perf_memory_breakdown("none", top=bad)
+            except paths.ToolError:
+                pass
+            else:
+                raise AssertionError(f"top={bad!r} should be a ToolError")
+    finally:
+        config.OUT = saved
+
+
 def test_old_summaries_read_in_every_tool(tmp_path):
     """A summary recorded before schema_version existed (generation 1, plain `.frames.csv`, no `tier`, no `retention`)
     goes through every tool that reads recordings without error; perf_runs lists its generation."""

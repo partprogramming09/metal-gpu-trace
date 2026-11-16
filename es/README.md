@@ -296,7 +296,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 
 ### Herramientas
 
-25 herramientas en cuatro grupos. Tu agente las elige; rara vez llamas a una tú. Cada fila empieza por para qué sirve y sigue con el detalle.
+26 herramientas en cuatro grupos. Tu agente las elige; rara vez llamas a una tú. Cada fila empieza por para qué sirve y sigue con el detalle.
 
 #### Grabar
 
@@ -319,6 +319,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 | `perf_baseline` | Guarda varias grabaciones iguales como referencia y dice cuánto varían solas. — Guarda varias grabaciones iguales como referencia con nombre y devuelve el rango que abarca cada cifra entre ellas y `spread_pct`, cuánto difieren corridas iguales (el ruido que un cambio tiene que superar); sola, lista las referencias. `skip_s` guarda cada corrida sin sus primeros segundos y `perf_check` aplica el mismo corte a la corrida que juzga |
 | `perf_history` | Sigue una cifra a lo largo de muchas grabaciones. — Sigue FPS, 1 % bajo, ms de GPU, tirones, hitches y MiB de Metal en las corridas cuyo nombre empieza por un prefijo, de la más antigua a la más reciente, con el cambio de la primera a la última |
 | `perf_diagnose` | Dice si el programa reparte el trabajo de la GPU en demasiadas piezas diminutas, como hacen las capas de traducción. — Dice si una grabación reparte su trabajo de GPU en demasiados encoders cortos, como hacen las capas de traducción, con encoders y command buffers por cuadro, las etiquetas con más tiempo de GPU y el tiempo ocioso de la GPU |
+| `perf_memory_breakdown` | Muestra qué tipos de recursos de Metal asigna y suelta un programa. — Desglosa las asignaciones de Metal de una grabación por tipo (textura, búfer, heap): asignado, aún vivo, cuánto se recicla y la tasa de asignación tras el arranque |
 
 #### Ir más a fondo
 

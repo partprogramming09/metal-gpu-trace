@@ -273,7 +273,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 
 ### Tools
 
-25 tools in four groups. Your agent picks them; you rarely call one yourself. Each row starts with what the tool is for, then the detail.
+26 tools in four groups. Your agent picks them; you rarely call one yourself. Each row starts with what the tool is for, then the detail.
 
 #### Record
 
@@ -296,6 +296,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `perf_baseline` | Saves several equal recordings as a reference and tells how much equal runs differ by themselves. — Saves several equal recordings as a named reference and returns the range each number spans across them and `spread_pct`, how much equal runs differ (the noise a change must beat); alone, lists the references. `skip_s` saves each run without its first seconds and `perf_check` applies the same cut to the run it judges |
 | `perf_history` | Follows one number across many recordings. — Follows FPS, 1% low, GPU ms, stutter, hitches and Metal MiB across the runs whose name starts with a prefix, oldest first, with the change from first to last |
 | `perf_diagnose` | Says whether the program splits GPU work into too many tiny pieces, as translation layers do. — Says whether a recording splits its GPU work into too many short encoders, as translation layers do, with encoders and command buffers per frame, the labels with the most GPU time and the GPU's idle time |
+| `perf_memory_breakdown` | Shows which kinds of Metal resources a program allocates and drops. — Breaks a recording's Metal allocations down by type (texture, buffer, heap): allocated, still live, how much was recycled and the allocation rate after start-up |
 
 #### Dig deeper
 
