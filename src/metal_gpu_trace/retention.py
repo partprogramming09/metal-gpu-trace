@@ -3,10 +3,13 @@ import os
 import shutil
 import stat
 
-# what may go, lightest loss first: the raw .trace, then an exported Chrome trace, then the per-frame and memory tables;
-# summaries (.json), baselines.json, panel.json and the .rss.csv / .agx.csv samplers are never removed
-TRACE, CHROME, TABLE = 0, 1, 2
-CURRENT_TRACE = 3  # the run just recorded keeps its .trace until nothing else is left to remove
+# what may go, lightest loss first: the raw .trace, then an exported Chrome trace (perf_export_trace rebuilds it from the
+# per-frame table), then the tables file (only trace_query reads it), then the per-frame and memory tables (perf_compare
+# with skip_s and perf_export_trace need them); summaries (.json), baselines.json, panel.json and the .rss.csv / .agx.csv
+# samplers are never removed
+TRACE, CHROME, TABLES_DB, TABLE = 0, 1, 2, 3
+CURRENT_TRACE = 4  # the run just recorded keeps its .trace until nothing else is left to remove
+TABLES_DB_SUFFIX = ".tables.sqlite"
 TABLE_SUFFIXES = (".frames.csv", ".frames.csv.gz", ".metal_memory.csv", ".metal_memory.csv.gz")
 
 
@@ -28,16 +31,18 @@ def size_of(path):
 
 
 def kind_of(name, current):
-    """Returns what a top-level name in the runs folder is for pruning (TRACE, CHROME, TABLE, CURRENT_TRACE), or None
+    """Returns what a top-level name in the runs folder is for pruning (TRACE, CHROME, TABLES_DB, TABLE, CURRENT_TRACE), or None
     when it must stay."""
     if name == current + ".trace":
         return CURRENT_TRACE
-    if name == current + ".chrome-trace" or name in (current + s for s in TABLE_SUFFIXES):
+    if name == current + ".chrome-trace" or name in (current + s for s in (*TABLE_SUFFIXES, TABLES_DB_SUFFIX, TABLES_DB_SUFFIX + ".part")):
         return None  # the current run's tables and export stay
     if name.endswith(".trace"):
         return TRACE
     if name.endswith(".chrome-trace"):
         return CHROME
+    if name.endswith((TABLES_DB_SUFFIX, TABLES_DB_SUFFIX + ".part")):  # a .part left by a killed recording
+        return TABLES_DB
     if name.endswith(TABLE_SUFFIXES):
         return TABLE
     return None

@@ -1009,7 +1009,9 @@ def test_context_names_no_branch_path_or_person(tmp_path):
     text = json.dumps(got)
     assert set(got) == {"git", "instruments"} and set(got["git"]) == {"commit", "dirty"}, got
     assert str(tmp_path) not in text and "branch" not in text and "/" not in text, text
-    assert not any("branch" in word or "--abbrev-ref" in word for argv in argvs for word in argv), argvs
+    # the folder under test is named after this test (pytest) and says "branch": only the words git was given count
+    assert not any("branch" in word or "--abbrev-ref" in word for argv in argvs for word in argv
+                   if str(tmp_path) not in word), argvs
 
 
 def test_context_change_says_whether_two_runs_share_a_context():

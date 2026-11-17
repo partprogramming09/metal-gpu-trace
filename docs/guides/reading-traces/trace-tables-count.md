@@ -1,6 +1,9 @@
 # `trace_tables` and `trace_count`
 
-**Reader:** people who explore a kept `.trace`, or who change these two tools. Reviewed 2026-11-16.
+**Reader:** people who explore a recording's tables (its kept `.trace`, or its tables file), or who change these two tools. Reviewed 2026-11-16.
+
+> **Since the tables file:** when the `.trace` is gone, both tools read `<run>.tables.sqlite`, which holds the tables the summary
+> read (`trace_count` says "not in this trace's tables file" for the others). See [the tables file](tables-file.md).
 
 Español: [`trace_tables` y `trace_count`](../../es/guides/leer-trazas/tablas-y-conteo.md)
 

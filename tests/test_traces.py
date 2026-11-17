@@ -4,6 +4,7 @@ import os
 from support import ROOT  # noqa: F401  (puts src/ on sys.path)
 
 from metal_gpu_trace import config, paths, perf_report, traces
+from test_tabledb import GPU, sample, store, use, xml_table  # noqa: E402
 
 
 def table(tmp_path, columns, rows):
@@ -143,3 +144,84 @@ def test_a_capture_file_that_is_a_link_is_not_read(tmp_path):
             raise AssertionError(f"{call.__name__} read a linked capture file")
     finally:
         config.READ = saved
+
+
+def test_same_rows_from_the_tables_file_as_from_the_export(tmp_path):
+    """The .trace is not there when the file is read, so there is no silent fall back to the export."""
+    rows = sample()
+    store(tmp_path, {"metal-gpu-intervals": (GPU, rows)})
+    saved_export, saved_out = perf_report.export, config.OUT
+    perf_report.export = lambda trace, xpath=None, **_: xml_table(tmp_path, GPU, rows, "e.xml")
+    paths_trace = paths.trace_path
+    paths.trace_path = lambda trace: tmp_path / "r.trace"
+    (tmp_path / "r.trace").mkdir()  # while the .trace is there the export is what answers
+    try:
+        exported = traces.tool_trace_query("r", "metal-gpu-intervals", limit=100)
+        exported_window = traces.tool_trace_query("r", "metal-gpu-intervals", window_ms=3)
+        exported_pid = traces.tool_trace_query("r", "metal-gpu-intervals", pid=9)
+        perf_report.export = lambda *a, **k: (_ for _ in ()).throw(AssertionError("the export was used"))
+        config.OUT = tmp_path
+        (tmp_path / "r.trace").rmdir()
+        from_file = traces.tool_trace_query("r", "metal-gpu-intervals", limit=100)
+        assert from_file == exported and from_file["total"] == 6, (from_file, exported)
+        assert traces.tool_trace_query("r", "metal-gpu-intervals", window_ms=3) == exported_window
+        assert traces.tool_trace_query("r", "metal-gpu-intervals", pid=9) == exported_pid
+        assert traces.tool_trace_query("r", "metal-gpu-intervals", limit=2, offset=4)["next_offset"] is None
+    finally:
+        perf_report.export, paths.trace_path, config.OUT = saved_export, paths_trace, saved_out
+
+
+def test_tables_and_counts_from_the_file(tmp_path):
+    store(tmp_path, {"metal-gpu-intervals": (GPU, sample()), "device-thermal-state-intervals": (("start",), [])})
+    saved = use(tmp_path)
+    try:
+        assert traces.tool_trace_tables("r") == {"tables": ["device-thermal-state-intervals", "metal-gpu-intervals"]}
+        got = traces.tool_trace_count("r", ["metal-gpu-intervals", "device-thermal-state-intervals", "time-profile"])["tables"]
+    finally:
+        config.OUT = saved
+    assert got["metal-gpu-intervals"] == {"rows": 6, "by_process": {"Game (7)": 4, "Other (9)": 2}}, got
+    assert got["device-thermal-state-intervals"]["rows"] == 0, got
+    assert got["time-profile"]["rows"] is None and "tables file" in got["time-profile"]["note"], got
+
+
+def test_neither_trace_nor_file_says_so(tmp_path):
+    saved = use(tmp_path)
+    try:
+        for call in (lambda: traces.tool_trace_tables("gone"), lambda: traces.tool_trace_count("gone"),
+                     lambda: traces.tool_trace_query("gone", "metal-gpu-intervals")):
+            try:
+                call()
+            except paths.ToolError as error:
+                assert "gone.trace" in str(error) and "gone.tables.sqlite" in str(error), error
+            else:
+                raise AssertionError("no error")
+    finally:
+        config.OUT = saved
+
+
+def test_declarative_arguments_need_the_tables_file(tmp_path):
+    """A run kept only as a .trace has no file to filter: the error says what to do, the plain query still exports."""
+    (tmp_path / "k.trace").mkdir()
+    saved = use(tmp_path)
+    try:
+        try:
+            traces.tool_trace_query("k", "metal-gpu-intervals", where=[{"column": "start", "op": "=", "value": 1}])
+        except paths.ToolError as error:
+            assert "tables file" in str(error), error
+        else:
+            raise AssertionError("no error")
+    finally:
+        config.OUT = saved
+
+
+def test_a_trace_that_is_there_keeps_the_export_path(tmp_path):
+    (tmp_path / "k.trace").mkdir()
+    store(tmp_path, {"metal-gpu-intervals": (("start",), [["<start>1</start>"]])}, label="k")
+    saved_export, saved = perf_report.export, use(tmp_path)
+    perf_report.export = lambda trace, xpath=None, **_: xml_table(tmp_path, ("start",), [["<start>2</start>"], ["<start>3</start>"]], "e.xml")
+    try:
+        assert traces.tool_trace_query("k", "metal-gpu-intervals")["total"] == 2
+        got = traces.tool_trace_query("k", "metal-gpu-intervals", where=[{"column": "start", "op": ">", "value": 0}])
+        assert got["total"] == 1, "a filter reads the tables file even when the .trace is there"
+    finally:
+        perf_report.export, config.OUT = saved_export, saved

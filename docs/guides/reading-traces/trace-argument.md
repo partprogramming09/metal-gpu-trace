@@ -10,7 +10,7 @@ Español: [El argumento `trace`](../../es/guides/leer-trazas/argumento-trace.md)
 
 ## How a `trace` argument is understood
 
-The argument is described as "a run name from perf_runs whose trace_kept is true, or the path of a .trace" (`registry.py:20`).
+The argument is described as "a run name from perf_runs whose trace_kept or tables_kept is true, or the path of a .trace" (`registry.py:20`).
 `paths.trace_path` (`:83-91`) decides which:
 
 | The text is... | It becomes | If it fails |
@@ -21,7 +21,8 @@ The argument is described as "a run name from perf_runs whose trace_kept is true
 Consequence (**confirmed**, **not run**): `foo.trace` has no `/`, so it is a run name looked up in the runs folder. A `.trace`
 elsewhere needs a path with a directory (`./foo.trace`, or an absolute path inside `METAL_TRACE_READ`). The folder must exist:
 `export` raises `no recording at <name>: perf_record.sh deletes the .trace once its summary is written, unless KEEP_TRACE=1`
-(`perf_report.py:52-54`): what a client sees for a deleted trace.
+(`perf_report.py:52-54`), which the three table tools turn into `no recording at <name>.trace and no <name>.tables.sqlite: ...`
+(`traces.missing`). When the `.trace` is gone but the run's [tables file](tables-file.md) exists, they read that instead.
 
 ## What a `.trace` looks like from here
 

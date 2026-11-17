@@ -24,7 +24,7 @@ Xcode installed to record.
 
 1. **Install Xcode** from the App Store. Open the Terminal app and type `xcrun xctrace version`: it should print a version.
 2. **Install uv**, a tool that downloads and runs the server for you. In the Terminal: `brew install uv` (needs Homebrew, see brew.sh).
-3. **Connect the server to your agent.** An MCP server is a small helper program that gives your AI agent new tools. For Claude Code, paste this in the Terminal (`METAL_TRACE_OUT` is the folder where recordings are saved): `claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -- uvx metal-gpu-trace`. For other AI apps see [MCP server](#mcp-server).
+3. **Connect the server to your agent.** An MCP server is a small helper program that gives your AI agent new tools. Run `uvx metal-gpu-trace init` to set up every AI app it finds at once, or, for Claude Code, paste this in the Terminal (`METAL_TRACE_OUT` is the folder where recordings are saved): `claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -- uvx metal-gpu-trace`. For other AI apps see [MCP server](#mcp-server).
 4. **Ask:** "Record my app for 30 seconds, then tell me its FPS and how long the GPU takes per frame." For a Windows program under Wine (software that runs Windows programs on a Mac), also add `-e METAL_TRACE_WINE=/path/to/wine` to the command of step 3 (see [Install](#install)).
 
 ## Words used here
@@ -40,7 +40,7 @@ Xcode installed to record.
 - **translation layer**: software that lets a program written for another graphics API (Direct3D, Vulkan) run on Metal, such as DXMT, Mullion or MoltenVK.
 - **Wine**: software that runs Windows programs on a Mac.
 - **Metal System Trace**: the Instruments recording template that logs what the GPU does; this tool records with it.
-- **.trace**: the file Instruments writes. It is large (tens to hundreds of MB), so it is deleted after the summary unless you set `KEEP_TRACE=1`.
+- **.trace**: the file Instruments writes. It is large (tens to hundreds of MB), so it is deleted after the summary unless you set `KEEP_TRACE=1`. The tables the summary read stay in `<run>.tables.sqlite`, which `trace_query` can filter without the `.trace` (`PERF_TABLES=0` skips it).
 - **.gputrace**: a Metal capture of the draw commands of a few frames; this tool reads it without Xcode.
 - **baseline**: a saved reference made of several equal recordings. It shows how much a number moves by itself, so a later run can be judged against it.
 - **regression**: a change that makes the program worse than its baseline, for example FPS falling under the baseline's range by more than the margin.
@@ -71,7 +71,13 @@ run before calling a difference real.
 
 ## What's new
 
-Version 0.27.3. Each item links to the command that was run and its real output.
+Version 0.28.0. Each item links to the command that was run and its real output.
+
+- ✨ **Shorter answers: `fields`.** Every tool takes an optional `fields`, a list of dotted paths that cuts the result before it is sent (`perf_runs` with `fields=["fps"]` returns only the fps of each run); a path that matches nothing is named in `_meta.fields_missing`. `tools/list` is also shorter, 33 072 characters instead of 45 186. [Proof](docs/evidence/v0.28.0.md#every-tool-takes-fields-and-the-tool-list-is-shorter)
+- ✨ **One command to set the server up.** `metal-gpu-trace init` adds the server to Claude Code, Claude Desktop, Cursor and Codex CLI with absolute paths; `--dry-run` shows the change first, and an existing config is merged (other servers kept) with a `.bak` copy. [Proof](docs/evidence/v0.28.0.md#metal-gpu-trace-init-sets-the-server-up-in-one-command)
+- ✨ **The tables outlive the `.trace`.** Every recording keeps its tables in `<run>.tables.sqlite`, and `trace_query` gains `where`, `columns`, `order_by`, `group_by` and `aggregates`: the same rows as the `.trace` in 0.02 s instead of 3.8 s, and a count per channel in one call. Tested on a real Metal recording, not on Windows. [Proof](docs/evidence/v0.28.0.md#the-tables-are-kept-in-a-sqlite-file-and-queried-with-filters)
+
+Version 0.27.3, still current:
 
 - ✨ **One summary shape on both platforms.** Every new summary (`schema_version` 3) has a `common` block with frame
   pacing, memory pressure and graphics API, the same keys on macOS and Windows and a `source` per number; what cannot be
@@ -180,7 +186,8 @@ The server reads these environment variables:
 | `WINEPREFIX` | The Wine prefix used when the call names none; `~/.wine` otherwise. |
 | `METAL_TRACE_READ` | More directories the tools may read, separated by `:`. |
 | `METAL_TRACE_LOG` | `off` silences the one-line stderr log per call. |
-| `KEEP_TRACE` | `1` keeps each recording's `.trace`, for `trace_tables`, `trace_query` or Instruments. |
+| `KEEP_TRACE` | `1` keeps each recording's `.trace`, for Instruments or the raw export (the tables file already answers `trace_tables`, `trace_count` and `trace_query`). |
+| `PERF_TABLES` | `0` skips writing `<run>.tables.sqlite`. |
 | `METAL_TRACE_ALLOW_LOCKED` | `1` records with the screen locked; without it a recording is refused, because a locked session leaves the program's frames unpaced by the display. |
 | `METAL_TRACE_MAX_DISK_MB` | Size limit of the runs folder, in MiB (a whole number of 1 or more): after each recording the oldest `.trace`, then `.chrome-trace`, then per-frame and memory tables are removed until it fits; summaries and `baselines.json` never. The new recording's `.trace` goes last, and its summary says what was removed (`retention`). |
 | `KEEP_RUNS` | Keeps only the newest N recordings; `baselines.json` is never removed (nor is the `panel.json` that 0.24.0 and older left). An older recording's `.trace` is never removed by it: only `METAL_TRACE_MAX_DISK_MB` frees one, and without that variable they stay. |
@@ -211,6 +218,24 @@ each project's folder on its own. `runs` is relative to the file, starts with `~
 Any other key, or a wrong value, is an error that every tool reports, naming the field, until the file is fixed.
 `project_info` says which project is active and where its folder comes from. Without a project file nothing changes:
 `METAL_TRACE_OUT`, or `./perf-runs`, is used as before.
+
+### One command: `init`
+
+`uvx metal-gpu-trace init` finds the AI apps installed on this Mac (Claude Code, Claude Desktop, Cursor, Codex CLI)
+and adds the server to each, with the absolute path of `uvx` and `METAL_TRACE_OUT` set to `~/perf-runs`, resolved.
+
+```sh
+uvx metal-gpu-trace init --dry-run                       # show what it would write, write nothing
+uvx metal-gpu-trace init --client cursor --wine /path/to/wine
+```
+
+Options: `--client claude-code|claude-desktop|cursor|codex|vscode`, `--wine DIR` (a Wine directory holding
+`bin/wine`; `METAL_TRACE_WINE` is used when set), `--out DIR`, `--dry-run`, `--project`. An existing JSON config is
+merged (your other servers stay) and copied to `<file>.bak` first; a file that is not valid JSON is refused untouched.
+For Codex the block is appended to `config.toml` when missing, and only shown when `[mcp_servers.metal-trace]` is
+already there. Claude Code is registered with `claude mcp add`, not by editing its file. VS Code needs `--project`
+(it writes `.vscode/mcp.json`); `--project` files hold absolute paths of your machine, so keep them out of git. Paths
+of apps on other systems are not verified yet: init says "not supported yet" there. Restart the app afterwards.
 
 ### Claude Code
 
@@ -283,7 +308,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 
 ### Tools
 
-26 tools in four groups. Your agent picks them; you rarely call one yourself. Each row starts with what the tool is for, then the detail.
+26 tools in four groups. Your agent picks them; you rarely call one yourself. Every tool also takes an optional `fields`, a list of dotted paths such as `common.frame_pacing.fps_1pct_low`: the result keeps only those (on a page, in each row), so the agent reads a few numbers instead of a whole summary. A path that matches nothing is listed in `_meta.fields_missing`. Each row starts with what the tool is for, then the detail.
 
 #### Record
 
@@ -315,7 +340,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `perf_export_trace` | Exports a recording's frames to a file that Perfetto or Chrome can draw. — Writes a recording's GPU frames as `<run>.chrome-trace`, one slice per frame, for ui.perfetto.dev or chrome://tracing |
 | `trace_tables` | Lists the tables of a kept `.trace`. — Lists the tables of a kept `.trace`, named by its run or its path |
 | `trace_count` | Counts the rows of several tables of a kept `.trace`. — Counts the rows of several tables of a kept `.trace`, in all and per process; by default the tables that matter for a translation layer (GPU intervals, encoders, compiler spills, compiled shaders, allocations, counters, Time Profiler), so an empty one shows before reading it |
-| `trace_query` | Returns rows of one table of a kept `.trace`. — One page of rows of one table, optionally one process; with `window_ms`, one page of time windows (`count` and summed duration) in `rows` instead |
+| `trace_query` | Returns rows of one table of a recording, from its `.trace` or its tables file. — One page of rows of one table, optionally one process; with `window_ms`, one page of time windows (`count` and summed duration) in `rows` instead; with `where`, `columns`, `order_by`, `group_by`, `aggregates`, filtered rows or groups of the tables file |
 | `capture_summary` | Summarizes a `.gputrace` capture. — Summarizes a `.gputrace`; lists its 100 most frequent calls out of `calls_total` |
 | `capture_diff` | Compares two `.gputrace` captures. — Counts of each confirmed Metal call in both (debug markers not counted), their difference, and the debug groups whose calls differ |
 | `capture_records` | Returns the records of a `.gputrace` capture, one page at a time. — One page of a `.gputrace`'s records |

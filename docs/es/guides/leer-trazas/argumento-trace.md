@@ -10,7 +10,7 @@ English: [The `trace` argument](../../../guides/reading-traces/trace-argument.md
 
 ## Cómo se entiende el argumento `trace`
 
-El argumento se describe como «un nombre de corrida de perf_runs cuyo trace_kept es verdadero, o la ruta de un .trace»
+El argumento se describe como «un nombre de corrida de perf_runs cuyo trace_kept o tables_kept es verdadero, o la ruta de un .trace»
 (`registry.py:20`). `paths.trace_path` (`:83-91`) decide cuál:
 
 | El texto es... | Se convierte en | Si falla |
@@ -21,7 +21,9 @@ El argumento se describe como «un nombre de corrida de perf_runs cuyo trace_kep
 Consecuencia (**confirmada**, **no ejecutada**): `foo.trace` no tiene `/`, así que es un nombre de corrida buscado en la carpeta
 de corridas. Un `.trace` en otro sitio necesita una ruta con directorio (`./foo.trace`, o una absoluta dentro de
 `METAL_TRACE_READ`). La carpeta debe existir: `export` lanza `no recording at <name>: perf_record.sh deletes the .trace once its
-summary is written, unless KEEP_TRACE=1` (`perf_report.py:52-54`): lo que ve un cliente ante una traza borrada.
+summary is written, unless KEEP_TRACE=1` (`perf_report.py:52-54`): lo que ve un cliente ante una traza borrada. Las tres
+herramientas de tablas convierten ese caso en `no recording at <name>.trace and no <name>.tables.sqlite: ...` (`traces.missing`).
+Cuando falta el `.trace` pero la corrida tiene su [archivo de tablas](./archivo-de-tablas.md), leen ese archivo.
 
 ## Cómo es un `.trace` visto desde aquí
 
