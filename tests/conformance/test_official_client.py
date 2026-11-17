@@ -39,6 +39,9 @@ def session_run(tmp_path, handshake):
                 await getattr(session, handshake)()
                 tools = await session.list_tools()
                 result = await session.call_tool("gpu_family", {"name": "M3"})
+                cut = await session.call_tool("gpu_family", {"name": "M3", "fields": ["family", "nope"]})
+                assert list(cut.structured_content) == ["family"], cut
+                assert "fields" in tools.tools[0].input_schema["properties"]
                 return session.protocol_version, [t.name for t in tools.tools], result
     return anyio.run(main)
 

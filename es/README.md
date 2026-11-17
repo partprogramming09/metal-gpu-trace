@@ -306,7 +306,7 @@ env = { METAL_TRACE_OUT = "/ruta/absoluta/a/perf-runs", METAL_TRACE_WINE = "/rut
 
 ### Herramientas
 
-26 herramientas en cuatro grupos. Tu agente las elige; rara vez llamas a una tú. Cada fila empieza por para qué sirve y sigue con el detalle.
+26 herramientas en cuatro grupos. Tu agente las elige; rara vez llamas a una tú. Todas aceptan además `fields`, opcional: una lista de rutas con punto, como `common.frame_pacing.fps_1pct_low`; el resultado conserva solo esas (en una página, en cada fila), así el agente lee unos pocos números y no el resumen entero. Una ruta que no existe aparece en `_meta.fields_missing`. Cada fila empieza por para qué sirve y sigue con el detalle.
 
 #### Grabar
 

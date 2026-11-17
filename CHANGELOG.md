@@ -5,6 +5,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+- ✨ Every tool takes an optional `fields`: a list of dotted paths (`common.frame_pacing.fps_1pct_low`) that cuts the result before it is sent, in each row on the paged tools, with `total`, `offset`, `rows` and `next_offset` kept; a path that matches nothing is listed in `_meta.fields_missing`, and the cut comes before the size limit, so a big answer can fit. `schema_version` does not change. `tools/list` is shorter (45 186 to about 31 000 characters): the four experiment tools list perf_record's arguments by type only, and the tool texts are tighter.
+
 - 🛠️ A `.gputrace` whose `capture` file is a link is refused by `capture_summary`, `capture_diff` and `capture_records`, as a link in the runs folder is (the link could point outside the readable folders); a run or label name that starts with a dot is refused, since it would name a hidden file.
 
 - Test changes (not fixes, so no icon): five tests that assumed macOS now hold on Windows (`perf_cold_warm` refuses there, the import test gives `USERPROFILE` and `SYSTEMROOT`, a bad `TMPDIR` is not an error where preflight does not read it, every file passes the executable check, an NTFS-sized `utime` step), and the `metal-trace-branch` job runs the Windows tests with pytest and also judges two Direct3D 11 runs against each other with `perf_check`. Found by running the suite on a real Windows PC.

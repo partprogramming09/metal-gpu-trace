@@ -6,6 +6,9 @@ OBJECT = {"type": "object"}
 PAGED = {"type": "object", "required": ["total", "offset", "rows", "next_offset"],
          "properties": {"total": {"type": "integer"}, "offset": {"type": "integer"}, "rows": {"type": "array"},
                         "next_offset": {"type": ["integer", "null"]}}}
+# optional on every tool; worker.call applies it, so it is added to each inputSchema in tools/list, not to TOOLS
+FIELDS = {"type": "array", "items": {"type": "string"},
+          "description": "result paths to keep, dotted: common.frame_pacing"}
 PAGED_TOOLS = ("perf_runs", "trace_query", "capture_records")  # the tools that return page()
 
 
@@ -15,10 +18,11 @@ RESOURCES = {"metal-trace://gpu-families": ("Apple GPU families", config.FAMILIE
     for key in config.FAMILIES["families"]}
 
 S, I = {"type": "string"}, {"type": "integer"}
-PAGE = {"offset": {**I, "description": "first row, default 0"},
-        "limit": {**I, "description": f"rows per page, default 50, at most {config.MAX_LIMIT}"}}
-TRACE = {**S, "description": "a run name from perf_runs whose trace_kept is true, or the path of a .trace"}
-CAPTURE = {**S, "description": "path of a .gputrace bundle saved from Xcode, inside METAL_TRACE_OUT or METAL_TRACE_READ"}
+RUN = {**S, "description": "a run name from perf_runs"}
+PAGE = {"offset": {**I, "description": "default 0"},
+        "limit": {**I, "description": f"default 50, at most {config.MAX_LIMIT}"}}
+TRACE = {**S, "description": "a run name from perf_runs with trace_kept true, or a .trace path"}
+CAPTURE = {**S, "description": "a .gputrace bundle inside METAL_TRACE_OUT or METAL_TRACE_READ"}
 
 
 def schema(properties, required=()):
@@ -34,74 +38,69 @@ def hints(title, destructive=None, idempotent=False, open_world=False):
             "openWorldHint": open_world}
 
 
-RECORD_PROPS = {"label": {**S, "description": "name for the run: letters, digits, '.', '_', '-'"},
+RECORD_PROPS = {"label": {**S, "description": "run name: letters, digits, '.', '_', '-'"},
          "program": {**S, "description": "path of the .exe, or of the macOS binary with wine=native"},
-         "seconds": {**I, "description": "recording length, default 20; use 30 under Wine, whose start-up takes part of it; the export afterwards takes several minutes under Wine"},
+         "seconds": {**I, "description": "seconds, default 20; 30 under Wine (start-up eats part); the export takes minutes under Wine"},
          "wine": {**S, "description": "Wine directory holding bin/wine, or native"},
          "prefix": {**S, "description": "Wine prefix, default WINEPREFIX or ~/.wine; ignored with native"},
-         "workdir": {**S, "description": "directory the program starts in, default the program's own"},
-         "args": {**S, "description": "program arguments as in a shell, quotes included"},
-         "workload": {**S, "description": "a test program from workload_list, fetched with workload_fetch, instead "
-                                          "of program"},
-         "api": {**S, "description": "with workload: mtl (native Metal), mtl-x64 (Metal built for x86_64, run under Rosetta like Wine), vk (Vulkan through MoltenVK: set "
-                                                        "METAL_TRACE_MOLTENVK), d3d11 or d3d12 (under wine)"},
-         "dim": {**I, "description": "with workload drawstress: side of the cube grid, dim^3 draws per frame"},
-         "example": {**S, "description": "with a workload that lists examples in workload_list: the one to run"},
-         "size": {**S, "description": "with a workload that has size_variables (drawstress): the window size, WIDTHxHEIGHT such as 1920x1080"},
-         "memory": {"type": "boolean", "description": "default true; false skips the Metal memory table, the slowest "
-                                                      "to read (about 40 % faster summary): no metal_mib_peak"},
-         "env": {**S, "description": "NAME=VALUE pairs separated by spaces, set in the program's environment; MTL_SHADER_VALIDATION=1 or MTL_DEBUG_LAYER=1 adds `validation` to the summary: the layers' messages counted by kind"},
-         "memory_free_pct": {**I, "description": "macOS only, 20 to 60: holds the whole Mac at this percentage of RAM free "
-                                                 "while recording (memory_pressure), to see how the program behaves short of memory; lower can freeze the Mac"},
-         "background": {"type": "boolean", "description": "macOS only, default false; true runs the program under taskpolicy -b, "
-                                                        "which throttles it hard and unevenly (drawstress: 18 to 280 times slower): repeat the run"},
-         "counters": {"type": "boolean", "description": "default false; true also records Metal GPU Counters (gpu_counters in "
-                                                        "the summary); not under Windows; adds about 40 s of read-back per recorded second"},
+         "workdir": {**S, "description": "directory to start in, default the program's own"},
+         "args": {**S, "description": "program arguments as in a shell"},
+         "workload": {**S, "description": "a test program from workload_list (fetch it first) instead of program"},
+         "api": {**S, "description": "with workload: mtl, mtl-x64 (Metal under Rosetta), vk (needs METAL_TRACE_MOLTENVK), d3d11 or d3d12 (under wine)"},
+         "dim": {**I, "description": "with drawstress: cube grid side, dim^3 draws per frame"},
+         "example": {**S, "description": "with a workload that lists examples: the one to run"},
+         "size": {**S, "description": "with drawstress: window size, such as 1920x1080"},
+         "memory": {"type": "boolean", "description": "default true; false skips the slowest table, Metal memory (no metal_mib_peak)"},
+         "env": {**S, "description": "NAME=VALUE pairs separated by spaces; MTL_SHADER_VALIDATION=1 or MTL_DEBUG_LAYER=1 adds `validation`"},
+         "memory_free_pct": {**I, "description": "macOS, 20 to 60: holds the whole Mac at this % RAM free while recording; lower can freeze it"},
+         "background": {"type": "boolean", "description": "macOS, default false; true throttles the program hard and unevenly (taskpolicy -b): repeat the run"},
+         "counters": {"type": "boolean", "description": "default false; true adds gpu_counters; not on Windows; about 40 s of read-back per second"},
          "tier": {**S, "enum": list(recording.TIERS),
-                  "description": "default standard. light: no Metal memory and no counters, seconds of read-back, to iterate; "
-                                 "standard: with Metal memory, to decide; deep: also GPU counters and a kept .trace "
-                                 "(subject to METAL_TRACE_MAX_DISK_MB), macOS only. memory and counters given on their own "
-                                 "replace that part. Compare recordings of the same tier"}}
+                  "description": "default standard. light: no memory or counters; standard: memory; deep: also counters and a kept .trace (macOS). memory and counters given alone override"}}
 
-SKIP = ("seconds to leave out at the start of each recording, where shaders compile and resources load; 0 (default) "
-        "keeps all. The GPU numbers, hitches and Metal memory are recomputed without them")
+# the experiment tools take perf_record's arguments: the full text is in perf_record, the same list holds it
+SAME = {k: {t: v[t] for t in ("type", "enum") if t in v} for k, v in RECORD_PROPS.items()}
+
+SKIP = "seconds to leave out at the start (shaders compile, resources load), default 0; GPU numbers, hitches and Metal memory are recomputed without them"
+COOLDOWN = {"type": "number", "description": "seconds to rest between recordings, 0 to 600, default 0; 60 on a laptop is a start, thermal_state_share says if it throttled"}
+NAME = {**S, "description": "name: letters, digits, '.', '_', '-'"}
 
 TOOLS = {
     "perf_record": (recording.tool_perf_record, schema(RECORD_PROPS, ["label"]), hints("Record a program", destructive=True)),
     "perf_baseline_record": (experiments.tool_perf_baseline_record, schema(
-        {"name": {**S, "description": "reference name: letters, digits, '.', '_', '-'"},
+        {"name": NAME,
          "count": {**I, "description": "equal recordings to make, default 3"},
-         "cooldown_s": {"type": "number", "description": "seconds to rest between two consecutive recordings (never before the first or after the last), 0 to 600, default 0; on a laptop 60 is a starting value, not a measurement: the summaries' thermal_state_share says whether it throttled"},
-                  "skip_s": {"type": "number", "description": SKIP + "; perf_check applies the same cut to the run it judges"},
-         **{k: v for k, v in RECORD_PROPS.items() if k != "label"}}, ["name"]),
+         "cooldown_s": COOLDOWN,
+                  "skip_s": {"type": "number", "description": SKIP + "; perf_check applies the same cut"},
+         **{k: v for k, v in SAME.items() if k != "label"}}, ["name"]),
         hints("Record a reference", destructive=True)),
     "perf_sweep": (experiments.tool_perf_sweep, schema(
-        {"name": {**S, "description": "name for the runs: letters, digits, '.', '_', '-'"},
-         "variable": {**S, "description": "what changes between runs: dim, example, api, size, or env:NAME for an environment variable"},
+        {"name": NAME,
+         "variable": {**S, "description": "what changes: dim, example, api, size, or env:NAME"},
          "values": {"type": "array", "items": {"type": ["string", "integer"]},
                     "description": "2 to 8 values of the variable, such as [10, 20, 30] for dim"},
-         "rounds": {**I, "description": "rounds, default 1, at most 5 and at most 24 recordings in all; every other round runs the values in reverse"},
-         "cooldown_s": {"type": "number", "description": "seconds to rest between two consecutive recordings (never before the first or after the last), 0 to 600, default 0; on a laptop 60 is a starting value, not a measurement: the summaries' thermal_state_share says whether it throttled"},
+         "rounds": {**I, "description": "default 1, at most 5 and 24 recordings in all"},
+         "cooldown_s": COOLDOWN,
                   "skip_s": {"type": "number", "description": SKIP},
-         **{k: v for k, v in RECORD_PROPS.items() if k != "label"}}, ["name", "variable", "values"]),
+         **{k: v for k, v in SAME.items() if k != "label"}}, ["name", "variable", "values"]),
         hints("Record one run per value of a variable", destructive=True)),
     "perf_ab": (experiments.tool_perf_ab, schema(
-        {"name": {**S, "description": "name for the runs: letters, digits, '.', '_', '-'"},
+        {"name": NAME,
          "env_a": {**S, "description": "NAME=VALUE pairs for side A, the reference (empty: none)"},
          "env_b": {**S, "description": "NAME=VALUE pairs for side B, the change under test (empty: none)"},
          "rounds": {**I, "description": "A B B A rounds, default 1 (4 recordings), at most 5"},
-         "cooldown_s": {"type": "number", "description": "seconds to rest between two consecutive recordings (never before the first or after the last), 0 to 600, default 0; on a laptop 60 is a starting value, not a measurement: the summaries' thermal_state_share says whether it throttled"},
+         "cooldown_s": COOLDOWN,
                   "skip_s": {"type": "number", "description": SKIP},
-         **{k: v for k, v in RECORD_PROPS.items() if k not in ("label", "env")}}, ["name", "env_a", "env_b"]),
+         **{k: v for k, v in SAME.items() if k not in ("label", "env")}}, ["name", "env_a", "env_b"]),
         hints("Record two settings in A B B A order", destructive=True)),
     "perf_cold_warm": (experiments.tool_perf_cold_warm, schema(
-        {"name": {**S, "description": "name for the runs: letters, digits, '.', '_', '-'"},
-         **{k: v for k, v in RECORD_PROPS.items() if k != "label"}}, ["name"]),
+        {"name": NAME,
+         **{k: v for k, v in SAME.items() if k != "label"}}, ["name"]),
         hints("Record a run twice to find first-seen shader stutter", destructive=True)),
     "perf_attach": (recording.tool_perf_attach, schema(
-        {"label": {**S, "description": "name for the run: letters, digits, '.', '_', '-'"},
+        {"label": NAME,
          "process": {**S, "description": "pid, or a name in the program's command line such as Game.exe"},
-         "seconds": {**I, "description": "recording length, default 20; the export afterwards takes several minutes under Wine"}},
+         "seconds": {**I, "description": "recording length, default 20"}},
         ["label", "process"]), hints("Record a running program", destructive=False)),
     "project_info": (project.tool_project_info, schema({}), hints("Show the active project")),
     "perf_runs": (analysis.tool_perf_runs, schema(PAGE), hints("List recordings")),
@@ -115,22 +114,21 @@ TOOLS = {
         ["a", "b"]),
         hints("Compare two recordings")),
     "perf_baseline": (analysis.tool_perf_baseline, schema(
-        {"name": {**S, "description": "reference name: letters, digits, '.', '_', '-'; alone, shows that reference"},
-         "runs": {"type": "array", "items": S, "description": "run names from perf_runs to save as this reference, "
-                                                             "ideally 3 or more equal runs; replaces a previous one"},
-         "skip_s": {"type": "number", "description": SKIP + "; perf_check applies the same cut to the run it judges"}}),
+        {"name": {**S, "description": "reference name; alone, shows that reference"},
+         "runs": {"type": "array", "items": S, "description": "run names to save as this reference, ideally 3 or more equal runs"},
+         "skip_s": {"type": "number", "description": SKIP + "; perf_check applies the same cut"}}),
         hints("Name a reference", destructive=False, idempotent=True)),
     "perf_check": (analysis.tool_perf_check, schema(
-        {"run": {**S, "description": "a run name from perf_runs"},
+        {"run": RUN,
          "baseline": {**S, "description": "a reference name from perf_baseline"},
          "margin_pct": {"type": "number", "description": "how far outside the reference's range FPS or GPU ms per "
                                                          "frame may fall before counting, default 3"}},
         ["run", "baseline"]), hints("Check a run against a reference")),
     "perf_export_trace": (traces.tool_perf_export_trace, schema(
-        {"run": {**S, "description": "a run name from perf_runs"}}, ["run"]),
+        {"run": RUN}, ["run"]),
         hints("Export frames to Perfetto", destructive=False, idempotent=True)),
     "perf_gate": (analysis.tool_perf_gate, schema(
-        {"run": {**S, "description": "a run name from perf_runs"},
+        {"run": RUN,
          "fps_min": {"type": "number", "description": "the FPS must be at least this"},
          "fps_1pct_low_min": {"type": "number", "description": "the 1% low FPS must be at least this"},
          "stutter_rate_pct_max": {"type": "number", "description": "the share of stutter frames, in %, at most this"},
@@ -145,7 +143,7 @@ TOOLS = {
          "skip_s": {"type": "number", "description": SKIP}}, ["prefix"]),
         hints("Follow a number across runs")),
     "perf_diagnose": (analysis.tool_perf_diagnose, schema(
-        {"run": {**S, "description": "a run name from perf_runs"},
+        {"run": RUN,
          "min_encoders": {**I, "description": "encoders per frame (median) from which the verdict can be yes, default 4"},
          "short_us": {**I, "description": "an encoder under this GPU time counts as short: 10, 25 (default), 50, 100, "
                                           "250, 500 or 1000"},
@@ -153,7 +151,7 @@ TOOLS = {
                                                           "default 0.25"}}, ["run"]),
         hints("Diagnose encoder use")),
     "perf_memory_breakdown": (analysis.tool_perf_memory_breakdown, schema(
-        {"run": {**S, "description": "a run name from perf_runs"},
+        {"run": RUN,
          "top": {**I, "description": "how many resource types to keep, the largest allocated first, default 10"}}, ["run"]),
         hints("Break down Metal allocations by type")),
     "trace_tables": (traces.tool_trace_tables, schema({"trace": TRACE}, ["trace"]), hints("List a trace's tables")),
@@ -165,8 +163,7 @@ TOOLS = {
     "trace_query": (traces.tool_trace_query, schema(
         {"trace": TRACE, "schema": {**S, "description": "a table name that trace_tables lists, such as metal-gpu-intervals"},
          "pid": {**I, "description": "keep only this process's rows"},
-         "window_ms": {"type": "integer", "description": "1 to 3600000: return time windows of this many ms, each with "
-                       "its count and summed duration, instead of rows (the table needs a start or time column)"},
+         "window_ms": {"type": "integer", "description": "1 to 3600000: time windows of this many ms instead of rows (needs a start or time column)"},
          **PAGE}, ["trace", "schema"]),
                     hints("Read a trace table")),
     "capture_summary": (traces.tool_capture_summary, schema({"capture": CAPTURE}, ["capture"]), hints("Summarize a capture")),

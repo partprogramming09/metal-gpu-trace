@@ -283,7 +283,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 
 ### Tools
 
-26 tools in four groups. Your agent picks them; you rarely call one yourself. Each row starts with what the tool is for, then the detail.
+26 tools in four groups. Your agent picks them; you rarely call one yourself. Every tool also takes an optional `fields`, a list of dotted paths such as `common.frame_pacing.fps_1pct_low`: the result keeps only those (on a page, in each row), so the agent reads a few numbers instead of a whole summary. A path that matches nothing is listed in `_meta.fields_missing`. Each row starts with what the tool is for, then the detail.
 
 #### Record
 

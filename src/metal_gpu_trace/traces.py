@@ -7,10 +7,8 @@ from metal_gpu_trace import config, gputrace_read, paths, perf_report, tables as
 
 
 def tool_perf_export_trace(run):
-    """Writes a recording's GPU frames as a Chrome trace file, `<run>.chrome-trace` in the runs directory, that
-    ui.perfetto.dev and chrome://tracing open: one slice per GPU frame, from its start for its GPU time (the sum of
-    its encoders' time, so a frame with parallel encoders can show shorter than it took), with the compute, fragment
-    and vertex split as arguments. Returns the file name and the number of frames."""
+    """Writes a recording's GPU frames as `<run>.chrome-trace` in the runs directory, for ui.perfetto.dev and
+    chrome://tracing: one slice per GPU frame. Returns the file name and the number of frames."""
     paths.run_path(run)
     source = table_files.find(config.OUT, f"{run}.frames")
     if source is None:
@@ -31,7 +29,7 @@ def tool_perf_export_trace(run):
 
 
 def tool_trace_tables(trace):
-    """Lists the data tables (schemas) a .trace recording holds; recordings keep their .trace only with KEEP_TRACE=1."""
+    """Lists the data tables a .trace holds; recordings keep their .trace only with KEEP_TRACE=1."""
     toc = perf_report.toc_of(paths.trace_path(trace))
     return {"tables": sorted({t.attrib["schema"] for t in toc.iter("table") if "schema" in t.attrib})}
 
@@ -90,10 +88,8 @@ def windows_of(rows, window_ms):
 
 
 def tool_trace_query(trace, schema, offset=0, limit=50, pid=None, window_ms=None):
-    """Returns one page of rows of one table of a .trace as {column: value}, optionally only one process's rows. With
-    window_ms (a whole number from 1 to 3600000) the page holds time windows instead, each {start_ms, count} and, when
-    the table has a duration column, duration_ms (the sum of the durations): a summary of a table too long to read
-    row by row. skipped_rows appears only when some row had no usable time."""
+    """Returns one page of rows of one table of a .trace as {column: value}, optionally one process's. With window_ms the
+    page holds time windows instead ({start_ms, count}, plus duration_ms when the table has a duration column)."""
     window = check_window(window_ms)
     if not schema.replace("-", "").isalnum():
         raise paths.ToolError("schema holds only letters, digits and '-'; trace_tables lists them")
@@ -122,8 +118,8 @@ COUNTED_TABLES = ["metal-gpu-intervals", "metal-application-encoders-list", "met
 
 
 def tool_trace_count(trace, tables=None):
-    """Counts the rows of several tables of a kept .trace, in all and per process, so a recording's useful tables
-    show before reading them: a table with 0 rows needs another instrument or Xcode, not a bigger page."""
+    """Counts the rows of tables of a kept .trace, in all and per process: a table with 0 rows needs another instrument or
+    Xcode, not a bigger page."""
     tables = tables or COUNTED_TABLES
     known = set(tool_trace_tables(trace)["tables"])
     out = {}
@@ -158,8 +154,8 @@ def tool_capture_summary(capture):
 
 
 def tool_capture_diff(a, b):
-    """Compares two .gputrace captures by their confirmed Metal calls: totals per call (a, b, delta) and the debug groups
-    whose calls differ, the 100 with the largest change out of groups_total. Needs no Xcode."""
+    """Compares two .gputrace captures by their confirmed Metal calls: totals per call (a, b, delta) and the 100 debug
+    groups with the largest change. Needs no Xcode."""
     result = gputrace_read.diff(paths.allowed(a), paths.allowed(b))
     result["groups_total"] = len(result["groups"])
     result["groups"] = result["groups"][:100]
@@ -186,8 +182,8 @@ def family_of(name):
 
 
 def tool_gpu_family(name):
-    """Apple's published facts for one GPU family, by family ("Apple7") or chip ("M1 Pro"): its chips, what it adds,
-    its limits, plus the limits shared by all families and the footnotes. Source URLs are in the result."""
+    """Apple's published facts for one GPU family ("Apple7") or chip ("M1 Pro"): its chips, what it adds, its limits, the
+    limits shared by all families, footnotes and source URLs."""
     key = family_of(name)
     if key is None:
         raise paths.ToolError(f"unknown family or chip {name!r}; try one of {', '.join(config.FAMILIES['families'])} or a chip "
