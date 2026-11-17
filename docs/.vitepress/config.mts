@@ -81,6 +81,7 @@ export default defineConfig({
         ] },
         { text: 'Server and transport', link: '/guides/server-and-transport/', collapsed: true, items: [
             { text: 'Design: why the server has this shape', link: '/guides/server-and-transport/design' },
+            { text: 'Configuration', link: '/guides/server-and-transport/configuration' },
             { text: 'How the server starts', link: '/guides/server-and-transport/startup' },
             { text: 'The tool registry', link: '/guides/server-and-transport/registry' },
             { text: 'The worker', link: '/guides/server-and-transport/worker' },
@@ -147,6 +148,7 @@ export default defineConfig({
         ] },
         { text: 'Servidor y transporte', link: '/es/guides/servidor-y-transporte/', collapsed: true, items: [
             { text: 'Diseño: por qué el servidor tiene esta forma', link: '/es/guides/servidor-y-transporte/diseno' },
+            { text: 'Configuración', link: '/es/guides/servidor-y-transporte/configuracion' },
             { text: 'Cómo arranca el servidor', link: '/es/guides/servidor-y-transporte/arranque' },
             { text: 'El registro de herramientas', link: '/es/guides/servidor-y-transporte/registro' },
             { text: 'El worker', link: '/es/guides/servidor-y-transporte/worker' },

@@ -18,6 +18,7 @@ and [Summarizing and analyzing](../summarizing/index.md): this guide stops where
 | Page | What it answers |
 |---|---|
 | [Design](./design.md) | Why the server has this shape; the pieces and the file of each |
+| [Configuration](./configuration.md) | Environment variables and project files |
 | [Startup](./startup.md) | The command line, stdio, HTTP start, what is configured and when |
 | [Registry](./registry.md) | Tools, resources, prompts, and what pins them |
 | [Worker](./worker.md) | The queue, the checks before a tool runs, cancel, progress |

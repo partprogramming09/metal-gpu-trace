@@ -70,19 +70,11 @@ Read it like this: 2 034 frames in 20.8 s. `fps_estimate` is 104.5: it comes fro
 
 ## What's new
 
-Version 0.28.0. Each item links to the command that was run and its real output.
+Version 0.28.0. Older versions: [changelog](CHANGELOG.md).
 
-- ✨ **Shorter answers: `fields`.** Every tool takes an optional `fields`, a list of dotted paths that cuts the result before it is sent (`perf_runs` with `fields=["fps"]` returns only the fps of each run); a path that matches nothing is named in `_meta.fields_missing`. `tools/list` is also shorter, 33 072 characters instead of 45 186. [Proof](docs/evidence/v0.28.0.md#every-tool-takes-fields-and-the-tool-list-is-shorter)
-- ✨ **One command to set the server up.** `metal-gpu-trace init` adds the server to Claude Code, Claude Desktop, Cursor and Codex CLI with absolute paths; `--dry-run` shows the change first, and an existing config is merged (other servers kept) with a `.bak` copy. [Proof](docs/evidence/v0.28.0.md#metal-gpu-trace-init-sets-the-server-up-in-one-command)
-- ✨ **The tables outlive the `.trace`.** Every recording keeps its tables in `<run>.tables.sqlite`, and `trace_query` gains `where`, `columns`, `order_by`, `group_by` and `aggregates`: the same rows as the `.trace` in 0.02 s instead of 3.8 s, and a count per channel in one call. Tested on a real Metal recording, not on Windows. [Proof](docs/evidence/v0.28.0.md#the-tables-are-kept-in-a-sqlite-file-and-queried-with-filters)
-
-Version 0.27.3, still current:
-
-- ✨ **One summary shape on both platforms.** Every new summary (`schema_version` 3) has a `common` block with frame pacing, memory pressure and graphics API, the same keys on macOS and Windows and a `source` per number; what cannot be measured the same way says `comparable: false` instead of a made-up number. [Proof](docs/evidence/v0.27.3.md#a-summary-has-a-common-block-on-both-platforms)
-- 🔍 **What a recording allocated.** `perf_memory_breakdown` splits the Metal allocations by type, what is still live and how many times over the live memory was allocated (5.47 in a real run), from the summary alone. [Proof](docs/evidence/v0.27.3.md#what-a-recording-allocated-by-type)
-- 🩺 **An honest verdict against one run.** `perf_check` adds a `note` when the verdict is not same and the reference is a single run: its noise is not measured, so a small change may be noise. [Proof](docs/evidence/v0.27.3.md#perf_check-says-when-its-reference-is-one-run)
-
-Earlier versions (0.27.2, 0.27.0 and older) are in the [changelog](CHANGELOG.md), each with its proof in [docs/evidence/](docs/evidence/). One change to know: a locked screen now refuses a recording (`METAL_TRACE_ALLOW_LOCKED=1` records anyway).
+- ✨ **Shorter answers.** Every tool takes `fields` to keep only the paths you ask for. [Proof](docs/evidence/v0.28.0.md#every-tool-takes-fields-and-the-tool-list-is-shorter)
+- ✨ **One setup command.** `metal-gpu-trace init` adds the server to Claude Code, Claude Desktop, Cursor and Codex CLI. [Proof](docs/evidence/v0.28.0.md#metal-gpu-trace-init-sets-the-server-up-in-one-command)
+- ✨ **Tables outlive the `.trace`.** They are kept in `<run>.tables.sqlite`, and `trace_query` filters them. [Proof](docs/evidence/v0.28.0.md#the-tables-are-kept-in-a-sqlite-file-and-queried-with-filters)
 
 ## For developers
 
@@ -124,43 +116,7 @@ uvx metal-gpu-trace
 
 This is the command each client below runs. Desktop apps do not see Homebrew's `PATH`: give them the full path that `which uvx` prints (`/opt/homebrew/bin/uvx` on Apple silicon). `uvx` keeps the version it first downloaded; run the command once with `--refresh` to get the latest. `uvx metal-gpu-trace@0.4.0` pins a version.
 
-The server reads these environment variables:
-
-| Variable | What it sets |
-| --- | --- |
-| `METAL_TRACE_OUT` | Where recordings go. Give an absolute path: the default, `./perf-runs`, depends on the client's working directory. A project file takes precedence. |
-| `METAL_TRACE_PROJECT` | The project file to use (or the folder holding it), instead of searching from the working directory. |
-| `METAL_TRACE_WINE` | The Wine directory (holding `bin/wine`) that `perf_record` uses when the call names none. |
-| `WINEPREFIX` | The Wine prefix used when the call names none; `~/.wine` otherwise. |
-| `METAL_TRACE_READ` | More directories the tools may read, separated by `:` (`;` on Windows). |
-| `METAL_TRACE_LOG` | `off` silences the one-line stderr log per call. |
-| `KEEP_TRACE` | `1` keeps each recording's `.trace`, for Instruments or the raw export (the tables file already answers `trace_tables`, `trace_count` and `trace_query`). |
-| `PERF_TABLES` | `0` skips writing `<run>.tables.sqlite`. |
-| `METAL_TRACE_ALLOW_LOCKED` | `1` records with the screen locked. Without it a recording is refused: a locked session leaves the frames unpaced. |
-| `METAL_TRACE_MAX_DISK_MB` | Size limit of the runs folder, in MiB. After each recording the oldest `.trace` goes first, then `.chrome-trace`, then per-frame and memory tables; summaries and `baselines.json` never. [Retention](docs/guides/data-and-lifecycle/retention.md) |
-| `KEEP_RUNS` | Keeps only the newest N recordings. It never removes a `.trace`, and `baselines.json` is never removed. [Retention](docs/guides/data-and-lifecycle/retention.md) |
-| `METAL_TRACE_LOCK` | The lock that keeps recordings one at a time, whatever folder each goes to (default `~/Library/Caches/metal-gpu-trace/recording.lock`). [Cache and lock](docs/guides/data-and-lifecycle/cache-and-lock.md) |
-| `PERF_ENV` | `NAME=VALUE` pairs, separated by spaces, set for the recorded program. |
-| `PERF_INSTRUMENTS` | Instruments added to the Metal System Trace template, separated by `;` (`xcrun xctrace list instruments` names them). Their tables need the `.trace`: pair it with `KEEP_TRACE=1`. |
-
-### Projects
-
-A repository can hold a `metal-gpu-trace.json` that names its project and the folder of its recordings:
-
-```json
-{"name": "my-game", "runs": "perf-runs", "baseline": "main-ref"}
-```
-
-The server looks for it in its working directory and the folders above it, stopping below the home folder, so one file at a repository's root serves every folder inside it. When it finds one, recordings go to and are read from `runs` instead of `METAL_TRACE_OUT`, and `baselines.json` lives there too: projects do not mix their recordings. [Project file](docs/guides/data-and-lifecycle/project-and-config.md)
-
-| Key | Meaning |
-| --- | --- |
-| `name` | The project's name (letters, digits, `.`, `_`, `-`). Required. |
-| `runs` | The recordings folder. Required. It must be new, empty or already marked by the server (a plain `.metal-gpu-trace-runs` file, not a folder or a link). A folder with other files is refused, because `KEEP_RUNS` removes old `.json` files there. A folder marked with another project's name is refused; to hand it over, edit or remove the mark. |
-| `baseline` | The name of the project's reference (`perf_baseline`). `project_info` reports it. |
-| `format` | `metal-gpu-trace`, the only one for now. |
-
-Any other key, or a wrong value, is an error that every tool reports, naming the field, until the file is fixed. Without a project file, `METAL_TRACE_OUT`, or `./perf-runs`, is used as before.
+Environment variables and project files: [Configuration](docs/guides/server-and-transport/configuration.md).
 
 ### One command: `init`
 
