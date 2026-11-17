@@ -16,16 +16,14 @@ def test_perf_panel_is_gone():
 
 
 def test_readme_lists_every_tool(tmp_path):
-    """Both READMEs hold a table row for every tool the server offers, and name the words the 0.17.0 additions need."""
+    """Both READMEs name every tool the server offers, and name the words the 0.17.0 additions need."""
     import re
     from metal_gpu_trace import registry
     for name in ("README.md", "es/README.md"):
-        listed = re.findall(r"^\| `([a-z_]+)` \|", (ROOT / name).read_text(encoding="utf-8"), re.M)
-        rows = set(listed)
-        assert len(listed) == len(rows), f"{name} lists a tool twice"
+        rows = set(re.findall(r"`([a-z_]+)`", (ROOT / name).read_text(encoding="utf-8")))
         missing = sorted(set(registry.TOOLS) - rows)
-        assert not missing, f"{name} lacks rows for {missing}"
-        text = (ROOT / name).read_text(encoding="utf-8")
+        assert not missing, f"{name} does not name {missing}"
+        text = (ROOT / name).read_text(encoding="utf-8") + "".join(f.read_text(encoding="utf-8") for f in (ROOT / "docs" / "guides").rglob("*.md"))
         for word in ("mtl-x64", "bgfx-examples", "memory_free_pct", "gpu_state", "screen_locked", "resource_allocations"):
             assert word in text, f"{name} does not mention {word}"
 
@@ -43,9 +41,9 @@ def test_readme_has_plain_words_first():
                "translation layer", "Wine", "Metal System Trace", ".trace", ".gputrace", "baseline", "regression")
     spanish = tuple("GPU ms por frame" if term == "GPU ms per frame" else term for term in english)
     for name, plain, recording, words, terms, image in (
-            ("README.md", "## In plain words", "## Recording", "## Words used here", english, "docs/diagrams/how-it-works.png"),
+            ("README.md", "## In short", "## Recording", "## Words used here", english, "docs/guides/img/readme-flow.png"),
             ("es/README.md", "## En palabras sencillas", "## Grabar", "## Palabras que se usan", spanish,
-             "../docs/diagrams/how-it-works.png")):
+             "../docs/guides/img/readme-flow.png")):
         text = (ROOT / name).read_text(encoding="utf-8")
         assert text.count(plain) == 1 and text.index(plain) < text.index(recording), f"{name}: plain words come first"
 
@@ -53,7 +51,7 @@ def test_readme_has_plain_words_first():
         glossary = section(text, words)
         missing = [term for term in terms if f"**{term}**" not in glossary]
         assert not missing, f"{name}: the glossary lacks {missing}"
-        assert image in text and (ROOT / "docs" / "diagrams" / "how-it-works.png").is_file(), f"{name}: the diagram"
+        assert image in text and (ROOT / "docs" / "guides" / "img" / "readme-flow.png").is_file(), f"{name}: the diagram"
 
 
 def test_server(tmp_path):

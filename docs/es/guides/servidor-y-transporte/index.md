@@ -20,6 +20,7 @@ salidas y mensajes de error del programa no se traducen).
 | Página | Qué responde |
 |---|---|
 | [Diseño](./diseno.md) | Por qué el servidor tiene esta forma; las piezas y el archivo de cada una |
+| [Configuración](./configuracion.md) | Variables de entorno y archivos de proyecto |
 | [Arranque](./arranque.md) | La línea de comandos, stdio, el arranque de HTTP, qué se configura y cuándo |
 | [Registro](./registro.md) | Herramientas, recursos, prompts y lo que los fija |
 | [Worker](./worker.md) | La cola, las comprobaciones antes de que corra una herramienta, cancelar, progreso |
