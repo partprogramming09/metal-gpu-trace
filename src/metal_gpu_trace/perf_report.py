@@ -1,8 +1,8 @@
 """Summarizes an Instruments "Metal System Trace" recording of one launched program: GPU time per frame and memory.
 
-Usage: python3 -I src/metal_gpu_trace/perf_report.py <recording.trace> [--label NAME] [--out DIR] [--no-memory]
-Writes <out>/<label>.json (summary), <label>.frames.csv.gz (one row per GPU frame) and <label>.metal_memory.csv.gz (Metal
-memory over time). A <recording>.rss.csv beside the trace adds the process's resident memory.
+Usage: python3 -I src/metal_gpu_trace/perf_report.py <recording.trace> [--label NAME] [--out DIR] [--no-memory] [--no-tables]
+Writes <out>/<label>.json (summary), <label>.frames.csv.gz (one row per GPU frame), <label>.metal_memory.csv.gz (Metal
+memory over time) and <label>.tables.sqlite (the tables it read, for trace_query once the .trace is gone). A <recording>.rss.csv beside the trace adds the process's resident memory.
 """
 import argparse
 import array
@@ -23,7 +23,7 @@ import xml.etree.ElementTree as ET
 
 if __package__ in (None, ""):  # run by path (perf_record.sh does): make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from metal_gpu_trace import metrics, tables as table_files  # noqa: E402  (summarize has a local named tables)
+from metal_gpu_trace import metrics, tabledb, tables as table_files  # noqa: E402  (summarize has a local named tables)
 
 # the numbers shared with the Windows recorder live in metrics; these names keep perf_report's interface
 SHORT_US, stats, label_name = metrics.SHORT_US, metrics.stats, metrics.label_name
@@ -140,12 +140,13 @@ def referenced_ids(path):
     return found
 
 
-def rows(path):
+def rows(path, sink=None, keep=False):
     """Yields each row of an exported table as {column mnemonic: element}, with xctrace's id/ref values resolved,
-    and deletes the file when done or closed early. Memory follows the values that rows share, not the rows: each row is
-    freed after its turn (its elements are valid until the next one) and only the cells that a later ref names are kept,
-    found by a first pass over the file."""
-    ids, columns, node = {}, [], None
+    and deletes the file when done or closed early (not with `keep`). Memory follows the values that rows share, not the
+    rows: each row is freed after its turn (its elements are valid until the next one) and only the cells that a later ref
+    names are kept, found by a first pass over the file. A `sink` (tabledb.TableSink) gets the columns and each row as
+    it goes by, so the table is stored without a second read."""
+    ids, columns, node, announced = {}, [], None, False
     try:
         referenced = referenced_ids(path)
         for event, el in ET.iterparse(path, events=("start", "end")):
@@ -159,7 +160,13 @@ def rows(path):
                 columns.append(el.findtext("mnemonic"))
             elif el.tag == "row":
                 values = [ids.get(c.attrib["ref"], c) if "ref" in c.attrib else c for c in el]
-                yield dict(zip(columns, values))
+                row = dict(zip(columns, values))
+                if sink is not None:
+                    if not announced:
+                        sink.columns(columns)
+                        announced = True
+                    sink.add(row)
+                yield row
                 el.clear()  # the row only: a cell in ids stays whole, because later rows refer to it
                 if node is not None:  # xctrace always wraps the rows in a <node>
                     del node[:]
@@ -167,7 +174,10 @@ def rows(path):
         if not complete_xml(path):  # a file cut at a row boundary by xctrace's crash has every row already
             raise
     finally:
-        os.unlink(path)
+        if sink is not None and not announced:
+            sink.columns(columns)  # a table of no rows still has its columns
+        if not keep:
+            os.unlink(path)
 
 
 def text(el):
@@ -320,13 +330,13 @@ def attribute_hitches(frames, starts, totals, compiler, thermal, memory, growth_
             "worst": sorted(found, key=lambda h: -h["interval_ms"])[:20]}
 
 
-def counter_stats(info_path, value_path):
+def counter_stats(info_path, value_path, info_sink=None):
     """Returns the GPU counters of a recording as {"samples", "counters": [{name, type, unit, mean, p95, max}], "top_limiter"},
     read from the exported gpu-counter-info and gpu-counter-value files, which it deletes. The value table is read line
     by line: it holds millions of rows whose repeated cells are `ref`s to an earlier `id`, so the tree is never built.
     `top_limiter` is the counter named ... Limiter with the highest mean: the unit the GPU waited on most."""
     info = {}
-    for row in rows(info_path):
+    for row in rows(info_path, sink=info_sink):
         cid = number(row.get("counter-id"))
         if cid is not None:
             info[cid] = (text(row.get("name")), text(row.get("type")))
@@ -624,11 +634,12 @@ def machine_info(device, read=read_command):
         return None
 
 
-def summarize(trace, label=None, out=None, memory=True, counters=None):
+def summarize(trace, label=None, out=None, memory=True, counters=None, tables_db=True):
     """Summarizes `trace`, writes the JSON and CSV files into `out` (default: beside it) and returns the summary.
     With `memory` false the Metal memory table, the slowest to read, is skipped: no metal_memory_mib and no CSV.
     With `counters` true, or None when PERF_INSTRUMENTS names Metal GPU Counters, the counter tables are read too
-    (`gpu_counters`): minutes more on a long recording."""
+    (`gpu_counters`): minutes more on a long recording. With `tables_db` (the default) every table it reads is also stored,
+    cleaned of home folders, in `<label>.tables.sqlite` (tabledb) before the exports are deleted."""
     if counters is None:
         counters = "Metal GPU Counters" in os.environ.get("PERF_INSTRUMENTS", "").split(";")
     trace = pathlib.Path(trace)
@@ -639,6 +650,12 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
     schemas = [t for t in TABLES if memory or t != MEMORY]
     extra = COUNTER_TABLES if counters else ()
     toc, tables = toc_and_tables(trace, tuple(schemas) + OPTIONAL + extra, optional=OPTIONAL + extra)
+    writer = tabledb.Writer(out / f"{label}{tabledb.SUFFIX}") if tables_db else None
+    stored = None
+
+    def read(schema):
+        return rows(tables[schema], sink=writer.table(schema) if writer is not None else None)
+
     try:
         launched = next((p for p in toc.iter("process") if p.attrib.get("type") in ("launched", "attached")), None)
         if launched is None:
@@ -671,7 +688,7 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
         spans = []
         latency_frames, latency_ns = array.array("q"), array.array("q")  # start-latency of each row that has one
         by_process, own_ns = collections.Counter(), 0  # GPU ns of every other process, by pid, and of the program
-        for row in rows(tables["metal-gpu-intervals"]):
+        for row in read("metal-gpu-intervals"):
             if pid_of(row.get("process")) != pid:
                 other_pid, other = pid_of(row.get("process")), number(row.get("duration"))
                 if other_pid is not None and other and other > 0:
@@ -724,14 +741,14 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
         labels = {}
         if "metal-application-encoders-list" in tables:
             labels = {text(row.get("encoder-id")): text(row.get("encoder-label-indexed"))
-                      for row in rows(tables["metal-application-encoders-list"])}
+                      for row in read("metal-application-encoders-list")}
         summary["encoders"] = encoder_stats(kept["spans"], labels)
         summary["gpu_idle"] = kept["idle"]
 
         # Metal memory the launched process holds over time
         allocated = []
         if memory:
-            for row in rows(tables[MEMORY]):
+            for row in read(MEMORY):
                 size, start = number(row.get("current-allocated-size")), number(row.get("start"))
                 if pid_of(row.get("process")) == pid and size is not None and start is not None:
                     allocated.append((start / 1e6, size))
@@ -763,7 +780,7 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
 
         # the GPU's clock states over the recording, as a share of time
         states = collections.Counter()
-        for row in rows(tables["gpu-performance-state-intervals"]):
+        for row in read("gpu-performance-state-intervals"):
             state, duration = row.get("gpu-performance-state"), number(row.get("duration"))
             if state is not None and duration:
                 states[(state.attrib.get("fmt") or state.text or "?").strip()] += duration
@@ -773,14 +790,14 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
         # the graphics compiler's activity for the process and the device's thermal state, in ms
         compiler, thermal, thermal_time = [], [], collections.Counter()
         if "graphics-compiler-activity-intervals" in tables:
-            for row in rows(tables["graphics-compiler-activity-intervals"]):
+            for row in read("graphics-compiler-activity-intervals"):
                 start, duration = number(row.get("start")), number(row.get("duration"))
                 if pid_of(row.get("process")) == pid and start is not None and duration is not None:
                     compiler.append((start / 1e6, (start + duration) / 1e6))
             summary["graphics_compiler"] = {"intervals": len(compiler),
                                             "busy_ms": round(sum(b - a for a, b in compiler), 3)}
         if "device-thermal-state-intervals" in tables:
-            for row in rows(tables["device-thermal-state-intervals"]):
+            for row in read("device-thermal-state-intervals"):
                 start, duration, state = number(row.get("start")), number(row.get("duration")), text(row.get("thermal-state"))
                 if start is not None and duration:
                     thermal_time[state] += duration
@@ -790,20 +807,20 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             summary["thermal_state_share"] = {k: round(v / total_thermal, 3) for k, v in thermal_time.most_common()}
         cpu = []
         if "ProcessCPUUsage" in tables:
-            for row in rows(tables["ProcessCPUUsage"]):
+            for row in read("ProcessCPUUsage"):
                 start, pct = number(row.get("start")), text(row.get("cpu-usage")).rstrip("%")
                 if pid_of(row.get("process")) == pid and start is not None and pct.replace(".", "", 1).isdigit():
                     cpu.append((start / 1e6, float(pct)))
             if cpu:
                 summary["cpu"] = stats([pct for _, pct in cpu])
         if "metal-resource-allocations" in tables:
-            allocations = resource_summary(rows(tables["metal-resource-allocations"]), pid, len(frames))
+            allocations = resource_summary(read("metal-resource-allocations"), pid, len(frames))
             if allocations["events"]:
                 summary["resource_allocations"] = allocations
         if "graphics-compiler-spill-events" in tables:
-            summary["shader_spills"] = spill_summary(rows(tables["graphics-compiler-spill-events"]), pid)
+            summary["shader_spills"] = spill_summary(read("graphics-compiler-spill-events"), pid)
         if "metal-command-buffer-error" in tables:
-            summary["command_buffer_errors"] = sum(1 for _ in rows(tables["metal-command-buffer-error"]))
+            summary["command_buffer_errors"] = sum(1 for _ in read("metal-command-buffer-error"))
         log = out / f"{label}.validation.log"
         if log.is_file():
             with log.open(errors="replace") as handle:
@@ -811,7 +828,11 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
             summary["validation"] = found or {"messages": 0}
         counter_series = None
         if all(schema in tables for schema in COUNTER_TABLES):
-            found = counter_stats(tables[COUNTER_TABLES[0]], tables[COUNTER_TABLES[1]])
+            if writer is not None:  # counter_stats reads the value table line by line; this pass only stores it
+                for _ in rows(tables[COUNTER_TABLES[1]], sink=writer.table(COUNTER_TABLES[1]), keep=True):
+                    pass
+            found = counter_stats(tables[COUNTER_TABLES[0]], tables[COUNTER_TABLES[1]],
+                                  writer.table(COUNTER_TABLES[0]) if writer is not None else None)
             counter_series = found.pop("_series")
             if found["samples"]:
                 summary["gpu_counters"] = found
@@ -822,7 +843,13 @@ def summarize(trace, label=None, out=None, memory=True, counters=None):
         summary["hitches"] = attribute_hitches(ordered, starts, totals, sorted(compiler), sorted(thermal), allocated, cpu=sorted(cpu))
         if counter_series and counter_series["bins"]:
             attach_limiters(summary["hitches"]["worst"], counter_series)
+        if writer is not None:
+            stored = writer.commit()
+            if not stored:
+                print(f"{label}{tabledb.SUFFIX} was not written ({writer.failed}); the summary is complete", file=sys.stderr)
     finally:
+        if writer is not None and stored is None:
+            writer.abort()
         # rows() deletes each table's file once read; one left unread by a failure is removed here
         for path in tables.values():
             if os.path.exists(path):
@@ -843,10 +870,12 @@ def main():
     parser.add_argument("--label", help="name of the output files; defaults to the trace's name")
     parser.add_argument("--out", type=pathlib.Path, help="output directory; defaults to the trace's directory")
     parser.add_argument("--no-memory", action="store_true", help="skip the Metal memory table, the slowest to read")
+    parser.add_argument("--no-tables", action="store_true", help="do not store the tables in <label>.tables.sqlite")
     parser.add_argument("--counters", action="store_true", help="read the GPU counter tables of a trace recorded with PERF_INSTRUMENTS='Metal GPU Counters'")
     args = parser.parse_args()
     try:
-        summary = summarize(args.trace, args.label, args.out, memory=not args.no_memory, counters=True if args.counters else None)
+        summary = summarize(args.trace, args.label, args.out, memory=not args.no_memory, counters=True if args.counters else None,
+                            tables_db=not args.no_tables)
     except (ValueError, FileNotFoundError, RuntimeError) as error:
         sys.exit(str(error))
     print(json.dumps({k: summary.get(k) for k in ("gpu", "metal_memory_mib", "process_rss_mib")}, indent=2))

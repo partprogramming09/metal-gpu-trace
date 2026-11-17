@@ -1,7 +1,8 @@
 """retention: keeping a runs folder under METAL_TRACE_MAX_DISK_MB by removing the heaviest, oldest files first."""
 import os
+import subprocess
 
-import support  # noqa: F401  (puts src/ on sys.path)
+from support import PKG  # noqa: F401  (puts src/ on sys.path)
 from metal_gpu_trace import config, retention
 
 MIB = 2**20
@@ -168,3 +169,39 @@ def test_quota_boundary_is_inclusive(tmp_path):
         put(tmp_path, name, MIB, age)
     got = retention.prune_to_quota(tmp_path, 2, "cur")  # 3 MiB: the oldest goes and 2 MiB is exactly the quota
     assert got["removed"] == 1 and names(tmp_path) == ["c.trace", "d.trace"], (got, names(tmp_path))
+
+
+def test_quota_removes_the_tables_file_after_the_chrome_trace_and_before_the_csv(tmp_path):
+    mib = MIB
+
+    def left(quota):
+        folder = tmp_path / f"q{quota}"
+        folder.mkdir()
+        put(folder, "old.frames.csv.gz", mib, 0)  # the oldest, but it goes last
+        put(folder, "old.tables.sqlite", mib, 1)
+        put(folder, "old.chrome-trace", mib, 2)
+        put(folder, "new.trace", mib, 3)
+        put(folder, "cur.tables.sqlite", mib, 4)
+        put(folder, "cur.json", 10, 9)
+        retention.prune_to_quota(folder, quota, "cur")
+        return sorted(p.name for p in folder.iterdir())
+
+    everything = ["cur.json", "cur.tables.sqlite", "old.chrome-trace", "old.frames.csv.gz", "old.tables.sqlite"]
+    assert left(5) == everything, "new.trace went first"
+    assert left(4) == ["cur.json", "cur.tables.sqlite", "old.frames.csv.gz", "old.tables.sqlite"]
+    assert left(3) == ["cur.json", "cur.tables.sqlite", "old.frames.csv.gz"]
+    assert left(2) == ["cur.json", "cur.tables.sqlite"], "the current run's file stays, so does an older run's table last"
+
+
+def test_keep_runs_removes_an_old_runs_tables_file(tmp_path):
+    for i, name in enumerate(("old", "new")):
+        for suffix in (".json", ".frames.csv.gz", ".tables.sqlite", ".trace"):
+            put(tmp_path, name + suffix, 1, i * 10)
+    subprocess.run(["zsh", str(PKG / "prune_runs.sh"), str(tmp_path), "1"], check=True)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["new.frames.csv.gz", "new.json", "new.tables.sqlite", "new.trace", "old.trace"]
+
+
+def test_an_orphaned_tables_part_file_is_pruned_but_the_current_one_stays():
+    from metal_gpu_trace import retention
+    assert retention.kind_of("old.tables.sqlite.part", "cur") == retention.TABLES_DB
+    assert retention.kind_of("cur.tables.sqlite.part", "cur") is None

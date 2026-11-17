@@ -7,7 +7,8 @@ import sys
 import xml.etree.ElementTree as ET
 
 from support import PKG, golden  # also puts src/ on sys.path
-from metal_gpu_trace import perf_report  # noqa: E402
+from metal_gpu_trace import config, perf_report, traces  # noqa: E402
+from test_tabledb import use, xml_table  # noqa: E402
 
 
 def test_no_memory(tmp_path):
@@ -1055,3 +1056,52 @@ def test_noisy_basis_counts_the_other_processes(tmp_path):
     assert "Chrome" not in json.dumps(got) and "WindowServer" not in json.dumps(got), "no process name reaches a summary"
     assert run(own)["noisy_basis"]["other_processes"] == {"count": 0, "gpu_ms": 0.0, "share": 0.0}
     assert run(own + [row(2 ** 63, 5, proc(7, "x (7)"))])["gpu"]["start_latency_ms"]["count"] == 60, "a sentinel frame number must not abort the summary"
+
+
+def summary_files(tmp_path, tag):
+    """Fresh exported files for a summary of three presented frames and three memory samples."""
+    stalled = [(f, f * 16_000_000, 500_000, f"e{f}", f"c{f}") for f in range(1, 4)]
+    cols = ("start", "duration", "channel-name", "frame-number", "process", "cmdbuffer-id", "encoder-id")
+    body = [[f"<start>{s}</start>", f"<duration>{d}</duration>", "<channel-name>Vertex</channel-name>",
+             f"<frame-number>{f}</frame-number>", '<process fmt="x (7)"><pid>7</pid></process>',
+             f"<id>{c}</id>", f"<id>{e}</id>"] for f, s, d, e, c in stalled]
+    files = {"metal-gpu-intervals": xml_table(tmp_path, cols, body, f"{tag}a.xml"),
+             "gpu-performance-state-intervals": xml_table(tmp_path, ("start",), [], f"{tag}b.xml"),
+             perf_report.MEMORY: xml_table(tmp_path, ("start", "current-allocated-size", "process"),
+                                          [[f"<start>{t * 1_000_000}</start>", f"<current-allocated-size>{2**20 * (t + 1)}</current-allocated-size>",
+                                            '<process fmt="x (7)"><pid>7</pid></process>'] for t in range(3)], f"{tag}c.xml")}
+    return files
+
+
+def test_summarize_writes_the_tables_file_before_the_trace_goes(tmp_path):
+    """summarize() stores every table it reads, cleaned, and the shared summary has no path or machine name."""
+    files = summary_files(tmp_path, "1")
+    toc = ET.fromstring('<trace-toc><run><info><target><process type="launched" pid="7" name="x" '
+                        'arguments="/Users/ann/g.exe --x"/></target></info><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
+    saved = perf_report.toc_and_tables
+    perf_report.toc_and_tables = lambda trace, schemas, optional=(): (toc, files)
+    try:
+        out = tmp_path / "out"
+        summary = perf_report.summarize(tmp_path / "x.trace", "x", out, memory=True)
+    finally:
+        perf_report.toc_and_tables = saved
+    db = out / "x.tables.sqlite"
+    assert db.is_file() and b"/Users/" not in db.read_bytes() and "/Users/" not in (out / "x.json").read_text()
+    assert summary["process"]["arguments"] == "g.exe --x", summary["process"]
+    saved = use(out)
+    try:
+        assert traces.tool_trace_tables("x")["tables"] == ["gpu-performance-state-intervals", "metal-current-allocated-size",
+                                                          "metal-gpu-intervals"]
+        assert traces.tool_trace_query("x", "metal-gpu-intervals")["total"] == 3
+        assert traces.tool_trace_query("x", perf_report.MEMORY, where=[{"column": "start", "op": ">=", "value": 1_000_000}])["total"] == 2
+    finally:
+        config.OUT = saved
+    assert not list(out.glob("*.part")) and not list(tmp_path.glob("*.xml.tmp"))
+    # an opt-out writes no file
+    again = summary_files(tmp_path, "2")
+    perf_report.toc_and_tables = lambda trace, schemas, optional=(): (toc, again)
+    try:
+        perf_report.summarize(tmp_path / "x.trace", "y", out, memory=True, tables_db=False)
+    finally:
+        perf_report.toc_and_tables = saved
+    assert not (out / "y.tables.sqlite").exists()

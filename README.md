@@ -40,7 +40,7 @@ Xcode installed to record.
 - **translation layer**: software that lets a program written for another graphics API (Direct3D, Vulkan) run on Metal, such as DXMT, Mullion or MoltenVK.
 - **Wine**: software that runs Windows programs on a Mac.
 - **Metal System Trace**: the Instruments recording template that logs what the GPU does; this tool records with it.
-- **.trace**: the file Instruments writes. It is large (tens to hundreds of MB), so it is deleted after the summary unless you set `KEEP_TRACE=1`.
+- **.trace**: the file Instruments writes. It is large (tens to hundreds of MB), so it is deleted after the summary unless you set `KEEP_TRACE=1`. The tables the summary read stay in `<run>.tables.sqlite`, which `trace_query` can filter without the `.trace` (`PERF_TABLES=0` skips it).
 - **.gputrace**: a Metal capture of the draw commands of a few frames; this tool reads it without Xcode.
 - **baseline**: a saved reference made of several equal recordings. It shows how much a number moves by itself, so a later run can be judged against it.
 - **regression**: a change that makes the program worse than its baseline, for example FPS falling under the baseline's range by more than the margin.
@@ -180,7 +180,8 @@ The server reads these environment variables:
 | `WINEPREFIX` | The Wine prefix used when the call names none; `~/.wine` otherwise. |
 | `METAL_TRACE_READ` | More directories the tools may read, separated by `:`. |
 | `METAL_TRACE_LOG` | `off` silences the one-line stderr log per call. |
-| `KEEP_TRACE` | `1` keeps each recording's `.trace`, for `trace_tables`, `trace_query` or Instruments. |
+| `KEEP_TRACE` | `1` keeps each recording's `.trace`, for Instruments or the raw export (the tables file already answers `trace_tables`, `trace_count` and `trace_query`). |
+| `PERF_TABLES` | `0` skips writing `<run>.tables.sqlite`. |
 | `METAL_TRACE_ALLOW_LOCKED` | `1` records with the screen locked; without it a recording is refused, because a locked session leaves the program's frames unpaced by the display. |
 | `METAL_TRACE_MAX_DISK_MB` | Size limit of the runs folder, in MiB (a whole number of 1 or more): after each recording the oldest `.trace`, then `.chrome-trace`, then per-frame and memory tables are removed until it fits; summaries and `baselines.json` never. The new recording's `.trace` goes last, and its summary says what was removed (`retention`). |
 | `KEEP_RUNS` | Keeps only the newest N recordings; `baselines.json` is never removed (nor is the `panel.json` that 0.24.0 and older left). An older recording's `.trace` is never removed by it: only `METAL_TRACE_MAX_DISK_MB` frees one, and without that variable they stay. |
@@ -333,7 +334,7 @@ env = { METAL_TRACE_OUT = "/absolute/path/to/perf-runs", METAL_TRACE_WINE = "/ab
 | `perf_export_trace` | Exports a recording's frames to a file that Perfetto or Chrome can draw. — Writes a recording's GPU frames as `<run>.chrome-trace`, one slice per frame, for ui.perfetto.dev or chrome://tracing |
 | `trace_tables` | Lists the tables of a kept `.trace`. — Lists the tables of a kept `.trace`, named by its run or its path |
 | `trace_count` | Counts the rows of several tables of a kept `.trace`. — Counts the rows of several tables of a kept `.trace`, in all and per process; by default the tables that matter for a translation layer (GPU intervals, encoders, compiler spills, compiled shaders, allocations, counters, Time Profiler), so an empty one shows before reading it |
-| `trace_query` | Returns rows of one table of a kept `.trace`. — One page of rows of one table, optionally one process; with `window_ms`, one page of time windows (`count` and summed duration) in `rows` instead |
+| `trace_query` | Returns rows of one table of a recording, from its `.trace` or its tables file. — One page of rows of one table, optionally one process; with `window_ms`, one page of time windows (`count` and summed duration) in `rows` instead; with `where`, `columns`, `order_by`, `group_by`, `aggregates`, filtered rows or groups of the tables file |
 | `capture_summary` | Summarizes a `.gputrace` capture. — Summarizes a `.gputrace`; lists its 100 most frequent calls out of `calls_total` |
 | `capture_diff` | Compares two `.gputrace` captures. — Counts of each confirmed Metal call in both (debug markers not counted), their difference, and the debug groups whose calls differ |
 | `capture_records` | Returns the records of a `.gputrace` capture, one page at a time. — One page of a `.gputrace`'s records |

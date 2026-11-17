@@ -9,6 +9,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - ✨ `metal-gpu-trace init` adds the server to Claude Code, Claude Desktop, Cursor and Codex CLI (and VS Code with `--project`) in one command: absolute paths, `--dry-run`, an existing JSON config merged with a `.bak` copy, Codex's TOML appended or shown, safe to run twice.
 
+- 🧪 Every recording keeps its tables in `<run>.tables.sqlite`, so `trace_tables`, `trace_count` and `trace_query` still answer after the `.trace` is deleted; `trace_query` gains `where`, `columns`, `order_by`, `descending`, `group_by` and `aggregates` (filters, not SQL), `perf_runs` reports `tables_kept`, the disk quota removes the file after the Chrome trace and before the compressed tables, and `PERF_TABLES=0` skips it ([ADR-0007](docs/adr/0007-sqlite-tables-beside-the-compressed-tables.md)). Home folders are cleaned from the stored text.
+
+- The standard-library-only rule is lifted, the Python 3.9 floor stays ([ADR-0008](docs/adr/0008-lift-the-standard-library-only-rule.md)).
+
 - 🛠️ A `.gputrace` whose `capture` file is a link is refused by `capture_summary`, `capture_diff` and `capture_records`, as a link in the runs folder is (the link could point outside the readable folders); a run or label name that starts with a dot is refused, since it would name a hidden file.
 
 - Test changes (not fixes, so no icon): five tests that assumed macOS now hold on Windows (`perf_cold_warm` refuses there, the import test gives `USERPROFILE` and `SYSTEMROOT`, a bad `TMPDIR` is not an error where preflight does not read it, every file passes the executable check, an NTFS-sized `utime` step), and the `metal-trace-branch` job runs the Windows tests with pytest and also judges two Direct3D 11 runs against each other with `perf_check`. Found by running the suite on a real Windows PC.

@@ -19,6 +19,10 @@ Español: [`trace_query`](../../es/guides/leer-trazas/trace-query.md)
 | 5 | Rows (no `window_ms`) | each row becomes `{column: value}`, the value being the cell's `fmt` text if any, else its text: as Instruments shows it. **Probable:** a time column may read `1.5 ms` where the raw text is nanoseconds, which is why windows read `.text`, not `fmt` (`:68`, `:79`). Then `paths.page` cuts a page | `:111-112` |
 | 6 | Cleanup | the file `rows` read is deleted in a `finally`, also if the windows code raised (`tests/test_traces.py:118-124`, not run) | `:113-114` |
 
+> **Since the tables file:** the rows can also come from `<run>.tables.sqlite` when the `.trace` is gone, and `where`, `columns`,
+> `order_by`, `group_by` and `aggregates` filter them: see [the tables file](tables-file.md). The line numbers below describe the
+> export path.
+
 ## Paging
 
 `paths.page(items, offset, limit)` (`paths.py:94-99`) clamps `offset` to 0 or more and `limit` to 1..500 (`config.MAX_LIMIT`,

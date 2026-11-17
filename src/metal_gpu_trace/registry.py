@@ -21,7 +21,7 @@ S, I = {"type": "string"}, {"type": "integer"}
 RUN = {**S, "description": "a run name from perf_runs"}
 PAGE = {"offset": {**I, "description": "default 0"},
         "limit": {**I, "description": f"default 50, at most {config.MAX_LIMIT}"}}
-TRACE = {**S, "description": "a run name from perf_runs with trace_kept true, or a .trace path"}
+TRACE = {**S, "description": "a run name from perf_runs with trace_kept or tables_kept true, or a .trace path"}
 CAPTURE = {**S, "description": "a .gputrace bundle inside METAL_TRACE_OUT or METAL_TRACE_READ"}
 
 
@@ -164,6 +164,17 @@ TOOLS = {
         {"trace": TRACE, "schema": {**S, "description": "a table name that trace_tables lists, such as metal-gpu-intervals"},
          "pid": {**I, "description": "keep only this process's rows"},
          "window_ms": {"type": "integer", "description": "1 to 3600000: time windows of this many ms instead of rows (needs a start or time column)"},
+         "where": {"type": "array", "description": "tables file only, joined by AND: {column, op, value}, op one of = != < <= > >=; a time or size column holds its number as text: compare with a number",
+                   "items": {"type": "object", "properties": {"column": S, "op": {**S, "enum": ["=", "!=", "<", "<=", ">", ">="]},
+                                                            "value": {"type": ["string", "number", "null"]}},
+                             "required": ["column", "op", "value"]}},
+         "columns": {"type": "array", "items": S, "description": "tables file only: keep these columns"},
+         "order_by": {**S, "description": "tables file only: a column, or with group_by an aggregate name such as count or sum_duration"},
+         "descending": {"type": "boolean", "description": "with order_by, largest first"},
+         "group_by": {"type": "array", "items": S, "description": "tables file only: group rows by these columns (each group gets its count)"},
+         "aggregates": {"type": "array", "description": "tables file only: {fn, column}, fn count, sum, avg, min or max; named fn_column",
+                        "items": {"type": "object", "properties": {"fn": {**S, "enum": ["count", "sum", "avg", "min", "max"]}, "column": S},
+                                  "required": ["fn"]}},
          **PAGE}, ["trace", "schema"]),
                     hints("Read a trace table")),
     "capture_summary": (traces.tool_capture_summary, schema({"capture": CAPTURE}, ["capture"]), hints("Summarize a capture")),

@@ -41,6 +41,7 @@ From the top (the entry point) to the bottom (what everything else rests on):
 | 0 | `config` | Settings, read as `config.NAME` at use time |
 | 0 | `logs` | One stderr line per tool call |
 | 0 | `tables` | Reads and writes the per-frame and Metal memory tables, `.csv.gz` or the plain `.csv` of older recordings |
+| 0 | `tabledb` | The `<run>.tables.sqlite` file: writes the tables a summary reads, reads them back through declarative filters ([ADR-0007](../adr/0007-sqlite-tables-beside-the-compressed-tables.md)) |
 | 0 | `metrics` | Numbers that Mac and Windows summaries share |
 | 0 | `perf_report` | Summarizes a `.trace` (also a script) |
 | 0 | `perf_record_windows` | Windows recording (also a script) |
