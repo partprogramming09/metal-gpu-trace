@@ -33,7 +33,7 @@ Antes de tocar documentación, lee `.claude/ROUTING.md`. Mapa de piezas y flujo:
 - Every change gets a test in the matching `tests/test_*.py` and a line in `CHANGELOG.md` under the version it ships in.
 - Check with `python3 -I tests/run.py`; it must print `ok`. Lint as CI does: `uvx ruff@0.14.0 check src tests`. `python -m pytest tests` also runs the Windows tests on
   Windows.
-- Never commit, tag, push or release without the owner's explicit go-ahead.
+- Commits are fine without asking; never tag, push, merge or release without the owner's explicit go-ahead.
 
 ## Summary contract (from `schema_version` 3)
 
