@@ -24,7 +24,7 @@ Xcode installed to record.
 
 1. **Install Xcode** from the App Store. Open the Terminal app and type `xcrun xctrace version`: it should print a version.
 2. **Install uv**, a tool that downloads and runs the server for you. In the Terminal: `brew install uv` (needs Homebrew, see brew.sh).
-3. **Connect the server to your agent.** An MCP server is a small helper program that gives your AI agent new tools. For Claude Code, paste this in the Terminal (`METAL_TRACE_OUT` is the folder where recordings are saved): `claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -- uvx metal-gpu-trace`. For other AI apps see [MCP server](#mcp-server).
+3. **Connect the server to your agent.** An MCP server is a small helper program that gives your AI agent new tools. Run `uvx metal-gpu-trace init` to set up every AI app it finds at once, or, for Claude Code, paste this in the Terminal (`METAL_TRACE_OUT` is the folder where recordings are saved): `claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -- uvx metal-gpu-trace`. For other AI apps see [MCP server](#mcp-server).
 4. **Ask:** "Record my app for 30 seconds, then tell me its FPS and how long the GPU takes per frame." For a Windows program under Wine (software that runs Windows programs on a Mac), also add `-e METAL_TRACE_WINE=/path/to/wine` to the command of step 3 (see [Install](#install)).
 
 ## Words used here
@@ -211,6 +211,24 @@ each project's folder on its own. `runs` is relative to the file, starts with `~
 Any other key, or a wrong value, is an error that every tool reports, naming the field, until the file is fixed.
 `project_info` says which project is active and where its folder comes from. Without a project file nothing changes:
 `METAL_TRACE_OUT`, or `./perf-runs`, is used as before.
+
+### One command: `init`
+
+`uvx metal-gpu-trace init` finds the AI apps installed on this Mac (Claude Code, Claude Desktop, Cursor, Codex CLI)
+and adds the server to each, with the absolute path of `uvx` and `METAL_TRACE_OUT` set to `~/perf-runs`, resolved.
+
+```sh
+uvx metal-gpu-trace init --dry-run                       # show what it would write, write nothing
+uvx metal-gpu-trace init --client cursor --wine /path/to/wine
+```
+
+Options: `--client claude-code|claude-desktop|cursor|codex|vscode`, `--wine DIR` (a Wine directory holding
+`bin/wine`; `METAL_TRACE_WINE` is used when set), `--out DIR`, `--dry-run`, `--project`. An existing JSON config is
+merged (your other servers stay) and copied to `<file>.bak` first; a file that is not valid JSON is refused untouched.
+For Codex the block is appended to `config.toml` when missing, and only shown when `[mcp_servers.metal-trace]` is
+already there. Claude Code is registered with `claude mcp add`, not by editing its file. VS Code needs `--project`
+(it writes `.vscode/mcp.json`); `--project` files hold absolute paths of your machine, so keep them out of git. Paths
+of apps on other systems are not verified yet: init says "not supported yet" there. Restart the app afterwards.
 
 ### Claude Code
 

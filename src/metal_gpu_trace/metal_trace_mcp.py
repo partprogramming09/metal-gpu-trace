@@ -78,10 +78,13 @@ def check_cli(args):
 
 def main():
     """Serves newline-delimited JSON-RPC on stdin and stdout until stdin closes; --version prints the version, and
-    `check` judges a run for CI (see check_cli)."""
+    `check` judges a run for CI (see check_cli), and `init` adds the server to AI apps (see init)."""
     if sys.argv[1:] == ["--version"]:
         print(f"metal-gpu-trace {__version__}")
         return
+    if sys.argv[1:2] == ["init"]:  # before project.apply(): it only edits client config files
+        from metal_gpu_trace import init
+        sys.exit(init.main(sys.argv[2:]))
     project.apply()
     if sys.argv[1:2] == ["check"]:
         sys.exit(check_cli(sys.argv[2:]))

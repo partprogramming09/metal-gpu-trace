@@ -22,7 +22,7 @@ Xcode instalado.
 
 1. **Instala Xcode** desde la App Store. Abre la app Terminal y escribe `xcrun xctrace version`: debe imprimir una versión.
 2. **Instala uv**, una herramienta que descarga y ejecuta el servidor por ti. En Terminal: `brew install uv` (necesita Homebrew, ver brew.sh).
-3. **Conecta el servidor a tu agente.** Un servidor MCP es un programa auxiliar pequeño que le da herramientas nuevas a tu agente de IA. Para Claude Code, pega esto en Terminal (`METAL_TRACE_OUT` es la carpeta donde se guardan las grabaciones): `claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -- uvx metal-gpu-trace`. Para otras apps de IA, mira [Servidor MCP](#servidor-mcp).
+3. **Conecta el servidor a tu agente.** Un servidor MCP es un programa auxiliar pequeño que le da herramientas nuevas a tu agente de IA. Ejecuta `uvx metal-gpu-trace init` para configurar de una vez todas las apps de IA que encuentre, o, para Claude Code, pega esto en Terminal (`METAL_TRACE_OUT` es la carpeta donde se guardan las grabaciones): `claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -- uvx metal-gpu-trace`. Para otras apps de IA, mira [Servidor MCP](#servidor-mcp).
 4. **Pregunta:** «Graba mi app 30 segundos y dime sus FPS y cuánto tarda la GPU por frame.» Para un programa de Windows bajo Wine (software que ejecuta programas de Windows en un Mac), añade también `-e METAL_TRACE_WINE=/ruta/a/wine` al comando del paso 3 (ver [Instalar](#instalar)).
 
 ## Palabras que se usan
@@ -219,6 +219,25 @@ guardan y se leen en `runs` en vez de en `METAL_TRACE_OUT` (`METAL_TRACE_READ` s
 Cualquier otra clave, o un valor equivocado, es un error que cada herramienta explica, con el campo, hasta que se
 arregle el archivo. `project_info` dice qué proyecto está activo y de dónde sale su carpeta. Sin archivo de proyecto
 no cambia nada: se usa `METAL_TRACE_OUT`, o `./perf-runs`, como antes.
+
+### Un solo comando: `init`
+
+`uvx metal-gpu-trace init` busca las apps de IA instaladas en este Mac (Claude Code, Claude Desktop, Cursor, Codex CLI) y
+añade el servidor a cada una, con la ruta absoluta de `uvx` y `METAL_TRACE_OUT` en `~/perf-runs`, ya resuelta.
+
+```sh
+uvx metal-gpu-trace init --dry-run                       # muestra lo que escribiría, sin escribir
+uvx metal-gpu-trace init --client cursor --wine /ruta/a/wine
+```
+
+Opciones: `--client claude-code|claude-desktop|cursor|codex|vscode`, `--wine DIR` (un directorio de Wine con
+`bin/wine`; si está, se usa `METAL_TRACE_WINE`), `--out DIR`, `--dry-run`, `--project`. Un JSON existente se fusiona
+(tus otros servidores se quedan) y antes se copia a `<archivo>.bak`; un archivo que no es JSON válido se rechaza sin
+tocarlo. En Codex el bloque se añade al final de `config.toml` si falta, y solo se muestra si ya existe
+`[mcp_servers.metal-trace]`. Claude Code se registra con `claude mcp add`, sin editar su archivo. VS Code pide
+`--project` (escribe `.vscode/mcp.json`); los archivos de `--project` llevan rutas absolutas de tu máquina: no los
+versiones. En otros sistemas las rutas de las apps no están verificadas y `init` dice «no soportado todavía».
+Reinicia la app después.
 
 ### Claude Code
 
