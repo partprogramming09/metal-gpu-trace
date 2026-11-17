@@ -12,7 +12,9 @@ Español: [El archivo de tablas](../../es/guides/leer-trazas/archivo-de-tablas.m
 
 The tables `perf_report` already reads for the summary: the GPU intervals, Metal memory, performance state, and the optional
 ones the trace has (encoders, shader compiler, thermal, CPU, resource allocations, command buffer errors, shader spills),
-plus the two counter tables when the recording used GPU counters. Tables only `trace_count` names by default (such as
+plus `gpu-counter-info` when the recording used GPU counters. The counter samples (`gpu-counter-value`) are not stored: a
+6 s recording had 2 955 137 of them, 229 MB of a 233 MB file, and the summary already keeps each counter's mean, p95 and
+max. Tables only `trace_count` names by default (such as
 `time-profile`) are not stored; `trace_count` says "not in this trace's tables file" for them.
 
 Each table has the columns the export names, nothing assumed. A column `c` is kept as the cell's text (an integer or decimal

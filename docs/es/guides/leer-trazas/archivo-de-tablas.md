@@ -12,7 +12,9 @@ English: [The tables file: question a recording after its `.trace` is gone](../.
 
 Las tablas que `perf_report` ya lee para el resumen: los intervalos de GPU, la memoria de Metal, el estado de rendimiento, y
 las opcionales que tenga la traza (encoders, compilador de shaders, térmica, CPU, asignaciones de recursos, errores de command
-buffer, derrames de shaders), más las dos tablas de contadores cuando la grabación usó contadores de GPU. Las tablas que solo
+buffer, derrames de shaders), más `gpu-counter-info` cuando la grabación usó contadores de GPU. Las muestras de los contadores (`gpu-counter-value`) no se
+guardan: una grabación de 6 s tuvo 2 955 137, 229 MB de un archivo de 233 MB, y el resumen ya guarda la media, el p95 y el
+máximo de cada contador. Las tablas que solo
 `trace_count` nombra por defecto (como `time-profile`) no se guardan; `trace_count` dice «not in this trace's tables file»
 para ellas (no está en el archivo de tablas de esta traza).
 

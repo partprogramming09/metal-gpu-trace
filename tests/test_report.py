@@ -1105,3 +1105,49 @@ def test_summarize_writes_the_tables_file_before_the_trace_goes(tmp_path):
     finally:
         perf_report.toc_and_tables = saved
     assert not (out / "y.tables.sqlite").exists()
+
+
+def test_tables_file_keeps_the_counter_info_but_not_the_counter_samples(tmp_path):
+    """Found on a real 6 s recording with counters: gpu-counter-value had 2 955 137 rows and made 229 MB of a 233 MB file
+    (the .trace was 90 MB); the summary already keeps each counter's mean, p95 and max, so the samples are not stored."""
+    import sqlite3
+
+    def table(columns, body):
+        cols = "".join(f"<col><mnemonic>{c}</mnemonic></col>" for c in columns)
+        return f"<trace-query-result><node xpath='x'><schema>{cols}</schema>{body}</node></trace-query-result>\n"
+
+    spans = "".join(f"<row><start-time>{s}</start-time><duration>{d}</duration><gpu-channel-name>Vertex</gpu-channel-name>"
+                    f"<gpu-frame-number>{f}</gpu-frame-number><process><pid>7</pid></process><id>{c}</id><id>{e}</id></row>"
+                    for f, s, d, e, c in stalled_spans())
+    info = ("<trace-query-result><node xpath='x'><schema name=\"gpu-counter-info\"><col><mnemonic>counter-id</mnemonic></col>"
+            "<col><mnemonic>name</mnemonic></col><col><mnemonic>type</mnemonic></col></schema>"
+            "<row><uint32 id=\"1\" fmt=\"0\">0</uint32><string id=\"2\" fmt=\"ALU Limiter\">ALU Limiter</string>"
+            "<string id=\"3\" fmt=\"Percentage\">Percentage</string></row></node></trace-query-result>\n")
+    values = ("<?xml version=\"1.0\"?>\n<trace-query-result>\n<node xpath='x'><schema name=\"gpu-counter-value\"></schema>"
+              "<row><event-time id=\"1\" fmt=\"00:00.910.037\">910037000</event-time><uint32 id=\"2\" fmt=\"0\">0</uint32>"
+              "<fixed-decimal id=\"3\" fmt=\"10,0\">10.0</fixed-decimal><uint64 id=\"4\" fmt=\"7\">7</uint64><uint32 ref=\"2\"/>"
+              "<uint32 id=\"5\" fmt=\"1\">1</uint32></row>\n</node></trace-query-result>\n")
+    paths = {"metal-gpu-intervals": table(("start", "duration", "channel-name", "frame-number", "process", "cmdbuffer-id",
+                                           "encoder-id"), spans),
+             "gpu-performance-state-intervals": table(("start",), ""),
+             "gpu-counter-info": info, "gpu-counter-value": values}
+    toc = ET.fromstring('<trace-toc><run><info><target><process type="launched" pid="7" name="x"/></target>'
+                        '</info><data><table schema="metal-gpu-intervals"/></data></run></trace-toc>')
+
+    def fake(trace, schemas, optional=()):
+        files = {}
+        for name, xml in paths.items():
+            files[name] = str(tmp_path / f"{name}.xml")
+            pathlib.Path(files[name]).write_text(xml)
+        return toc, files
+
+    saved = perf_report.toc_and_tables
+    perf_report.toc_and_tables = fake
+    try:
+        summary = perf_report.summarize(tmp_path / "x.trace", "x", tmp_path, memory=False, counters=True)
+    finally:
+        perf_report.toc_and_tables = saved
+    assert summary["gpu_counters"]["samples"] == 1, summary.get("gpu_counters")
+    con = sqlite3.connect(f"file:{tmp_path / 'x.tables.sqlite'}?mode=ro", uri=True)
+    stored = {r[0] for r in con.execute("select name from sqlite_master where type='table'")}
+    assert "gpu-counter-info" in stored and "gpu-counter-value" not in stored, stored

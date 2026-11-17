@@ -14,8 +14,9 @@ a few columns and no filter.
 
 ## Decision
 - While `perf_report` reads each table for the summary it also stores the rows in `<run>.tables.sqlite`, in one
-  transaction, in a temporary file moved into place at the end. It stores the tables the summary already reads (the
-  counter tables only with counters), so no extra `xctrace` call is made. Columns are the export's own, with the cell's text
+  transaction, in a temporary file moved into place at the end. It stores the tables the summary already reads (plus
+  `gpu-counter-info` with counters; the samples of `gpu-counter-value` are not stored: 2 955 137 rows made 229 MB of a
+  233 MB file in a 6 s recording), so no extra `xctrace` call is made. Columns are the export's own, with the cell's text
   (a number when it is exactly one), its formatted value where that differs, and the pid of a `process` cell.
 - Before storing, a command-line column gets the summary's `public_arguments` and any `/Users/<name>` becomes `~`.
 - The three tools read the file when the `.trace` is not there; when it is, nothing changes. `trace_query` gains

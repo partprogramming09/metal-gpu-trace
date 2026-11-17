@@ -828,9 +828,8 @@ def summarize(trace, label=None, out=None, memory=True, counters=None, tables_db
             summary["validation"] = found or {"messages": 0}
         counter_series = None
         if all(schema in tables for schema in COUNTER_TABLES):
-            if writer is not None:  # counter_stats reads the value table line by line; this pass only stores it
-                for _ in rows(tables[COUNTER_TABLES[1]], sink=writer.table(COUNTER_TABLES[1]), keep=True):
-                    pass
+            # the tables file keeps gpu-counter-info only: the samples are millions of rows (229 MB of a 233 MB file for 6 s,
+            # the .trace was 90 MB) and the summary already holds each counter's mean, p95 and max
             found = counter_stats(tables[COUNTER_TABLES[0]], tables[COUNTER_TABLES[1]],
                                   writer.table(COUNTER_TABLES[0]) if writer is not None else None)
             counter_series = found.pop("_series")
