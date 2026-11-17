@@ -15,7 +15,7 @@ a page of wide rows) is refused with `the result has N characters; ask for a sma
 
 | What goes wrong | What the reader gets | Line |
 |---|---|---|
-| The `.trace` is not there (deleted after the summary) | `no recording at <name>: perf_record.sh deletes the .trace once its summary is written, unless KEEP_TRACE=1` | `perf_report.py:52-54` |
+| The `.trace` is not there (deleted after the summary) | `trace_tables`, `trace_count` and `trace_query` read the run's `<name>.tables.sqlite` instead; with neither file: `no recording at <name>.trace and no <name>.tables.sqlite: ...` | `traces.py` (`source_of`, `missing`) |
 | A `trace` or capture path outside the readable folders | `<name> is outside the readable directories; add its directory to METAL_TRACE_READ` | `paths.py:20-21` |
 | The `.trace` of a name is a link | `<name>.trace cannot be read` | `paths.py:88-89` |
 | `xctrace` fails on an export | `xctrace export of <name> failed (exit N): <last line of its error>`; a table cut by the known `SIGTRAP` crash at a row boundary is accepted | `perf_report.py:62-65`, `:60-61` |

@@ -26,7 +26,7 @@ Detalles para quien cambia el código: [Cómo funciona](../docs/guides/how-it-wo
 
 1. **Instala Xcode** desde la App Store. Abre la app Terminal y escribe `xcrun xctrace version`: debe imprimir una versión.
 2. **Instala uv**, una herramienta que descarga y ejecuta el servidor por ti. En Terminal: `brew install uv` (necesita Homebrew, ver brew.sh).
-3. **Conecta el servidor a tu agente.** Un servidor MCP es un programa auxiliar pequeño que le da herramientas nuevas a tu agente de IA. Para Claude Code, pega esto en Terminal (`METAL_TRACE_OUT` es la carpeta donde se guardan las grabaciones): `claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -- uvx metal-gpu-trace`. Para otras apps de IA, mira [Servidor MCP](#servidor-mcp).
+3. **Conecta el servidor a tu agente.** Un servidor MCP es un programa auxiliar pequeño que le da herramientas nuevas a tu agente de IA. Ejecuta `uvx metal-gpu-trace init` para configurar de una vez todas las apps de IA que encuentre, o, para Claude Code, pega esto en Terminal (`METAL_TRACE_OUT` es la carpeta donde se guardan las grabaciones): `claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -- uvx metal-gpu-trace`. Para otras apps de IA, mira [Servidor MCP](#servidor-mcp).
 4. **Pregunta:** «Graba mi app 30 segundos y dime sus FPS y cuánto tarda la GPU por frame.» Para un programa de Windows bajo Wine (software que ejecuta programas de Windows en un Mac), añade también `-e METAL_TRACE_WINE=/ruta/a/wine` al comando del paso 3 (ver [Instalar](#instalar)).
 
 ## Palabras que se usan
@@ -70,7 +70,13 @@ Se lee así: 2 034 frames en 20,8 s. `fps_estimate` vale 104,5: sale de la media
 
 ## Novedades
 
-Versión 0.27.3, vigente. Cada punto enlaza al comando que se ejecutó y a su salida real.
+Versión 0.28.0. Cada punto enlaza al comando que se ejecutó y a su salida real.
+
+- ✨ **Respuestas más cortas: `fields`.** Toda herramienta acepta un `fields` opcional, una lista de rutas con puntos que recorta el resultado antes de enviarlo (`perf_runs` con `fields=["fps"]` devuelve solo los fps de cada corrida); una ruta que no coincide con nada se nombra en `_meta.fields_missing`. `tools/list` también es más corto: 33 072 caracteres en vez de 45 186. [Prueba](../docs/evidence/v0.28.0.md#every-tool-takes-fields-and-the-tool-list-is-shorter)
+- ✨ **Un comando para configurar el servidor.** `metal-gpu-trace init` agrega el servidor a Claude Code, Claude Desktop, Cursor y Codex CLI con rutas absolutas; `--dry-run` muestra el cambio antes, y una config existente se fusiona (los otros servidores se conservan) con una copia `.bak`. [Prueba](../docs/evidence/v0.28.0.md#metal-gpu-trace-init-sets-the-server-up-in-one-command)
+- ✨ **Las tablas sobreviven al `.trace`.** Cada grabación guarda sus tablas en `<run>.tables.sqlite`, y `trace_query` gana `where`, `columns`, `order_by`, `group_by` y `aggregates`: las mismas filas que el `.trace` en 0,02 s en vez de 3,8 s, y un conteo por canal en una sola llamada. Probado en una grabación real de Metal, no en Windows. [Prueba](../docs/evidence/v0.28.0.md#the-tables-are-kept-in-a-sqlite-file-and-queried-with-filters)
+
+Versión 0.27.3, aún vigente:
 
 - ✨ **Una sola forma de resumen en las dos plataformas.** Todo resumen nuevo (`schema_version` 3) trae un bloque `common` con el ritmo de frames, la presión de memoria y la API gráfica, con las mismas claves en macOS y Windows y un `source` por número; lo que no se puede medir igual dice `comparable: false` en vez de un número inventado. [Prueba](../docs/evidence/v0.27.3.md#a-summary-has-a-common-block-on-both-platforms)
 - 🔍 **Qué reservó una grabación.** `perf_memory_breakdown` reparte las reservas de Metal por tipo, lo que sigue vivo y cuántas veces se reservó la memoria viva (5,47 en una corrida real), solo con el resumen. [Prueba](../docs/evidence/v0.27.3.md#what-a-recording-allocated-by-type)
@@ -128,7 +134,8 @@ El servidor lee estas variables de entorno:
 | `WINEPREFIX` | El prefijo de Wine si la llamada no indica otro; si no, `~/.wine`. |
 | `METAL_TRACE_READ` | Más directorios que las herramientas pueden leer, separados por `:` (`;` en Windows). |
 | `METAL_TRACE_LOG` | `off` apaga la línea de log por llamada en stderr. |
-| `KEEP_TRACE` | `1` guarda el `.trace` de cada grabación, para `trace_tables`, `trace_query` o Instruments. |
+| `KEEP_TRACE` | `1` guarda el `.trace` de cada grabación, para Instruments o el export en bruto (el archivo de tablas ya responde `trace_tables`, `trace_count` y `trace_query`). |
+| `PERF_TABLES` | `0` no escribe `<etiqueta>.tables.sqlite`. |
 | `METAL_TRACE_ALLOW_LOCKED` | `1` graba con la pantalla bloqueada. Sin él la grabación se rechaza: una sesión bloqueada deja los frames sin ritmo. |
 | `METAL_TRACE_MAX_DISK_MB` | Límite de tamaño de la carpeta de grabaciones, en MiB. Tras cada grabación se borran primero el `.trace` más viejo, luego el `.chrome-trace` y luego las tablas por frame y de memoria; nunca los resúmenes ni `baselines.json`. [Retención](../docs/guides/data-and-lifecycle/retention.md) |
 | `KEEP_RUNS` | Guarda solo las N grabaciones más recientes. Nunca quita un `.trace`, y `baselines.json` nunca se borra. [Retención](../docs/guides/data-and-lifecycle/retention.md) |
@@ -154,6 +161,25 @@ El servidor lo busca en su directorio de trabajo y en las carpetas de encima, ha
 | `format` | `metal-gpu-trace`, el único por ahora. |
 
 Cualquier otra clave, o un valor equivocado, es un error que cada herramienta explica, con el campo, hasta que se arregle el archivo. Sin archivo de proyecto se usa `METAL_TRACE_OUT`, o `./perf-runs`, como antes.
+
+### Un solo comando: `init`
+
+`uvx metal-gpu-trace init` busca las apps de IA instaladas en este Mac (Claude Code, Claude Desktop, Cursor, Codex CLI) y
+añade el servidor a cada una, con la ruta absoluta de `uvx` y `METAL_TRACE_OUT` en `~/perf-runs`, ya resuelta.
+
+```sh
+uvx metal-gpu-trace init --dry-run                       # muestra lo que escribiría, sin escribir
+uvx metal-gpu-trace init --client cursor --wine /ruta/a/wine
+```
+
+Opciones: `--client claude-code|claude-desktop|cursor|codex|vscode`, `--wine DIR` (un directorio de Wine con
+`bin/wine`; si está, se usa `METAL_TRACE_WINE`), `--out DIR`, `--dry-run`, `--project`. Un JSON existente se fusiona
+(tus otros servidores se quedan) y antes se copia a `<archivo>.bak`; un archivo que no es JSON válido se rechaza sin
+tocarlo. En Codex el bloque se añade al final de `config.toml` si falta, y solo se muestra si ya existe
+`[mcp_servers.metal-trace]`. Claude Code se registra con `claude mcp add`, sin editar su archivo. VS Code pide
+`--project` (escribe `.vscode/mcp.json`); los archivos de `--project` llevan rutas absolutas de tu máquina: no los
+versiones. En otros sistemas las rutas de las apps no están verificadas y `init` dice «no soportado todavía».
+Reinicia la app después.
 
 ### Claude Code
 
@@ -205,7 +231,7 @@ Estas apps no expanden `~` ni `$HOME`: escribe rutas absolutas.
 
 ### Herramientas
 
-26 herramientas en cuatro grupos. Tu agente las elige; rara vez llamas a una tú. Los argumentos de cada una están en [Servidor y transporte](../docs/guides/server-and-transport/registry.md).
+26 herramientas en cuatro grupos. Tu agente las elige; rara vez llamas a una tú. Todas aceptan además `fields`, opcional: una lista de rutas con punto, como `common.frame_pacing.fps_1pct_low`; el resultado conserva solo esas (en una página, en cada fila), así el agente lee unos pocos números y no el resumen entero. Una ruta que no existe aparece en `_meta.fields_missing`. Los argumentos de cada una están en [Servidor y transporte](../docs/guides/server-and-transport/registry.md).
 
 | Grupo | Herramientas (para qué sirve cada una) |
 | --- | --- |

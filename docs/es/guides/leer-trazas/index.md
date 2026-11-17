@@ -17,6 +17,7 @@ English: [Reading traces](../../../guides/reading-traces/index.md)
 | [El argumento `trace`](./argumento-trace.md) | cómo se entiende un nombre o una ruta; qué es un `.trace` desde aquí |
 | [`trace_tables` y `trace_count`](./tablas-y-conteo.md) | qué tablas existen y cuáles tienen filas |
 | [`trace_query`](./trace-query.md) | filas, páginas y ventanas de tiempo |
+| [El archivo de tablas](./archivo-de-tablas.md) | `<run>.tables.sqlite`: consultar una grabación después de borrar su `.trace` |
 | [Exportar un `.chrome-trace`](./chrome-trace.md) | `perf_export_trace`, qué muestra y qué omite el archivo |
 | [El formato `.gputrace`](./formato-gputrace.md) | lo que el código supone; los ids de llamada |
 | [Las herramientas de captura](./herramientas-captura.md) | `capture_summary`, `capture_diff`, `capture_records`, lo que no pueden decir |
@@ -74,9 +75,11 @@ cambió. Ese par es **sintético** (un flujo de bytes que construye una prueba):
 
 | Tienes | Pregunta con | Necesita `xctrace` | Necesita el `.trace` guardado |
 |---|---|---|---|
-| Un nombre de corrida: la lista de tablas, cuáles tienen filas, o las filas (o ventanas) de una | `trace_tables`, `trace_count`, `trace_query` | sí | sí (así que `KEEP_TRACE=1`; cada página vuelve a exportar, por eso las tablas grandes son lentas: [trace_query](./trace-query.md)) |
+| Un nombre de corrida: la lista de tablas, cuáles tienen filas, o las filas (o ventanas) de una | `trace_tables`, `trace_count`, `trace_query` | sí, si lee el `.trace`; no con el archivo de tablas | no: el archivo de tablas (`<run>.tables.sqlite`) basta. Con el `.trace` guardado (`KEEP_TRACE=1`) se lee ese; cada página vuelve a exportar, por eso las tablas grandes son lentas: [trace_query](./trace-query.md) |
 | Un nombre de corrida: sus fotogramas en Perfetto | `perf_export_trace` | no | no (lee la tabla por fotograma, que se queda) |
 | Un `.gputrace` guardado desde Xcode | `capture_summary`, `capture_diff`, `capture_records` | no | no es un `.trace`; nombres, cuentas y etiquetas, ningún tiempo ([herramientas de captura](./herramientas-captura.md)) |
+
+`perf_runs` tiene también `tables_kept` (`analysis.py:80`): verdadero cuando existe `<run>.tables.sqlite` y no es un enlace; [el archivo de tablas](./archivo-de-tablas.md) explica qué guarda.
 
 `perf_runs` tiene un indicador `trace_kept` por corrida (`analysis.py:79`): es verdadero cuando existe la carpeta `<run>.trace` y
 no es un enlace, así que dice si la primera fila puede funcionar (**confirmada**; una traza se guarda con `KEEP_TRACE=1` o el

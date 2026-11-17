@@ -140,6 +140,46 @@ def check_arguments(schema, arguments):
     return None
 
 
+MISSING = object()  # a path that matches nothing; None is a real value ("not measured") and must survive
+
+
+def _take(value, parts):
+    """Returns the part of `value` at the dotted path `parts` (inside a list, in every item), or MISSING if absent."""
+    if not parts:
+        return value
+    if isinstance(value, dict):
+        sub = _take(value[parts[0]], parts[1:]) if parts[0] in value else MISSING
+        return MISSING if sub is MISSING else {parts[0]: sub}
+    if isinstance(value, list):
+        items = [_take(item, parts) for item in value]
+        return MISSING if value and all(item is MISSING for item in items) else [{} if item is MISSING else item for item in items]
+    return MISSING
+
+
+def _merge(a, b):
+    """Returns `a` and `b` joined: objects by key, lists item by item."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return {**a, **{k: _merge(a[k], v) if k in a else v for k, v in b.items()}}
+    if isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+        return [_merge(x, y) for x, y in zip(a, b)]
+    return b
+
+
+def cut(value, fields, paged=False):
+    """Returns `value` cut to the dotted paths in `fields` and the paths that matched nothing. On a page (`paged`)
+    the paths apply to each row and the page's own keys stay. An object left empty stays, as {}."""
+    target = value["rows"] if paged else value
+    kept, missing = None, []
+    for path in fields:
+        part = _take(target, path.split("."))
+        if part is MISSING:
+            missing.append(path)
+        else:
+            kept = part if kept is None else _merge(kept, part)
+    kept = kept if kept is not None else ([{} for _ in target] if paged else {})
+    return ({**value, "rows": kept} if paged else kept), missing
+
+
 def call(name, arguments, request_id=None, token=None):
     """Runs one tool and returns its MCP result, with failures as isError results that say what to do. A client's
     notifications/cancelled for `request_id` stops it; `token` is the client's progressToken, if it sent one."""
@@ -153,15 +193,27 @@ def call(name, arguments, request_id=None, token=None):
         if recording.cancelled():
             raise paths.ToolError("the call was cancelled before it started")
         project.check()
+        # `fields` belongs to every tool and is not one of its arguments: it leaves before the check
+        fields = None
+        if isinstance(arguments, dict):
+            arguments = dict(arguments)
+            fields = arguments.pop("fields", None)
+        if fields is not None and not (isinstance(fields, list) and all(isinstance(f, str) and f for f in fields)):
+            raise paths.ToolError("bad arguments: fields must be a list of dotted paths such as common.frame_pacing")
         if (problem := check_arguments(registry.TOOLS[name][1], arguments)) is not None:
             raise paths.ToolError(f"bad arguments: {problem}")
         value = registry.TOOLS[name][0](**arguments)
         if not isinstance(value, dict):
             raise RuntimeError(f"{name} returned {type(value).__name__}, not an object")
+        missing = []
+        if fields:  # before the size limit, so a big answer is cut to size instead of refused
+            value, missing = cut(value, fields, name in registry.PAGED_TOOLS)
         text = json.dumps(value, ensure_ascii=False)
         if len(text) > config.MAX_TEXT:
             raise paths.ToolError(f"the result has {len(text)} characters; ask for a smaller page with limit")
         result = {"content": [{"type": "text", "text": text}], "structuredContent": value}
+        if missing:
+            result["_meta"] = {"fields_missing": missing}
     except (paths.ToolError, FileNotFoundError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         result = {"content": [{"type": "text", "text": str(error)}], "isError": True}
     except Exception as error:  # an unexpected failure is reported to the client, not fatal to the server

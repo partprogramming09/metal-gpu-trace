@@ -1,6 +1,6 @@
 #!/bin/zsh
-# Keeps the newest <keep> recordings in <folder>: removes every file of each older recording except its .trace, which
-# only the disk quota frees (ADR-0006).
+# Keeps the newest <keep> recordings in <folder>: removes every file of each older recording (its .tables.sqlite too)
+# except its .trace, which only the disk quota frees (ADR-0006).
 # baselines.json (the baselines) and panel.json (left by the removed panel of 0.24.0) are not recordings and are never removed.
 # Usage: prune_runs.sh <folder> <keep>
 set -euo pipefail

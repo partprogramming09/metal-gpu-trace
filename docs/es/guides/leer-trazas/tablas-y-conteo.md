@@ -1,6 +1,10 @@
 # `trace_tables` y `trace_count`
 
-**Lector:** personas que exploran un `.trace` guardado, o que cambian estas dos herramientas. Revisado el 2026-11-16.
+**Lector:** personas que exploran las tablas de una grabación (su `.trace` guardado, o su archivo de tablas), o que cambian estas dos herramientas. Revisado el 2026-11-16.
+
+> **Desde el archivo de tablas:** cuando el `.trace` ya no está, las dos herramientas leen `<run>.tables.sqlite`, que guarda las
+> tablas que leyó el resumen (`trace_count` dice «not in this trace's tables file» para las demás). Ver
+> [el archivo de tablas](./archivo-de-tablas.md).
 
 English: [`trace_tables` and `trace_count`](../../../guides/reading-traces/trace-tables-count.md)
 

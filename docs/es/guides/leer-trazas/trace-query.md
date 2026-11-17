@@ -1,6 +1,6 @@
 # `trace_query`: filas, páginas y ventanas
 
-**Lector:** personas que leen las filas de una tabla de un `.trace` guardado, o que cambian `traces.py:92-114`. Revisado el 2026-11-16.
+**Lector:** personas que leen las filas de una tabla de un `.trace` guardado o de su archivo de tablas, o que cambian `traces.py:92-114`. Revisado el 2026-11-16.
 
 English: [`trace_query`](../../../guides/reading-traces/trace-query.md)
 
@@ -18,6 +18,28 @@ English: [`trace_query`](../../../guides/reading-traces/trace-query.md)
 | 4 | Filtro `pid` | `pid is None or "process" not in row or perf_report.pid_of(row["process"]) == int(pid)`: una tabla **sin** columna `process` se devuelve entera diga lo que diga `pid`, aunque la herramienta diga «keep only this process's rows» (F6) | `:102-103` |
 | 5 | Filas (sin `window_ms`) | cada fila pasa a `{columna: valor}`, siendo el valor el texto `fmt` de la celda si lo tiene, si no su texto: como lo muestra Instruments. **Probable:** una columna de tiempo puede leerse `1.5 ms` cuando el texto crudo son nanosegundos, por eso las ventanas leen `.text` y no `fmt` (`:68`, `:79`). Luego `paths.page` corta una página | `:111-112` |
 | 6 | Limpieza | el archivo que leyó `rows` se borra en un `finally`, también si el código de ventanas lanzó una excepción (`tests/test_traces.py:118-124`, no corrida) | `:113-114` |
+
+## Paginación
+
+> **Desde el archivo de tablas:** las filas también pueden venir de `<run>.tables.sqlite` cuando el `.trace` ya no está, y los
+> argumentos `where`, `columns`, `order_by`, `descending`, `group_by` y `aggregates` filtran, ordenan y agrupan esas filas: ver
+> [el archivo de tablas](./archivo-de-tablas.md). Los números de línea de arriba describen la ruta de exportación.
+
+## Argumentos de filtro
+
+| Argumento | Qué hace |
+|---|---|
+| `where` | lista de `{column, op, value}` unidos con Y; `op` es `=`, `!=`, `<`, `<=`, `>` o `>=`. Una columna de tiempo o de tamaño guarda su número como texto, así que se compara con un número |
+| `columns` | deja solo esas columnas de cada fila |
+| `order_by` | una columna; con `group_by`, el nombre de un agregado (`count`, `sum_duration`) |
+| `descending` | con `order_by`, el mayor primero |
+| `group_by` | agrupa las filas por esas columnas; cada grupo lleva su cuenta salvo que `aggregates` diga otra cosa |
+| `aggregates` | lista de `{fn, column}`, con `fn` en `count`, `sum`, `avg`, `min` o `max`; cada uno se llama `fn_columna`, y `count` se llama `count` |
+
+Estos argumentos leen el archivo de tablas aunque el `.trace` siga existiendo. Si el archivo no está (una corrida anterior a él,
+o grabada con `PERF_TABLES=0`), la llamada falla y dice que hay que quitar los argumentos o grabar la corrida de nuevo.
+`window_ms` solo se combina con `where` y `pid`: con cualquiera de los otros, la llamada falla con `window_ms combines only with
+where and pid`. La paginación (`total`, `offset`, `rows`, `next_offset`) es la misma en todos los modos.
 
 ## Paginación
 

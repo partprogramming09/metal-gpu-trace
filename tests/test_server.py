@@ -16,16 +16,14 @@ def test_perf_panel_is_gone():
 
 
 def test_readme_lists_every_tool(tmp_path):
-    """Both READMEs hold a table row for every tool the server offers, and name the words the 0.17.0 additions need."""
+    """Both READMEs name every tool the server offers, and name the words the 0.17.0 additions need."""
     import re
     from metal_gpu_trace import registry
     for name in ("README.md", "es/README.md"):
-        listed = re.findall(r"^\| `([a-z_]+)` \|", (ROOT / name).read_text(encoding="utf-8"), re.M)
-        rows = set(listed)
-        assert len(listed) == len(rows), f"{name} lists a tool twice"
+        rows = set(re.findall(r"`([a-z_]+)`", (ROOT / name).read_text(encoding="utf-8")))
         missing = sorted(set(registry.TOOLS) - rows)
-        assert not missing, f"{name} lacks rows for {missing}"
-        text = (ROOT / name).read_text(encoding="utf-8")
+        assert not missing, f"{name} does not name {missing}"
+        text = (ROOT / name).read_text(encoding="utf-8") + "".join(f.read_text(encoding="utf-8") for f in (ROOT / "docs" / "guides").rglob("*.md"))
         for word in ("mtl-x64", "bgfx-examples", "memory_free_pct", "gpu_state", "screen_locked", "resource_allocations"):
             assert word in text, f"{name} does not mention {word}"
 
@@ -43,9 +41,9 @@ def test_readme_has_plain_words_first():
                "translation layer", "Wine", "Metal System Trace", ".trace", ".gputrace", "baseline", "regression")
     spanish = tuple("GPU ms por frame" if term == "GPU ms per frame" else term for term in english)
     for name, plain, recording, words, terms, image in (
-            ("README.md", "## In plain words", "## Recording", "## Words used here", english, "docs/diagrams/how-it-works.png"),
+            ("README.md", "## In short", "## Recording", "## Words used here", english, "docs/guides/img/readme-flow.png"),
             ("es/README.md", "## En palabras sencillas", "## Grabar", "## Palabras que se usan", spanish,
-             "../docs/diagrams/how-it-works.png")):
+             "../docs/guides/img/readme-flow.png")):
         text = (ROOT / name).read_text(encoding="utf-8")
         assert text.count(plain) == 1 and text.index(plain) < text.index(recording), f"{name}: plain words come first"
 
@@ -53,7 +51,7 @@ def test_readme_has_plain_words_first():
         glossary = section(text, words)
         missing = [term for term in terms if f"**{term}**" not in glossary]
         assert not missing, f"{name}: the glossary lacks {missing}"
-        assert image in text and (ROOT / "docs" / "diagrams" / "how-it-works.png").is_file(), f"{name}: the diagram"
+        assert image in text and (ROOT / "docs" / "guides" / "img" / "readme-flow.png").is_file(), f"{name}: the diagram"
 
 
 def test_server(tmp_path):
@@ -665,7 +663,7 @@ def test_tool_shape(tmp_path):
     tools = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
     assert len(tools) == 26
     info = next(t for t in tools if t["name"] == "project_info")
-    assert info["annotations"]["readOnlyHint"] is True and not info["inputSchema"].get("properties"), info
+    assert info["annotations"]["readOnlyHint"] is True and list(info["inputSchema"]["properties"]) == ["fields"] and info["inputSchema"]["additionalProperties"] is False, info
     for tool in tools:
         assert tool["title"] == tool["annotations"]["title"], tool["name"]
         if not tool["inputSchema"].get("properties"):
@@ -1257,3 +1255,110 @@ def test_stdio_invalid_utf8_is_a_parse_error_and_the_server_keeps_serving(tmp_pa
                           env=dict(os.environ, METAL_TRACE_OUT=str(tmp_path / "runs")))
     replies = [json.loads(line) for line in proc.stdout.decode().splitlines() if line.strip()]
     assert [r.get("error", {}).get("code") for r in replies] == [-32700, None] and replies[1]["id"] == 5, (replies, proc.stderr)
+
+
+def _call_fields(tmp_path, name, arguments):
+    """Returns worker.call's answer for `name` with `arguments`, with the runs folder in `tmp_path`."""
+    from metal_gpu_trace import config, metal_trace_mcp, worker  # noqa: F401  (metal_trace_mcp configures the worker)
+    saved = config.OUT
+    config.OUT = tmp_path
+    try:
+        return worker.call(name, arguments)
+    finally:
+        config.OUT = saved
+
+
+def test_fields_projects_a_summary(tmp_path):
+    """`fields` keeps only the dotted paths asked for, in structuredContent and in the text alike, and a path that is
+    not there is named in _meta without touching the body."""
+    full = _call_fields(tmp_path, "gpu_family", {"name": "M1 Pro"})
+    result = _call_fields(tmp_path, "gpu_family", {"name": "M1 Pro", "fields": ["family", "limits.texture_2d_px", "nope.x"]})
+    assert result["structuredContent"] == {"family": "Apple7", "limits": {"texture_2d_px": 16384}}
+    assert json.loads(result["content"][0]["text"]) == result["structuredContent"]
+    assert result["_meta"] == {"fields_missing": ["nope.x"]}
+    assert "_meta" not in full and len(full["structuredContent"]) > 2
+    whole = _call_fields(tmp_path, "gpu_family", {"name": "M1 Pro", "fields": ["limits"]})
+    assert whole["structuredContent"] == {"limits": full["structuredContent"]["limits"]}
+    assert _call_fields(tmp_path, "gpu_family", {"name": "M1 Pro", "fields": []}) == full  # empty: everything
+
+
+def test_fields_projects_inside_pages(tmp_path):
+    """On a paged tool `fields` cuts each row and keeps total, offset, rows and next_offset."""
+    for i in range(3):
+        (tmp_path / f"run{i}_x.json").write_text(json.dumps({"gpu": {"frames": 100 * i}}))
+    result = _call_fields(tmp_path, "perf_runs", {"limit": 2, "fields": ["run", "frames", "gone"]})
+    page = result["structuredContent"]
+    assert {"total", "offset", "rows", "next_offset"} <= set(page) and page["total"] == 3 and page["next_offset"] == 2
+    assert page["rows"] == [{"run": "run2_x", "frames": 200}, {"run": "run1_x", "frames": 100}]
+    assert json.loads(result["content"][0]["text"]) == page
+    assert result["_meta"] == {"fields_missing": ["gone"]}
+    # only the page keys: every row is empty, and the page still answers
+    assert _call_fields(tmp_path, "perf_runs", {"fields": ["total"]})["structuredContent"]["rows"] == [{}] * 3
+
+
+def test_fields_is_checked_before_the_tool(tmp_path):
+    """`fields` is not an argument of the tool, so it passes check_arguments; a wrong type is a clear error, and
+    other unknown arguments are still refused."""
+    for bad in ("run", [1], ["a", ""], {"a": 1}):
+        result = _call_fields(tmp_path, "perf_runs", {"fields": bad})
+        assert result["isError"] and "fields" in result["content"][0]["text"], result
+    result = _call_fields(tmp_path, "project_info", {"fields": ["project"]})  # a tool with no properties
+    assert not result.get("isError"), result
+    assert _call_fields(tmp_path, "perf_runs", {"fields": ["run"], "bad": 1})["isError"]
+
+
+def test_fields_in_tools_list_and_output_schema(tmp_path):
+    """Every tool declares `fields` in tools/list (none closes its schema without it), and the outputSchema holds
+    with and without `fields`."""
+    from metal_gpu_trace import metal_trace_mcp, protocol, registry  # noqa: F401
+    tools = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
+    assert len(tools) == len(registry.TOOLS)
+    for tool in tools:
+        field = tool["inputSchema"]["properties"]["fields"]
+        assert field["type"] == "array" and field["items"] == {"type": "string"}, tool["name"]
+        assert "fields" not in tool["inputSchema"].get("required", ())
+    (tmp_path / "run0_x.json").write_text(json.dumps({"gpu": {"frames": 1}}))
+    for arguments in ({}, {"fields": ["run"]}, {"fields": ["nope"]}):
+        page = _call_fields(tmp_path, "perf_runs", arguments)["structuredContent"]
+        assert set(registry.PAGED["required"]) <= set(page), page
+
+
+def test_tools_list_stays_short():
+    """tools/list is what every client reads on connect: it stays under 33 500 characters (it was 45 186)."""
+    from metal_gpu_trace import metal_trace_mcp, protocol  # noqa: F401
+    tools = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
+    # 45 186 characters before fields; 31 546 with it; 33 072 once trace_query took the tables-file filters (+1 526): a
+    # budget, so a new argument has to earn its characters
+    assert len(json.dumps(tools, ensure_ascii=False)) <= 33500
+
+
+def test_fields_cuts_a_big_answer_before_the_size_limit(tmp_path):
+    """An answer over MAX_TEXT is refused as it is but fits once `fields` cuts it; a cut that leaves an object empty
+    answers {} instead of dropping it."""
+    from metal_gpu_trace import config
+    for i in range(30):
+        (tmp_path / f"run{i:02d}_x.json").write_text(json.dumps({"gpu": {"frames": i}, "program": "p" * 200}))
+    saved = config.MAX_TEXT
+    config.MAX_TEXT = 2000
+    try:
+        refused = _call_fields(tmp_path, "perf_runs", {"limit": 30})
+        cut = _call_fields(tmp_path, "perf_runs", {"limit": 30, "fields": ["run"]})
+    finally:
+        config.MAX_TEXT = saved
+    assert refused["isError"] and "smaller page" in refused["content"][0]["text"]
+    assert not cut.get("isError") and len(cut["structuredContent"]["rows"]) == 30
+    empty = _call_fields(tmp_path, "gpu_family", {"name": "M1 Pro", "fields": ["limits.nope"]})
+    assert empty["structuredContent"] == {} and empty["_meta"] == {"fields_missing": ["limits.nope"]}
+
+
+def test_fields_keeps_a_null_value_and_reports_only_missing_paths():
+    from metal_gpu_trace import worker
+    # null means "not measured" in a summary: it is a present field, not a missing one
+    summary = {"common": {"frame_pacing": {"fps": 60, "low": None}}}
+    cut, missing = worker.cut(summary, ["common.frame_pacing.low", "common.frame_pacing.nope"])
+    assert cut == {"common": {"frame_pacing": {"low": None}}}
+    assert missing == ["common.frame_pacing.nope"]
+    page = {"rows": [{"a": None, "b": 1}, {"b": 2}], "total": 2}
+    cut, missing = worker.cut(page, ["a"], paged=True)
+    assert cut == {"rows": [{"a": None}, {}], "total": 2}
+    assert missing == []

@@ -36,15 +36,10 @@ def resolve_tier(tier, memory, counters):
 def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, workdir=None, args="", workload=None,
                      api=None, dim=None, memory=None, env="", counters=None, example=None, memory_free_pct=None,
                      background=False, size=None, tier="standard"):
-    """Records `program` (an .exe under Wine, or a macOS binary with wine="native"), or a test program fetched with
-    workload_fetch (workload, api, dim), for `seconds` with Metal System Trace and returns its summary: GPU ms per
-    frame, frame intervals, FPS, Metal and resident memory (memory=false skips the Metal memory table, the slowest
-    to read). When it ends it stops every program of that Wine prefix (wineserver -k), or every process named like
-    the program with native. counters=true also records Metal GPU Counters (`gpu_counters` in the summary: the units the
-    GPU waited on, its utilization, occupancy and memory bandwidth); it adds about 40 s of read-back per recorded second.
-    tier sets both at once: light (no Metal memory, no counters: seconds of read-back, to iterate), standard (the default:
-    Metal memory) and deep (also counters, and the .trace is kept unless METAL_TRACE_MAX_DISK_MB drops it); memory and
-    counters given on their own replace that part of the tier. Compare recordings of the same tier."""
+    """Records `program` (an .exe under Wine, or a macOS binary with wine="native") or a test `workload` for `seconds` with
+    Metal System Trace and returns its summary: GPU ms per frame, frame intervals, FPS, Metal and resident memory. It
+    then stops every program of that Wine prefix (wineserver -k), or every process named like the program with native.
+    tier sets memory and counters together; compare recordings of the same tier."""
     memory, counters, keep_trace = resolve_tier(tier, memory, counters)
     if tier == "deep" and sys.platform == "win32":
         raise paths.ToolError("deep needs Metal GPU counters: macOS only")
@@ -89,9 +84,9 @@ def split_args(text):
 
 
 def tool_perf_attach(label, process, seconds=20):
-    """Records a program that is already running, by pid or by a name in its command line (Game.exe under Wine),
-    for `seconds` and returns the same summary as perf_record; the program keeps running. For games started by
-    Steam, CrossOver, NotProton or any launcher: start the game or its benchmark there first."""
+    """Records a program that is already running, by pid or by a name in its command line, for `seconds`, and returns
+    perf_record's summary; the program keeps running. For games from Steam, CrossOver or any launcher: start the game
+    first."""
     return record(label, seconds, "attach", "-", "-", [str(process)])
 
 

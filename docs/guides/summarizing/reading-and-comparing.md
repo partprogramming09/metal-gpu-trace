@@ -45,6 +45,8 @@ With fewer than 2 frames left it refuses: `<run> has under 2 frames after the fi
 | `measure` | a Windows run against a Metal run: GPU ms and Metal memory are not subtracted, the encoders are "not comparable" and the function returns early | `:215-222` |
 | `encoders` and `labels` | both are Metal summaries with encoders: encoders and command buffers per frame, short-encoder share, idle share (shares change in points, never in %, because 1.9 % to 49.7 % would read +2516 %, `:239-240`), and each label's count and GPU ms per frame, largest change first, at most 20 | `:223-242`, `:399-421` |
 
+Keys the tool description no longer spells out: `skipped_s` appears when `skip_s` cut the runs (thermal state, process memory and encoders stay whole-run). `context` says whether both runs share the project's commit and Instruments' version: `same` is true or false, null when a run's commit is unknown (named in `unknown_in`; runs from before 0.26.0 are named in `missing_in`). `perf_memory_breakdown` also returns `allocated_mib_per_live_mib` (how many times over the live memory was allocated) and `events_per_s_after_3s` (the allocation rate once start-up is over). To read only some of these, pass `fields` to the tool ([the worker](../server-and-transport/worker.md)).
+
 `short_us` must be one of 10, 25, 50, 100, 250, 500, 1000 (`:228-230`). With `markdown` true the result also has a table for a pull request (`:85-102`), and `suggested_actions` lists what to call next for each run (`:125-126`). A label missing from one summary may only have fallen out of that summary's top 20, so it is `outside_top_20` with no change, not `new` or `gone` (`:399-421`).
 
 ## Baselines: a range, not a run

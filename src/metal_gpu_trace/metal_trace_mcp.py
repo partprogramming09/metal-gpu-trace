@@ -15,7 +15,7 @@ import json
 import pathlib
 import sys
 
-__version__ = "0.27.3"
+__version__ = "0.28.0"
 if __package__ in (None, ""):  # run by path: make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from metal_gpu_trace import analysis, http_transport, paths, project, protocol, stdio, worker  # noqa: E402
@@ -28,8 +28,9 @@ INSTRUCTIONS = (
     "per second for Instruments' temporary files (26 GB for 30 s, 50 GB for 60 s); perf_record refuses to start without it. Reading a "
     "recording back takes 1 to 14 s per recorded second. Compare only recordings with 100 frames or more, and repeat "
     "a run before calling a change real. perf_baseline (or perf_baseline_record, which records them) saves several equal runs as a named reference and perf_check says whether a new run regressed against their range. perf_diagnose says whether a run splits its GPU work into too many short "
-    "encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables and trace_query "
-    "need the .trace, kept only with KEEP_TRACE=1. When perf_record ends it stops every program of its Wine prefix, "
+    "encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables, trace_count and trace_query "
+    "read the .trace when KEEP_TRACE=1 kept it, else the run's tables file (<run>.tables.sqlite, written at every recording: perf_runs tables_kept); "
+    "trace_query's where, columns, order_by, group_by and aggregates filter that file without SQL. When perf_record ends it stops every program of its Wine prefix, "
     "or every process named like a native program. To compare native Metal with a translation layer without a game "
     "of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload "
     "that lists examples), or the compare-layer prompt. The diagnose-stutter prompt tells first-seen shader stutter from "
@@ -78,10 +79,13 @@ def check_cli(args):
 
 def main():
     """Serves newline-delimited JSON-RPC on stdin and stdout until stdin closes; --version prints the version, and
-    `check` judges a run for CI (see check_cli)."""
+    `check` judges a run for CI (see check_cli), and `init` adds the server to AI apps (see init)."""
     if sys.argv[1:] == ["--version"]:
         print(f"metal-gpu-trace {__version__}")
         return
+    if sys.argv[1:2] == ["init"]:  # before project.apply(): it only edits client config files
+        from metal_gpu_trace import init
+        sys.exit(init.main(sys.argv[2:]))
     project.apply()
     if sys.argv[1:2] == ["check"]:
         sys.exit(check_cli(sys.argv[2:]))

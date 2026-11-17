@@ -145,7 +145,8 @@ def handle(message):
                                     "text": json.dumps(registry.RESOURCES[uri][2](), ensure_ascii=False)}]}
     elif method == "tools/list":
         result = {"tools": [{"name": n, "title": hints["title"], "description": inspect.cleandoc(f.__doc__),
-                             "inputSchema": s if s.get("properties") else {**s, "additionalProperties": False},
+                             "inputSchema": {**s, "properties": {**s.get("properties", {}), "fields": registry.FIELDS}}
+                                        | ({} if s.get("properties") else {"additionalProperties": False}),
                              "outputSchema": registry.PAGED if n in registry.PAGED_TOOLS else registry.OBJECT, "annotations": hints}
                             | ({"_meta": registry.META[n]} if n in registry.META else {}) for n, (f, s, hints) in registry.TOOLS.items()]}
     elif method == "prompts/list":
