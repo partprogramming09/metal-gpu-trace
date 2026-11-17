@@ -7,11 +7,9 @@ from metal_gpu_trace import analysis, paths, recording, workloads
 
 
 def tool_perf_baseline_record(name, count=3, skip_s=0, cooldown_s=0, **record):
-    """Records the same program `count` times in a row with perf_record's arguments and saves the runs as the
-    reference `name` for perf_check, returning the range each number spans across them. Runs are named
-    `name`-1, `name`-2, ... Each recording takes its seconds plus about a minute to read back. skip_s as in
-    perf_baseline: the reference leaves out each run's start-up. cooldown_s rests that many seconds between two
-    recordings (never before the first or after the last), so a laptop does not throttle."""
+    """Records the same program `count` times with perf_record's arguments and saves the runs as the reference `name` for
+    perf_check, returning the range each number spans. Runs are `name`-1, `name`-2, ... Each takes its seconds plus
+    about a minute of read-back."""
     if not paths.name_ok(name):
         raise paths.ToolError("a reference name holds only letters, digits, '.', '_' and '-'")
     paths.check_skip(skip_s)
@@ -46,12 +44,9 @@ def ab_verdict(a, b, higher_better):
 
 
 def tool_perf_ab(name, env_a, env_b, rounds=1, skip_s=0, cooldown_s=0, **record):
-    """Records the same program with two environments in the order A B B A (repeated `rounds` times, so drift hits both
-    sides equally) and says per metric whether B is better, worse or the same as A, with every value behind it.
-    env_a and env_b are NAME=VALUE pairs separated by spaces; empty means none. Runs are named `name`-a1, `name`-b1, ...
-    Each recording takes its seconds plus about a minute to read back. skip_s leaves out the first seconds of every
-    recording (the start-up) when the verdicts are drawn, as perf_compare does; the recordings are whole. cooldown_s rests
-    that many seconds between any two consecutive recordings (never before the first or after the last)."""
+    """Records the same program with two environments in the order A B B A (`rounds` times) and says per metric whether B
+    is better, worse or the same as A, with every value behind it. Runs are `name`-a1, `name`-b1, ... Each takes its
+    seconds plus about a minute of read-back."""
     if not paths.name_ok(name):
         raise paths.ToolError("a name holds only letters, digits, '.', '_' and '-'")
     paths.check_skip(skip_s)
@@ -88,9 +83,9 @@ def cold_warm_report(name, first, second):
 
 
 def tool_perf_cold_warm(name, **record):
-    """Records the same program twice in a row and says what the first run suffers that the second does not: hitches
-    whose cause is a shader compile (first-seen pipelines: the first run's count minus the second's, never below 0), with
-    each run's hitch count and graphics compiler time. macOS only. Runs are named `name`-first and `name`-second; each recording takes its seconds plus about a minute to read back."""
+    """Records the same program twice and says what the first run suffers that the second does not: shader-compile hitches
+    (first minus second, never below 0), each run's hitch count and compiler time. macOS only. Runs are `name`-first and
+    `name`-second."""
     if not paths.name_ok(name):
         raise paths.ToolError("a name holds only letters, digits, '.', '_' and '-'")
     if sys.platform == "win32":
@@ -139,12 +134,10 @@ def sweep_values(variable, values):
 
 
 def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, cooldown_s=0, **record):
-    """Records the same program once per value of one variable (dim, example, api, size, or env:NAME for an environment
-    variable) and returns, per value, the median of FPS, 1 % low, GPU ms per frame and stutter, and with 3 or more
-    numeric values the straight line GPU ms per frame follows (fixed ms plus ms per draw for dim, per unit otherwise)
-    with its r2. With rounds above 1 the values run in opposite order every other round, so drift hits all alike.
-    Runs are named `name`-<value number>-r<round>; each takes its seconds plus about a minute to read back. cooldown_s
-    rests that many seconds between any two consecutive recordings (never before the first or after the last)."""
+    """Records the same program once per value of one variable and returns, per value, the median FPS, 1 % low, GPU ms per
+    frame and stutter; with 3 or more numeric values also the line GPU ms follows (fixed ms plus ms per unit) with its
+    r2. With rounds above 1 the values run in reverse every other round, so drift hits all alike. Runs are `name`-<value
+    number>-r<round>; each takes its seconds plus about a minute of read-back."""
     if not paths.name_ok(name):
         raise paths.ToolError("a name holds only letters, digits, '.', '_' and '-'")
     paths.check_skip(skip_s)

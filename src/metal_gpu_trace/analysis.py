@@ -63,9 +63,8 @@ def _recordings(pattern="*.json"):
 
 
 def tool_perf_runs(offset=0, limit=50):
-    """Lists the saved recordings, newest first, with frames, FPS, GPU ms per frame, memory peaks and the translation
-    layer each ran on (fingerprint and Wine, or native); project names the project they belong to (null without a
-    metal-gpu-trace.json, see project_info)."""
+    """Lists the saved recordings, newest first, with frames, FPS, GPU ms per frame, memory peaks and the translation layer
+    each ran on; project names the project they belong to."""
     runs = []
     for path in reversed(_recordings()):
         try:
@@ -104,21 +103,11 @@ def markdown_report(result):
 
 @reads_recordings
 def tool_perf_compare(a, b, short_us=25, markdown=False, skip_s=0):
-    """Compares two saved recordings (names from perf_runs), a the reference and b the run after a change: the
-    headline numbers (FPS, GPU ms, frame pacing, memory), then what changed in the GPU work and where: encoders and
-    command buffers per frame, the share of encoders under short_us, the GPU's idle time, and each encoder label's
-    count and GPU ms per frame, largest change first. layer says whether both ran on the same translation layer:
-    with different layers it compares layers, not one change. A Windows run against a Metal run has `measure`: the
-    GPU ms and Metal memory differ in kind and the encoders exist only in Metal, so use FPS, its lows, stutter and
-    jitter. Recordings with under 100 frames are flagged: too short to compare. With markdown true the result also has
-    `markdown`: the same numbers as tables for a PR comment. skip_s leaves out the first seconds of each recording,
-    where shaders compile and resources load: the GPU numbers, hitches and Metal memory are recomputed from the
-    per-frame files without them, and `skipped_s` says it; thermal state, process memory and encoders stay whole-run.
-    `screen` appears when one run was recorded with the screen locked and the other not: FPS is then not comparable.
-    context says whether both runs share the commit of the project's repository and Instruments' version (same true or
-    false; null when a run's commit is unknown, named in unknown_in; runs from before 0.26.0 are named in missing_in).
-    `noisy_environment` names the runs recorded while another process loaded the GPU. `suggested_actions` lists, as
-    {tool, arguments, reason}, what to call next for each run."""
+    """Compares two saved recordings, a the reference and b the run after a change: headline numbers (FPS, GPU ms, frame
+    pacing, memory), then the GPU work: encoders and command buffers per frame, share of short encoders, idle time, and
+    each encoder label's change, largest first. `layer` says whether both ran on the same translation layer; `measure`
+    marks Windows against Metal (use FPS, lows, stutter, jitter); runs under 100 frames are flagged. `screen`,
+    `noisy_environment` flag runs that do not compare; `suggested_actions` says what to call next."""
     sa, sb = (steady_summary(r, skip_s) for r in (a, b))
     result = compare_summaries(sa, sb, a, b, short_us)
     skip = paths.check_skip(skip_s)
@@ -258,14 +247,9 @@ def load_baselines():
 
 @reads_recordings
 def tool_perf_baseline(name=None, runs=None, skip_s=0):
-    """Names a reference for perf_check, or lists them. With name and runs (names from perf_runs, several runs of the
-    same program recorded with no change between them), it saves copies of their summaries as the reference `name`,
-    replacing a previous one, and returns the range each number spans across them: that range, not one run, is what
-    perf_check judges against, since repeated runs differ by a few percent, and `spread_pct`, each range's width in %
-    of its midpoint: the noise of this program on this machine, which a change must exceed. With name alone it shows that reference;
-    with nothing it lists them. With skip_s the reference keeps each run without its first skip_s seconds (the
-    start-up, as perf_compare's skip_s) and perf_check applies the same cut to the run it judges, so both are
-    steady-state; the runs need their per-frame files for that."""
+    """Names a reference for perf_check, or lists them. With name and runs (equal runs of one program) it saves their
+    summaries as the reference, replacing a previous one, and returns each number's range and `spread_pct`: the noise a
+    change must exceed. With name alone it shows that reference; with nothing it lists them."""
     baselines = load_baselines()
     if name is not None and not paths.name_ok(name):
         raise paths.ToolError("a reference name holds only letters, digits, '.', '_' and '-'")
@@ -332,15 +316,10 @@ def judge(metric, value, span, margin_pct):
 
 @reads_recordings
 def tool_perf_check(run, baseline, margin_pct=3):
-    """Judges a recording against a reference saved with perf_baseline: regressed when FPS falls under the
-    reference's lowest FPS by more than margin_pct, GPU ms per frame rises over its highest by more than margin_pct,
-    or encoders or command buffers per frame exceed its highest; improved when a number leaves the range the other
-    way and none regressed; same otherwise. Frame pacing, short encoders and GPU idle time are reported by the
-    comparison but do not decide: they vary too much between equal runs. A run from Windows against a Metal
-    reference (or the reverse) is judged on FPS alone. A reference saved with skip_s judges the run without its first
-    skip_s seconds too (`skipped_s` says so). Returns the reasons and perf_compare's
-    full comparison against the reference's first run. A reference of one run adds a `note` when the verdict is not same: the range is a point, so
-    the noise between equal runs is not measured."""
+    """Judges a recording against a reference from perf_baseline: regressed when FPS falls under the reference's lowest, or
+    GPU ms per frame rises over its highest, by more than margin_pct, or encoders or command buffers per frame exceed
+    its highest; improved when a number leaves the range the other way and none regressed; same otherwise. Windows
+    against Metal is judged on FPS alone. Returns the reasons and perf_compare's comparison."""
     baselines = load_baselines()
     if baseline not in baselines:
         raise paths.ToolError(f"no reference {baseline}; perf_baseline with no arguments lists them")
@@ -439,11 +418,9 @@ HISTORY = {"fps": ("gpu", "fps_estimate"), "fps_1pct_low": ("gpu", "fps_1pct_low
 
 
 def tool_perf_history(prefix, limit=50, skip_s=0):
-    """Lists the recordings whose name starts with `prefix`, oldest first, with their FPS, 1% low, GPU ms, stutter,
-    hitches and peak Metal MiB, and the change from the first to the last: how a number moved over a series of runs, such as
-    one recording per version of a translation layer. Read a trend as real only when it exceeds the spread_pct that
-    perf_baseline reports for equal runs. Runs from Windows and Metal in one series are flagged: their GPU ms and
-    memory do not compare. skip_s leaves out the first seconds of each recording (the start-up), as perf_compare does."""
+    """Lists the recordings whose name starts with `prefix`, oldest first, with FPS, 1% low, GPU ms, stutter, hitches and
+    peak Metal MiB, and the change from first to last. A trend is real only above the spread_pct of perf_baseline.
+    Windows and Metal runs in one series are flagged."""
     if not paths.name_ok(prefix):
         raise paths.ToolError("a prefix holds only letters, digits, '.', '_' and '-'")
     rows = []
@@ -475,12 +452,10 @@ GATES = {"fps_min": (("gpu", "fps_estimate"), "min"), "fps_1pct_low_min": (("gpu
 @reads_recordings
 def tool_perf_gate(run, fps_min=None, fps_1pct_low_min=None, stutter_rate_pct_max=None, gpu_ms_p95_max=None,
                    hitches_max=None, metal_mib_max=None, skip_s=0):
-    """Checks a recording against budgets and says pass or fail: a floor for FPS and the 1% low, a ceiling for the
-    stutter rate, the p95 GPU ms per frame, the hitch count and the peak Metal MiB. Give at least one. A number the
-    recording lacks fails its budget (value null): a gate must not pass on missing data, nor on a recording whose
-    program stopped presenting (`unpresented`). Returns each budget with its
-    limit, the value and whether it held. Use it as a bar a change must clear, where perf_check judges against equal runs.
-    skip_s leaves out the first seconds of the recording (the start-up), as perf_compare does."""
+    """Checks a recording against budgets and says pass or fail: FPS and 1% low floors, ceilings for stutter rate, p95 GPU
+    ms per frame, hitches and peak Metal MiB. Give at least one. A number the recording lacks fails its budget (value
+    null), and so does a run that stopped presenting (`unpresented`). Returns each budget with its limit, value and
+    whether it held."""
     given = {k: v for k, v in (("fps_min", fps_min), ("fps_1pct_low_min", fps_1pct_low_min),
                                ("stutter_rate_pct_max", stutter_rate_pct_max), ("gpu_ms_p95_max", gpu_ms_p95_max),
                                ("hitches_max", hitches_max), ("metal_mib_max", metal_mib_max)) if v is not None}
@@ -696,12 +671,10 @@ def _startup_skip_s(hitches, summary, rows):
 
 @reads_recordings
 def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
-    """Says whether a saved recording splits its GPU work into too many short encoders, the pattern of translation
-    layers such as DXMT, Mullion or MoltenVK, with the numbers behind it: encoders and command buffers per frame, the
-    share of short encoders, the labels with the most GPU time and the GPU's idle time. Read the idle time together
-    with the FPS: a program waiting for vsync idles too. Defaults come from bgfx 17-drawstress on an M1 Pro: 7
-    encoders per frame and 50% under 25 us under Mullion, 2 and 2% in native Metal. `suggested_actions` lists, as
-    {tool, arguments, reason}, what to call next (a cold/warm run, a skip_s, a longer recording, a cooldown_s)."""
+    """Says whether a saved recording splits its GPU work into too many short encoders (the pattern of translation layers
+    such as DXMT, Mullion or MoltenVK), with the numbers: encoders and command buffers per frame, share of short
+    encoders, labels with the most GPU time, idle time (read with the FPS: vsync idles too). `suggested_actions` says
+    what to call next."""
     s = paths.read_object(paths.run_path(run), f"{run}.json")
     encoders = s.get("encoders")
     if not encoders:
@@ -826,14 +799,9 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
 
 @reads_recordings
 def tool_perf_memory_breakdown(run, top=10):
-    """Breaks down the Metal resource allocations of a saved recording by type (texture, buffer, heap...), from its
-    summary and without reading the trace: for each type what was allocated (`count`, `mib`, `mean_mib`), what is
-    still live at the end, `live_share_pct` and `gone` (allocated and not live). A small live share of a large
-    allocated size is churn: resources created and dropped again, the pattern behind a memory spike or a stall. Also
-    the totals, the live memory by mode (Private, Shared...), what was freed, `allocated_mib_per_live_mib` (how many
-    times over the live memory was allocated), `events_per_s_after_3s` (the allocation rate once the start-up is over)
-    and the peak Metal memory. `top` keeps that many types, the largest allocated first. Needs a recording with the
-    resource table (a Metal one, not at tier light)."""
+    """Breaks down the Metal allocations of a saved recording by type (texture, buffer, heap...): allocated, still live and
+    `gone` per type. A small live share of a large allocated size is churn, the pattern behind a memory spike or a
+    stall. Also totals, live memory by mode, allocation rate and peak. Needs a Metal recording above tier light."""
     if type(top) is not int or top < 1:
         raise paths.ToolError("top is a whole number of 1 or more")
     s = paths.read_object(paths.run_path(run), f"{run}.json")
