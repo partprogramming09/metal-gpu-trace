@@ -17,7 +17,7 @@ RESOURCES = {"metal-trace://gpu-families": ("Apple GPU families", config.FAMILIE
 S, I = {"type": "string"}, {"type": "integer"}
 PAGE = {"offset": {**I, "description": "first row, default 0"},
         "limit": {**I, "description": f"rows per page, default 50, at most {config.MAX_LIMIT}"}}
-TRACE = {**S, "description": "a run name from perf_runs whose trace_kept is true, or the path of a .trace"}
+TRACE = {**S, "description": "a run name from perf_runs whose trace_kept or tables_kept is true, or the path of a .trace"}
 CAPTURE = {**S, "description": "path of a .gputrace bundle saved from Xcode, inside METAL_TRACE_OUT or METAL_TRACE_READ"}
 
 
@@ -167,6 +167,18 @@ TOOLS = {
          "pid": {**I, "description": "keep only this process's rows"},
          "window_ms": {"type": "integer", "description": "1 to 3600000: return time windows of this many ms, each with "
                        "its count and summed duration, instead of rows (the table needs a start or time column)"},
+         "where": {"type": "array", "description": "filters joined by AND, on the tables file: {column, op, value}; op is one of "
+                   "= != < <= > >=; a time or size column holds its number as text, so compare it with a number",
+                   "items": {"type": "object", "properties": {"column": S, "op": {**S, "enum": ["=", "!=", "<", "<=", ">", ">="]},
+                                                            "value": {"type": ["string", "number", "null"]}},
+                             "required": ["column", "op", "value"]}},
+         "columns": {"type": "array", "items": S, "description": "keep only these columns (tables file)"},
+         "order_by": {**S, "description": "a column, or with group_by an aggregate name such as count or sum_duration (tables file)"},
+         "descending": {"type": "boolean", "description": "with order_by, largest first"},
+         "group_by": {"type": "array", "items": S, "description": "group rows by these columns; each group gets its count unless aggregates says more (tables file)"},
+         "aggregates": {"type": "array", "description": "{fn, column} with fn count, sum, avg, min or max; named fn_column, or count (tables file)",
+                        "items": {"type": "object", "properties": {"fn": {**S, "enum": ["count", "sum", "avg", "min", "max"]}, "column": S},
+                                  "required": ["fn"]}},
          **PAGE}, ["trace", "schema"]),
                     hints("Read a trace table")),
     "capture_summary": (traces.tool_capture_summary, schema({"capture": CAPTURE}, ["capture"]), hints("Summarize a capture")),

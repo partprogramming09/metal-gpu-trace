@@ -27,7 +27,8 @@ Antes de tocar documentación, lee `.claude/ROUTING.md`. Mapa de piezas y flujo:
 
 - Usage rules belong in `INSTRUCTIONS`, so they travel with the server: one recording at a time, 30 s or more under
   Wine, compare recordings of 100 frames or more, repeat a run before calling a change real.
-- Standard library only; Python 3.9 or newer; run scripts with `python3 -I`.
+- Prefer dependencies that already exist when they save work, and say what each costs (install size, supply chain, a
+  higher Python floor); Python 3.9 or newer stays; run scripts with `python3 -I` ([ADR-0008](docs/adr/0008-lift-the-standard-library-only-rule.md)).
 - Summaries are shared: no machine name, UUID or absolute path in them or in the repo.
 - Every change gets a test in the matching `tests/test_*.py` and a line in `CHANGELOG.md` under the version it ships in.
 - Check with `python3 -I tests/run.py`; it must print `ok`. Lint as CI does: `uvx ruff@0.14.0 check src tests`. `python -m pytest tests` also runs the Windows tests on

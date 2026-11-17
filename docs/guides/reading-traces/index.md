@@ -16,6 +16,7 @@ Español: [Leer trazas](../../es/guides/leer-trazas/index.md)
 | [The `trace` argument](./trace-argument.md) | how a name or path is understood; what a `.trace` is from here |
 | [`trace_tables` and `trace_count`](./trace-tables-count.md) | which tables exist and which have rows |
 | [`trace_query`](./trace-query.md) | rows, pages and time windows |
+| [The tables file](./tables-file.md) | `<run>.tables.sqlite`: query a recording after its `.trace` is gone |
 | [Exporting a `.chrome-trace`](./chrome-trace.md) | `perf_export_trace`, what the file shows and omits |
 | [The `.gputrace` format](./gputrace-format.md) | what the code assumes; the call ids |
 | [The capture tools](./capture-tools.md) | `capture_summary`, `capture_diff`, `capture_records`, what they cannot say |
@@ -71,9 +72,11 @@ each. The [proof of 0.26.0](../../evidence/v0.26.0.md#capture_diff-compares-two-
 
 | You have | Ask with | Needs `xctrace` | Needs the `.trace` kept |
 |---|---|---|---|
-| A run name: the list of tables, which have rows, or the rows (or time windows) of one | `trace_tables`, `trace_count`, `trace_query` | yes | yes (so `KEEP_TRACE=1`; every page re-exports, so big tables are slow: [trace_query](./trace-query.md)) |
+| A run name: the list of tables, which have rows, or the rows (or time windows) of one | `trace_tables`, `trace_count`, `trace_query` | yes, if it reads the `.trace`; not with the tables file | no: the tables file (`<run>.tables.sqlite`) is enough. With a kept `.trace` (`KEEP_TRACE=1`) it reads that; every page re-exports, so big tables are slow: [trace_query](./trace-query.md) |
 | A run name: its frames in Perfetto | `perf_export_trace` | no | no (reads the per-frame table, which stays) |
 | A `.gputrace` saved from Xcode | `capture_summary`, `capture_diff`, `capture_records` | no | not a `.trace`; names, counts, labels, no time ([capture tools](./capture-tools.md)) |
+
+`perf_runs` also has `tables_kept` (`analysis.py:80`): true when `<run>.tables.sqlite` exists and is not a link; [the tables file](./tables-file.md) says what it holds.
 
 `perf_runs` has a `trace_kept` flag per run (`analysis.py:79`): true when the `<run>.trace` folder exists and is not a link, so
 it tells whether the first three rows can work (**confirmed**; a trace is kept with `KEEP_TRACE=1` or the `deep` tier, see the

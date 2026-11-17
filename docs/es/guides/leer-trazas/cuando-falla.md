@@ -5,7 +5,8 @@
 English: [When it fails](../../../guides/reading-traces/when-it-fails.md)
 
 > **En corto:** cuando algo sale mal el servidor no se detiene: recibes una frase que dice qué pasó y, casi siempre, qué hacer.
-> La más común es «no recording at ...»: la grabación se borró tras escribir su resumen; volver a grabar con `KEEP_TRACE=1` la conserva.
+> La más común es «no recording at ...»: el `.trace` se borró tras escribir el resumen. Si la grabación tiene archivo de tablas,
+> las herramientas de tablas siguen funcionando; si no, graba de nuevo (con `KEEP_TRACE=1` se conserva el `.trace`).
 
 Todas las herramientas de esta guía corren dentro de `worker.call`, que convierte `ToolError`, `FileNotFoundError`,
 `ValueError`, `RuntimeError` y `subprocess.TimeoutExpired` en un resultado `isError: true` cuyo texto es el mensaje
@@ -15,7 +16,7 @@ Todas las herramientas de esta guía corren dentro de `worker.call`, que convier
 
 | Qué sale mal | Qué recibe el lector | Línea |
 |---|---|---|
-| El `.trace` no está (borrado tras el resumen) | `no recording at <name>: perf_record.sh deletes the .trace once its summary is written, unless KEEP_TRACE=1` | `perf_report.py:52-54` |
+| El `.trace` no está (borrado tras el resumen) | `trace_tables`, `trace_count` y `trace_query` leen el `<name>.tables.sqlite` de la corrida; sin ninguno de los dos: `no recording at <name>.trace and no <name>.tables.sqlite: ...` | `traces.py` (`source_of`, `missing`) |
 | Una ruta de `trace` o de captura fuera de las carpetas legibles | `<name> is outside the readable directories; add its directory to METAL_TRACE_READ` | `paths.py:20-21` |
 | El `.trace` de un nombre es un enlace | `<name>.trace cannot be read` | `paths.py:88-89` |
 | `xctrace` falla en una exportación | `xctrace export of <name> failed (exit N): <última línea de su error>`; una tabla cortada por el fallo `SIGTRAP` conocido en un límite de fila se acepta | `perf_report.py:62-65`, `:60-61` |

@@ -5,6 +5,8 @@ import pathlib
 import sys
 
 import support  # noqa: F401  (puts src/ on sys.path)
+from metal_gpu_trace import config  # noqa: E402
+from test_tabledb import GPU, sample, store, use  # noqa: E402
 
 
 def test_diagnose(tmp_path):
@@ -1418,3 +1420,16 @@ def test_compare_start_latency(tmp_path):
         assert got["a"] is None and got["b"] == 1.5, got
     finally:
         config.OUT = saved
+
+
+def test_perf_runs_says_whether_the_tables_file_exists(tmp_path):
+    from metal_gpu_trace import analysis
+    for name in ("a", "b"):
+        (tmp_path / f"{name}.json").write_text('{"schema_version": 3, "gpu": {}}')
+    store(tmp_path, {"metal-gpu-intervals": (GPU, sample())}, label="a")
+    saved = use(tmp_path)
+    try:
+        got = {r["run"]: r["tables_kept"] for r in analysis.tool_perf_runs()["rows"]}
+    finally:
+        config.OUT = saved
+    assert got == {"a": True, "b": False}, got

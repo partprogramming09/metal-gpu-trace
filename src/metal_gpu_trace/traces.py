@@ -1,9 +1,12 @@
 """Reading .trace and .gputrace files, and the Apple GPU family facts."""
+import contextlib
 import csv
 import json
+import os
+import sqlite3
 import subprocess
 
-from metal_gpu_trace import config, gputrace_read, paths, perf_report, tables as table_files  # tool_trace_count has a `tables` argument
+from metal_gpu_trace import config, gputrace_read, paths, perf_report, tabledb, tables as table_files  # tool_trace_count has a `tables` argument
 
 
 def tool_perf_export_trace(run):
@@ -30,9 +33,54 @@ def tool_perf_export_trace(run):
     return {"file": target.name, "frames": len(events)}
 
 
+def source_of(trace, filtering=False):
+    """Returns (the .trace path, the tables file path or None) to read for `trace`: the .trace when it is there, else
+    the tables file the recording left. A run with neither gets the .trace path, whose export says so (`missing`). With
+    `filtering` (where, columns, order_by, group_by, aggregates) only the tables file can answer."""
+    path = paths.trace_path(trace)
+    db = tabledb.path_for(path)
+    if filtering and not os.path.lexists(db):
+        raise paths.ToolError(f"where, columns, order_by, descending, group_by and aggregates read the tables file, and "
+                              f"{db.name} is not there (a recording made before it existed, or one with --no-tables): "
+                              "leave them out, or record the run again")
+    if filtering or (not path.exists() and os.path.lexists(db)):
+        return path, db
+    return path, None
+
+
+def missing(path):
+    """Returns the error for a run that has neither a .trace nor a tables file."""
+    return paths.ToolError(f"no recording at {path.name} and no {tabledb.path_for(path).name}: the .trace is deleted once "
+                           "its summary is written unless KEEP_TRACE=1, and the tables file is written at every recording "
+                           "(not with --no-tables); record the run again")
+
+
+@contextlib.contextmanager
+def tables_file(db):
+    """Opens the tables file `db` read-only; its errors (a link, a damaged file) are ToolErrors that never name a path."""
+    try:
+        conn = tabledb.connect(db)
+    except ValueError as error:
+        raise paths.ToolError(str(error)) from None
+    try:
+        yield conn
+    except sqlite3.Error:
+        raise paths.ToolError(f"{db.name} cannot be read; record the run again") from None
+    finally:
+        conn.close()
+
+
 def tool_trace_tables(trace):
-    """Lists the data tables (schemas) a .trace recording holds; recordings keep their .trace only with KEEP_TRACE=1."""
-    toc = perf_report.toc_of(paths.trace_path(trace))
+    """Lists the data tables (schemas) a recording holds: those of its .trace when KEEP_TRACE=1 kept it, else those its
+    tables file (<run>.tables.sqlite) stored."""
+    path, db = source_of(trace)
+    if db is not None:
+        with tables_file(db) as conn:
+            return {"tables": tabledb.tables(conn)}
+    try:
+        toc = perf_report.toc_of(path)
+    except FileNotFoundError:
+        raise missing(path) from None
     return {"tables": sorted({t.attrib["schema"] for t in toc.iter("table") if "schema" in t.attrib})}
 
 
@@ -89,16 +137,32 @@ def windows_of(rows, window_ms):
     return out, skipped
 
 
-def tool_trace_query(trace, schema, offset=0, limit=50, pid=None, window_ms=None):
-    """Returns one page of rows of one table of a .trace as {column: value}, optionally only one process's rows. With
+def tool_trace_query(trace, schema, offset=0, limit=50, pid=None, window_ms=None, where=None, columns=None,
+                     order_by=None, descending=None, group_by=None, aggregates=None):
+    """Returns one page of rows of one table of a recording as {column: value}, optionally only one process's rows. With
     window_ms (a whole number from 1 to 3600000) the page holds time windows instead, each {start_ms, count} and, when
     the table has a duration column, duration_ms (the sum of the durations): a summary of a table too long to read
-    row by row. skipped_rows appears only when some row had no usable time."""
+    row by row. skipped_rows appears only when some row had no usable time.
+    The rows come from the .trace when KEEP_TRACE=1 kept it, else from the recording's tables file. where (a list of
+    {column, op, value}, op one of = != < <= > >=, joined by AND), columns, order_by with descending, and group_by with
+    aggregates ({fn: count|sum|avg|min|max, column}) filter, sort and summarize the tables file (never SQL): they need
+    it, and compare a column's text (nanoseconds for a time) as a number when it is one."""
     window = check_window(window_ms)
     if not schema.replace("-", "").isalnum():
         raise paths.ToolError("schema holds only letters, digits and '-'; trace_tables lists them")
+    declarative = {"where": where, "columns": columns, "order_by": order_by, "descending": descending,
+                   "group_by": group_by, "aggregates": aggregates}
+    filtering = any(v is not None for v in declarative.values())
+    if window is not None and any(declarative[k] is not None for k in ("columns", "order_by", "descending", "group_by", "aggregates")):
+        raise paths.ToolError("window_ms combines only with where and pid")
+    path, db = source_of(trace, filtering)
+    if db is not None:
+        return query_tables_file(db, schema, window, pid, offset, limit, declarative)
     xpath = f'/trace-toc/run[@number="1"]/data/table[@schema="{schema}"]'
-    exported = perf_report.rows(perf_report.export(paths.trace_path(trace), xpath=xpath))
+    try:
+        exported = perf_report.rows(perf_report.export(path, xpath=xpath))
+    except FileNotFoundError:
+        raise missing(path) from None
     selected = (row for row in exported
                 if pid is None or "process" not in row or perf_report.pid_of(row["process"]) == int(pid))
     try:
@@ -114,6 +178,24 @@ def tool_trace_query(trace, schema, offset=0, limit=50, pid=None, window_ms=None
         exported.close()  # deletes the exported file now, also when windows_of raised
 
 
+def query_tables_file(db, schema, window, pid, offset, limit, declarative):
+    """trace_query over the tables file `db`: the same rows and windows as the export gives, plus the declarative filters."""
+    with tables_file(db) as conn:
+        if schema not in tabledb.tables(conn):
+            raise paths.ToolError(f"{schema} is not in {db.name}; trace_tables lists the tables it holds")
+        try:
+            if window is not None:
+                windows, skipped = windows_of(tabledb.time_rows(conn, schema, (*TIME_COLUMNS, "duration"), pid, declarative["where"]), window)
+                got = {**paths.page(windows, offset, limit), "window_ms": window}
+                if skipped:
+                    got["skipped_rows"] = skipped
+                return got
+            return tabledb.select(conn, schema, declarative["where"], declarative["columns"], declarative["order_by"],
+                                  declarative["descending"], declarative["group_by"], declarative["aggregates"], pid, offset, limit)
+        except (ValueError, OverflowError) as error:  # OverflowError: a number beyond SQLite's 64 bits
+            raise paths.ToolError(str(error)) from None
+
+
 # the tables of a kept .trace that say most about a translation layer, counted by trace_count when none are named
 COUNTED_TABLES = ["metal-gpu-intervals", "metal-application-encoders-list", "metal-command-buffer-completed",
                   "graphics-compiler-spill-events", "graphics-compiler-activity-intervals",
@@ -122,14 +204,27 @@ COUNTED_TABLES = ["metal-gpu-intervals", "metal-application-encoders-list", "met
 
 
 def tool_trace_count(trace, tables=None):
-    """Counts the rows of several tables of a kept .trace, in all and per process, so a recording's useful tables
-    show before reading them: a table with 0 rows needs another instrument or Xcode, not a bigger page."""
+    """Counts the rows of several tables of a recording, in all and per process, so a recording's useful tables show
+    before reading them: a table with 0 rows needs another instrument or Xcode, not a bigger page. Reads the .trace
+    when KEEP_TRACE=1 kept it, else the tables file, which holds only the tables the summary read."""
     tables = tables or COUNTED_TABLES
-    known = set(tool_trace_tables(trace)["tables"])
-    out = {}
     for schema in tables:
-        if not schema.replace("-", "").isalnum():
+        if not isinstance(schema, str) or not schema.replace("-", "").isalnum():
             raise paths.ToolError("a table name holds only letters, digits and '-'; trace_tables lists them")
+    path, db = source_of(trace)
+    out = {}
+    if db is not None:
+        with tables_file(db) as conn:
+            known = set(tabledb.tables(conn))
+            for schema in tables:
+                if schema not in known:
+                    out[schema] = {"rows": None, "note": "not in this trace's tables file"}
+                    continue
+                total, per = tabledb.process_counts(conn, schema)
+                out[schema] = {"rows": total, "by_process": per}
+        return {"trace": trace, "tables": out}
+    known = set(tool_trace_tables(trace)["tables"])
+    for schema in tables:
         if schema not in known:
             out[schema] = {"rows": None, "note": "not in this trace"}
             continue

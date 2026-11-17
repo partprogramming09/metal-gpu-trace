@@ -7,7 +7,7 @@ import math
 import statistics
 import time
 
-from metal_gpu_trace import config, metrics, paths, perf_report, recording, tables
+from metal_gpu_trace import config, metrics, paths, perf_report, recording, tabledb, tables
 
 
 UNPRESENTED_NOTE = ("the program stopped presenting (its window hidden behind another, minimized or off screen, or a "
@@ -76,7 +76,8 @@ def tool_perf_runs(offset=0, limit=50):
                          "gpu_ms_mean": (gpu.get("frame_gpu_ms") or {}).get("mean"),
                          "metal_mib_peak": (s.get("metal_memory_mib") or {}).get("peak"),
                          "rss_mib_max": (s.get("process_rss_mib") or {}).get("max"),
-                         "trace_kept": path.with_suffix(".trace").is_dir() and not path.with_suffix(".trace").is_symlink(), "layer": recording.layer_label(s.get("layer"))})
+                         "trace_kept": path.with_suffix(".trace").is_dir() and not path.with_suffix(".trace").is_symlink(),
+                         "tables_kept": tabledb.path_for(path.with_suffix(".trace")).is_file() and not tabledb.path_for(path.with_suffix(".trace")).is_symlink(), "layer": recording.layer_label(s.get("layer"))})
         except (paths.ToolError, *paths.MALFORMED):  # a summary still being written, or a file that is not one
             continue
     return {**paths.page(runs, offset, limit), "project": (config.PROJECT or {}).get("name")}

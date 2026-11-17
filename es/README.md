@@ -188,7 +188,8 @@ El servidor lee estas variables de entorno:
 | `WINEPREFIX` | El prefijo de Wine si la llamada no indica otro; si no, `~/.wine`. |
 | `METAL_TRACE_READ` | Más directorios que las herramientas pueden leer, separados por `:`. |
 | `METAL_TRACE_LOG` | `off` apaga la línea de log por llamada en stderr. |
-| `KEEP_TRACE` | `1` guarda el `.trace` de cada grabación, para `trace_tables`, `trace_query` o Instruments. |
+| `KEEP_TRACE` | `1` guarda el `.trace` de cada grabación, para Instruments o el export en bruto (el archivo de tablas ya responde `trace_tables`, `trace_count` y `trace_query`). |
+| `PERF_TABLES` | `0` no escribe `<etiqueta>.tables.sqlite`. |
 | `METAL_TRACE_ALLOW_LOCKED` | `1` graba con la pantalla bloqueada; sin él se rechaza la grabación, porque una sesión bloqueada deja los frames del programa sin el ritmo de la pantalla. |
 | `METAL_TRACE_MAX_DISK_MB` | Límite de tamaño de la carpeta de grabaciones, en MiB (un número entero de 1 o más): tras cada grabación se borran el `.trace` más antiguo, luego el `.chrome-trace` y luego las tablas por frame y de memoria hasta que quepa; nunca los resúmenes ni `baselines.json`. El `.trace` de la grabación nueva se borra el último, y su resumen dice qué se quitó (`retention`). |
 | `KEEP_RUNS` | Guarda solo las N grabaciones más recientes; nunca borra `baselines.json` (ni el `panel.json` que dejaron 0.24.0 y anteriores). El `.trace` de una grabación vieja no lo borra: solo `METAL_TRACE_MAX_DISK_MB` lo libera, y sin esa variable se quedan. |
