@@ -71,7 +71,13 @@ run before calling a difference real.
 
 ## What's new
 
-Version 0.27.3. Each item links to the command that was run and its real output.
+Version 0.28.0. Each item links to the command that was run and its real output.
+
+- ✨ **Shorter answers: `fields`.** Every tool takes an optional `fields`, a list of dotted paths that cuts the result before it is sent (`perf_runs` with `fields=["fps"]` returns only the fps of each run); a path that matches nothing is named in `_meta.fields_missing`. `tools/list` is also shorter, 33 072 characters instead of 45 186. [Proof](docs/evidence/v0.28.0.md#every-tool-takes-fields-and-the-tool-list-is-shorter)
+- ✨ **One command to set the server up.** `metal-gpu-trace init` adds the server to Claude Code, Claude Desktop, Cursor and Codex CLI with absolute paths; `--dry-run` shows the change first, and an existing config is merged (other servers kept) with a `.bak` copy. [Proof](docs/evidence/v0.28.0.md#metal-gpu-trace-init-sets-the-server-up-in-one-command)
+- ✨ **The tables outlive the `.trace`.** Every recording keeps its tables in `<run>.tables.sqlite`, and `trace_query` gains `where`, `columns`, `order_by`, `group_by` and `aggregates`: the same rows as the `.trace` in 0.02 s instead of 3.8 s, and a count per channel in one call. Tested on a real Metal recording, not on Windows. [Proof](docs/evidence/v0.28.0.md#the-tables-are-kept-in-a-sqlite-file-and-queried-with-filters)
+
+Version 0.27.3, still current:
 
 - ✨ **One summary shape on both platforms.** Every new summary (`schema_version` 3) has a `common` block with frame
   pacing, memory pressure and graphics API, the same keys on macOS and Windows and a `source` per number; what cannot be

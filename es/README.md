@@ -71,7 +71,13 @@ corrida antes de dar una diferencia por real.
 
 ## Novedades
 
-Versión 0.27.3. Cada punto enlaza al comando que se ejecutó y a su salida real.
+Versión 0.28.0. Cada punto enlaza al comando que se ejecutó y a su salida real.
+
+- ✨ **Respuestas más cortas: `fields`.** Toda herramienta acepta un `fields` opcional, una lista de rutas con puntos que recorta el resultado antes de enviarlo (`perf_runs` con `fields=["fps"]` devuelve solo los fps de cada corrida); una ruta que no coincide con nada se nombra en `_meta.fields_missing`. `tools/list` también es más corto: 33 072 caracteres en vez de 45 186. [Prueba](../docs/evidence/v0.28.0.md#every-tool-takes-fields-and-the-tool-list-is-shorter)
+- ✨ **Un comando para configurar el servidor.** `metal-gpu-trace init` agrega el servidor a Claude Code, Claude Desktop, Cursor y Codex CLI con rutas absolutas; `--dry-run` muestra el cambio antes, y una config existente se fusiona (los otros servidores se conservan) con una copia `.bak`. [Prueba](../docs/evidence/v0.28.0.md#metal-gpu-trace-init-sets-the-server-up-in-one-command)
+- ✨ **Las tablas sobreviven al `.trace`.** Cada grabación guarda sus tablas en `<run>.tables.sqlite`, y `trace_query` gana `where`, `columns`, `order_by`, `group_by` y `aggregates`: las mismas filas que el `.trace` en 0,02 s en vez de 3,8 s, y un conteo por canal en una sola llamada. Probado en una grabación real de Metal, no en Windows. [Prueba](../docs/evidence/v0.28.0.md#the-tables-are-kept-in-a-sqlite-file-and-queried-with-filters)
+
+Versión 0.27.3, aún vigente:
 
 - ✨ **Una sola forma de resumen en las dos plataformas.** Todo resumen nuevo (`schema_version` 3) trae un bloque
   `common` con el ritmo de frames, la presión de memoria y la API gráfica, con las mismas claves en macOS y Windows y una

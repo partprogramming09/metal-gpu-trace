@@ -5,13 +5,19 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
-- ✨ Every tool takes an optional `fields`: a list of dotted paths (`common.frame_pacing.fps_1pct_low`) that cuts the result before it is sent, in each row on the paged tools, with `total`, `offset`, `rows` and `next_offset` kept; a path that matches nothing is listed in `_meta.fields_missing`, and the cut comes before the size limit, so a big answer can fit. `schema_version` does not change. `tools/list` is shorter (45 186 to about 31 000 characters): the four experiment tools list perf_record's arguments by type only, and the tool texts are tighter.
+## 0.28.0 — 2026-11-16
 
-- ✨ `metal-gpu-trace init` adds the server to Claude Code, Claude Desktop, Cursor and Codex CLI (and VS Code with `--project`) in one command: absolute paths, `--dry-run`, an existing JSON config merged with a `.bak` copy, Codex's TOML appended or shown, safe to run twice.
+(Shorter answers from every tool, one command to set the server up, and the recording's tables kept in a SQLite file you can filter. Its proof is [docs/evidence/v0.28.0.md](docs/evidence/v0.28.0.md).)
 
-- 🧪 Every recording keeps its tables in `<run>.tables.sqlite`, so `trace_tables`, `trace_count` and `trace_query` still answer after the `.trace` is deleted; `trace_query` gains `where`, `columns`, `order_by`, `descending`, `group_by` and `aggregates` (filters, not SQL), `perf_runs` reports `tables_kept`, the disk quota removes the file after the Chrome trace and before the compressed tables, and `PERF_TABLES=0` skips it ([ADR-0007](docs/adr/0007-sqlite-tables-beside-the-compressed-tables.md)). Home folders are cleaned from the stored text.
+### Added
+
+- ✨ Every tool takes an optional `fields`: a list of dotted paths (`common.frame_pacing.fps_1pct_low`) that cuts the result before it is sent, in each row on the paged tools, with `total`, `offset`, `rows` and `next_offset` kept; a path that matches nothing is listed in `_meta.fields_missing`, and the cut comes before the size limit, so a big answer can fit. `schema_version` does not change. `tools/list` is shorter (45 186 to about 33 000 characters): the four experiment tools list perf_record's arguments by type only, and the tool texts are tighter. [proof](docs/evidence/v0.28.0.md#every-tool-takes-fields-and-the-tool-list-is-shorter)
+- ✨ `metal-gpu-trace init` adds the server to Claude Code, Claude Desktop, Cursor and Codex CLI (and VS Code with `--project`) in one command: absolute paths, `--dry-run`, an existing JSON config merged with a `.bak` copy, Codex's TOML appended or shown, safe to run twice. [proof](docs/evidence/v0.28.0.md#metal-gpu-trace-init-sets-the-server-up-in-one-command)
+- ✨ Every recording keeps its tables in `<run>.tables.sqlite`, so `trace_tables`, `trace_count` and `trace_query` still answer after the `.trace` is deleted; `trace_query` gains `where`, `columns`, `order_by`, `descending`, `group_by` and `aggregates` (filters, not SQL), `perf_runs` reports `tables_kept`, the disk quota removes the file after the Chrome trace and before the compressed tables, and `PERF_TABLES=0` skips it ([ADR-0007](docs/adr/0007-sqlite-tables-beside-the-compressed-tables.md)). Home folders are cleaned from the stored text. Tested on a real 15 s Metal recording; not tested on Windows, with the GPU counters of a long recording, or on a Wine/Direct3D 12 `.trace` (see the proof). [proof](docs/evidence/v0.28.0.md#the-tables-are-kept-in-a-sqlite-file-and-queried-with-filters)
 
 - The standard-library-only rule is lifted, the Python 3.9 floor stays ([ADR-0008](docs/adr/0008-lift-the-standard-library-only-rule.md)).
+
+### Fixed
 
 - 🛠️ A `.gputrace` whose `capture` file is a link is refused by `capture_summary`, `capture_diff` and `capture_records`, as a link in the runs folder is (the link could point outside the readable folders); a run or label name that starts with a dot is refused, since it would name a hidden file.
 
