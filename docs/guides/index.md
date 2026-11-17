@@ -12,6 +12,9 @@ description: What metal-gpu-trace is, who it is for and how it is used, in plain
 ## In one sentence
 metal-gpu-trace measures how hard a program works the graphics chip (the GPU) of a Mac with Apple silicon, and whether its pictures come out evenly.
 
+## Install it in one command
+`uvx metal-gpu-trace init` adds the server to the AI apps it finds (Claude Code, Claude Desktop, Cursor, Codex CLI) with the absolute path of `uvx`, and never overwrites your other servers (a `.bak` copy is made first). `--dry-run` shows what it would write; `--client` names one app; `--wine DIR` sets the Wine directory; `--project` writes the project's own file instead (it holds paths of this machine: keep it out of git). The README has the details.
+
 ## What problem it solves
 People who port or test games and apps on a Mac, Windows games run through Wine included, need numbers, not impressions, to know whether a change made the program faster. This tool has Instruments (Apple's profiler, installed with Xcode) record the program and hands back a short summary; run it again after a change and it says whether the program got faster, slower or stayed the same. It does not fix the program, and it needs Xcode to record.
 
