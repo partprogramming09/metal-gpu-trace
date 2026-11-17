@@ -1520,3 +1520,84 @@ def test_finish_refreshes_the_common_block_with_the_layer(tmp_path):
 def test_finish_does_not_add_common_to_an_older_summary(tmp_path):
     from metal_gpu_trace import recording
     assert "common" not in recording.finish({"schema_version": 2, "gpu": {}}, tmp_path / "old.json", None, None)
+
+
+def test_readme_states_the_deadline_the_code_uses():
+    """The README's deadline for a recording through the server is the one `deadline` computes (limit 2)."""
+    from metal_gpu_trace import recording
+    assert (recording.deadline(1), recording.deadline(1, True)) == (15 + 180, 55 + 180)
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "15 s per recorded second plus 180" in readme and "10 s per recorded second" not in readme
+
+
+def test_first_progress_message_says_read_back_only_off_windows():
+    """Windows has no read-back, so its first progress line does not promise one (limit 8)."""
+    from metal_gpu_trace import recording
+    assert recording.worst_case_message(630, windows=False) == "recording: up to 630 s including read-back"
+    assert recording.worst_case_message(630, windows=True) == "recording: up to 630 s"
+
+
+def test_daemon_architecture_empty_or_null_is_an_absent_key():
+    """A daemon that answers with null, empty or blank architectures, or a block that is not an object, adds no key:
+    never the text "None" and never an error."""
+    from metal_gpu_trace import perf_record_windows as prw
+    for payload in ({"cpu_architecture": None, "gpu_architecture": None}, {"cpu_architecture": "", "gpu_architecture": " "},
+                    {"cpu": None, "gpu": None, "ram": None}, {"cpu": [], "gpu": "x", "ram": 3},
+                    {"cpu_architecture": 5, "gpu_architecture": {"a": 1}}, {}):
+        device = {"platform": "Windows"}
+        prw._enrich_device_with_vegaflow(device, payload)
+        assert device == {"platform": "Windows"}, (payload, device)
+    device = {}
+    prw._enrich_device_with_vegaflow(device, {"cpu_architecture": " Zen 2 ", "gpu_architecture": None,
+                                              "gpu": {"adapter_name": "AMD (Vega 6 / GCN 5.0)"}})
+    assert device == {"cpu_architecture": "Zen 2", "gpu_architecture": "Vega 6 / GCN 5.0"}, device
+
+
+def test_daemon_that_does_not_answer_says_why_without_its_path(tmp_path):
+    """`--system-info` that times out, prints no JSON, a JSON that is not an object, nothing, or exits non-zero says
+    a short reason in the device block; the daemon's path is never in it."""
+    from metal_gpu_trace import perf_record_windows as prw
+    exe = tmp_path / "secret-dir" / "vegaflow_daemon.exe"
+    exe.parent.mkdir()
+    exe.write_text("x")
+
+    def answer(stdout="", code=0, error=None):
+        def run(*args, **kwargs):
+            if args[0][1:] != ["--system-info"]:  # platform and ctypes may spawn their own commands
+                return real_run(*args, **kwargs)
+            if error:
+                raise error
+            return subprocess.CompletedProcess(args[0], code, stdout, "")
+        return run
+
+    cases = [(answer(error=subprocess.TimeoutExpired("d", 1)), "timeout"), (answer("{broken"), "invalid_json"),
+             (answer("[1]"), "invalid_json"), (answer(""), "missing"), (answer("{}", code=3), "missing"),
+             (answer(error=OSError("no")), "missing")]
+    saved = real_run = prw.subprocess.run
+    try:
+        for run, reason in cases:
+            prw.subprocess.run = run
+            device = prw.collect_device_info(daemon_path=exe)
+            assert device["daemon_info_error"] == reason, (reason, device)
+            assert "secret-dir" not in json.dumps(device), device
+        prw.subprocess.run = answer('{"cpu_architecture": "Zen 2"}')
+        device = prw.collect_device_info(daemon_path=exe)
+        assert device["cpu_architecture"] == "Zen 2" and "daemon_info_error" not in device, device
+    finally:
+        prw.subprocess.run = saved
+    assert "daemon_info_error" not in prw.collect_device_info(daemon_path=tmp_path / "none.exe")  # no daemon: not an error
+
+
+def test_daemon_names_are_configurable():
+    """METAL_TRACE_DAEMON_NAMES lists other file names to look for; a name with a path in it is ignored."""
+    from metal_gpu_trace import perf_record_windows as prw
+    saved = os.environ.get("METAL_TRACE_DAEMON_NAMES")
+    os.environ["METAL_TRACE_DAEMON_NAMES"] = "other.exe, ../evil.exe,,sub/x.exe"
+    try:
+        names = {c.name for c in prw.daemon_candidates()}
+    finally:
+        if saved is None:
+            os.environ.pop("METAL_TRACE_DAEMON_NAMES")
+        else:
+            os.environ["METAL_TRACE_DAEMON_NAMES"] = saved
+    assert names == {"vegaflow_daemon.exe", "other.exe"}, names

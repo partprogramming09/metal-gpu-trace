@@ -75,6 +75,12 @@ started (never an attached one), deletes every file starting with the run's name
 ## Hardware facts for the `device` block
 
 It reads Win32 for the processor, RAM and OS version, and when a `vegaflow_daemon.exe` is found next to the clone, a
-`--system-info` call with a 1 s timeout that adds CPU and GPU architecture names (`collect_device_info`, `:242-283`;
-`daemon_candidates` `:231-239`). Any failure falls back to the Win32 facts silently. What VegaFlow is, where it comes
-from and who runs it is **not documented in this repository's guides** and was not investigated: pending confirmation ([limit 14](./limits.md)).
+`--system-info` call with a 1 s timeout that adds CPU and GPU architecture names (`collect_device_info`, `daemon_info`,
+`daemon_candidates`). VegaFlow is a separate, optional Windows daemon for AMD APUs: this package only runs its
+`--system-info` and answers nothing else of it ([limit 14](./limits.md)). Set `METAL_TRACE_DAEMON_NAMES` (comma-separated
+file names, no paths) to look for a daemon with another name too.
+
+A null, blank or non-text architecture adds no key. When a daemon was found but gave no usable answer, the `device` block
+gets `daemon_info_error`: `timeout`, `invalid_json` (not JSON, or not an object) or `missing` (it would not run, exited
+non-zero or printed nothing); the daemon's path is never in it. Without a daemon, nothing is added: that is the normal case.
+The recording still falls back to the Win32 facts.

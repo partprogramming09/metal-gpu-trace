@@ -183,31 +183,39 @@ def _enrich_device_with_vegaflow(device, vf_data):
     if not isinstance(vf_data, dict):
         return
 
+    def text(value):
+        """Returns the stripped text of a non-blank string, else None (null, blank, numbers and objects are absent)."""
+        return value.strip() or None if isinstance(value, str) else None
+
+    def block(name):
+        value = vf_data.get(name)
+        return value if isinstance(value, dict) else {}
+
     # 1. CPU Architecture / detailed model (e.g. Zen 2 Renoir 7nm)
-    cpu_info = vf_data.get("cpu", {})
+    cpu_info = block("cpu")
     cpu_arch = (
-        vf_data.get("cpu_architecture")
-        or cpu_info.get("microarchitecture")
-        or cpu_info.get("brand_string")
+        text(vf_data.get("cpu_architecture"))
+        or text(cpu_info.get("microarchitecture"))
+        or text(cpu_info.get("brand_string"))
     )
     if cpu_arch:
-        device["cpu_architecture"] = str(cpu_arch)
+        device["cpu_architecture"] = cpu_arch
 
     # 2. GPU Architecture / UMA topology (e.g. Vega 6 / GCN 5.0, bus dual-channel 128-bit)
-    if "gpu_architecture" in vf_data:
-        device["gpu_architecture"] = str(vf_data["gpu_architecture"])
+    if text(vf_data.get("gpu_architecture")):
+        device["gpu_architecture"] = text(vf_data["gpu_architecture"])
     else:
-        gpu_info = vf_data.get("gpu", {})
-        ram_info = vf_data.get("ram", {})
-        adapter_name = gpu_info.get("adapter_name", "")
-        arch_desc = gpu_info.get("architecture", "")
+        gpu_info = block("gpu")
+        ram_info = block("ram")
+        adapter_name = text(gpu_info.get("adapter_name")) or ""
+        arch_desc = text(gpu_info.get("architecture")) or ""
 
         # Extract specific GPU silicon tag e.g. "Vega 6 / GCN 5.0"
         m_gpu = re.search(r"\(([^)]*(?:Vega|GCN|RDNA|Graphics)[^)]*)\)", adapter_name, re.IGNORECASE)
         gpu_tag = m_gpu.group(1).strip() if m_gpu else (adapter_name or arch_desc)
 
         # Extract bus and channel topology e.g. "bus dual-channel 128-bit"
-        channel_top = ram_info.get("channel_topology", "")
+        channel_top = text(ram_info.get("channel_topology")) or ""
         m_ram = re.search(r"([A-Za-z0-9\-]+-Channel)\s*\((?:.*?)?(\d+-bit)", channel_top, re.IGNORECASE)
         if m_ram:
             bus_tag = f"bus {m_ram.group(1).lower()} {m_ram.group(2).lower()}"
@@ -228,15 +236,39 @@ def _enrich_device_with_vegaflow(device, vf_data):
             device["gpu_architecture"] = bus_tag
 
 
+def daemon_names():
+    """Returns the file names to look for: vegaflow_daemon.exe and those in METAL_TRACE_DAEMON_NAMES (comma-separated;
+    an entry with a path in it is ignored, so the variable cannot point outside build/)."""
+    extra = [n.strip() for n in os.environ.get("METAL_TRACE_DAEMON_NAMES", "").split(",")]
+    return ["vegaflow_daemon.exe"] + [n for n in extra if n and pathlib.PurePath(n).name == n]
+
+
 def daemon_candidates(daemon_path=None):
-    """Returns where vegaflow_daemon.exe may be, in order: the given path, build/ under the working directory and its
-    parent, then build/ in the clone root and its parent (the package lives in <clone>/src/metal_gpu_trace)."""
-    exe = "vegaflow_daemon.exe"
-    candidates = [pathlib.Path(daemon_path)] if daemon_path is not None else []
-    candidates += [pathlib.Path("..") / "build" / exe, pathlib.Path("build") / exe]
+    """Returns where a daemon (see `daemon_names`) may be, in order: the given path, build/ under the working directory
+    and its parent, then build/ in the clone root and its parent (the package lives in <clone>/src/metal_gpu_trace)."""
     clone = pathlib.Path(__file__).resolve().parents[2]
-    candidates += [clone.parent / "build" / exe, clone / "build" / exe]
+    candidates = [pathlib.Path(daemon_path)] if daemon_path is not None else []
+    for build in (pathlib.Path("..") / "build", pathlib.Path("build"), clone.parent / "build", clone / "build"):
+        candidates += [build / name for name in daemon_names()]
     return candidates
+
+
+def daemon_info(exe):
+    """Returns (data, None) from `exe --system-info`, or (None, reason) with reason `timeout`, `invalid_json` (not JSON,
+    or JSON that is not an object) or `missing` (it would not run, exited non-zero or printed nothing)."""
+    try:
+        res = subprocess.run([str(exe), "--system-info"], capture_output=True, text=True, timeout=1.0, check=False)
+    except subprocess.TimeoutExpired:
+        return None, "timeout"
+    except Exception:
+        return None, "missing"
+    if res.returncode != 0 or not res.stdout.strip():
+        return None, "missing"
+    try:
+        data = json.loads(res.stdout)
+    except ValueError:
+        return None, "invalid_json"
+    return (data, None) if isinstance(data, dict) else (None, "invalid_json")
 
 
 def collect_device_info(daemon_path=None):
@@ -265,20 +297,11 @@ def collect_device_info(daemon_path=None):
             continue
 
     if daemon_exe:
-        try:
-            res = subprocess.run(
-                [str(daemon_exe), "--system-info"],
-                capture_output=True,
-                text=True,
-                timeout=1.0,
-                check=False,
-            )
-            if res.returncode == 0 and res.stdout.strip():
-                vf_data = json.loads(res.stdout)
-                _enrich_device_with_vegaflow(device, vf_data)
-        except Exception:
-            # Fall back transparently to native Win32 device info on any error or timeout
-            pass
+        vf_data, reason = daemon_info(daemon_exe)
+        if reason:
+            device["daemon_info_error"] = reason  # a short word, never the daemon's path
+        else:
+            _enrich_device_with_vegaflow(device, vf_data)
 
     return device
 

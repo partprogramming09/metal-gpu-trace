@@ -258,6 +258,11 @@ def kill_program(name):
     subprocess.run(["pkill", "-KILL", "-x", name], capture_output=True, timeout=30)
 
 
+def worst_case_message(limit, windows):
+    """Returns the first progress line: the worst case in seconds, with read-back only where there is one."""
+    return f"recording: up to {limit} s" + ("" if windows else " including read-back")
+
+
 def deadline(seconds, counters=False):
     """Returns the seconds a recording of `seconds` may take in all; closing and reading back a Wine D3D12 trace takes
     up to 14 s per recorded second on an M1 Pro, and the GPU counters table about 40 more (an M-series Mac, native)."""
@@ -364,7 +369,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
         env["PERF_INSTRUMENTS"] = ";".join(filter(None, [os.environ.get("PERF_INSTRUMENTS", ""), "Metal GPU Counters"]))
     layer = layer or layer_of(wine, prefix, env["PERF_ENV"])
     limit = deadline(seconds, True) if counters and sys.platform != "win32" else deadline(seconds)
-    progress(0, limit, f"recording: up to {limit} s including read-back")
+    progress(0, limit, worst_case_message(limit, sys.platform == "win32"))
     if sys.platform == "win32":
         from metal_gpu_trace import perf_record_windows  # here, not at import: the module may have been imported elsewhere
         try:

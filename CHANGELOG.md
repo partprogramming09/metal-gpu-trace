@@ -5,6 +5,16 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+### Added
+
+- 🩺 On Windows, when a hardware daemon is found but gives no usable answer, the `device` block says why in `daemon_info_error` (`timeout`, `invalid_json` or `missing`), never with its path. `METAL_TRACE_DAEMON_NAMES` adds other daemon file names to look for.
+
+### Fixed
+
+- 🛠️ A daemon that answers a null, blank or non-text `cpu_architecture` or `gpu_architecture` no longer writes the text `None` or an empty value: the key is absent.
+- 🛠️ The first progress line of a Windows recording no longer says "including read-back" (there is none there).
+- 🛠️ The README says what the code does for the deadline of a recording: 15 s per recorded second plus 180 (55 with GPU counters), not 10 s plus 120.
+
 ## 0.28.0 — 2026-11-16
 
 (Shorter answers from every tool, one command to set the server up, and the recording's tables kept in a SQLite file you can filter. Its proof is [docs/evidence/v0.28.0.md](docs/evidence/v0.28.0.md).)

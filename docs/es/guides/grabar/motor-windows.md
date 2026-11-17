@@ -76,5 +76,11 @@ arrancó (nunca uno al que se enganchó), borra todo archivo que empiece por el 
 
 Lee Win32 para el procesador, la RAM y la versión del sistema, y, cuando se encuentra un `vegaflow_daemon.exe` junto al
 clon, una llamada `--system-info` con plazo de 1 s que añade nombres de arquitectura de CPU y GPU (`collect_device_info`,
-`:242-283`; `daemon_candidates` `:231-239`). Cualquier fallo vuelve a los datos de Win32 en silencio. Qué es VegaFlow, de
-dónde viene y quién lo ejecuta **no está documentado en las guías de este repositorio** y no se investigó: pendiente de confirmar ([límite 14](./limites.md)).
+`daemon_info`, `daemon_candidates`). VegaFlow es un daemon de Windows aparte y opcional para APUs de AMD: este paquete solo
+ejecuta su `--system-info` y no usa nada más de él ([límite 14](./limites.md)). Con `METAL_TRACE_DAEMON_NAMES` (nombres de
+archivo separados por comas, sin rutas) también se busca un daemon con otro nombre.
+
+Una arquitectura nula, en blanco o que no es texto no añade clave. Si se encontró un daemon pero no dio una respuesta
+útil, el bloque `device` lleva `daemon_info_error`: `timeout`, `invalid_json` (no es JSON, o no es un objeto) o `missing`
+(no arrancó, salió con código distinto de cero o no imprimió nada); nunca incluye la ruta del daemon. Sin daemon no se
+añade nada: es el caso normal. La grabación sigue usando los datos de Win32.
