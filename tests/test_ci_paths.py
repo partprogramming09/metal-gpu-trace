@@ -64,3 +64,12 @@ def test_ci_lint():
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert re.search(r"uvx ruff@\d+\.\d+\.\d+ check", workflow), "a lint job runs a pinned ruff"
     assert "[tool.ruff]" in pyproject and 'target-version = "py39"' in pyproject and "line-length = 120" in pyproject
+
+
+def test_every_winbridge_job_has_its_script():
+    import json
+    base = ROOT / "windows" / "winbridge-job"
+    jobs = json.loads((base / "manifest.json").read_text(encoding="utf-8"))["jobs"]
+    assert "metal-trace-daemon" in jobs
+    for name, job in jobs.items():
+        assert (base / "scripts" / job["script"]).is_file(), name

@@ -1,6 +1,6 @@
 # How each number is computed
 
-**Reader:** people who see a number in a summary and ask where it comes from, or who change `perf_report.py` or `metrics.py`. Reviewed 2026-11-16.
+**Reader:** people who see a number in a summary and ask where it comes from, or who change `perf_report.py` or `metrics.py`. Reviewed 2026-11-17.
 
 Español: [Cómo se calcula cada número](../../es/guides/resumir-y-analizar/como-se-calculan-los-numeros.md)
 
@@ -30,6 +30,11 @@ Example first: in the first run of the guide's example, the median gap is 9.4845
 | `metal_memory_mib` | `peak`, `final`, `mean` of the program's samples; `trend_mib_per_min` is the least-squares slope over the second half of the time, with at least 5 samples and 5 s | `perf_report.py:731-746`, `:438-450` |
 | `gpu_performance_state_share`, `thermal_state_share` | time in each state over the total, 3 decimals | `:765-771`, `:782-790` |
 | `noisy_environment` | `external = device_pct_mean - 100 × (1 - idle_share)`; flagged when `external >= 20` points | `:560-581` |
+| `graphics_compiler.duration_ms` | `stats` (count, mean, p50, p95, max) of `end - start` for each compile in the program's graphics-compiler intervals: the same rows as `busy_ms` | `perf_report.py:548-563` (`compiler_summary`) |
+| `graphics_compiler.startup`, `.in_flight` | the compiles split by their start against the start of the 10th frame (`frame_starts[9]`): `startup` those that begin before it, `in_flight` the rest; each with `intervals` and `busy_ms`. Absent with fewer than 10 frames | `perf_report.py:548-563`, `:864-866` |
+| `command_buffer_errors`, `command_buffer_errors_scope`, `command_buffer_error_codes` | errors whose `cmdbuffer-id` the encoders table names under the program's pid; `scope` is `program`, or `all_processes` when there is no encoders table; codes are counted by `error-code` (`unknown` when a row has none), and the key appears only with at least one error | `perf_report.py:535-546`, `:789-796`, `:889-896` |
+| `gpu_activity.split_scenes_per_min`, `recoveries_per_min` | growth of `split_scenes` or `recoveries` over the samples' time span, per minute: `growth × 60 / span_s`; `null` when the span is zero | `perf_report.py:564-602` (`agx_summary`) |
+| `machine.power` | low power mode and thermal warning, read before and after the recording; `changed` is true when a fact known at both ends differs. Explained in [power and heat](./power-and-heat.md) | `perf_report.py:653-676`; `recording.py:386`, `:438-439` |
 
 ## fps_estimate
 

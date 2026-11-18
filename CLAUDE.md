@@ -34,6 +34,9 @@ Antes de tocar documentación, lee `.claude/ROUTING.md`. Mapa de piezas y flujo:
 - Check with `python3 -I tests/run.py`; it must print `ok`. Lint as CI does: `uvx ruff@0.14.0 check src tests`. `python -m pytest tests` also runs the Windows tests on
   Windows.
 - Commits are fine without asking; never tag, push, merge or release without the owner's explicit go-ahead.
+- A pull request is for integrating a code feature or fix. A change with no code (docs, wording, config, notes) does not
+  get a PR; it goes straight to `main` once the owner says push. Exception: it touches important project data (summary
+  contract, release facts, security, secrets) or fixes an error; then it gets a PR.
 
 ## Summary contract (from `schema_version` 3)
 

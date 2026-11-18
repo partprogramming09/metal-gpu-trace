@@ -1,6 +1,6 @@
 # Noise and verdicts
 
-**Reader:** people deciding whether a change really made a program faster or slower. Reviewed 2026-11-16.
+**Reader:** people deciding whether a change really made a program faster or slower. Reviewed 2026-11-17.
 
 Español: [Ruido y veredictos](../../es/guides/resumir-y-analizar/ruido-y-veredictos.md) · Back to the [guide index](./index.md).
 
@@ -20,4 +20,4 @@ The [guide's example](./index.md#one-example-first) shows why: against `a2-proof
 ![Eight boxes in two rows joined by arrows. Top row: read the summaries, perf_compare (changes, no verdict), perf_baseline (the range and spread of equal runs) and perf_check's decision of each metric against that range with a margin. Bottom row: the verdict regressed, improved or same; perf_ab; perf_gate; and the warnings that never change a verdict.](./img/compare-flow.png)
 *Figure 2. How a run is compared and judged. HTML source: `docs/guides/summarizing/img/compare-flow.html`.*
 
-What the project does about noise, in the order you meet it: **1 Repeat**: "Repeat a run before calling a change real" (the project's `CLAUDE.md`; the [guides index](../index.md) says the same); `perf_baseline_record` and A B B A repeat for you. **2 Measure the noise**: the `spread_pct` of a baseline is how far equal runs differ. **3 Judge outside the noise**: the range replaces the single run; the margin adds a small buffer past it. **4 Say when the run is suspect**: the flags of `perf_compare` (`unpresented`, `noisy_environment`, `screen`, `gpu_state`, `tier`, `too_short`) are visible and **do not change the verdict** of `perf_check`; only `perf_gate` fails on `unpresented`. **5 Rest**: `cooldown_s`, and a `suggested_actions` entry proposing a 60 s rest when the Mac throttled ("60 s is a starting value, not a measurement", `analysis.py:665-666`).
+What the project does about noise, in the order you meet it: **1 Repeat**: "Repeat a run before calling a change real" (the project's `CLAUDE.md`; the [guides index](../index.md) says the same); `perf_baseline_record` and A B B A repeat for you. **2 Measure the noise**: the `spread_pct` of a baseline is how far equal runs differ. **3 Judge outside the noise**: the range replaces the single run; the margin adds a small buffer past it. **4 Say when the run is suspect**: the flags of `perf_compare` (`unpresented`, `noisy_environment`, `screen`, `power`, `gpu_state`, `tier`, `too_short`) are visible and **do not change the verdict** of `perf_check`; only `perf_gate` fails on `unpresented`. **5 Rest**: `cooldown_s`, and a `suggested_actions` entry proposing a 60 s rest when the Mac throttled ("60 s is a starting value, not a measurement", `analysis.py:665-666`).

@@ -5,6 +5,29 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+### Added
+
+- 🛡️ A WinBridge job, `metal-trace-daemon` (`windows/winbridge-job/`), installs the published package and records `drawstress` once with the VegaFlow daemon stopped and once running, then leaves the daemon as it found it. Run on the Windows PC by hand with the same steps (stop, record, start, record): 392 and 388 frames.
+
+- 📈 A recorded program can write its own numbers (VRAM, a frame counter, anything numeric) to the CSV whose path is in `METAL_TRACE_APP_METRICS`, on macOS (the Windows engine passes the same variable; not yet run there); the summary carries them as `app_metrics` (samples, duration and, per column, count, mean, p50, p95, max, min, last), always `comparable: false`, with what was ignored in `issues`. The file is read from a private temporary folder and removed.
+
+- 🩺 On Windows, when a hardware daemon is found but gives no usable answer, the `device` block says why in `daemon_info_error` (`timeout`, `invalid_json` or `missing`), never with its path. `METAL_TRACE_DAEMON_NAMES` adds other daemon file names to look for.
+
+- 🔋 On macOS, `machine.power` says whether low power mode was on and whether the Mac warned of heat or limited its CPU, read when the recording starts and when it ends, with `changed` when a fact moved in between. `perf_compare` adds a `power` note when two runs differ in that (or one changed while recording); a summary without the key gets no note.
+
+- 🧮 On macOS, `graphics_compiler` adds `duration_ms` (count, mean, p50, p95, max of one compile), and `command_buffer_error_codes` counts the errors by `error-code`. `graphics_compiler.startup` and `.in_flight` split the compiles by whether they began before the 10th frame, and the GPU activity block adds `split_scenes_per_min` and `recoveries_per_min`.
+
+- 🪟 On Windows, `common.api.runtime` (`d3d9`, `d3d11`, `d3d12`, `vulkan`, `opengl`, else `unknown`) is read from the graphics DLLs the process has loaded, and `translation_layer` says `dxvk` or `vkd3d-proton` when those DLLs come from outside the system folder (the summary's `graphics_api`; no path is kept).
+- 🪟 On Windows, `noisy_environment` and `gpu_noise` (`process_busy_pct`, `external_pct`, `samples`) come from the `GPU Engine` counters, read every 2 s while recording; 20 points or more of other processes' GPU use is the flag, the same threshold as on macOS.
+
+### Fixed
+
+- 🛠️ `command_buffer_errors` counted the errors of every process on the Mac; it now counts only the recorded program's command buffers (matched through `cmdbuffer-id`, since the error table has no process column), and `command_buffer_errors_scope` says `program` (a summary without that key counted every process; with no encoders table it says `all_processes`).
+- 🛠️ A daemon that answers a null, blank or non-text `cpu_architecture` or `gpu_architecture` no longer writes the text `None` or an empty value: the key is absent.
+- 🛠️ The hardware daemon's memory bus width must be a positive number (no more `bus True-bit`), its output that is not text now counts as `invalid_json`, and `METAL_TRACE_DAEMON_NAMES` ignores `.`, `..` and names with a slash or backslash.
+- 🛠️ The first progress line of a Windows recording no longer says "including read-back" (there is none there).
+- 🛠️ The README says what the code does for the deadline of a recording: 15 s per recorded second plus 180 (55 with GPU counters), not 10 s plus 120.
+
 ## 0.28.0 — 2026-11-16
 
 (Shorter answers from every tool, one command to set the server up, and the recording's tables kept in a SQLite file you can filter. Its proof is [docs/evidence/v0.28.0.md](docs/evidence/v0.28.0.md).)

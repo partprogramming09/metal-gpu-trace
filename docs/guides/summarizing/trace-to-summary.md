@@ -1,6 +1,6 @@
 # From a trace to the summary
 
-**Reader:** people who change `perf_report.py` or want to know which tables of a recording feed which number. Reviewed 2026-11-16.
+**Reader:** people who change `perf_report.py` or want to know which tables of a recording feed which number. Reviewed 2026-11-17.
 
 Español: [Del trace al resumen](../../es/guides/resumir-y-analizar/del-trace-al-resumen.md)
 
@@ -35,11 +35,11 @@ The tables the summary can read:
 | `metal-gpu-intervals` | **required** (`:34`, `:194`) | every `gpu` number, `encoders`, `gpu_idle`, `frames.csv`, the hitches | `ValueError: the trace has no metal-gpu-intervals table; this Xcode may name it differently: trace_tables lists the tables it has` (`:194-196`), but see [limit 2](./limits.md) |
 | `metal-current-allocated-size` | requested unless `--no-memory` (`:34`, `:639`) | `metal_memory_mib`, `metal_memory.csv`, the `memory_growth` hitch cause | with `--no-memory` it is not exported and is named in `missing_tables`; otherwise the export of an absent table fails (probable, [limit 3](./limits.md)) |
 | `gpu-performance-state-intervals` | requested always (`:34`) | `gpu_performance_state_share` | the export of an absent table fails (probable, [limit 3](./limits.md)) |
-| `metal-application-encoders-list` | optional (`:36`) | the labels of the encoders | no labels: encoders grouped under `?` (`:724-727`, `metrics.label_name` `:89-91`) |
-| `graphics-compiler-activity-intervals` | optional | `graphics_compiler`; the `shader_compile` cause | no `graphics_compiler` key; no hitch is ever named `shader_compile` (`:774-781`) |
+| `metal-application-encoders-list` | optional (`:36`) | the labels of the encoders; which command buffers belong to the program (for `command_buffer_errors`) | no labels: encoders grouped under `?` (`:724-727`, `metrics.label_name` `:89-91`); no program buffers: `command_buffer_errors` counts every process ([limit 5](./limits.md)) |
+| `graphics-compiler-activity-intervals` | optional | `graphics_compiler` (`busy_ms`, `duration_ms`, and `startup` / `in_flight` once there are 10 frames); the `shader_compile` cause | no `graphics_compiler` key; no hitch is ever named `shader_compile` (`:774-781`) |
 | `device-thermal-state-intervals` | optional | `thermal_state_share`; the `thermal` cause | neither exists; the throttling flag stays the FPS-based one (`:782-790`, `:819-820`) |
 | `ProcessCPUUsage` | optional | `cpu`; each hitch's `cpu_pct` | no `cpu`, no `cpu_pct` (`:791-798`) |
-| `metal-resource-allocations`, `graphics-compiler-spill-events`, `metal-command-buffer-error` | optional | `resource_allocations`, `shader_spills`, `command_buffer_errors` | no key (`:799-806`); **absent is not zero** (and no `resource_allocations` when the program has no allocation) |
+| `metal-resource-allocations`, `graphics-compiler-spill-events`, `metal-command-buffer-error` | optional | `resource_allocations`, `shader_spills`, `command_buffer_errors` | no key (`:799-806`), except that `command_buffer_errors` then counts every process, and says so in `command_buffer_errors_scope` ([limit 5](./limits.md)); **absent is not zero** (and no `resource_allocations` when the program has no allocation) |
 | `gpu-counter-info`, `gpu-counter-value` | only with `--counters` or `PERF_INSTRUMENTS` naming Metal GPU Counters (`:42`, `:632-633`, `:640`) | `gpu_counters`; each hitch's `top_limiter` | no `gpu_counters` (`:812-824`) |
 
 `missing_tables(toc)` (`:190-197`) is the sorted list of the tables above (memory and performance state included, though only `OPTIONAL` is optional) that the table of contents lacks. It is written to the summary (`:664`) so that "their numbers come out empty" is not mistaken for zero (`:663`); a test pins the full list for a trace with only the GPU intervals, and the error for an empty one (`tests/test_report.py:128-135`, not run; [E7](./evidence.md#e7)). **Nothing in `src/` reads the key** (`rg`; see [the data guide](../data-and-lifecycle/json-keys.md#the-summary-key-by-key)): it is for the person reading, and a gate fails on the missing value itself ([When a number is missing](./reading-and-comparing.md#when-a-number-is-missing)). It is `[]` in both real runs ([E4](./evidence.md#e4)); the three names the Windows engine always writes are a fixed list, not a reading of a trace (`perf_record_windows.py:900`, [recording guide](../recording/windows-engine.md#why-a-separate-engine-and-what-it-measures)).

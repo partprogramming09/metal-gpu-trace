@@ -532,6 +532,35 @@ def spill_summary(table_rows, pid):
     return {"events": events, "bytes": spilled, "encoders": len(encoders)} if events else {"events": 0}
 
 
+def command_buffer_errors(error_rows, program_buffers):
+    """Returns {"count", "by_code"}: the errors of the program's command buffers in `metal-command-buffer-error`, by
+    `error-code` ("unknown" when a row has none). That table has no process column, so a buffer is the program's when
+    its `cmdbuffer-id` is in `program_buffers` (those `metal-application-encoders-list` names under the program's pid);
+    errors of other or unknown buffers do not count. None when `program_buffers` is None (no encoders table): whose
+    errors they are cannot be told."""
+    if program_buffers is None:
+        return None
+    by_code = collections.Counter(text(row.get("error-code")) or "unknown"
+                                  for row in error_rows if text(row.get("cmdbuffer-id")) in program_buffers)
+    return {"count": sum(by_code.values()), "by_code": dict(by_code.most_common())}
+
+
+def compiler_summary(intervals, startup_until_ms=None):
+    """Returns the graphics compiler's work of the program from its (start, end) intervals in ms: `intervals`, `busy_ms`,
+    and `duration_ms` (count, mean, p50, p95, max of one compile) when there is any. With `startup_until_ms` (when the
+    10th frame begins), `startup` and `in_flight` split the intervals by their start: compiles in the start-up are
+    expected, those in flight can cause a hitch."""
+    out = {"intervals": len(intervals), "busy_ms": round(sum(b - a for a, b in intervals), 3)}
+    if intervals:
+        out["duration_ms"] = metrics.stats([b - a for a, b in intervals])
+    if startup_until_ms is not None:
+        early = [i for i in intervals if i[0] < startup_until_ms]
+        late = [i for i in intervals if i[0] >= startup_until_ms]
+        out["startup"] = {"intervals": len(early), "busy_ms": round(sum(b - a for a, b in early), 3)}
+        out["in_flight"] = {"intervals": len(late), "busy_ms": round(sum(b - a for a, b in late), 3)}
+    return out
+
+
 def agx_summary(path):
     """Summarizes a recording's `.agx.csv`, one row per second of the GPU driver's counters, which cover the whole GPU
     and not only the recorded program: utilization of the device, renderer and tiler as stats, `split_scenes` (growth of
@@ -559,17 +588,22 @@ def agx_summary(path):
         values = column(name)
         return int(values[-1] - values[0]) if values else None
     recoveries = growth("recovery_count")
+    times = column("time_s")
+    span = times[-1] - times[0] if len(times) > 1 else 0
+
+    def per_minute(count):
+        return round(count / span * 60, 3) if count is not None and span > 0 else None
+    splits = growth("split_scenes")
     return {"samples": len(rows),
             **{key: (stats(column(name)) if column(name) else None)
                for key, name in (("device_pct", "device_pct"), ("renderer_pct", "renderer_pct"),
                                  ("tiler_pct", "tiler_pct"), ("in_use_mib", "in_use_mib"))},
-            "split_scenes": growth("split_scenes"), "recoveries": recoveries,
+            "split_scenes": splits, "split_scenes_per_min": per_minute(splits),
+            "recoveries": recoveries, "recoveries_per_min": per_minute(recoveries),
             "gpu_recovered": None if recoveries is None else recoveries > 0}
 
 
-# points of GPU use beyond the program's own at which a recording counts as made in a noisy environment; provisional, not
-# a measurement: re-fit it on at least 3 quiet runs of the same Mac
-NOISY_EXTERNAL_PCT = 20.0
+NOISY_EXTERNAL_PCT = metrics.NOISY_EXTERNAL_PCT  # one threshold, shared with the Windows engine
 
 
 def noisy_environment(activity, idle):
@@ -612,6 +646,32 @@ def screen_locked(read=read_command):
         return "CGSSessionScreenIsLocked" in read(("ioreg", "-n", "Root", "-d1", "-a"))
     except (KeyError, OSError, subprocess.SubprocessError):
         return None
+
+
+def power_state(read=read_command):
+    """Returns {"low_power_mode", "thermal_warning"} of this Mac from `pmset`: low power mode on or off, and whether the Mac
+    has recorded a thermal or performance warning or limits its CPU speed (below 100). A fact `pmset` does not give (no
+    `pmset`, a Mac with no such key, text this does not know) is None, never a guess."""
+    state = {"low_power_mode": None, "thermal_warning": None}
+    try:
+        low = re.search(r"^\s*lowpowermode\s+(\d)\s*$", read(("pmset", "-g")), re.MULTILINE)
+        therm = read(("pmset", "-g", "therm"))
+    except (KeyError, OSError, subprocess.SubprocessError):
+        return state
+    if low:
+        state["low_power_mode"] = low.group(1) == "1"
+    speed = re.search(r"CPU_Speed_Limit\s*=\s*(\d+)", therm)
+    warned = [line for line in therm.splitlines() if "warning level" in line.lower() and "no " not in line.lower()]
+    if speed or warned or "warning level" in therm.lower():
+        state["thermal_warning"] = bool(warned) or (speed is not None and int(speed.group(1)) < 100)
+    return state
+
+
+def power_block(start, end):
+    """Returns the `power` block of `machine`: both readings, and `changed` true when a fact known at both ends differs
+    (the run's conditions moved while it was recorded)."""
+    return {"start": start, "end": end,
+            "changed": any(None not in (start[k], end[k]) and start[k] != end[k] for k in start)}
 
 
 def machine_info(device, read=read_command):
@@ -738,10 +798,14 @@ def summarize(trace, label=None, out=None, memory=True, counters=None, tables_db
             summary["gpu"]["unpresented"] = stalled
 
         # how the work splits into encoders, and when the GPU waits for it
-        labels = {}
+        labels, program_buffers = {}, None  # the table is read once: its file is deleted as it is read
         if "metal-application-encoders-list" in tables:
-            labels = {text(row.get("encoder-id")): text(row.get("encoder-label-indexed"))
-                      for row in read("metal-application-encoders-list")}
+            program_buffers = set()
+            for row in read("metal-application-encoders-list"):
+                labels[text(row.get("encoder-id"))] = text(row.get("encoder-label-indexed"))
+                if pid_of(row.get("process")) == pid:
+                    program_buffers.add(text(row.get("cmdbuffer-id")))
+            program_buffers -= {None, ""}
         summary["encoders"] = encoder_stats(kept["spans"], labels)
         summary["gpu_idle"] = kept["idle"]
 
@@ -794,8 +858,9 @@ def summarize(trace, label=None, out=None, memory=True, counters=None, tables_db
                 start, duration = number(row.get("start")), number(row.get("duration"))
                 if pid_of(row.get("process")) == pid and start is not None and duration is not None:
                     compiler.append((start / 1e6, (start + duration) / 1e6))
-            summary["graphics_compiler"] = {"intervals": len(compiler),
-                                            "busy_ms": round(sum(b - a for a, b in compiler), 3)}
+            frame_starts = sorted(first_start.values())
+            summary["graphics_compiler"] = compiler_summary(
+                compiler, frame_starts[9] / 1e6 if len(frame_starts) > 9 else None)
         if "device-thermal-state-intervals" in tables:
             for row in read("device-thermal-state-intervals"):
                 start, duration, state = number(row.get("start")), number(row.get("duration")), text(row.get("thermal-state"))
@@ -820,7 +885,14 @@ def summarize(trace, label=None, out=None, memory=True, counters=None, tables_db
         if "graphics-compiler-spill-events" in tables:
             summary["shader_spills"] = spill_summary(read("graphics-compiler-spill-events"), pid)
         if "metal-command-buffer-error" in tables:
-            summary["command_buffer_errors"] = sum(1 for _ in read("metal-command-buffer-error"))
+            errors = list(read("metal-command-buffer-error"))
+            mine = command_buffer_errors(errors, program_buffers)
+            if mine is None:  # no encoders table: every process's errors, said in `command_buffer_errors_scope`
+                summary["command_buffer_errors"], summary["command_buffer_errors_scope"] = len(errors), "all_processes"
+            else:  # scope "program" (summaries without this key counted every process)
+                summary["command_buffer_errors"], summary["command_buffer_errors_scope"] = mine["count"], "program"
+                if mine["by_code"]:
+                    summary["command_buffer_error_codes"] = mine["by_code"]
         log = out / f"{label}.validation.log"
         if log.is_file():
             with log.open(errors="replace") as handle:

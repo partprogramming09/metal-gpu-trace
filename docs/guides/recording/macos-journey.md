@@ -1,6 +1,6 @@
 # The macOS journey
 
-**Reader:** people who change `recording.py` or `perf_record.sh`. Reviewed 2026-11-16. Labels: see [Recording](./index.md#how-to-read-the-labels).
+**Reader:** people who change `recording.py` or `perf_record.sh`. Reviewed 2026-11-18. Labels: see [Recording](./index.md#how-to-read-the-labels).
 
 Español: [El recorrido en macOS](../../es/guides/grabar/recorrido-macos.md)
 
@@ -88,6 +88,7 @@ fingerprints the layer ([What identifies a run](#what-identifies-a-run)).
 | A non-zero exit, or no new `.json` | `recording failed (exit N): <last line of stderr>` | `recording.py:422-425` |
 | A summary with no GPU intervals | The program did no GPU work: the run's files are deleted and the error says how it ended ([When it fails](./failures.md)) | `:427-436` |
 | Otherwise | `finish` adds `layer`, `context`, `tier`, applies the disk limit and rewrites the summary. Key tables: [data guide](../data-and-lifecycle/json-keys.md#the-summary-key-by-key) | `recording.py:337-351`, `:437` |
+| The summary has a `machine` block | `machine.power` gets the two power readings: one taken before the script starts, one after the summary is written ([power and heat](../summarizing/power-and-heat.md)) | `recording.py:386`, `:438-439` |
 
 ## The kill sequence
 
@@ -101,6 +102,59 @@ Cancel and overrun end the same way, in this order (`recording.py:396-413`):
 
 `test_overrun`, `test_overrun_removes_lock_with_pid` and `test_free_lock_only_frees_its_own`
 (`tests/test_recording.py:358`, `:387`, `:733`) pin this (not run for this guide).
+
+## Program telemetry
+
+**In short:** a program you record can write its own numbers (graphics memory, a frame counter, anything numeric) to a
+file. The recording tells it where with an environment variable (a setting the system hands to the program when it
+starts), reads the file when the run ends, and summarises it under the `app_metrics` key of the summary.
+
+Example: the program writes one row per second to a text file with this content:
+
+```text
+t_ms,vram_mb,uma_mb
+0,500,100
+1000,600,110
+2000,690,119
+```
+
+The first column is `t_ms`, the time in milliseconds since the start; the others are named numbers. The format (CSV:
+comma-separated columns) opens in any spreadsheet.
+
+What the recording does, with nothing more from the program:
+
+1. It creates a private temporary folder and puts `METAL_TRACE_APP_METRICS=<file path>` in the program's environment.
+   If no temporary folder has a path without spaces, it does not set the variable and the summary has no such key.
+2. When the run ends, it reads the file and adds the `app_metrics` block. Then it deletes the file and its folder, also when the run failed.
+
+Rules for the file:
+
+- UTF-8. A BOM (the invisible mark some editors put at the start) and CRLF line breaks are accepted.
+- The first column must be `t_ms`. Any other header gives `samples: 0` and `issues.header`.
+- The other column names have 1 to 64 characters: letters, digits, `_`, `.` or `-`. Up to 32 columns.
+  An invalid name is left out; a repeated column keeps the first one (`ignored_columns`).
+- Rows out of order are sorted by `t_ms` and counted (`out_of_order_rows`).
+- A cell that is not a number, or is NaN or infinite, is skipped (`bad_cells`). A row with a different number of cells,
+  or with `t_ms` outside ±1e12 ms, is dropped (`dropped_rows`).
+- Only the first 8 MiB are read. A larger file is cut at its last complete line and the block gets `truncated: true`.
+- A huge cell or an unclosed quote counts as one bad cell (`bad_cells`); it does not hide the rows after it.
+- A missing file, a symbolic link (a system shortcut) or a folder: no key. An empty file: `samples: 0`.
+
+The block:
+
+| Field | Content |
+|---|---|
+| `source`, `comparable`, `reason` | Always `app-file`, `false` and one sentence: each program decides what its columns mean, so programs are not compared |
+| `samples` | Valid rows kept |
+| `duration_ms` | Time between the first and the last row (only when there are rows) |
+| `columns` | Per column: `count`, `mean`, `p50` (median), `p95`, `max`, `min` and `last` (the last value). Only when there are rows |
+| `issues` | Only the non-zero items: `dropped_rows`, `bad_cells`, `out_of_order_rows`, `ignored_columns`, or `header` |
+| `truncated` | `true` only when the file was cut for its size |
+
+`app_metrics` sits at the top level of the summary, not in `common`. See [the summary keys](../data-and-lifecycle/json-keys.md).
+
+**Not reproduced on Windows:** the Windows engine takes the same path (the variable reaches the program through
+`PERF_ENV`), but there is no real Windows recording yet with a program that writes this file.
 
 ## What identifies a run
 

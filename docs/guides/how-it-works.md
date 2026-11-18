@@ -88,6 +88,9 @@ Think of the runs folder as one drawer per project: everything about a project (
   `write` writes the compressed one, byte for byte the same for the same rows), read by `analysis._csv_rows` and
   `traces.tool_perf_export_trace`. A summary without `schema_version` is generation 1 (`metrics.schema_of`). Generation 3 adds `common`, built by `metrics.common_block` for both engines: `frame_pacing` and `memory_pressure` (each with its `source`), `api` (`runtime`, `translation_layer`), and `boundness` and `submission_overhead` as `comparable: false` until both platforms measure them alike. The keys each backend already had stay where they are. `perf_compare` subtracts memory peaks only when both runs measured the same thing. A truncated or malformed file becomes a `ToolError` that names the file (such as `<run>.json`) and never a path;
   a CSV line that cannot be read, or that holds a value that is not finite, is left out instead of failing the whole read.
+- **The program's own numbers.** `record_run` points the program at a private CSV file through `METAL_TRACE_APP_METRICS`;
+  `recording.finish` reads it with `app_metrics.safe_read` into the summary's `app_metrics` (top level, never comparable)
+  and the folder is removed whatever happened. Details: [Program telemetry](./recording/macos-journey.md#program-telemetry).
 - **Where a run came from.** `recording.run_context` adds `context` to each new summary: the 12-character commit and the
   dirty flag of the repository that holds the project file (`null` without a project file or a git repository) and
   Instruments' version. It drops the `GIT_*` variables before running git, so they cannot point at another repository,

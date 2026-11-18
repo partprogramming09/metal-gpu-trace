@@ -188,6 +188,19 @@ def compare_summaries(sa, sb, a, b, short_us=25):
                             "note": "one run was recorded with the screen locked and the other not: a locked session may "
                                     "leave frames unpaced by the display, so FPS, and GPU ms (they follow the GPU's performance "
                                     "state), are not comparable; record both with the Mac unlocked"}
+    powers = [(s.get("machine") or {}).get("power") for s in (sa, sb)]
+    if all(powers):
+        starts = [p["start"] for p in powers]
+        moved = [r for r, p in zip((a, b), powers) if p.get("changed")]
+        differ = [k for k in ("low_power_mode", "thermal_warning")
+                  if None not in (starts[0].get(k), starts[1].get(k)) and starts[0][k] != starts[1][k]]
+        if differ or moved:
+            result["power"] = {"a": starts[0], "b": starts[1], **({"changed_in": moved} if moved else {}),
+                               "note": ("the runs were recorded with different low power mode or thermal state (the Mac "
+                                        "lowers its clocks), so FPS and GPU ms are not comparable; record both with low "
+                                        "power mode off and the Mac cool" if differ else
+                                        "low power mode or the thermal state changed during a recording (changed_in): the "
+                                        "run is not steady, repeat it") }
     tiers = [s.get("tier") for s in (sa, sb)]
     if None not in tiers and tiers[0] != tiers[1]:
         result["tier"] = {"a": tiers[0], "b": tiers[1],

@@ -327,6 +327,37 @@ def test_resource_summary_live_and_freed():
     assert got["freed"]["count"] == 2000, got["freed"]
 
 
+def test_command_buffer_errors_count_the_program_by_error_code():
+    """command_buffer_errors keeps the errors of the recorded program's command buffers (the error table has no process
+    column: they are matched through the program's `cmdbuffer-id`s), by `error-code`; rows of other processes
+    and of unknown buffers do not count, and with no encoders table nothing can be matched."""
+    def cell(text):
+        el = ET.Element("v")
+        el.text = text
+        return el
+
+    errors = [{"cmdbuffer-id": cell(b), "error-code": cell(c)} for b, c in
+              (("1", "Timeout"), ("1", "Timeout"), ("2", "Hang"), ("9", "Timeout"), ("3", "Hang"))]
+    mine = {"1", "2"}
+    assert perf_report.command_buffer_errors(errors, mine) == {"count": 3, "by_code": {"Timeout": 2, "Hang": 1}}
+    assert perf_report.command_buffer_errors(errors, set()) == {"count": 0, "by_code": {}}
+    assert perf_report.command_buffer_errors([], mine) == {"count": 0, "by_code": {}}
+    assert perf_report.command_buffer_errors([{"cmdbuffer-id": cell("1")}], mine) == {"count": 1, "by_code": {"unknown": 1}}
+    assert perf_report.command_buffer_errors(errors, None) is None  # no encoders table: cannot tell whose they are
+
+
+def test_compiler_summary_has_percentiles():
+    """graphics_compiler keeps intervals and busy_ms and adds the spread of one compile: p50, p95 and max in ms."""
+    assert perf_report.compiler_summary([]) == {"intervals": 0, "busy_ms": 0.0}
+    one = perf_report.compiler_summary([(0.0, 4.0)])
+    assert one == {"intervals": 1, "busy_ms": 4.0, "duration_ms": {"count": 1, "mean": 4.0, "p50": 4.0, "p95": 4.0, "max": 4.0}}, one
+    split = perf_report.compiler_summary([(1.0, 2.0), (5.0, 6.0), (50.0, 53.0)], startup_until_ms=10.0)
+    assert split["startup"] == {"intervals": 2, "busy_ms": 2.0} and split["in_flight"] == {"intervals": 1, "busy_ms": 3.0}, split
+    assert "startup" not in perf_report.compiler_summary([(1.0, 2.0)])  # no cut-off known: no split
+    many = perf_report.compiler_summary([(i, i + d) for i, d in enumerate([1, 2, 3, 4, 100])])
+    assert many["intervals"] == 5 and many["busy_ms"] == 110.0 and many["duration_ms"]["max"] == 100.0, many
+
+
 def test_spill_summary():
     """shader_spills counts the spill events of the recorded program, their bytes and the distinct encoders; rows of
     other processes do not count, and a table with no row of the program gives {"events": 0}."""
@@ -355,6 +386,9 @@ def test_gpu_activity(tmp_path):
     assert got["samples"] == 4 and got["device_pct"]["max"] == 90 and got["device_pct"]["count"] == 3, got
     assert got["split_scenes"] == 9 and got["recoveries"] == 1 and got["gpu_recovered"] is True, got
     assert got["in_use_mib"]["max"] == 730, got
+    assert got["split_scenes_per_min"] == 180.0 and got["recoveries_per_min"] == 20.0, got  # 9 and 1 over 3 s
+    csv_path.write_text("time_s,device_pct,split_scenes,recovery_count\n0,10,0,0\n")  # one sample: no span, no rate
+    assert perf_report.agx_summary(csv_path)["split_scenes_per_min"] is None
     csv_path.write_text("time_s,device_pct\n0,10\n1,20\n")
     got = perf_report.agx_summary(csv_path)
     assert got["device_pct"]["mean"] == 15 and got["split_scenes"] is None and got["gpu_recovered"] is None, got
@@ -563,6 +597,34 @@ def test_gpu_counters(tmp_path):
         recording.record = saved_record
     assert seen == [False, True] and registry.RECORD_PROPS["counters"]["type"] == "boolean", seen
     assert recording.deadline(10, True) > recording.deadline(10) and recording.deadline(10) == 330
+
+def test_power_state_reads_low_power_mode_and_thermal_warning():
+    """power_state() says whether low power mode is on and whether the Mac warns of heat or limits its CPU; a fact it cannot
+    read is None, never a guess (no pmset, empty output, text it does not know, a Mac with no battery)."""
+    def state(power, therm):
+        facts = {("pmset", "-g"): power, ("pmset", "-g", "therm"): therm}
+        return perf_report.power_state(facts.__getitem__)
+    calm = "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\n"
+    assert state(" sleep 0\n lowpowermode         0\n", calm) == {"low_power_mode": False, "thermal_warning": False}
+    assert state(" lowpowermode 1\n", "CPU_Speed_Limit \t= 80\n") == {"low_power_mode": True, "thermal_warning": True}
+    assert state(" lowpowermode 0\n", "CPU_Speed_Limit \t= 100\n")["thermal_warning"] is False
+    assert state(" lowpowermode 0\n", "Note: Thermal warning level has been recorded (2)\n")["thermal_warning"] is True
+    assert state(" sleep 0\n", "") == {"low_power_mode": None, "thermal_warning": None}  # a desktop Mac: no key, no text
+    assert state("modo raro\n", "algo que no conozco\n") == {"low_power_mode": None, "thermal_warning": None}
+    assert perf_report.power_state({}.__getitem__) == {"low_power_mode": None, "thermal_warning": None}  # no pmset
+    def broken(argv):
+        raise subprocess.TimeoutExpired(argv, 10)
+    assert perf_report.power_state(broken) == {"low_power_mode": None, "thermal_warning": None}
+
+
+def test_power_block_marks_what_changed_during_the_recording():
+    """power_block(start, end) keeps both readings and says `changed` only when a fact known at both ends differs."""
+    off, on = {"low_power_mode": False, "thermal_warning": False}, {"low_power_mode": True, "thermal_warning": False}
+    assert perf_report.power_block(off, off) == {"start": off, "end": off, "changed": False}
+    assert perf_report.power_block(off, on)["changed"] is True
+    unknown = {"low_power_mode": None, "thermal_warning": None}
+    assert perf_report.power_block(off, unknown)["changed"] is False  # nothing known at the end: nothing to say changed
+
 
 def test_machine(tmp_path):
     """machine_info() names the chip, cores, RAM and macOS without host name or UUID, and gives None when the machine

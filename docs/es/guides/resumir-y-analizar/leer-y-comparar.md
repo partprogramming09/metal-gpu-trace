@@ -1,6 +1,6 @@
 # Leer y comparar
 
-**Lector:** personas que usan `perf_compare`, `perf_check`, `perf_gate` y compañía y quieren saber qué hace cada una de verdad, o que cambian `analysis.py`. Revisado el 2026-11-16.
+**Lector:** personas que usan `perf_compare`, `perf_check`, `perf_gate` y compañía y quieren saber qué hace cada una de verdad, o que cambian `analysis.py`. Revisado el 2026-11-17.
 
 English: [Reading and comparing](../../../guides/summarizing/reading-and-comparing.md)
 
@@ -39,6 +39,7 @@ Con menos de 2 fotogramas se niega: `<run> has under 2 frames after the first N 
 | `layer`, `context` | las corridas difieren en capa de traducción, commit o versión de Instruments ([guía de grabación](../grabar/recorrido-macos.md#que-identifica-una-corrida)) | `:188` |
 | `unpresented`, `noisy_environment` | una corrida dejó de presentar; una corrida se marcó ruidosa | `:189-191`, `:192-194` |
 | `screen` | una corrida se grabó con la pantalla bloqueada y la otra no | `:195-200` |
+| `power` | al empezar, las corridas difieren en modo de bajo consumo o en aviso térmico (ambos conocidos), o una corrida cambió mientras se grababa; el aviso dice cuál, y `changed_in` nombra la corrida. Un resumen sin `machine.power` no recibe ninguno ([energía y calor](./energia-y-calor.md)) | `analysis.py:191-203` |
 | `tier` | los niveles difieren (una corrida `light` no tiene memoria) | `:201-205` |
 | `gpu_state` | el nivel de rendimiento ponderado por tiempo difiere en 0.25 o más (0 todo Minimum, 1 todo Medium, 2 todo Maximum): el mismo trabajo tarda más ms de GPU en un estado más bajo | `:206-211`, `:141-146` |
 | `memory_pressure` | ambas midieron la memoria igual (su cambio), o una nota de que no | `:212-214`, `:149-163` |

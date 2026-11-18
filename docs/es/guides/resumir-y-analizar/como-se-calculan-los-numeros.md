@@ -1,6 +1,6 @@
 # Cómo se calcula cada número
 
-**Lector:** personas que ven un número en un resumen y preguntan de dónde sale, o que cambian `perf_report.py` o `metrics.py`. Revisado el 2026-11-16.
+**Lector:** personas que ven un número en un resumen y preguntan de dónde sale, o que cambian `perf_report.py` o `metrics.py`. Revisado el 2026-11-17.
 
 English: [How each number is computed](../../../guides/summarizing/how-numbers-are-computed.md)
 
@@ -30,6 +30,11 @@ Primero el ejemplo: en la primera corrida del ejemplo de la guía, el intervalo 
 | `metal_memory_mib` | `peak`, `final`, `mean` de las muestras del programa; `trend_mib_per_min` es la pendiente de mínimos cuadrados sobre la segunda mitad del tiempo, con al menos 5 muestras y 5 s | `perf_report.py:731-746`, `:438-450` |
 | `gpu_performance_state_share`, `thermal_state_share` | tiempo en cada estado sobre el total, 3 decimales | `:765-771`, `:782-790` |
 | `noisy_environment` | `external = device_pct_mean - 100 × (1 - idle_share)`; se marca cuando `external >= 20` puntos | `:560-581` |
+| `graphics_compiler.duration_ms` | `stats` (recuento, media, p50, p95, máximo) de `fin - inicio` de cada compilación en los intervalos del compilador gráfico del programa: las mismas filas que `busy_ms` | `perf_report.py:548-563` (`compiler_summary`) |
+| `graphics_compiler.startup`, `.in_flight` | las compilaciones separadas por su inicio frente al inicio del fotograma 10 (`frame_starts[9]`): `startup` las que empiezan antes, `in_flight` el resto; cada una con `intervals` y `busy_ms`. Faltan con menos de 10 fotogramas | `perf_report.py:548-563`, `:864-866` |
+| `command_buffer_errors`, `command_buffer_errors_scope`, `command_buffer_error_codes` | errores cuyo `cmdbuffer-id` nombra la tabla de encoders bajo el pid del programa; `scope` vale `program`, o `all_processes` sin tabla de encoders; los códigos se cuentan por `error-code` (`unknown` si una fila no tiene), y la clave aparece solo con al menos un error | `perf_report.py:535-546`, `:789-796`, `:889-896` |
+| `gpu_activity.split_scenes_per_min`, `recoveries_per_min` | crecimiento de `split_scenes` o `recoveries` sobre el tramo de tiempo de las muestras, por minuto: `crecimiento × 60 / tramo_s`; `null` si el tramo es cero | `perf_report.py:564-602` (`agx_summary`) |
+| `machine.power` | modo de bajo consumo y aviso térmico, leídos antes y después de la grabación; `changed` es true cuando un dato conocido en ambos extremos difiere. Explicado en [energía y calor](./energia-y-calor.md) | `perf_report.py:653-676`; `recording.py:386`, `:438-439` |
 
 ## fps_estimate
 

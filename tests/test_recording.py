@@ -704,8 +704,13 @@ def test_daemon_candidates():
     exe = "vegaflow_daemon.exe"
     expected = [pathlib.Path("..") / "build" / exe, pathlib.Path("build") / exe, ROOT.parent / "build" / exe,
                 ROOT / "build" / exe]
-    assert prw.daemon_candidates() == expected, prw.daemon_candidates()
-    assert prw.daemon_candidates("x.exe")[0] == pathlib.Path("x.exe")
+    saved = os.environ.pop("METAL_TRACE_DAEMON_NAMES", None)  # a name set in the environment would add candidates
+    try:
+        assert prw.daemon_candidates() == expected, prw.daemon_candidates()
+        assert prw.daemon_candidates("x.exe")[0] == pathlib.Path("x.exe")
+    finally:
+        if saved is not None:
+            os.environ["METAL_TRACE_DAEMON_NAMES"] = saved
 
 
 def test_record_new_summary(tmp_path):
@@ -1520,3 +1525,142 @@ def test_finish_refreshes_the_common_block_with_the_layer(tmp_path):
 def test_finish_does_not_add_common_to_an_older_summary(tmp_path):
     from metal_gpu_trace import recording
     assert "common" not in recording.finish({"schema_version": 2, "gpu": {}}, tmp_path / "old.json", None, None)
+
+
+def test_readme_states_the_deadline_the_code_uses():
+    """The README's deadline for a recording through the server is the one `deadline` computes (limit 2)."""
+    from metal_gpu_trace import recording
+    assert (recording.deadline(1), recording.deadline(1, True)) == (15 + 180, 55 + 180)
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "15 s per recorded second plus 180" in readme and "10 s per recorded second" not in readme
+
+
+def test_first_progress_message_says_read_back_only_off_windows():
+    """Windows has no read-back, so its first progress line does not promise one (limit 8)."""
+    from metal_gpu_trace import recording
+    assert recording.worst_case_message(630, windows=False) == "recording: up to 630 s including read-back"
+    assert recording.worst_case_message(630, windows=True) == "recording: up to 630 s"
+
+
+def test_daemon_architecture_empty_or_null_is_an_absent_key():
+    """A daemon that answers with null, empty or blank architectures, or a block that is not an object, adds no key:
+    never the text "None" and never an error."""
+    from metal_gpu_trace import perf_record_windows as prw
+    for payload in ({"cpu_architecture": None, "gpu_architecture": None}, {"cpu_architecture": "", "gpu_architecture": " "},
+                    {"cpu": None, "gpu": None, "ram": None}, {"cpu": [], "gpu": "x", "ram": 3},
+                    {"cpu_architecture": 5, "gpu_architecture": {"a": 1}}, {}):
+        device = {"platform": "Windows"}
+        prw._enrich_device_with_vegaflow(device, payload)
+        assert device == {"platform": "Windows"}, (payload, device)
+    device = {}
+    prw._enrich_device_with_vegaflow(device, {"cpu_architecture": " Zen 2 ", "gpu_architecture": None,
+                                              "gpu": {"adapter_name": "AMD (Vega 6 / GCN 5.0)"}})
+    assert device == {"cpu_architecture": "Zen 2", "gpu_architecture": "Vega 6 / GCN 5.0"}, device
+
+
+def test_graphics_api_comes_from_the_loaded_modules():
+    """graphics_api() names the runtime from the graphics DLLs a process holds (d3d12 beats d3d11, d3d9, vulkan and OpenGL)
+    and the translation layer from where they were loaded from; an empty or unreadable list is `unknown`, never a guess."""
+    from metal_gpu_trace import perf_record_windows as prw
+    sysdir = {"d3d11.dll": True, "dxgi.dll": True}
+    assert prw.graphics_api([("d3d11.dll", True), ("dxgi.dll", True)]) == {"runtime": "d3d11", "translation_layer": None}
+    assert prw.graphics_api([("d3d11.dll", True), ("d3d12.dll", True)])["runtime"] == "d3d12"  # 11on12 loads both
+    assert prw.graphics_api([("D3D9.DLL", True)])["runtime"] == "d3d9"
+    assert prw.graphics_api([("vulkan-1.dll", True)])["runtime"] == "vulkan"
+    assert prw.graphics_api([("opengl32.dll", True)])["runtime"] == "opengl"
+    assert prw.graphics_api([("vulkan-1.dll", True), ("d3d11.dll", False), ("dxgi.dll", False)]) == {"runtime": "d3d11", "translation_layer": "dxvk"}
+    assert prw.graphics_api([("d3d12.dll", False), ("dxgi.dll", False), ("vulkan-1.dll", True)]) == {"runtime": "d3d12", "translation_layer": "vkd3d-proton"}
+    assert prw.graphics_api([("kernel32.dll", True)]) == {"runtime": "unknown", "translation_layer": None}
+    assert prw.graphics_api([]) == {"runtime": "unknown", "translation_layer": None}
+    assert prw.graphics_api(None) == {"runtime": "unknown", "translation_layer": None}  # the list could not be read
+    assert sysdir  # the names are lower-cased before they are compared
+
+
+def test_gpu_engine_counters_give_the_program_and_the_others():
+    """parse_gpu_engines() sums typeperf's `GPU Engine` utilization by pid; gpu_noise() flags a recording when the other
+    processes used NOISY_EXTERNAL_PCT points or more of the GPU; no sample, or a header without rows, gives None."""
+    from metal_gpu_trace import perf_record_windows as prw
+    header = ('"(PDH-CSV 4.0)","\\\\PC\\GPU Engine(pid_10_luid_0x0_0x1_phys_0_eng_0_engtype_3D)\\Utilization Percentage",'
+              '"\\\\PC\\GPU Engine(pid_10_luid_0x0_0x1_phys_0_eng_1_engtype_Copy)\\Utilization Percentage",'
+              '"\\\\PC\\GPU Engine(pid_20_luid_0x0_0x1_phys_0_eng_0_engtype_3D)\\Utilization Percentage"')
+    text = "\n" + header + '\n"11/17/2026 22:27:58.556","40.5","2.0","30.0"\n\nExiting, please wait...   The command completed successfully.\n'
+    assert prw.parse_gpu_engines(text) == {10: 42.5, 20: 30.0}, prw.parse_gpu_engines(text)
+    assert prw.parse_gpu_engines("") == {} and prw.parse_gpu_engines(header) == {} and prw.parse_gpu_engines("garbage") == {}
+    noisy = prw.gpu_noise([{10: 50.0, 20: 30.0}, {10: 60.0, 20: 20.0}], 10)
+    assert noisy == {"flag": True, "process_busy_pct": 55.0, "external_pct": 25.0, "samples": 2}, noisy
+    assert prw.gpu_noise([{10: 50.0, 20: 5.0}], 10)["flag"] is False
+    assert prw.gpu_noise([{10: 50.0}], 10)["external_pct"] == 0.0  # alone on the GPU
+    assert prw.gpu_noise([], 10) is None
+
+
+def test_daemon_bus_width_must_be_a_positive_number():
+    """A bus width that is a bool, text, blank, an object or not positive is absent: no `bus True-bit`."""
+    from metal_gpu_trace import perf_record_windows as prw
+    for bad in (True, "   ", "None", {"a": 1}, 0, -64, None):
+        device = {}
+        prw._enrich_device_with_vegaflow(device, {"ram": {"memory_bus_width_bits": bad}})
+        assert device == {}, (bad, device)
+    device = {}
+    prw._enrich_device_with_vegaflow(device, {"ram": {"memory_bus_width_bits": 128}})
+    assert device == {"gpu_architecture": "bus 128-bit"}, device
+
+
+def test_daemon_output_that_is_not_utf8_is_invalid_json_not_missing(tmp_path):
+    """Bytes that are not text come back as `invalid_json` (the daemon answered, badly), not `missing`."""
+    if sys.platform == "win32":
+        return  # the fake daemon is a shell script
+    from metal_gpu_trace import perf_record_windows as prw
+    exe = tmp_path / "daemon.sh"
+    exe.write_text("#!/bin/sh\nprintf '\\377\\376'\n")
+    exe.chmod(0o755)
+    assert prw.daemon_info(exe) == (None, "invalid_json")
+
+
+def test_daemon_that_does_not_answer_says_why_without_its_path(tmp_path):
+    """`--system-info` that times out, prints no JSON, a JSON that is not an object, nothing, or exits non-zero says
+    a short reason in the device block; the daemon's path is never in it."""
+    from metal_gpu_trace import perf_record_windows as prw
+    exe = tmp_path / "secret-dir" / "vegaflow_daemon.exe"
+    exe.parent.mkdir()
+    exe.write_text("x")
+
+    def answer(stdout="", code=0, error=None):
+        def run(*args, **kwargs):
+            if args[0][1:] != ["--system-info"]:  # platform and ctypes may spawn their own commands
+                return real_run(*args, **kwargs)
+            if error:
+                raise error
+            return subprocess.CompletedProcess(args[0], code, stdout, "")
+        return run
+
+    cases = [(answer(error=subprocess.TimeoutExpired("d", 1)), "timeout"), (answer("{broken"), "invalid_json"),
+             (answer("[1]"), "invalid_json"), (answer(""), "missing"), (answer("{}", code=3), "missing"),
+             (answer(error=OSError("no")), "missing")]
+    saved = real_run = prw.subprocess.run
+    try:
+        for run, reason in cases:
+            prw.subprocess.run = run
+            device = prw.collect_device_info(daemon_path=exe)
+            assert device["daemon_info_error"] == reason, (reason, device)
+            assert "secret-dir" not in json.dumps(device), device
+        prw.subprocess.run = answer('{"cpu_architecture": "Zen 2"}')
+        device = prw.collect_device_info(daemon_path=exe)
+        assert device["cpu_architecture"] == "Zen 2" and "daemon_info_error" not in device, device
+    finally:
+        prw.subprocess.run = saved
+    assert "daemon_info_error" not in prw.collect_device_info(daemon_path=tmp_path / "none.exe")  # no daemon: not an error
+
+
+def test_daemon_names_are_configurable():
+    """METAL_TRACE_DAEMON_NAMES lists other file names to look for; a name with a path in it is ignored."""
+    from metal_gpu_trace import perf_record_windows as prw
+    saved = os.environ.get("METAL_TRACE_DAEMON_NAMES")
+    os.environ["METAL_TRACE_DAEMON_NAMES"] = "other.exe, ../evil.exe,,sub/x.exe, .., ., a\\b.exe"
+    try:
+        names = {c.name for c in prw.daemon_candidates()}
+    finally:
+        if saved is None:
+            os.environ.pop("METAL_TRACE_DAEMON_NAMES")
+        else:
+            os.environ["METAL_TRACE_DAEMON_NAMES"] = saved
+    assert names == {"vegaflow_daemon.exe", "other.exe"}, names

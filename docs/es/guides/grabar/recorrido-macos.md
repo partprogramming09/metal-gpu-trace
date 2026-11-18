@@ -1,6 +1,6 @@
 # El recorrido en macOS
 
-**Lector:** personas que cambian `recording.py` o `perf_record.sh`. Revisado el 2026-11-16. Etiquetas: véase [Grabar](./index.md#como-leer-las-etiquetas).
+**Lector:** personas que cambian `recording.py` o `perf_record.sh`. Revisado el 2026-11-18. Etiquetas: véase [Grabar](./index.md#como-leer-las-etiquetas).
 
 English: [The macOS journey](../../../guides/recording/macos-journey.md)
 
@@ -88,6 +88,7 @@ calcula la huella de la capa ([Qué identifica una corrida](#que-identifica-una-
 | Una salida distinta de cero, o ningún `.json` nuevo | `recording failed (exit N): <última línea de stderr>` | `recording.py:422-425` |
 | Un resumen sin intervalos de GPU | El programa no hizo trabajo de GPU: los archivos de la corrida se borran y el error dice cómo terminó ([Cuando falla](./fallos.md)) | `:427-436` |
 | Si no | `finish` añade `layer`, `context`, `tier`, aplica el límite de disco y reescribe el resumen. Tablas de claves: [guía de datos](../datos-y-su-ciclo-de-vida/claves-del-resumen.md#el-resumen-clave-por-clave) | `recording.py:337-351`, `:437` |
+| El resumen tiene un bloque `machine` | `machine.power` recibe las dos lecturas de energía: una antes de que arranque el script, otra después de escribir el resumen ([energía y calor](../resumir-y-analizar/energia-y-calor.md)) | `recording.py:386`, `:438-439` |
 
 ## La secuencia de cierre forzado
 
@@ -101,6 +102,59 @@ Cancelar y pasarse del plazo terminan igual, en este orden (`recording.py:396-41
 
 `test_overrun`, `test_overrun_removes_lock_with_pid` y `test_free_lock_only_frees_its_own`
 (`tests/test_recording.py:358`, `:387`, `:733`) lo fijan (no ejecutadas para esta guía).
+
+## Telemetría del programa
+
+**En corto:** un programa que grabas puede escribir sus propias cifras (memoria de la tarjeta gráfica, un contador de
+fotogramas, lo que quieras) en un archivo. La grabación le indica dónde con una variable de entorno (un ajuste que el
+sistema pasa al programa al arrancarlo), lee el archivo al terminar y lo resume en la clave `app_metrics` del resumen.
+
+Ejemplo: el programa escribe una fila por segundo en un archivo de texto con este contenido:
+
+```text
+t_ms,vram_mb,uma_mb
+0,500,100
+1000,600,110
+2000,690,119
+```
+
+La primera columna es `t_ms`, el tiempo en milisegundos desde el inicio; las demás son números con nombre. Ese formato
+(CSV: columnas separadas por comas) lo abre cualquier hoja de cálculo.
+
+Lo que hace la grabación, sin que el programa tenga que hacer nada más:
+
+1. Crea una carpeta temporal privada y pone en el entorno del programa `METAL_TRACE_APP_METRICS=<ruta del archivo>`.
+   Si ninguna carpeta temporal tiene una ruta sin espacios, no pone la variable y el resumen no tiene la clave.
+2. Al terminar, lee el archivo y añade el bloque `app_metrics`. Después borra el archivo y su carpeta, también si la grabación falló.
+
+Reglas del archivo:
+
+- UTF-8. Se toleran el BOM (la marca invisible que algunos editores ponen al principio) y los saltos de línea CRLF.
+- La primera columna debe ser `t_ms`. Otra cabecera deja `samples: 0` y `issues.header`.
+- Los nombres de las demás columnas tienen de 1 a 64 caracteres: letras, cifras, `_`, `.` o `-`. Hasta 32 columnas.
+  Un nombre no válido se deja fuera; una columna repetida gana la primera (`ignored_columns`).
+- Las filas desordenadas se ordenan por `t_ms` y se cuentan (`out_of_order_rows`).
+- Una celda que no es número, o es NaN o infinito, se salta (`bad_cells`). Una fila con otro número de celdas, o con
+  `t_ms` fuera de ±1e12 ms, se descarta (`dropped_rows`).
+- Se leen los primeros 8 MiB. Si el archivo es más grande, se corta en la última línea completa y el bloque lleva `truncated: true`.
+- Una celda gigante o con comillas sin cerrar cuenta como una celda mala (`bad_cells`); no oculta las filas siguientes.
+- Un archivo ausente, un enlace simbólico (un acceso directo del sistema) o una carpeta: no hay clave. Un archivo vacío: `samples: 0`.
+
+El bloque:
+
+| Campo | Contenido |
+|---|---|
+| `source`, `comparable`, `reason` | Siempre `app-file`, `false` y una frase: cada programa decide qué significan sus columnas, así que no se compara entre programas |
+| `samples` | Filas válidas que quedaron |
+| `duration_ms` | Tiempo entre la primera y la última fila (solo si hay filas) |
+| `columns` | Por cada columna: `count`, `mean` (media), `p50` (mediana), `p95`, `max`, `min` y `last` (el último valor). Solo si hay filas |
+| `issues` | Solo lo que no es cero: `dropped_rows`, `bad_cells`, `out_of_order_rows`, `ignored_columns`, o `header` |
+| `truncated` | `true` solo cuando se cortó por el tamaño |
+
+`app_metrics` va al nivel superior del resumen, no a `common`. Ver [las claves del resumen](../datos-y-su-ciclo-de-vida/claves-del-resumen.md).
+
+**No reproducido en Windows:** el motor de Windows usa el mismo camino (la variable llega al programa por `PERF_ENV`),
+pero todavía no hay una grabación real de Windows con un programa que escriba este archivo.
 
 ## Qué identifica una corrida
 

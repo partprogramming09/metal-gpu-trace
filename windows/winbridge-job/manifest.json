@@ -20,6 +20,13 @@
       "session": 1,
       "description": "metal-gpu-trace: test and record a branch of origin without touching the checkout (no parameters; runs elevated)",
       "params": {}
+    },
+    "metal-trace-daemon": {
+      "script": "metal-trace-daemon.ps1",
+      "timeout_s": 900,
+      "session": 1,
+      "description": "metal-gpu-trace: install the published package and record drawstress with and without the VegaFlow daemon (no parameters; runs elevated)",
+      "params": {}
     }
   },
   "env": {

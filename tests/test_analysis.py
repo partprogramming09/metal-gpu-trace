@@ -453,6 +453,19 @@ def test_windows_against_metal(tmp_path):
                 near["gpu_performance_state_share"] = share_b
             (tmp_path / "mac2.json").write_text(json.dumps(near))
             assert "gpu_state" not in analysis.tool_perf_compare("mac", "mac2"), share_b
+        for run, low, changed in (("mac", False, False), ("mac2", True, False)):
+            power_summary = summary("macOS", 60.0)
+            power_summary["machine"] = {"power": {"start": {"low_power_mode": low, "thermal_warning": False},
+                                                  "end": {"low_power_mode": low, "thermal_warning": False}, "changed": changed}}
+            (tmp_path / f"{run}.json").write_text(json.dumps(power_summary))
+        power = analysis.tool_perf_compare("mac", "mac2")["power"]
+        assert power["a"]["low_power_mode"] is False and power["b"]["low_power_mode"] is True and "low power" in power["note"], power
+        power_summary["machine"]["power"]["changed"] = True  # same state at the start, but it changed in the middle of b
+        power_summary["machine"]["power"]["start"]["low_power_mode"] = False
+        (tmp_path / "mac2.json").write_text(json.dumps(power_summary))
+        assert "changed during" in analysis.tool_perf_compare("mac", "mac2")["power"]["note"]
+        (tmp_path / "mac2.json").write_text(json.dumps(summary("macOS", 60.0)))  # a generation without the key: no warning
+        assert "power" not in analysis.tool_perf_compare("mac", "mac2")
         locked_summary["machine"] = {"screen_locked": True}
         (tmp_path / "mac2.json").write_text(json.dumps(locked_summary))
         assert "screen" not in analysis.tool_perf_compare("mac", "mac2")
@@ -923,6 +936,22 @@ def test_common_block_has_the_same_keys_on_both_platforms():
         common = metrics.common_block(s)
         for name in ("boundness", "submission_overhead"):  # not measured the same way on both: never invented
             assert common[name]["comparable"] is False and common[name]["reason"], common[name]
+
+
+def test_common_api_of_a_windows_run_is_read_from_the_engine_not_guessed():
+    """A Windows summary's common.api.runtime is the engine's graphics_api.runtime when it is a known one; a missing,
+    odd or `unknown` value stays `unknown`, and a layer the engine found (dxvk) wins over the recorder's label."""
+    from metal_gpu_trace import metrics
+    win = _windows_summary()
+    assert metrics.common_block(win)["api"]["runtime"] == "unknown"
+    win["graphics_api"] = {"runtime": "d3d12", "translation_layer": None}
+    assert metrics.common_block(win)["api"]["runtime"] == "d3d12"
+    win["graphics_api"] = {"runtime": "d3d11", "translation_layer": "dxvk"}
+    assert metrics.common_block(win)["api"] == {"runtime": "d3d11", "translation_layer": "dxvk"}
+    for odd in ({"runtime": "banana"}, {"runtime": 5}, "d3d12", None, {}):
+        win["graphics_api"] = odd
+        assert metrics.common_block(win)["api"]["runtime"] == "unknown", odd
+    assert metrics.common_block(_mac_summary())["api"]["runtime"] == "metal"  # macOS is untouched
 
 
 def test_common_block_names_where_each_number_comes_from():

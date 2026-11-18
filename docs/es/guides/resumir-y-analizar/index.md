@@ -1,6 +1,6 @@
 # Resumir y analizar
 
-**Lector:** personas que leen un resumen o una comparación y quieren saber de dónde sale cada número y cuándo no fiarse de él, o que cambian `perf_report.py`, `analysis.py`, `metrics.py` o `experiments.py`. Revisado el 2026-11-16.
+**Lector:** personas que leen un resumen o una comparación y quieren saber de dónde sale cada número y cuándo no fiarse de él, o que cambian `perf_report.py`, `analysis.py`, `metrics.py` o `experiments.py`. Revisado el 2026-11-17.
 
 English: [Summarizing and analyzing](../../../guides/summarizing/index.md)
 
@@ -17,10 +17,11 @@ Esta guía muestra de dónde sale cada número, por qué una sola corrida prueba
 | [Leer y comparar](./leer-y-comparar.md) | `analysis.py`: `skip_s`, comparar, línea base, check, gate, history, diagnose, números que faltan | `analysis.py`: `perf_runs`, `perf_compare`, `perf_baseline`, `perf_check`, `perf_history`, `perf_gate`, `perf_diagnose`, `perf_memory_breakdown` |
 | [Los experimentos](./experimentos.md) | `experiments.py`: grabar línea base, A B B A, frío/caliente, barrido | `perf_baseline_record`, `perf_ab`, `perf_cold_warm`, `perf_sweep` (graban y luego llaman a `analysis`) |
 | [Ruido y veredictos](./ruido-y-veredictos.md) | los cuatro jueces lado a lado; qué hace el proyecto con el ruido | |
+| [Energía y calor en los dos extremos](./energia-y-calor.md) | `machine.power`: modo de bajo consumo y calor leídos antes y después de una grabación, y el aviso `power` de `perf_compare` | `perf_report.py`: `power_state` `:653`, `power_block` `:672`; `recording.py`: `:386`, `:438-439`; `analysis.py`: `:191-203` |
 | [Cuando falla](./cuando-falla.md) | qué sale mal y qué recibe quien lee | |
 | [Tocarlo sin romperlo](./tocarlo-sin-romperlo.md) | cómo cambiar el código sin romper nada | |
 | [Límites conocidos](./limites.md) | 13 límites anotados y lo que no se reprodujo | |
-| [Evidencia](./evidencia.md) | los comandos (E1 a E8) y su salida real | |
+| [Evidencia](./evidencia.md) | los comandos (E1 a E10) y su salida real | |
 
 ## Cómo leer las etiquetas
 

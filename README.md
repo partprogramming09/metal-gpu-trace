@@ -98,7 +98,7 @@ PERF_OUT=~/perf-runs zsh src/metal_gpu_trace/perf_record.sh game-d3d12 30 /path/
 PERF_OUT=~/perf-runs zsh src/metal_gpu_trace/perf_record.sh app-metal 30 native - /path/to/app ./app
 ```
 
-Arguments: label, seconds, a Wine directory holding `bin/wine` (or `native`), the Wine prefix, the working directory, the program and its arguments. Without `PERF_OUT`, runs go to `./perf-runs`. Reading the trace takes about a minute on an M1 Pro (87 s for a 10 s recording). Through the MCP server the call times out after 10 s per recorded second plus 120 s, and an overrun recording leaves no files behind. One recording runs at a time; keep other GPU work off the Mac while it records. Under Wine, record for 30 s: Wine's start-up takes part of the recording. Under 100 frames is too short to compare.
+Arguments: label, seconds, a Wine directory holding `bin/wine` (or `native`), the Wine prefix, the working directory, the program and its arguments. Without `PERF_OUT`, runs go to `./perf-runs`. Reading the trace takes about a minute on an M1 Pro (87 s for a 10 s recording). Through the MCP server the call times out after 15 s per recorded second plus 180 (55 with GPU counters), and an overrun recording leaves no files behind. One recording runs at a time; keep other GPU work off the Mac while it records. Under Wine, record for 30 s: Wine's start-up takes part of the recording. Under 100 frames is too short to compare.
 
 ## Disk use
 
