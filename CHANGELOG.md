@@ -7,7 +7,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Added
 
-- 📈 A recorded program can write its own numbers (VRAM, a frame counter, anything numeric) to the CSV whose path is in `METAL_TRACE_APP_METRICS`, on macOS and Windows; the summary carries them as `app_metrics` (samples, duration and, per column, count, mean, p50, p95, max, min, last), always `comparable: false`, with what was ignored in `issues`. The file is read from a private temporary folder and removed.
+- 📈 A recorded program can write its own numbers (VRAM, a frame counter, anything numeric) to the CSV whose path is in `METAL_TRACE_APP_METRICS`, on macOS (the Windows engine passes the same variable; not yet run there); the summary carries them as `app_metrics` (samples, duration and, per column, count, mean, p50, p95, max, min, last), always `comparable: false`, with what was ignored in `issues`. The file is read from a private temporary folder and removed.
 
 - 🩺 On Windows, when a hardware daemon is found but gives no usable answer, the `device` block says why in `daemon_info_error` (`timeout`, `invalid_json` or `missing`), never with its path. `METAL_TRACE_DAEMON_NAMES` adds other daemon file names to look for.
 

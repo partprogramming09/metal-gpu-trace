@@ -1,7 +1,5 @@
 """The optional telemetry file a recorded program writes: CSV, first column `t_ms`, then named numeric columns. The
 recording gives its path in METAL_TRACE_APP_METRICS; read() turns it into the summary's `app_metrics` block."""
-import csv
-import io
 import math
 import pathlib
 import re
@@ -35,7 +33,7 @@ def discard(path):
 def number(text):
     """Returns the finite float in `text`, or None."""
     try:
-        value = float(text)
+        value = float(text) if text.isascii() and "_" not in text else math.nan  # float() takes 1_0 and other scripts' digits
     except ValueError:
         return None
     return value if math.isfinite(value) else None
@@ -51,18 +49,15 @@ def read(path):
     text = data[:MAX_BYTES].decode("utf-8-sig", errors="replace")
     if truncated:
         text = text.rsplit("\n", 1)[0]  # the last line may be cut
-    rows, unreadable = [], False
-    try:
-        rows.extend(csv.reader(io.StringIO(text)))
-    except csv.Error:  # a cell over the csv field limit: keep the rows before it
-        unreadable = True
+    # no csv module: a quote must not swallow the rows after it, and a huge cell must not raise
+    rows = [line.split(",") for line in text.splitlines() if line.strip()]
     block = {"source": "app-file", "comparable": False,
              "reason": "the names and meaning of the columns belong to the program", "samples": 0}
-    issues = {"unreadable": True} if unreadable else {}
     if truncated:
         block["truncated"] = True
     if not rows:
         return block
+    issues = {}
     header = [cell.strip() for cell in rows[0]]
     if header[0] != "t_ms":
         block["issues"] = {"header": "first column must be t_ms"}

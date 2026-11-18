@@ -1,6 +1,6 @@
 # El resumen, clave por clave
 
-**Lector:** personas que añaden, leen o cambian una clave del JSON de resumen. Revisado el 2026-11-17.
+**Lector:** personas que añaden, leen o cambian una clave del JSON de resumen. Revisado el 2026-11-18.
 
 English: [The summary, key by key](../../../guides/data-and-lifecycle/json-keys.md)
 
@@ -12,7 +12,7 @@ Volver al [índice](./index.md). Ejemplo: un resumen real de aquí tiene `label`
 Las claves se escriben en secuencia:
 
 1. `perf_report.summarize` lo construye desde el `.trace` (`perf_report.py:648-835`) y escribe el primer `.json`.
-2. `recording.finish` añade `layer`, `context`, `tier`, `retention`, reconstruye `common` y reescribe el archivo (`recording.py:337-351`).
+2. `recording.finish` añade `layer`, `context`, `tier`, `retention`, `app_metrics` (si el programa escribió su archivo), reconstruye `common` y reescribe el archivo (`recording.py:337-351`).
 3. En Windows, `perf_record_windows.py` construye un objeto más pequeño (`perf_record_windows.py:887-917`) y luego `finish` hace el paso 2 sobre él.
 
 ## Las generaciones
@@ -57,6 +57,7 @@ Las claves de ritmo dentro de `gpu` vienen de `frame_pacing` (`perf_report.py:25
 |---|---|---|
 | `tier` | `recording.finish` recibió un nivel: `perf_record` lo pasa, `perf_attach` no | `recording.py:344-345` |
 | `retention` | `METAL_TRACE_MAX_DISK_MB` fijado, sin otra grabación en curso y al menos un archivo borrado: `{freed_mb, removed, trace_dropped}` | `recording.py:346-349` |
+| `app_metrics` | El programa escribió un archivo en la ruta de `METAL_TRACE_APP_METRICS`. La grabación pone esa variable solo si alguna carpeta temporal tiene una ruta sin espacios; el archivo debe ser normal (no un enlace ni una carpeta); un archivo vacío da `samples: 0`. Ver [Telemetría del programa](../grabar/recorrido-macos.md#telemetria-del-programa) | `recording.py:342` (`app_metrics.safe_read`); `app_metrics.py:44` (`read`) |
 | `gpu.unpresented` | El programa dejó de presentar; el trabajo posterior queda fuera de los fotogramas | `perf_report.py:721` |
 | `metal_memory_mib` | Se leyó la tabla de memoria de Metal (`memory` verdadero: no nivel `light`, no `PERF_MEMORY=0`); `{"samples": 0}` si no hubo muestra | `perf_report.py:740` |
 | `process_rss_mib` | Existe `<run>.rss.csv` junto al trazo | `perf_report.py:753` |
@@ -71,6 +72,8 @@ Las claves de ritmo dentro de `gpu` vienen de `frame_pacing` (`perf_report.py:25
 | `validation` | Existe `<run>.validation.log` (la validación de Metal estaba activa) | `perf_report.py:811` |
 | `gpu_counters` | Las dos tablas de contadores existen y dieron muestras (`counters=true`, nivel `deep`) | `perf_report.py:817` |
 
+`app_metrics` va al nivel superior del resumen y no a `common`: cada programa decide qué significan sus columnas, así que el bloque lleva `comparable: false` y no se compara entre programas. No sube `schema_version`; los lectores de las generaciones 1 a 3 no cambian.
+
 ## Un resumen de Windows
 
 `perf_record_windows.py:887-917` escribe un objeto más pequeño:
@@ -79,7 +82,7 @@ Las claves de ritmo dentro de `gpu` vienen de `frame_pacing` (`perf_report.py:25
 |---|---|
 | Escritas por el motor | `schema_version`, `label`, `trace` (el nombre `<run>.trace`, un archivo que nunca existe en Windows), `process`, `device`, `template` (`Windows Native Trace`), `duration_s`, `missing_tables` (tres nombres fijos), `gpu`, `encoders`, `gpu_idle`, `metal_memory_mib` (`{"samples": 0}`), `process_rss_mib`, `layer`, `common` |
 | `gpu` | Tiene `source` (`drawstress-log`, `presentmon` o `dwm-composition`), las claves de ritmo y `throttling_analysis` |
-| Añadidas por `finish` | `context`, y `tier`, `retention` bajo las mismas condiciones |
+| Añadidas por `finish` | `context`, y `tier`, `retention`, `app_metrics` bajo las mismas condiciones |
 | Ausentes | `machine`, `hitches`, `gpu_performance_state_share` y toda clave condicional de Metal: trata cada una como opcional (confirmado: no están en el dict en esas líneas) |
 
 `finish` sustituye `layer` por la que calculó `record_run` (`recording.py:341`, `:370`, `:385`): en una corrida nativa de Windows `native Metal, no translation layer` (`recording.py:134-135`) en vez del `native Windows` del motor; `layer_label` llama `native` a ambas, así que ningún lector lo nota (confirmado por el código, no reproducido).

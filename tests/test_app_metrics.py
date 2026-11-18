@@ -106,11 +106,22 @@ def test_record_run_hands_over_the_path_and_always_removes_it(tmp_path):
     assert seen["env"].startswith("A=1 ") and not seen["file"].parent.exists()
 
 
-def test_a_huge_cell_does_not_raise_and_keeps_the_rows_before_it(tmp_path):
+def test_a_huge_cell_is_one_bad_cell(tmp_path):
     block = app_metrics.read(put(tmp_path, "", b"t_ms,a\n0,1\n1," + b"9" * 200000 + b"\n2,3\n"))
-    assert block["samples"] >= 1 and block["issues"]["unreadable"] is True
+    assert block["samples"] == 3 and block["issues"]["bad_cells"] == 1
 
 
 def test_absurd_times_keep_every_number_finite(tmp_path):
     block = app_metrics.read(put(tmp_path, "t_ms,a\n1e308,1\n-1e308,2\n0,3\n"))
     assert block["samples"] == 1 and block["issues"]["dropped_rows"] == 2 and block["duration_ms"] == 0
+
+
+def test_blank_first_line_and_quotes_do_not_hide_rows(tmp_path):
+    assert app_metrics.read(put(tmp_path, "\r\n\r\n"))["samples"] == 0
+    assert app_metrics.read(put(tmp_path, "\nt_ms,a\n0,1\n"))["samples"] == 1
+    assert app_metrics.read(put(tmp_path, 't_ms,a\n0,1\n1,"2\n2,3\n3,4\n'))["samples"] == 4
+
+
+def test_only_plain_ascii_numbers_count(tmp_path):
+    block = app_metrics.read(put(tmp_path, "t_ms,a\n0,1_0\n1,٣\n2,5\n"))
+    assert block["columns"]["a"]["count"] == 1 and block["issues"]["bad_cells"] == 2

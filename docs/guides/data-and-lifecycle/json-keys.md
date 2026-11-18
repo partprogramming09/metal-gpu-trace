@@ -1,6 +1,6 @@
 # The summary, key by key
 
-**Reader:** people who add, read or change a key of the summary JSON. Reviewed 2026-11-17.
+**Reader:** people who add, read or change a key of the summary JSON. Reviewed 2026-11-18.
 
 Español: [El resumen, clave por clave](../../es/guides/datos-y-su-ciclo-de-vida/claves-del-resumen.md)
 
@@ -12,7 +12,7 @@ Back to the [index](./index.md). Example: a real summary here has `label`, `trac
 Keys are written in sequence by:
 
 1. `perf_report.summarize` builds it from the `.trace` (`perf_report.py:648-835`) and writes the first `.json`.
-2. `recording.finish` adds `layer`, `context`, `tier`, `retention`, rebuilds `common` and rewrites the file (`recording.py:337-351`).
+2. `recording.finish` adds `layer`, `context`, `tier`, `retention`, `app_metrics` (when the program wrote its file), rebuilds `common` and rewrites the file (`recording.py:337-351`).
 3. On Windows, `perf_record_windows.py` builds a smaller object (`perf_record_windows.py:887-917`), then `finish` does step 2 on it.
 
 ## The generations
@@ -57,6 +57,7 @@ The pacing keys in `gpu` come from `frame_pacing` (`perf_report.py:253`), only w
 |---|---|---|
 | `tier` | `recording.finish` got a tier: `perf_record` passes one, `perf_attach` does not | `recording.py:344-345` |
 | `retention` | `METAL_TRACE_MAX_DISK_MB` set, no other recording running, at least one file removed: `{freed_mb, removed, trace_dropped}` | `recording.py:346-349` |
+| `app_metrics` | The program wrote a file at the path in `METAL_TRACE_APP_METRICS`. The recording sets that variable only when some temporary folder has a path without spaces; the file must be a plain file (not a link or a folder); an empty file gives `samples: 0`. See [Program telemetry](../recording/macos-journey.md#program-telemetry) | `recording.py:342` (`app_metrics.safe_read`); `app_metrics.py:44` (`read`) |
 | `gpu.unpresented` | The program stopped presenting; later work is left out of the frames | `perf_report.py:721` |
 | `metal_memory_mib` | Metal memory table read (`memory` true: not `light` tier, not `PERF_MEMORY=0`); `{"samples": 0}` if no sample | `perf_report.py:740` |
 | `process_rss_mib` | `<run>.rss.csv` exists beside the trace | `perf_report.py:753` |
@@ -71,6 +72,8 @@ The pacing keys in `gpu` come from `frame_pacing` (`perf_report.py:253`), only w
 | `validation` | `<run>.validation.log` exists (Metal validation was on) | `perf_report.py:811` |
 | `gpu_counters` | Both counter tables exist and gave samples (`counters=true`, the `deep` tier) | `perf_report.py:817` |
 
+`app_metrics` sits at the top level of the summary, not in `common`: each program decides what its columns mean, so the block carries `comparable: false` and is not compared across programs. It does not raise `schema_version`; readers of generations 1 to 3 do not change.
+
 ## A Windows summary
 
 `perf_record_windows.py:887-917` writes a smaller object:
@@ -79,7 +82,7 @@ The pacing keys in `gpu` come from `frame_pacing` (`perf_report.py:253`), only w
 |---|---|
 | Written by the engine | `schema_version`, `label`, `trace` (the name `<run>.trace`, a file that never exists on Windows), `process`, `device`, `template` (`Windows Native Trace`), `duration_s`, `missing_tables` (three fixed names), `gpu`, `encoders`, `gpu_idle`, `metal_memory_mib` (`{"samples": 0}`), `process_rss_mib`, `layer`, `common` |
 | `gpu` | Has `source` (`drawstress-log`, `presentmon` or `dwm-composition`), the pacing keys and `throttling_analysis` |
-| Added by `finish` | `context`, and `tier`, `retention` under the same conditions |
+| Added by `finish` | `context`, and `tier`, `retention`, `app_metrics` under the same conditions |
 | Absent | `machine`, `hitches`, `gpu_performance_state_share` and every conditional Metal key: treat each as optional (confirmed: not in the dict at those lines) |
 
 `finish` replaces `layer` with the one `record_run` computed (`recording.py:341`, `:370`, `:385`): for a native Windows run `native Metal, no translation layer` (`recording.py:134-135`) instead of the engine's `native Windows`; `layer_label` calls both `native`, so no reader notices (confirmed by the code, not reproduced).
