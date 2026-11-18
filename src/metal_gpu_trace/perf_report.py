@@ -532,6 +532,28 @@ def spill_summary(table_rows, pid):
     return {"events": events, "bytes": spilled, "encoders": len(encoders)} if events else {"events": 0}
 
 
+def command_buffer_errors(error_rows, program_buffers):
+    """Returns {"count", "by_code"}: the errors of the program's command buffers in `metal-command-buffer-error`, by
+    `error-code` ("unknown" when a row has none). That table has no process column, so a buffer is the program's when
+    its `cmdbuffer-id` is in `program_buffers` (those `metal-application-encoders-list` names under the program's pid);
+    errors of other or unknown buffers do not count. None when `program_buffers` is None (no encoders table): whose
+    errors they are cannot be told."""
+    if program_buffers is None:
+        return None
+    by_code = collections.Counter(text(row.get("error-code")) or "unknown"
+                                  for row in error_rows if text(row.get("cmdbuffer-id")) in program_buffers)
+    return {"count": sum(by_code.values()), "by_code": dict(by_code.most_common())}
+
+
+def compiler_summary(intervals):
+    """Returns the graphics compiler's work of the program from its (start, end) intervals in ms: `intervals`, `busy_ms`,
+    and `duration_ms` (count, mean, p50, p95, max of one compile) when there is any."""
+    out = {"intervals": len(intervals), "busy_ms": round(sum(b - a for a, b in intervals), 3)}
+    if intervals:
+        out["duration_ms"] = metrics.stats([b - a for a, b in intervals])
+    return out
+
+
 def agx_summary(path):
     """Summarizes a recording's `.agx.csv`, one row per second of the GPU driver's counters, which cover the whole GPU
     and not only the recorded program: utilization of the device, renderer and tiler as stats, `split_scenes` (growth of
@@ -764,10 +786,14 @@ def summarize(trace, label=None, out=None, memory=True, counters=None, tables_db
             summary["gpu"]["unpresented"] = stalled
 
         # how the work splits into encoders, and when the GPU waits for it
-        labels = {}
+        labels, program_buffers = {}, None  # the table is read once: its file is deleted as it is read
         if "metal-application-encoders-list" in tables:
-            labels = {text(row.get("encoder-id")): text(row.get("encoder-label-indexed"))
-                      for row in read("metal-application-encoders-list")}
+            program_buffers = set()
+            for row in read("metal-application-encoders-list"):
+                labels[text(row.get("encoder-id"))] = text(row.get("encoder-label-indexed"))
+                if pid_of(row.get("process")) == pid:
+                    program_buffers.add(text(row.get("cmdbuffer-id")))
+            program_buffers -= {None, ""}
         summary["encoders"] = encoder_stats(kept["spans"], labels)
         summary["gpu_idle"] = kept["idle"]
 
@@ -820,8 +846,7 @@ def summarize(trace, label=None, out=None, memory=True, counters=None, tables_db
                 start, duration = number(row.get("start")), number(row.get("duration"))
                 if pid_of(row.get("process")) == pid and start is not None and duration is not None:
                     compiler.append((start / 1e6, (start + duration) / 1e6))
-            summary["graphics_compiler"] = {"intervals": len(compiler),
-                                            "busy_ms": round(sum(b - a for a, b in compiler), 3)}
+            summary["graphics_compiler"] = compiler_summary(compiler)
         if "device-thermal-state-intervals" in tables:
             for row in read("device-thermal-state-intervals"):
                 start, duration, state = number(row.get("start")), number(row.get("duration")), text(row.get("thermal-state"))
@@ -846,7 +871,14 @@ def summarize(trace, label=None, out=None, memory=True, counters=None, tables_db
         if "graphics-compiler-spill-events" in tables:
             summary["shader_spills"] = spill_summary(read("graphics-compiler-spill-events"), pid)
         if "metal-command-buffer-error" in tables:
-            summary["command_buffer_errors"] = sum(1 for _ in read("metal-command-buffer-error"))
+            errors = list(read("metal-command-buffer-error"))
+            mine = command_buffer_errors(errors, program_buffers)
+            if mine is None:  # no encoders table: every process's errors, said in `command_buffer_errors_scope`
+                summary["command_buffer_errors"], summary["command_buffer_errors_scope"] = len(errors), "all_processes"
+            else:  # scope "program" (summaries without this key counted every process)
+                summary["command_buffer_errors"], summary["command_buffer_errors_scope"] = mine["count"], "program"
+                if mine["by_code"]:
+                    summary["command_buffer_error_codes"] = mine["by_code"]
         log = out / f"{label}.validation.log"
         if log.is_file():
             with log.open(errors="replace") as handle:

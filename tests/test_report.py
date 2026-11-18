@@ -327,6 +327,34 @@ def test_resource_summary_live_and_freed():
     assert got["freed"]["count"] == 2000, got["freed"]
 
 
+def test_command_buffer_errors_count_the_program_by_error_code():
+    """command_buffer_errors keeps the errors of the recorded program's command buffers (the error table has no process
+    column: they are matched through the program's `cmdbuffer-id`s), by `error-code`; rows of other processes
+    and of unknown buffers do not count, and with no encoders table nothing can be matched."""
+    def cell(text):
+        el = ET.Element("v")
+        el.text = text
+        return el
+
+    errors = [{"cmdbuffer-id": cell(b), "error-code": cell(c)} for b, c in
+              (("1", "Timeout"), ("1", "Timeout"), ("2", "Hang"), ("9", "Timeout"), ("3", "Hang"))]
+    mine = {"1", "2"}
+    assert perf_report.command_buffer_errors(errors, mine) == {"count": 3, "by_code": {"Timeout": 2, "Hang": 1}}
+    assert perf_report.command_buffer_errors(errors, set()) == {"count": 0, "by_code": {}}
+    assert perf_report.command_buffer_errors([], mine) == {"count": 0, "by_code": {}}
+    assert perf_report.command_buffer_errors([{"cmdbuffer-id": cell("1")}], mine) == {"count": 1, "by_code": {"unknown": 1}}
+    assert perf_report.command_buffer_errors(errors, None) is None  # no encoders table: cannot tell whose they are
+
+
+def test_compiler_summary_has_percentiles():
+    """graphics_compiler keeps intervals and busy_ms and adds the spread of one compile: p50, p95 and max in ms."""
+    assert perf_report.compiler_summary([]) == {"intervals": 0, "busy_ms": 0.0}
+    one = perf_report.compiler_summary([(0.0, 4.0)])
+    assert one == {"intervals": 1, "busy_ms": 4.0, "duration_ms": {"count": 1, "mean": 4.0, "p50": 4.0, "p95": 4.0, "max": 4.0}}, one
+    many = perf_report.compiler_summary([(i, i + d) for i, d in enumerate([1, 2, 3, 4, 100])])
+    assert many["intervals"] == 5 and many["busy_ms"] == 110.0 and many["duration_ms"]["max"] == 100.0, many
+
+
 def test_spill_summary():
     """shader_spills counts the spill events of the recorded program, their bytes and the distinct encoders; rows of
     other processes do not count, and a table with no row of the program gives {"events": 0}."""

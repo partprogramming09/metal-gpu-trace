@@ -11,8 +11,11 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - 🔋 On macOS, `machine.power` says whether low power mode was on and whether the Mac warned of heat or limited its CPU, read when the recording starts and when it ends, with `changed` when a fact moved in between. `perf_compare` adds a `power` note when two runs differ in that (or one changed while recording); a summary without the key gets no note.
 
+- 🧮 On macOS, `graphics_compiler` adds `duration_ms` (count, mean, p50, p95, max of one compile), and `command_buffer_error_codes` counts the errors by `error-code`.
+
 ### Fixed
 
+- 🛠️ `command_buffer_errors` counted the errors of every process on the Mac; it now counts only the recorded program's command buffers (matched through `cmdbuffer-id`, since the error table has no process column), and `command_buffer_errors_scope` says `program` (a summary without that key counted every process; with no encoders table it says `all_processes`).
 - 🛠️ A daemon that answers a null, blank or non-text `cpu_architecture` or `gpu_architecture` no longer writes the text `None` or an empty value: the key is absent.
 - 🛠️ The hardware daemon's memory bus width must be a positive number (no more `bus True-bit`), its output that is not text now counts as `invalid_json`, and `METAL_TRACE_DAEMON_NAMES` ignores `.`, `..` and names with a slash or backslash.
 - 🛠️ The first progress line of a Windows recording no longer says "including read-back" (there is none there).
