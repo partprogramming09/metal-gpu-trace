@@ -1,6 +1,6 @@
 # Reading and comparing
 
-**Reader:** people who use `perf_compare`, `perf_check`, `perf_gate` and friends and want to know what each really does, or who change `analysis.py`. Reviewed 2026-11-16.
+**Reader:** people who use `perf_compare`, `perf_check`, `perf_gate` and friends and want to know what each really does, or who change `analysis.py`. Reviewed 2026-11-17.
 
 Español: [Leer y comparar](../../es/guides/resumir-y-analizar/leer-y-comparar.md)
 
@@ -39,6 +39,7 @@ With fewer than 2 frames left it refuses: `<run> has under 2 frames after the fi
 | `layer`, `context` | the runs differ in translation layer, commit or Instruments version ([recording guide](../recording/macos-journey.md#what-identifies-a-run)) | `:188` |
 | `unpresented`, `noisy_environment` | one run stopped presenting; one run was flagged noisy | `:189-191`, `:192-194` |
 | `screen` | one run was recorded with the screen locked and the other not | `:195-200` |
+| `power` | at the start, the runs differ in low power mode or in thermal warning (both known), or one run changed while it was recorded; the note says which, and `changed_in` names the run. A summary with no `machine.power` gets none ([power and heat](./power-and-heat.md)) | `analysis.py:191-203` |
 | `tier` | the tiers differ (a `light` run has no memory) | `:201-205` |
 | `gpu_state` | the time-weighted performance level differs by 0.25 or more (0 all Minimum, 1 all Medium, 2 all Maximum): the same work takes more GPU ms in a lower state | `:206-211`, `:141-146` |
 | `memory_pressure` | both measured memory the same way (its change), or a note that they did not | `:212-214`, `:149-163` |

@@ -1,6 +1,6 @@
 # Evidencia: los comandos y su salida real
 
-**Lector:** personas que quieren comprobar un número de esta guía o repetir un comando. Revisado el 2026-11-16.
+**Lector:** personas que quieren comprobar un número de esta guía o repetir un comando. Revisado el 2026-11-17.
 
 English: [Evidence](../../../guides/summarizing/evidence.md)
 
@@ -121,4 +121,25 @@ src/metal_gpu_trace/paths.py:113:    if not 0 <= seconds <= 600:  # a NaN is fal
 src/metal_gpu_trace/paths.py:124:    if not 0 <= skip <= 600:
 src/metal_gpu_trace/analysis.py:325:    margin = 0 if metric.endswith("_p50") else margin_pct / 100
 src/metal_gpu_trace/analysis.py:490:        ok = value is not None and (value >= limit if kind == "min" else value <= limit)
+```
+
+## E9 Energía en los dos extremos, una grabación real de 30 segundos {#e9}
+
+El comando que hizo la grabación **no se dio** para esta página: pendiente de evidencia. La salida es lo que dio la sesión,
+copiada tal cual. Es el bloque `power` de `machine` en el resumen; véase [Energía y calor](./energia-y-calor.md).
+
+```text
+pendiente de evidencia: el comando que hizo la grabación de 30 segundos (no se dio)
+"power": {"start": {"low_power_mode": false, "thermal_warning": false}, "end": {"low_power_mode": false, "thermal_warning": false}, "changed": false}
+```
+
+## E10 Las duraciones del compilador gráfico, una grabación real de 20 segundos {#e10}
+
+Comando: **no se dio**, pendiente de evidencia. La salida muestra el bloque del compilador en el resumen tal como la dio la
+sesión. No se dio: `duration_ms.count` ni `duration_ms.mean` (por eso no aparecen aquí), y no hay una corrida de
+`command_buffer_errors` para esta página.
+
+```text
+pendiente de evidencia: el comando que hizo la grabación de 20 segundos (no se dio)
+graphics_compiler: intervals 4, busy_ms 0.255, duration_ms p50 0.086, p95 0.088, max 0.088
 ```

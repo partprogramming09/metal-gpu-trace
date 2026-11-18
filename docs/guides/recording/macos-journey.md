@@ -1,6 +1,6 @@
 # The macOS journey
 
-**Reader:** people who change `recording.py` or `perf_record.sh`. Reviewed 2026-11-16. Labels: see [Recording](./index.md#how-to-read-the-labels).
+**Reader:** people who change `recording.py` or `perf_record.sh`. Reviewed 2026-11-17. Labels: see [Recording](./index.md#how-to-read-the-labels).
 
 Español: [El recorrido en macOS](../../es/guides/grabar/recorrido-macos.md)
 
@@ -88,6 +88,7 @@ fingerprints the layer ([What identifies a run](#what-identifies-a-run)).
 | A non-zero exit, or no new `.json` | `recording failed (exit N): <last line of stderr>` | `recording.py:422-425` |
 | A summary with no GPU intervals | The program did no GPU work: the run's files are deleted and the error says how it ended ([When it fails](./failures.md)) | `:427-436` |
 | Otherwise | `finish` adds `layer`, `context`, `tier`, applies the disk limit and rewrites the summary. Key tables: [data guide](../data-and-lifecycle/json-keys.md#the-summary-key-by-key) | `recording.py:337-351`, `:437` |
+| The summary has a `machine` block | `machine.power` gets the two power readings: one taken before the script starts, one after the summary is written ([power and heat](../summarizing/power-and-heat.md)) | `recording.py:386`, `:438-439` |
 
 ## The kill sequence
 

@@ -1,6 +1,6 @@
 # The summary, key by key
 
-**Reader:** people who add, read or change a key of the summary JSON. Reviewed 2026-11-16.
+**Reader:** people who add, read or change a key of the summary JSON. Reviewed 2026-11-17.
 
 Español: [El resumen, clave por clave](../../es/guides/datos-y-su-ciclo-de-vida/claves-del-resumen.md)
 
@@ -36,7 +36,7 @@ Keys are written in sequence by:
 | `trace` | Name of the `.trace`, kept after the file is deleted | `perf_report.py:650`; nothing in `src/` reads it (`rg`); `perf_runs` tests the file (`analysis.py:79`) |
 | `process` | `name`, `pid`, `termination-reason`, `arguments` (shareable via `public_arguments`) | `perf_report.py:651-652`; `analysis.py:74` (`arguments`), `recording.py:432` (`termination-reason`) |
 | `device` | `platform`, `model`, `memory-size`, `os-version`; machine name and UUID left out on purpose | `perf_report.py:654`; `analysis.py:138`, `metrics.py:55` |
-| `machine` | Chip, cores, RAM, macOS, `screen_locked` | `perf_report.py:661`; `analysis.py:195` (locked screen) |
+| `machine` | Chip, cores, RAM, macOS, `screen_locked`, and `power` (low power mode and heat at the start and the end, see [power and heat](../summarizing/power-and-heat.md)). **It can be `null`**: when this Mac is not the one that recorded the trace, or a fact cannot be read; then there is no `power` either | `perf_report.py:740` (`machine_info` `:679`); `recording.py:438-439` (`power`); `analysis.py:195` (locked screen), `:191-203` (`power`) |
 | `missing_tables` | Instruments tables the trace did not have | `perf_report.py:664`; no reader in `src/` (`rg`) |
 | `gpu` | `intervals`, `frames`, `frame_gpu_ms`, `per_channel_ms`, `frame_interval_ms`, `start_latency_ms`, `fps_estimate`, pacing keys below | `perf_report.py:709`; `perf_runs`, compare, diagnose, gates (`analysis.py`) |
 | `encoders` | Encoders and command buffers per frame, shortest encoders, top 20 labels | `perf_report.py:728`; `analysis.py:223`, `:702` |
@@ -60,12 +60,14 @@ The pacing keys in `gpu` come from `frame_pacing` (`perf_report.py:253`), only w
 | `gpu.unpresented` | The program stopped presenting; later work is left out of the frames | `perf_report.py:721` |
 | `metal_memory_mib` | Metal memory table read (`memory` true: not `light` tier, not `PERF_MEMORY=0`); `{"samples": 0}` if no sample | `perf_report.py:740` |
 | `process_rss_mib` | `<run>.rss.csv` exists beside the trace | `perf_report.py:753` |
-| `gpu_activity` | `<run>.agx.csv` gave rows | `perf_report.py:756` |
+| `gpu_activity` | `<run>.agx.csv` gave rows. Its `split_scenes_per_min` and `recoveries_per_min` are the growth of `split_scenes` and `recoveries` per minute of the samples' time span (null when the span is zero or the counter is missing) | `perf_report.py:756`; `agx_summary` `:564-602` |
 | `noisy_environment`, `noisy_basis` | `noisy_environment()` returned something (`true` or `false`); the basis (with `other_processes`) only when `true` | `perf_report.py:759`, `:761-762` |
-| `graphics_compiler`, `thermal_state_share` | The `graphics-compiler-activity-intervals`, `device-thermal-state-intervals` table exists | `perf_report.py:780`, `:790` |
+| `graphics_compiler` | The `graphics-compiler-activity-intervals` table exists. `intervals`, `busy_ms`, and `duration_ms` (count, mean, p50, p95, max of one compile). `startup` and `in_flight` (each with `intervals` and `busy_ms`) split the compiles by whether they began before the 10th frame; they are absent when the program has fewer than 10 frames | `perf_report.py:864-866`; `compiler_summary` `:548-563` |
+| `thermal_state_share` | The `device-thermal-state-intervals` table exists | `perf_report.py:790` |
 | `cpu` | `ProcessCPUUsage` had rows for the program | `perf_report.py:798` |
 | `resource_allocations` | The allocations table exists and has events | `perf_report.py:802` |
-| `shader_spills`, `command_buffer_errors` | The `graphics-compiler-spill-events`, `metal-command-buffer-error` table exists (a count) | `perf_report.py:804`, `:806` |
+| `shader_spills` | The `graphics-compiler-spill-events` table exists (a count) | `perf_report.py:804` |
+| `command_buffer_errors`, `command_buffer_errors_scope`, `command_buffer_error_codes` | The `metal-command-buffer-error` table exists. `command_buffer_errors` counts the errors of the program's command buffers (matched by `cmdbuffer-id` to the encoders table of the program's pid) and `command_buffer_errors_scope` is `program`; with no encoders table it counts every process's errors and the scope is `all_processes`. `command_buffer_error_codes` maps each `error-code` to its count, only when there is at least one error | `perf_report.py:889-896` (scope), `:535-546` (count), `:789-796` (buffers) |
 | `validation` | `<run>.validation.log` exists (Metal validation was on) | `perf_report.py:811` |
 | `gpu_counters` | Both counter tables exist and gave samples (`counters=true`, the `deep` tier) | `perf_report.py:817` |
 

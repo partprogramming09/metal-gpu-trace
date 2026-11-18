@@ -1,6 +1,6 @@
 # Summarizing and analyzing
 
-**Reader:** people who read a summary or a comparison and want to know where each number comes from and when not to trust it, or who change `perf_report.py`, `analysis.py`, `metrics.py` or `experiments.py`. Reviewed 2026-11-16.
+**Reader:** people who read a summary or a comparison and want to know where each number comes from and when not to trust it, or who change `perf_report.py`, `analysis.py`, `metrics.py` or `experiments.py`. Reviewed 2026-11-17.
 
 Español: [Resumir y analizar](../../es/guides/resumir-y-analizar/index.md)
 
@@ -17,10 +17,11 @@ This guide shows where every number comes from, why one run alone proves little,
 | [Reading and comparing](./reading-and-comparing.md) | `analysis.py`: `skip_s`, compare, baseline, check, gate, history, diagnose, missing numbers | `analysis.py`: `perf_runs`, `perf_compare`, `perf_baseline`, `perf_check`, `perf_history`, `perf_gate`, `perf_diagnose`, `perf_memory_breakdown` |
 | [The experiments](./experiments.md) | `experiments.py`: baseline record, A B B A, cold/warm, sweep | `perf_baseline_record`, `perf_ab`, `perf_cold_warm`, `perf_sweep` (they record, then call `analysis`) |
 | [Noise and verdicts](./noise-and-verdicts.md) | the four deciders side by side; what the project does about noise | |
+| [Power and heat at both ends](./power-and-heat.md) | `machine.power`: low power mode and heat read before and after a recording, and the `power` note of `perf_compare` | `perf_report.py`: `power_state` `:653`, `power_block` `:672`; `recording.py`: `:386`, `:438-439`; `analysis.py`: `:191-203` |
 | [When it fails](./when-it-fails.md) | what goes wrong and what the reader gets | |
 | [Changing it](./changing-it.md) | how to touch the code without breaking it | |
 | [Known limits](./limits.md) | 13 written-down limits and what was not reproduced | |
-| [Evidence](./evidence.md) | the commands (E1 to E8) and their real output | |
+| [Evidence](./evidence.md) | the commands (E1 to E10) and their real output | |
 
 ## How to read the labels
 

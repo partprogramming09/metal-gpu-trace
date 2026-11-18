@@ -1,6 +1,6 @@
 # Evidence: the commands and their real output
 
-**Reader:** people who want to check a number of this guide or repeat a command. Reviewed 2026-11-16.
+**Reader:** people who want to check a number of this guide or repeat a command. Reviewed 2026-11-17.
 
 Español: [Evidencia](../../es/guides/resumir-y-analizar/evidencia.md) · Back to the [guide index](./index.md).
 
@@ -119,4 +119,25 @@ src/metal_gpu_trace/paths.py:113:    if not 0 <= seconds <= 600:  # a NaN is fal
 src/metal_gpu_trace/paths.py:124:    if not 0 <= skip <= 600:
 src/metal_gpu_trace/analysis.py:325:    margin = 0 if metric.endswith("_p50") else margin_pct / 100
 src/metal_gpu_trace/analysis.py:490:        ok = value is not None and (value >= limit if kind == "min" else value <= limit)
+```
+
+## E9 Power at both ends, a real 30-second recording {#e9}
+
+The command that made the recording is **not given** for this page, so its evidence is pending. The output is what the session
+gave, copied as it was. It is the `power` block of `machine` in the summary; see [Power and heat](./power-and-heat.md).
+
+```text
+evidence pending: the command that made the 30-second recording (not given)
+"power": {"start": {"low_power_mode": false, "thermal_warning": false}, "end": {"low_power_mode": false, "thermal_warning": false}, "changed": false}
+```
+
+## E10 The graphics compiler's durations, a real 20-second recording {#e10}
+
+Command: **not given**, evidence pending. The output shows the compiler block of the summary as the session gave it.
+Not given: `duration_ms.count` and `duration_ms.mean` (so they are not shown here), and no run of `command_buffer_errors`
+for this page.
+
+```text
+evidence pending: the command that made the 20-second recording (not given)
+graphics_compiler: intervals 4, busy_ms 0.255, duration_ms p50 0.086, p95 0.088, max 0.088
 ```

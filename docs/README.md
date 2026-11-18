@@ -15,6 +15,9 @@ ADR status: proposed · accepted · rejected · superseded by NNNN.
 | [adr/0005-remove-the-panel.md](adr/0005-remove-the-panel.md) | Why the HTML panel was removed in 0.25.0 and what stays for old files (accepted) |
 | [evidence/README.md](evidence/README.md) | How each release proves its improvements, and the rule `tests/test_docs.py` checks |
 | [adr/0006-compressed-tables-and-disk-quota.md](adr/0006-compressed-tables-and-disk-quota.md) | Why per-frame tables are gzip and the runs folder has a size limit (accepted) |
+| [adr/0007-sqlite-tables-beside-the-compressed-tables.md](adr/0007-sqlite-tables-beside-the-compressed-tables.md) | Why each recording keeps its tables in a SQLite file beside the compressed ones (accepted, amends 0006) |
+| [adr/0008-lift-the-standard-library-only-rule.md](adr/0008-lift-the-standard-library-only-rule.md) | Why a dependency is allowed when it saves work, and the Python 3.9 floor stays (accepted) |
+| [adr/0009-keep-the-trace-uncompressed.md](adr/0009-keep-the-trace-uncompressed.md) | Why the `.trace` is not compressed, measured with the standard library's lzma (accepted) |
 | [guides/run-from-a-clone.md](guides/run-from-a-clone.md) | Commands to run the server, the scripts and the checks from a clone |
 | [guides/data-and-lifecycle/](guides/data-and-lifecycle/index.md) | What a recording leaves on disk, the summary key by key, the two retention settings, the cache and the lock |
 | [es/guides/datos-y-su-ciclo-de-vida/](es/guides/datos-y-su-ciclo-de-vida/index.md) | The same guide in Spanish |

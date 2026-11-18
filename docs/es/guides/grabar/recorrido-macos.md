@@ -1,6 +1,6 @@
 # El recorrido en macOS
 
-**Lector:** personas que cambian `recording.py` o `perf_record.sh`. Revisado el 2026-11-16. Etiquetas: véase [Grabar](./index.md#como-leer-las-etiquetas).
+**Lector:** personas que cambian `recording.py` o `perf_record.sh`. Revisado el 2026-11-17. Etiquetas: véase [Grabar](./index.md#como-leer-las-etiquetas).
 
 English: [The macOS journey](../../../guides/recording/macos-journey.md)
 
@@ -88,6 +88,7 @@ calcula la huella de la capa ([Qué identifica una corrida](#que-identifica-una-
 | Una salida distinta de cero, o ningún `.json` nuevo | `recording failed (exit N): <última línea de stderr>` | `recording.py:422-425` |
 | Un resumen sin intervalos de GPU | El programa no hizo trabajo de GPU: los archivos de la corrida se borran y el error dice cómo terminó ([Cuando falla](./fallos.md)) | `:427-436` |
 | Si no | `finish` añade `layer`, `context`, `tier`, aplica el límite de disco y reescribe el resumen. Tablas de claves: [guía de datos](../datos-y-su-ciclo-de-vida/claves-del-resumen.md#el-resumen-clave-por-clave) | `recording.py:337-351`, `:437` |
+| El resumen tiene un bloque `machine` | `machine.power` recibe las dos lecturas de energía: una antes de que arranque el script, otra después de escribir el resumen ([energía y calor](../resumir-y-analizar/energia-y-calor.md)) | `recording.py:386`, `:438-439` |
 
 ## La secuencia de cierre forzado
 

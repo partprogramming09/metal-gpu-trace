@@ -1,6 +1,6 @@
 # El resumen, clave por clave
 
-**Lector:** personas que añaden, leen o cambian una clave del JSON de resumen. Revisado el 2026-11-16.
+**Lector:** personas que añaden, leen o cambian una clave del JSON de resumen. Revisado el 2026-11-17.
 
 English: [The summary, key by key](../../../guides/data-and-lifecycle/json-keys.md)
 
@@ -36,7 +36,7 @@ Las claves se escriben en secuencia:
 | `trace` | Nombre del `.trace`, se conserva tras borrar el archivo | `perf_report.py:650`; nada en `src/` la lee (`rg`); `perf_runs` prueba el archivo (`analysis.py:79`) |
 | `process` | `name`, `pid`, `termination-reason`, `arguments` (compartibles con `public_arguments`) | `perf_report.py:651-652`; `analysis.py:74` (`arguments`), `recording.py:432` (`termination-reason`) |
 | `device` | `platform`, `model`, `memory-size`, `os-version`; el nombre de la máquina y su UUID se omiten a propósito | `perf_report.py:654`; `analysis.py:138`, `metrics.py:55` |
-| `machine` | Chip, núcleos, RAM, macOS, `screen_locked` | `perf_report.py:661`; `analysis.py:195` (pantalla bloqueada) |
+| `machine` | Chip, núcleos, RAM, macOS, `screen_locked` y `power` (bajo consumo y calor al empezar y al terminar; ver [energía y calor](../resumir-y-analizar/energia-y-calor.md)). **Puede ser `null`**: cuando este Mac no es el que grabó la traza, o un dato no se puede leer; entonces tampoco hay `power` | `perf_report.py:740` (`machine_info` `:679`); `recording.py:438-439` (`power`); `analysis.py:195` (pantalla bloqueada), `:191-203` (`power`) |
 | `missing_tables` | Tablas de Instruments que el trazo no tenía | `perf_report.py:664`; ningún lector en `src/` (`rg`) |
 | `gpu` | `intervals`, `frames`, `frame_gpu_ms`, `per_channel_ms`, `frame_interval_ms`, `start_latency_ms`, `fps_estimate`, claves de ritmo de abajo | `perf_report.py:709`; `perf_runs`, compare, diagnose, puertas (`analysis.py`) |
 | `encoders` | Encoders y command buffers por fotograma, los encoders más cortos, las 20 etiquetas principales | `perf_report.py:728`; `analysis.py:223`, `:702` |
@@ -60,12 +60,14 @@ Las claves de ritmo dentro de `gpu` vienen de `frame_pacing` (`perf_report.py:25
 | `gpu.unpresented` | El programa dejó de presentar; el trabajo posterior queda fuera de los fotogramas | `perf_report.py:721` |
 | `metal_memory_mib` | Se leyó la tabla de memoria de Metal (`memory` verdadero: no nivel `light`, no `PERF_MEMORY=0`); `{"samples": 0}` si no hubo muestra | `perf_report.py:740` |
 | `process_rss_mib` | Existe `<run>.rss.csv` junto al trazo | `perf_report.py:753` |
-| `gpu_activity` | `<run>.agx.csv` dio filas | `perf_report.py:756` |
+| `gpu_activity` | `<run>.agx.csv` dio filas. Sus `split_scenes_per_min` y `recoveries_per_min` son el crecimiento de `split_scenes` y `recoveries` por minuto del tramo de tiempo de las muestras (nulo si el tramo es cero o falta el contador) | `perf_report.py:756`; `agx_summary` `:564-602` |
 | `noisy_environment`, `noisy_basis` | `noisy_environment()` devolvió algo (`true` o `false`); la base (con `other_processes`) solo si es `true` | `perf_report.py:759`, `:761-762` |
-| `graphics_compiler`, `thermal_state_share` | Existe la tabla `graphics-compiler-activity-intervals`, `device-thermal-state-intervals` | `perf_report.py:780`, `:790` |
+| `graphics_compiler` | Existe la tabla `graphics-compiler-activity-intervals`. `intervals`, `busy_ms` y `duration_ms` (recuento, media, p50, p95, máximo de una compilación). `startup` e `in_flight` (cada uno con `intervals` y `busy_ms`) separan las compilaciones según empezaran antes del fotograma 10 o no; faltan si el programa tiene menos de 10 fotogramas | `perf_report.py:864-866`; `compiler_summary` `:548-563` |
+| `thermal_state_share` | Existe la tabla `device-thermal-state-intervals` | `perf_report.py:790` |
 | `cpu` | `ProcessCPUUsage` tenía filas del programa | `perf_report.py:798` |
 | `resource_allocations` | Existe la tabla de asignaciones y tiene eventos | `perf_report.py:802` |
-| `shader_spills`, `command_buffer_errors` | Existe la tabla `graphics-compiler-spill-events`, `metal-command-buffer-error` (un recuento) | `perf_report.py:804`, `:806` |
+| `shader_spills` | Existe la tabla `graphics-compiler-spill-events` (un recuento) | `perf_report.py:804` |
+| `command_buffer_errors`, `command_buffer_errors_scope`, `command_buffer_error_codes` | Existe la tabla `metal-command-buffer-error`. `command_buffer_errors` cuenta los errores de los command buffers del programa (se casan por `cmdbuffer-id` con la tabla de encoders del pid del programa) y `command_buffer_errors_scope` vale `program`; sin tabla de encoders cuenta los errores de todos los procesos y el ámbito es `all_processes`. `command_buffer_error_codes` lleva cada `error-code` con su recuento, solo si hay al menos un error | `perf_report.py:889-896` (ámbito), `:535-546` (recuento), `:789-796` (buffers) |
 | `validation` | Existe `<run>.validation.log` (la validación de Metal estaba activa) | `perf_report.py:811` |
 | `gpu_counters` | Las dos tablas de contadores existen y dieron muestras (`counters=true`, nivel `deep`) | `perf_report.py:817` |
 
