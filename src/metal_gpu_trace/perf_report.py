@@ -545,12 +545,19 @@ def command_buffer_errors(error_rows, program_buffers):
     return {"count": sum(by_code.values()), "by_code": dict(by_code.most_common())}
 
 
-def compiler_summary(intervals):
+def compiler_summary(intervals, startup_until_ms=None):
     """Returns the graphics compiler's work of the program from its (start, end) intervals in ms: `intervals`, `busy_ms`,
-    and `duration_ms` (count, mean, p50, p95, max of one compile) when there is any."""
+    and `duration_ms` (count, mean, p50, p95, max of one compile) when there is any. With `startup_until_ms` (when the
+    10th frame begins), `startup` and `in_flight` split the intervals by their start: compiles in the start-up are
+    expected, those in flight can cause a hitch."""
     out = {"intervals": len(intervals), "busy_ms": round(sum(b - a for a, b in intervals), 3)}
     if intervals:
         out["duration_ms"] = metrics.stats([b - a for a, b in intervals])
+    if startup_until_ms is not None:
+        early = [i for i in intervals if i[0] < startup_until_ms]
+        late = [i for i in intervals if i[0] >= startup_until_ms]
+        out["startup"] = {"intervals": len(early), "busy_ms": round(sum(b - a for a, b in early), 3)}
+        out["in_flight"] = {"intervals": len(late), "busy_ms": round(sum(b - a for a, b in late), 3)}
     return out
 
 
@@ -581,17 +588,22 @@ def agx_summary(path):
         values = column(name)
         return int(values[-1] - values[0]) if values else None
     recoveries = growth("recovery_count")
+    times = column("time_s")
+    span = times[-1] - times[0] if len(times) > 1 else 0
+
+    def per_minute(count):
+        return round(count / span * 60, 3) if count is not None and span > 0 else None
+    splits = growth("split_scenes")
     return {"samples": len(rows),
             **{key: (stats(column(name)) if column(name) else None)
                for key, name in (("device_pct", "device_pct"), ("renderer_pct", "renderer_pct"),
                                  ("tiler_pct", "tiler_pct"), ("in_use_mib", "in_use_mib"))},
-            "split_scenes": growth("split_scenes"), "recoveries": recoveries,
+            "split_scenes": splits, "split_scenes_per_min": per_minute(splits),
+            "recoveries": recoveries, "recoveries_per_min": per_minute(recoveries),
             "gpu_recovered": None if recoveries is None else recoveries > 0}
 
 
-# points of GPU use beyond the program's own at which a recording counts as made in a noisy environment; provisional, not
-# a measurement: re-fit it on at least 3 quiet runs of the same Mac
-NOISY_EXTERNAL_PCT = 20.0
+NOISY_EXTERNAL_PCT = metrics.NOISY_EXTERNAL_PCT  # one threshold, shared with the Windows engine
 
 
 def noisy_environment(activity, idle):
@@ -846,7 +858,9 @@ def summarize(trace, label=None, out=None, memory=True, counters=None, tables_db
                 start, duration = number(row.get("start")), number(row.get("duration"))
                 if pid_of(row.get("process")) == pid and start is not None and duration is not None:
                     compiler.append((start / 1e6, (start + duration) / 1e6))
-            summary["graphics_compiler"] = compiler_summary(compiler)
+            frame_starts = sorted(first_start.values())
+            summary["graphics_compiler"] = compiler_summary(
+                compiler, frame_starts[9] / 1e6 if len(frame_starts) > 9 else None)
         if "device-thermal-state-intervals" in tables:
             for row in read("device-thermal-state-intervals"):
                 start, duration, state = number(row.get("start")), number(row.get("duration")), text(row.get("thermal-state"))

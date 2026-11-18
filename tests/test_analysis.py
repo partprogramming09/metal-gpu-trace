@@ -938,6 +938,22 @@ def test_common_block_has_the_same_keys_on_both_platforms():
             assert common[name]["comparable"] is False and common[name]["reason"], common[name]
 
 
+def test_common_api_of_a_windows_run_is_read_from_the_engine_not_guessed():
+    """A Windows summary's common.api.runtime is the engine's graphics_api.runtime when it is a known one; a missing,
+    odd or `unknown` value stays `unknown`, and a layer the engine found (dxvk) wins over the recorder's label."""
+    from metal_gpu_trace import metrics
+    win = _windows_summary()
+    assert metrics.common_block(win)["api"]["runtime"] == "unknown"
+    win["graphics_api"] = {"runtime": "d3d12", "translation_layer": None}
+    assert metrics.common_block(win)["api"]["runtime"] == "d3d12"
+    win["graphics_api"] = {"runtime": "d3d11", "translation_layer": "dxvk"}
+    assert metrics.common_block(win)["api"] == {"runtime": "d3d11", "translation_layer": "dxvk"}
+    for odd in ({"runtime": "banana"}, {"runtime": 5}, "d3d12", None, {}):
+        win["graphics_api"] = odd
+        assert metrics.common_block(win)["api"]["runtime"] == "unknown", odd
+    assert metrics.common_block(_mac_summary())["api"]["runtime"] == "metal"  # macOS is untouched
+
+
 def test_common_block_names_where_each_number_comes_from():
     from metal_gpu_trace import metrics
     mac, win = metrics.common_block(_mac_summary()), metrics.common_block(_windows_summary())

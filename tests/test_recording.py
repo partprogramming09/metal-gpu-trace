@@ -1558,6 +1558,41 @@ def test_daemon_architecture_empty_or_null_is_an_absent_key():
     assert device == {"cpu_architecture": "Zen 2", "gpu_architecture": "Vega 6 / GCN 5.0"}, device
 
 
+def test_graphics_api_comes_from_the_loaded_modules():
+    """graphics_api() names the runtime from the graphics DLLs a process holds (d3d12 beats d3d11, d3d9, vulkan and OpenGL)
+    and the translation layer from where they were loaded from; an empty or unreadable list is `unknown`, never a guess."""
+    from metal_gpu_trace import perf_record_windows as prw
+    sysdir = {"d3d11.dll": True, "dxgi.dll": True}
+    assert prw.graphics_api([("d3d11.dll", True), ("dxgi.dll", True)]) == {"runtime": "d3d11", "translation_layer": None}
+    assert prw.graphics_api([("d3d11.dll", True), ("d3d12.dll", True)])["runtime"] == "d3d12"  # 11on12 loads both
+    assert prw.graphics_api([("D3D9.DLL", True)])["runtime"] == "d3d9"
+    assert prw.graphics_api([("vulkan-1.dll", True)])["runtime"] == "vulkan"
+    assert prw.graphics_api([("opengl32.dll", True)])["runtime"] == "opengl"
+    assert prw.graphics_api([("vulkan-1.dll", True), ("d3d11.dll", False), ("dxgi.dll", False)]) == {"runtime": "d3d11", "translation_layer": "dxvk"}
+    assert prw.graphics_api([("d3d12.dll", False), ("dxgi.dll", False), ("vulkan-1.dll", True)]) == {"runtime": "d3d12", "translation_layer": "vkd3d-proton"}
+    assert prw.graphics_api([("kernel32.dll", True)]) == {"runtime": "unknown", "translation_layer": None}
+    assert prw.graphics_api([]) == {"runtime": "unknown", "translation_layer": None}
+    assert prw.graphics_api(None) == {"runtime": "unknown", "translation_layer": None}  # the list could not be read
+    assert sysdir  # the names are lower-cased before they are compared
+
+
+def test_gpu_engine_counters_give_the_program_and_the_others():
+    """parse_gpu_engines() sums typeperf's `GPU Engine` utilization by pid; gpu_noise() flags a recording when the other
+    processes used NOISY_EXTERNAL_PCT points or more of the GPU; no sample, or a header without rows, gives None."""
+    from metal_gpu_trace import perf_record_windows as prw
+    header = ('"(PDH-CSV 4.0)","\\\\PC\\GPU Engine(pid_10_luid_0x0_0x1_phys_0_eng_0_engtype_3D)\\Utilization Percentage",'
+              '"\\\\PC\\GPU Engine(pid_10_luid_0x0_0x1_phys_0_eng_1_engtype_Copy)\\Utilization Percentage",'
+              '"\\\\PC\\GPU Engine(pid_20_luid_0x0_0x1_phys_0_eng_0_engtype_3D)\\Utilization Percentage"')
+    text = "\n" + header + '\n"11/17/2026 22:27:58.556","40.5","2.0","30.0"\n\nExiting, please wait...   The command completed successfully.\n'
+    assert prw.parse_gpu_engines(text) == {10: 42.5, 20: 30.0}, prw.parse_gpu_engines(text)
+    assert prw.parse_gpu_engines("") == {} and prw.parse_gpu_engines(header) == {} and prw.parse_gpu_engines("garbage") == {}
+    noisy = prw.gpu_noise([{10: 50.0, 20: 30.0}, {10: 60.0, 20: 20.0}], 10)
+    assert noisy == {"flag": True, "process_busy_pct": 55.0, "external_pct": 25.0, "samples": 2}, noisy
+    assert prw.gpu_noise([{10: 50.0, 20: 5.0}], 10)["flag"] is False
+    assert prw.gpu_noise([{10: 50.0}], 10)["external_pct"] == 0.0  # alone on the GPU
+    assert prw.gpu_noise([], 10) is None
+
+
 def test_daemon_bus_width_must_be_a_positive_number():
     """A bus width that is a bool, text, blank, an object or not positive is absent: no `bus True-bit`."""
     from metal_gpu_trace import perf_record_windows as prw

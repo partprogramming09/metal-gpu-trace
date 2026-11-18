@@ -31,6 +31,12 @@ def layer_label(layer):
     return f"{layer['fingerprint']} {layer['wine']} {layer['wine_version'] or ''}".strip()
 
 
+# points of GPU use beyond the program's own at which a recording counts as made in a noisy environment; provisional, not
+# a measurement: re-fit it on at least 3 quiet runs of the same machine. Both engines use it.
+NOISY_EXTERNAL_PCT = 20.0
+
+RUNTIMES = ("d3d9", "d3d11", "d3d12", "vulkan", "opengl")  # what a Windows engine can read from a process's modules
+
 PACING_KEYS = ("fps_estimate", "fps_1pct_low", "fps_01pct_low", "stutter_rate_pct", "frame_jitter_ms")
 
 
@@ -53,6 +59,7 @@ def common_block(summary):
     s = _dict(summary)
     gpu, layer = _dict(s.get("gpu")), s.get("layer")
     windows = _dict(s.get("device")).get("platform") == "Windows"
+    found = _dict(s.get("graphics_api"))
     metal_peak, rss_peak = _dict(s.get("metal_memory_mib")).get("peak"), _dict(s.get("process_rss_mib")).get("max")
     memory = ({"peak_mib": metal_peak, "source": "metal-allocated"} if metal_peak is not None
               else {"peak_mib": rss_peak, "source": "process-rss"} if rss_peak is not None
@@ -62,9 +69,11 @@ def common_block(summary):
         "memory_pressure": memory,
         "boundness": {"comparable": False, "reason": "CPU and GPU time are measured differently on each platform"},
         "submission_overhead": {"comparable": False, "reason": "only Metal records command buffers and encoders"},
-        # the runtime of a Windows run is read from PresentMon later; a Metal trace is always Metal
-        "api": {"runtime": "metal" if gpu and not windows else "unknown",
-                "translation_layer": _layer(layer) or "unknown"},
+        # a Windows run's runtime and translation layer are what its engine read from the loaded graphics modules; a Metal
+        # trace is always Metal. Anything the engine did not say is `unknown`.
+        "api": {"runtime": "metal" if gpu and not windows else (found.get("runtime") if found.get("runtime") in RUNTIMES else "unknown"),
+                "translation_layer": (found.get("translation_layer") if windows and isinstance(found.get("translation_layer"), str) else None)
+                                     or _layer(layer) or "unknown"},
     }
 
 

@@ -351,6 +351,9 @@ def test_compiler_summary_has_percentiles():
     assert perf_report.compiler_summary([]) == {"intervals": 0, "busy_ms": 0.0}
     one = perf_report.compiler_summary([(0.0, 4.0)])
     assert one == {"intervals": 1, "busy_ms": 4.0, "duration_ms": {"count": 1, "mean": 4.0, "p50": 4.0, "p95": 4.0, "max": 4.0}}, one
+    split = perf_report.compiler_summary([(1.0, 2.0), (5.0, 6.0), (50.0, 53.0)], startup_until_ms=10.0)
+    assert split["startup"] == {"intervals": 2, "busy_ms": 2.0} and split["in_flight"] == {"intervals": 1, "busy_ms": 3.0}, split
+    assert "startup" not in perf_report.compiler_summary([(1.0, 2.0)])  # no cut-off known: no split
     many = perf_report.compiler_summary([(i, i + d) for i, d in enumerate([1, 2, 3, 4, 100])])
     assert many["intervals"] == 5 and many["busy_ms"] == 110.0 and many["duration_ms"]["max"] == 100.0, many
 
@@ -383,6 +386,9 @@ def test_gpu_activity(tmp_path):
     assert got["samples"] == 4 and got["device_pct"]["max"] == 90 and got["device_pct"]["count"] == 3, got
     assert got["split_scenes"] == 9 and got["recoveries"] == 1 and got["gpu_recovered"] is True, got
     assert got["in_use_mib"]["max"] == 730, got
+    assert got["split_scenes_per_min"] == 180.0 and got["recoveries_per_min"] == 20.0, got  # 9 and 1 over 3 s
+    csv_path.write_text("time_s,device_pct,split_scenes,recovery_count\n0,10,0,0\n")  # one sample: no span, no rate
+    assert perf_report.agx_summary(csv_path)["split_scenes_per_min"] is None
     csv_path.write_text("time_s,device_pct\n0,10\n1,20\n")
     got = perf_report.agx_summary(csv_path)
     assert got["device_pct"]["mean"] == 15 and got["split_scenes"] is None and got["gpu_recovered"] is None, got

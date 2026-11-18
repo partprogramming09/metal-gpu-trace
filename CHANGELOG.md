@@ -11,7 +11,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - 🔋 On macOS, `machine.power` says whether low power mode was on and whether the Mac warned of heat or limited its CPU, read when the recording starts and when it ends, with `changed` when a fact moved in between. `perf_compare` adds a `power` note when two runs differ in that (or one changed while recording); a summary without the key gets no note.
 
-- 🧮 On macOS, `graphics_compiler` adds `duration_ms` (count, mean, p50, p95, max of one compile), and `command_buffer_error_codes` counts the errors by `error-code`.
+- 🧮 On macOS, `graphics_compiler` adds `duration_ms` (count, mean, p50, p95, max of one compile), and `command_buffer_error_codes` counts the errors by `error-code`. `graphics_compiler.startup` and `.in_flight` split the compiles by whether they began before the 10th frame, and the GPU activity block adds `split_scenes_per_min` and `recoveries_per_min`.
+
+- 🪟 On Windows, `common.api.runtime` (`d3d9`, `d3d11`, `d3d12`, `vulkan`, `opengl`, else `unknown`) is read from the graphics DLLs the process has loaded, and `translation_layer` says `dxvk` or `vkd3d-proton` when those DLLs come from outside the system folder (the summary's `graphics_api`; no path is kept).
+- 🪟 On Windows, `noisy_environment` and `gpu_noise` (`process_busy_pct`, `external_pct`, `samples`) come from the `GPU Engine` counters, read every 2 s while recording; 20 points or more of other processes' GPU use is the flag, the same threshold as on macOS.
 
 ### Fixed
 
