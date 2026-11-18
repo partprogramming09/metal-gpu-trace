@@ -44,7 +44,9 @@ INSTRUCTIONS = (
     "whose summary has noisy_environment (another process was loading the GPU) is repeated before it is trusted. A "
     "recording is refused before it starts when its program, xcrun, the disk or the lock is not ready, or when the "
     "screen is locked (METAL_TRACE_ALLOW_LOCKED=1 allows that). When memory spikes or a run stalls, "
-    "perf_memory_breakdown says which resource types it allocates and drops."
+    "perf_memory_breakdown says which resource types it allocates and drops. A program may write its own numbers to the "
+    "CSV named in METAL_TRACE_APP_METRICS (first column t_ms, then numeric columns); they come back as the summary's "
+    "app_metrics, never comparable between programs."
 )
 
 protocol.configure(instructions=INSTRUCTIONS, version=__version__)

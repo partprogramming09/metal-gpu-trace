@@ -14,7 +14,7 @@ import tempfile
 import threading
 import time
 
-from metal_gpu_trace import config, metrics, paths, perf_report, preflight, retention, workloads
+from metal_gpu_trace import app_metrics, config, metrics, paths, perf_report, preflight, retention, workloads
 
 
 TIERS = ("light", "standard", "deep")
@@ -334,11 +334,13 @@ def free_lock(pid):
     if owner == str(pid):
         shutil.rmtree(lock, ignore_errors=True)
 
-def finish(summary, json_path, layer, tier):
+def finish(summary, json_path, layer, tier, app_file=None):
     """Adds `layer`, the run's `context` and `tier` to the summary, applies METAL_TRACE_MAX_DISK_MB (the run just recorded
     is `json_path`'s; not while another recording runs, whose .trace is being written into the same folder): when files
     had to go, notes it in the summary's `retention`; writes the JSON and returns the summary. Both engines end here."""
     summary["layer"], summary["context"] = layer, run_context()
+    if app_file and (block := app_metrics.read(app_file)):  # the program's own telemetry, when it wrote any
+        summary["app_metrics"] = block
     if "common" in summary:  # built before the layer was known
         summary["common"] = metrics.common_block(summary)
     if tier:
@@ -351,8 +353,20 @@ def finish(summary, json_path, layer, tier):
     return summary
 
 
-def record_run(label, seconds, wine, prefix, workdir, command, program_env="", memory=True, layer=None, counters=False,
-               background=False, keep_trace=False, tier=None):
+def record_run(label, seconds, wine, prefix, workdir, command, program_env="", *args, **options):
+    """Runs the recording (see run_recording) with METAL_TRACE_APP_METRICS pointing at a private file the program may
+    write its telemetry to; the file is read into the summary's `app_metrics` and always removed."""
+    app_file = app_metrics.path_for([tempfile.gettempdir(), config.OUT])
+    if app_file:
+        program_env = " ".join(filter(None, [program_env, f"{app_metrics.ENV}={app_file}"]))
+    try:
+        return run_recording(label, seconds, wine, prefix, workdir, command, program_env, *args, app_file=app_file, **options)
+    finally:
+        app_metrics.discard(app_file)
+
+
+def run_recording(label, seconds, wine, prefix, workdir, command, program_env="", memory=True, layer=None, counters=False,
+                  background=False, keep_trace=False, tier=None, app_file=None):
     """Runs perf_record.sh and returns the summary it wrote, stopping the whole recording and deleting its files if
     it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV, `memory` false sets PERF_MEMORY=0, and `layer`
     names the translation layer a native run goes through (MoltenVK) instead of "native Metal"; `keep_trace` sets KEEP_TRACE=1
@@ -382,7 +396,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
             raise paths.ToolError(str(error)) from error
         except OSError as error:
             raise paths.ToolError(f"recording failed: {error}") from error
-        return finish(summary, json_path, layer, tier)
+        return finish(summary, json_path, layer, tier, app_file)
     power_start = perf_report.power_state()
     before = set(config.OUT.glob(f"{label}_*"))
     tmp = pathlib.Path(os.environ.get("TMPDIR", "/tmp"))
@@ -437,7 +451,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
                               "the Wine build, the prefix and the program's own log)")
     if isinstance(summary.get("machine"), dict):  # the machine is known: say its power state at both ends
         summary["machine"]["power"] = perf_report.power_block(power_start, perf_report.power_state())
-    return finish(summary, new[-1], layer, tier)
+    return finish(summary, new[-1], layer, tier, app_file)
 
 
 def record_new_summary(label, **record):
