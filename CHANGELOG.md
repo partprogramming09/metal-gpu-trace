@@ -7,6 +7,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Added
 
+- 🛡️ A WinBridge job, `metal-trace-attach` (`windows/winbridge-job/`), installs the published package and records with `perf_attach` a program that is already running (Process, Seconds, Label), failing unless it saw at least 100 frames.
+
 - 🛡️ A WinBridge job, `metal-trace-daemon` (`windows/winbridge-job/`), installs the published package and records `drawstress` once with the VegaFlow daemon stopped and once running, then leaves the daemon as it found it. Run on the Windows PC by hand with the same steps (stop, record, start, record): 392 and 388 frames.
 
 - 📈 A recorded program can write its own numbers (VRAM, a frame counter, anything numeric) to the CSV whose path is in `METAL_TRACE_APP_METRICS`, on macOS (the Windows engine passes the same variable; not yet run there); the summary carries them as `app_metrics` (samples, duration and, per column, count, mean, p50, p95, max, min, last), always `comparable: false`, with what was ignored in `issues`. The file is read from a private temporary folder and removed.
