@@ -19,7 +19,7 @@ def test_readme_lists_every_tool(tmp_path):
     """Both READMEs name every tool the server offers, and name the words the 0.17.0 additions need."""
     import re
     from metal_gpu_trace import registry
-    for name in ("README.md", "es/README.md"):
+    for name in ("README.md",):
         rows = set(re.findall(r"`([a-z_]+)`", (ROOT / name).read_text(encoding="utf-8")))
         missing = sorted(set(registry.TOOLS) - rows)
         assert not missing, f"{name} does not name {missing}"
@@ -35,15 +35,12 @@ def section(text, heading):
 
 
 def test_readme_has_plain_words_first():
-    """Both READMEs open with what the tool is in plain words (at most 150), before any recording command, explain the 15
+    """The README opens with what the tool is in plain words (at most 150), before any recording command, explain the 15
     words a newcomer meets, and name a diagram that exists."""
     english = ("frame", "GPU ms per frame", "FPS", "1 % low", "hitch", "frame pacing", "encoder", "command buffer",
                "translation layer", "Wine", "Metal System Trace", ".trace", ".gputrace", "baseline", "regression")
-    spanish = tuple("GPU ms por frame" if term == "GPU ms per frame" else term for term in english)
     for name, plain, recording, words, terms, image in (
-            ("README.md", "## In short", "## Recording", "## Words used here", english, "docs/guides/img/readme-flow.png"),
-            ("es/README.md", "## En palabras sencillas", "## Grabar", "## Palabras que se usan", spanish,
-             "../docs/guides/img/readme-flow.png")):
+            ("README.md", "## In short", "## Recording", "## Words used here", english, "docs/guides/img/readme-flow.png"),):
         text = (ROOT / name).read_text(encoding="utf-8")
         assert text.count(plain) == 1 and text.index(plain) < text.index(recording), f"{name}: plain words come first"
 

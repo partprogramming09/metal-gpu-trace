@@ -2,8 +2,6 @@
 
 **Reader:** people who want to check a number of this guide, and the owner. Reviewed 2026-11-16.
 
-Español: [Evidencia](../../es/guides/leer-trazas/evidencia.md)
-
 > **In short:** every number in this guide comes from a command shown here with its real output; all only read. The repository
 > holds no recording to open and Python could not be run, so **no tool of this guide was run**; where a tool's result is shown,
 > it was worked out by hand from the code's formula on a real run.

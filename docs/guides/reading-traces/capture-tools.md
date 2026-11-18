@@ -2,8 +2,6 @@
 
 **Reader:** people who read or compare `.gputrace` captures through the server, or who change `tool_capture_*`. Reviewed 2026-11-16.
 
-Español: [Las herramientas de captura](../../es/guides/leer-trazas/herramientas-captura.md)
-
 > **In short:** three tools read a Metal capture. `capture_summary` counts what is in one (how many draws, which named groups).
 > `capture_diff` compares two ("5 draws now, 3 before"), matching groups by name. `capture_records` shows the raw entries, to
 > check the other two. None tells how long anything took. Read [the format](./gputrace-format.md) first: ids and trust are there.

@@ -71,9 +71,9 @@ def problems(changelog, readmes, evidence_files):
         else:
             anchors.append(proof.group(3))
     for readme, content in readmes.items():
-        whats_new = re.search(r"(?ms)^## (?:What's new|Novedades)\s*\n(.*?)(?=^## |\Z)", content)
+        whats_new = re.search(r"(?ms)^## What's new\s*\n(.*?)(?=^## |\Z)", content)
         if not whats_new:
-            wrong.append(f"{readme} has no What's new / Novedades section")
+            wrong.append(f"{readme} has no What's new section")
             continue
         wrong.extend(f"{readme} What's new does not link v{name}.md#{a}" for a in anchors
                      if f"docs/evidence/v{name}.md#{a}" not in whats_new.group(1))
@@ -90,10 +90,9 @@ def good_evidence(count=5):
     return "# Proof\n\n" + "".join(f"## Thing {i}\n\ncommand, real output\n\n" for i in range(count))
 
 
-def readmes(count=5, prefix=("", "../")):
+def readmes(count=5, prefix=("",)):
     rows = "".join(f"- [proof]({{p}}docs/evidence/v0.26.0.md#thing-{i})\n" for i in range(count))
-    return {"README.md": "## What's new\n\n" + rows.format(p=prefix[0]) + "\n## Other\n",
-            "es/README.md": "## Novedades\n\n" + rows.format(p=prefix[1])}
+    return {"README.md": "## What's new\n\n" + rows.format(p=prefix[0]) + "\n## Other\n"}
 
 
 def evidence(count=5):
@@ -127,7 +126,6 @@ def test_an_anchor_with_an_underscore_is_accepted():
     proofs = {"docs/evidence/v0.26.0.md": good_evidence().replace("## Thing 0", "## capture_diff compares")}
     docs = readmes()
     docs["README.md"] = docs["README.md"].replace("#thing-0", "#capture_diff-compares")
-    docs["es/README.md"] = docs["es/README.md"].replace("#thing-0", "#capture_diff-compares")
     assert problems(changelog, docs, proofs) == []
 
 
@@ -146,17 +144,14 @@ def test_only_the_added_section_counts():
     assert len(improvements(good_changelog())) == 5
 
 
-def test_both_readmes_link_every_improvement():
-    missing = readmes()
-    missing["es/README.md"] = "## Novedades\n"
-    assert "es/README.md What's new does not link v0.26.0.md#thing-0" in problems(good_changelog(), missing, evidence())
+def test_the_readme_links_every_improvement():
+    missing = {"README.md": "## What's new\n"}
+    assert "README.md What's new does not link v0.26.0.md#thing-0" in problems(good_changelog(), missing, evidence())
     no_section = readmes()
     no_section["README.md"] = "## Other\n"
-    assert problems(good_changelog(), no_section, evidence())[0] == "README.md has no What's new / Novedades section"
+    assert problems(good_changelog(), no_section, evidence())[0] == "README.md has no What's new section"
     one_short = readmes(4)
-    assert problems(good_changelog(), one_short, evidence()) == [
-        "README.md What's new does not link v0.26.0.md#thing-4",
-        "es/README.md What's new does not link v0.26.0.md#thing-4"]
+    assert problems(good_changelog(), one_short, evidence()) == ["README.md What's new does not link v0.26.0.md#thing-4"]
 
 
 def test_old_changelog_sections_are_not_checked():
@@ -188,7 +183,7 @@ def test_the_package_version_has_its_changelog_section():
 def test_the_real_latest_release_follows_the_rule():
     """The checkout's own CHANGELOG and READMEs: the rule holds from 0.26.0 on, and passes while 0.25.0 is the newest."""
     proofs = {f"docs/evidence/{p.name}": p.read_text(encoding="utf-8") for p in (ROOT / "docs" / "evidence").glob("v*.md")}
-    docs = {n: (ROOT / n).read_text(encoding="utf-8") for n in ("README.md", "es/README.md")}
+    docs = {n: (ROOT / n).read_text(encoding="utf-8") for n in ("README.md",)}
     assert problems((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), docs, proofs) == []
 
 

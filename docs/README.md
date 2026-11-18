@@ -20,14 +20,9 @@ ADR status: proposed · accepted · rejected · superseded by NNNN.
 | [adr/0009-keep-the-trace-uncompressed.md](adr/0009-keep-the-trace-uncompressed.md) | Why the `.trace` is not compressed, measured with the standard library's lzma (accepted) |
 | [guides/run-from-a-clone.md](guides/run-from-a-clone.md) | Commands to run the server, the scripts and the checks from a clone |
 | [guides/data-and-lifecycle/](guides/data-and-lifecycle/index.md) | What a recording leaves on disk, the summary key by key, the two retention settings, the cache and the lock |
-| [es/guides/datos-y-su-ciclo-de-vida/](es/guides/datos-y-su-ciclo-de-vida/index.md) | The same guide in Spanish |
 | [guides/recording/](guides/recording/index.md) | The path of one recording, why one at a time and 30 s under Wine, what preflight checks and says, the test programs and their pins, the Windows engine, what happens when it fails |
-| [es/guides/grabar/](es/guides/grabar/index.md) | The same guide in Spanish |
 | [guides/summarizing/](guides/summarizing/index.md) | How a `.trace` becomes the summary, how each number is computed, what compare, check and gate decide, the experiments, noise, what happens when it fails |
-| [es/guides/resumir-y-analizar/](es/guides/resumir-y-analizar/index.md) | The same guide in Spanish |
 | [guides/reading-traces/](guides/reading-traces/index.md) | The tools that read a `.trace` or a `.gputrace`, windows and paging, Chrome-trace export, what the code assumes about a capture, what happens when it fails |
-| [es/guides/leer-trazas/](es/guides/leer-trazas/index.md) | The same guide in Spanish |
 | [guides/server-and-transport/](guides/server-and-transport/index.md) | Starting over stdio and HTTP, the registry, the worker, the HTTP checks, the logs, what happens when it fails |
-| [es/guides/servidor-y-transporte/](es/guides/servidor-y-transporte/index.md) | The same guide in Spanish |
 | [../tests/golden/README.md](../tests/golden/README.md) | What the golden files pin and how to re-record them |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) · [../SECURITY.md](../SECURITY.md) | How to send a change · how to report a vulnerability |

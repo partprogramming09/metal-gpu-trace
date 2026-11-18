@@ -2,7 +2,7 @@
 
 **Reader:** people who see an error from `perf_report.py`, `analysis.py` or `experiments.py` and want to know what it means and what is left behind. Reviewed 2026-11-16.
 
-Español: [Cuando falla](../../es/guides/resumir-y-analizar/cuando-falla.md) · Back to the [guide index](./index.md).
+Back to the [guide index](./index.md).
 
 **In short:** most failures end in a plain sentence that says what to do (for example, "record it again"). A few do not: a
 slow or cut export ends in a raw error trace. Nothing half-written is left for the reader to trust, except runs already

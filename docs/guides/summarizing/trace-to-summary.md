@@ -2,8 +2,6 @@
 
 **Reader:** people who change `perf_report.py` or want to know which tables of a recording feed which number. Reviewed 2026-11-17.
 
-Español: [Del trace al resumen](../../es/guides/resumir-y-analizar/del-trace-al-resumen.md)
-
 **In short:** a `.trace` is a very large recording made by Apple's Instruments. One script asks Instruments for the tables it
 needs, keeps the program's own GPU work, and writes a small summary file. If the program stopped drawing to the screen part
 way through, the script notices and sets that stretch aside instead of letting it ruin the frame-rate figures.

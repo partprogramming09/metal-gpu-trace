@@ -2,7 +2,7 @@
 
 **Reader:** people who change what the HTTP endpoint accepts, refuses or answers. Reviewed 2026-11-16.
 
-Español: [HTTP](../../es/guides/servidor-y-transporte/http.md) · [Index](./index.md)
+[Index](./index.md)
 
 **In short:** over HTTP the server works like a building with a doorman. It checks, in a fixed order, that you came to the right door, from the right street, with the right key and a sensible package, and only then reads what you brought. Refusals say as little as possible. Start-up is in [Startup](./startup.md).
 

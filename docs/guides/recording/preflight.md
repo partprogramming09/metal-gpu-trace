@@ -2,8 +2,6 @@
 
 **Reader:** people who add or change a refusal in `preflight.py` or in `perf_record.sh`. Reviewed 2026-11-16. Labels: see [Recording](./index.md#how-to-read-the-labels).
 
-Español: [Preflight](../../es/guides/grabar/preflight.md)
-
 **In short:** before anything starts, the server checks in milliseconds that the recording can work: valid numbers, the
 program and Wine exist, Xcode's tools are installed, there is enough disk, the screen is unlocked and nobody else is
 recording. The first failure stops the call with a sentence that says what to do; nothing was started, so there is

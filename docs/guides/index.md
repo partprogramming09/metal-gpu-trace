@@ -41,21 +41,18 @@ You ask your AI agent: "Record my app for 30 seconds, then tell me its FPS and h
 - [How it works](./how-it-works): how the modules are layered and how one request flows through them.
 - [Run from a clone](./run-from-a-clone): run and test the code without PyPI.
 - [Data and its lifecycle](./data-and-lifecycle/): what a recording leaves on disk, where it lives, how the summary is
-  built key by key, and which of `KEEP_RUNS` and `METAL_TRACE_MAX_DISK_MB` deletes what. Español:
-  [Datos y su ciclo de vida](../es/guides/datos-y-su-ciclo-de-vida/).
+  built key by key, and which of `KEEP_RUNS` and `METAL_TRACE_MAX_DISK_MB` deletes what.
 - [Recording](./recording/): the whole path of a recording, why one runs at a time and 30 s or more under Wine, what
   `preflight` checks and what it says when it refuses, the test programs and their pinned downloads, the Windows engine,
-  and what happens when a recording fails. Español: [Grabar](../es/guides/grabar/).
+  and what happens when a recording fails.
 - [Summarizing and analyzing](./summarizing/): how a `.trace` becomes the summary (the tables read and what a missing one
   does), how FPS, the 1 % low, stutter and hitches are computed, what `perf_compare`, `perf_check` and `perf_gate` compare,
-  the experiments, how better, worse and same are decided, and what happens when it fails. Español:
-  [Resumir y analizar](../es/guides/resumir-y-analizar/).
+  the experiments, how better, worse and same are decided, and what happens when it fails.
 - [Reading traces](./reading-traces/): the seven tools that read a `.trace` or a `.gputrace`, how the `trace` argument is
   read, windows and paging in `trace_query`, how a `.chrome-trace` is exported, what the code assumes about a capture,
-  and what happens when it fails. Español: [Leer trazas](../es/guides/leer-trazas/).
+  and what happens when it fails.
 - [Server and transport](./server-and-transport/): how the server starts over stdio and HTTP, the tool registry, the
-  worker, the HTTP checks (route, Host, Origin, token, size, JSON), the logs, and what happens when it fails. Español:
-  [Servidor y transporte](../es/guides/servidor-y-transporte/).
+  worker, the HTTP checks (route, Host, Origin, token, size, JSON), the logs, and what happens when it fails.
 
 ## Words used here
 The full glossary (frame, FPS, hitch, encoder, baseline, regression and more) is in the [README](https://github.com/partprogramming09/metal-gpu-trace#words-used-here).

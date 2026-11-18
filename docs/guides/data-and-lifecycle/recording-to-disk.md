@@ -2,8 +2,6 @@
 
 **Reader:** people who change the order in which a recording writes, locks and cleans up. Reviewed 2026-11-16.
 
-Español: [De una grabación a disco](../../es/guides/datos-y-su-ciclo-de-vida/de-grabacion-a-disco.md)
-
 > **In short:** a recording goes through eight steps: check the lock, take it, write the data, build the numbers, clean
 > up, free the lock, and let the server finish. The summary is written twice. A recording started by hand skips the last step, so it has no size limit.
 

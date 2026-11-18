@@ -2,8 +2,6 @@
 
 **Reader:** the owner and anyone deciding what to fix in `traces.py` or `gputrace_read.py`. Reviewed 2026-11-16.
 
-Español: [Límites conocidos y hallazgos](../../es/guides/leer-trazas/limites.md)
-
 > **In short:** what these tools cannot do today (limits) and what looked wrong while the guide was written (findings). Nothing
 > was fixed: each item is what the code does now, written down for the owner to decide. The biggest: no real capture was ever
 > read, so the capture format is the code's own claim.

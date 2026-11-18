@@ -2,8 +2,6 @@
 
 **Reader:** people who change or tune how the runs folder is kept small. Reviewed 2026-11-16.
 
-Español: [Retención: dos mecanismos que no se mezclan](../../es/guides/datos-y-su-ciclo-de-vida/retencion.md)
-
 > **In short:** two look-alike settings stop the runs folder from growing forever. One keeps the newest N recordings and
 > deletes the summaries and tables of older ones, never their big `.trace`. The other keeps the folder under a size and
 > deletes only heavy files, oldest first, so the small numbers survive. If the size cannot be reached it says nothing.

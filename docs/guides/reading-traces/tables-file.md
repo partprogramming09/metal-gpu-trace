@@ -2,8 +2,6 @@
 
 **Reader:** people who call `trace_tables`, `trace_count` or `trace_query`, or who change `tabledb.py`. Reviewed 2026-11-16.
 
-Español: [El archivo de tablas](../../es/guides/leer-trazas/archivo-de-tablas.md)
-
 > **In short:** every recording leaves `<run>.tables.sqlite` beside its summary. It holds the tables the summary read, so
 > the three table tools keep answering after the `.trace` (hundreds of MB) is deleted, and `trace_query` can filter, sort
 > and group them without you writing SQL. `perf_runs` says `tables_kept: true` for the runs that have it.

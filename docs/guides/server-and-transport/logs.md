@@ -2,7 +2,7 @@
 
 **Reader:** people who add or read the server's log lines. Reviewed 2026-11-16.
 
-Español: [Logs](../../es/guides/servidor-y-transporte/logs.md) · [Index](./index.md)
+[Index](./index.md)
 
 **In short:** the server writes a short line to stderr when a tool finishes or something breaks. Never what you asked for, a path or the token: only names, results and durations. stdout is reserved for the conversation with the client.
 

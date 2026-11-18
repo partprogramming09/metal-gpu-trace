@@ -2,8 +2,6 @@
 
 **Reader:** people who change the recorder or the analysis. Reviewed 2026-11-16.
 
-Español: [Por qué los datos tienen esta forma](../../es/guides/datos-y-su-ciclo-de-vida/por-que-esta-forma.md)
-
 > **In short:** a recording is one small file with the numbers plus big files with the raw data. Delete the big ones and
 > the numbers stay readable. There is no database on purpose: a folder can be copied, committed or deleted by hand.
 

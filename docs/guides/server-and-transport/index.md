@@ -2,8 +2,6 @@
 
 **Reader:** people who change how the server starts, listens and answers (`metal_trace_mcp.py`, `stdio.py`, `http_transport.py`, `worker.py`, `registry.py`, `logs.py`), who add or rename a tool, or who need to know why a client got a given error, status or silence. Reviewed 2026-11-16.
 
-Español: [Servidor y transporte](../../es/guides/servidor-y-transporte/index.md)
-
 **In short:** the server is the program an AI agent talks to. The agent sends a request ("record this game for 30
 seconds"); the server checks it and runs it on one worker, so two recordings never fight over the GPU. It is reached
 through a pipe (stdio) or a local web address (HTTP) that needs a secret token. This guide follows one request and says

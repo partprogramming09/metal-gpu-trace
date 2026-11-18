@@ -2,8 +2,6 @@
 
 **Reader:** people who want to see a run's frames on a timeline, or who change `tool_perf_export_trace`. Reviewed 2026-11-16.
 
-Español: [Exportar un `.chrome-trace`](../../es/guides/leer-trazas/chrome-trace.md)
-
 > **In short:** `perf_export_trace` turns a run's table of frames into a file Perfetto (a free timeline viewer) opens. Each
 > frame is one bar, as long as the GPU worked on it. It needs no `.trace` and no `xctrace`, only the per-frame table every run
 > keeps. It is a coarse view: one track, no encoders, no memory.

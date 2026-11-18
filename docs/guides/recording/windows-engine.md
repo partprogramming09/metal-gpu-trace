@@ -2,8 +2,6 @@
 
 **Reader:** people who change `perf_record_windows.py` or who need to know why a Windows recording has no GPU timing per encoder. Reviewed 2026-11-16. Labels: see [Recording](./index.md#how-to-read-the-labels).
 
-Español: [El motor de Windows](../../es/guides/grabar/motor-windows.md)
-
 **In short:** Windows has no Instruments, so a separate engine records a Windows program by measuring when each frame
 was shown on screen. It picks the best of three sources of frame data and writes the same kind of summary macOS does, with
 some blocks empty. Example: for a game with PresentMon installed, the engine starts the game and PresentMon, waits the

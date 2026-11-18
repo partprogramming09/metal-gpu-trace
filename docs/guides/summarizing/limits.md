@@ -2,7 +2,7 @@
 
 **Reader:** people who want to know where this part of the project is weak, or about to rely on a number that depends on one of these. Reviewed 2026-11-17.
 
-Español: [Límites conocidos](../../es/guides/resumir-y-analizar/limites.md) · Back to the [guide index](./index.md).
+Back to the [guide index](./index.md).
 
 **In short:** this page lists 13 places where today's behaviour is surprising or unproven, and what could not be run for the
 guide. They are written down, not fixed. Each carries a status: confirmed by the code, probable, or not verified.

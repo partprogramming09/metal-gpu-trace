@@ -2,8 +2,6 @@
 
 **Reader:** people who read the rows of a table in a kept `.trace`, or who change `traces.py:92-114`. Reviewed 2026-11-16.
 
-Español: [`trace_query`](../../es/guides/leer-trazas/trace-query.md)
-
 > **In short:** `trace_query` hands you one page of one table, 50 rows by default. For a table too long to read, ask for time
 > windows instead: "how many rows and how much time in each 10 ms". Three rows at 1 ms, 9 ms and 12 ms give two windows, with
 > 2 rows and 1. Every page runs the export again, so big tables are slow.

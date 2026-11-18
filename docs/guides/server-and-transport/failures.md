@@ -2,7 +2,7 @@
 
 **Reader:** people who need to know why a client got a given error, status or silence. Reviewed 2026-11-16.
 
-Español: [Cuando falla](../../es/guides/servidor-y-transporte/fallos.md) · [Index](./index.md)
+[Index](./index.md)
 
 **In short:** a bad request does not stop the server. A malformed request gets a protocol error, a failed tool gets an "error result", and sometimes the answer is silence because the client left or cancelled.
 

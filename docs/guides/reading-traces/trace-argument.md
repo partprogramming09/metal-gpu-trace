@@ -2,8 +2,6 @@
 
 **Reader:** people who call `trace_tables`, `trace_count` or `trace_query`, or who change how they find and open a trace. Reviewed 2026-11-16.
 
-Español: [El argumento `trace`](../../es/guides/leer-trazas/argumento-trace.md)
-
 > **In short:** you name the recording by a short name, such as `a2-proof-first_20261115-085621`, or by a path. The server looks
 > the name up in its runs folder and refuses anything outside the folders it may read. Then it asks Apple's `xctrace` for the
 > contents, one table at a time. If the recording was already deleted you get a sentence saying so: the likeliest error here.

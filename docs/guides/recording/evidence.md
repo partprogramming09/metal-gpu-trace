@@ -2,8 +2,6 @@
 
 **Reader:** people who want to repeat a check or see where a claim in the recording guide comes from. Reviewed 2026-11-16. Labels: see [Recording](./index.md#how-to-read-the-labels).
 
-Español: [Evidencia](../../es/guides/grabar/evidencia.md)
-
 **In short:** every number and message in the recording guide comes from a command anyone can run. This page has the
 commands for the checks, the script, the deadline and disk formulas, the Windows engine and PresentMon (E1, E2, E3, E6,
 E8, E9, E10), with their real output, and ends with what was **not** reproduced. The test programs and the data files

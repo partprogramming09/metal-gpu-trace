@@ -2,8 +2,6 @@
 
 **Reader:** people who change the recorder or the analysis, or who need to know what a recording leaves on disk, where it lives and who deletes it. Reviewed 2026-11-16.
 
-Español: [Datos y su ciclo de vida](../../es/guides/datos-y-su-ciclo-de-vida/index.md)
-
 > **In short:** every recording leaves a small group of files in one folder. One small file holds the numbers an agent
 > reads; the others are the data they came from. Only a shared name keeps the group together, and two cleanup settings
 > decide what is deleted and when. This guide follows one recording from request to deletion; layers are in [How it works](../how-it-works.md).

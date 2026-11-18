@@ -2,7 +2,7 @@
 
 **Reader:** people who want to check a number or a line of this guide, or see what was not reproduced. Reviewed 2026-11-16.
 
-Español: [Evidencia](../../es/guides/servidor-y-transporte/evidencia.md) · [Index](./index.md)
+[Index](./index.md)
 
 **In short:** every number in this guide comes from a command listed here, with its real output. All were read-only searches over the code and the recorded test replies; the server was never started, and the last section lists what was not reproduced.
 

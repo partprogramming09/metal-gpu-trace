@@ -2,8 +2,6 @@
 
 **Reader:** people who see an error from one of these tools and want to know what it means, or who change an error text. Reviewed 2026-11-16.
 
-Español: [Cuando falla](../../es/guides/leer-trazas/cuando-falla.md)
-
 > **In short:** when something goes wrong the server does not stop: you get one sentence saying what happened and, mostly, what
 > to do. The most common is "no recording at ...": the recording was deleted after its summary was written; recording again
 > with `KEEP_TRACE=1` keeps it.

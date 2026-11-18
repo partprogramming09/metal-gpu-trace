@@ -2,8 +2,6 @@
 
 **Reader:** people who need to know what a recording leaves on disk and where. Reviewed 2026-11-16.
 
-Español: [Archivos en disco](../../es/guides/datos-y-su-ciclo-de-vida/archivos-en-disco.md)
-
 > **In short:** a run is a handful of files sharing one name start, in one folder. This page says where that folder
 > is, what each file holds, who writes it and who reads it, then the two table formats and the two once-a-second samplers.
 

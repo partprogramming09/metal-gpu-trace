@@ -2,7 +2,7 @@
 
 **Reader:** people who plan fixes or need to know what the server does not guard against. Reviewed 2026-11-16.
 
-Español: [Límites conocidos](../../es/guides/servidor-y-transporte/limites.md) · [Index](./index.md)
+[Index](./index.md)
 
 **In short:** twelve surprising or fragile behaviours of today: a docs page that orders two steps the other way round, edge cases of the command line and HTTP, some couplings. Eleven are still open; row 2 was fixed on 2026-11-16 (commit c4b4a7c) and stays listed. Each says where it lives and how sure we are.
 

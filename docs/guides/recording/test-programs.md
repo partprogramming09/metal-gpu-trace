@@ -2,8 +2,6 @@
 
 **Reader:** people who add or change a test program, or who debug `workload_fetch` and `presentmon_install` (`workloads.py`, `data/workloads.json`). Reviewed 2026-11-16. Labels: see [Recording](./index.md#how-to-read-the-labels).
 
-Español: [Los programas de prueba](../../es/guides/grabar/programas-de-prueba.md)
-
 **In short:** the project ships three small graphics programs so two people on two Macs can record the same load and
 compare numbers. Each is downloaded once, and accepted only if its fingerprint (SHA-256, a number that changes if a
 single byte changes) equals the one written in the project. Example, on a Mac: `workload_fetch drawstress`, then

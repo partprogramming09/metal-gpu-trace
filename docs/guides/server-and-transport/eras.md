@@ -2,7 +2,7 @@
 
 **Reader:** people who touch the transports or the protocol and need to know where the old and the modern MCP behaviour part. Reviewed 2026-11-16.
 
-Español: [Las dos eras](../../es/guides/servidor-y-transporte/eras.md) · [Index](./index.md)
+[Index](./index.md)
 
 **In short:** MCP, the language agents and servers speak, has an older and a newer form ("eras"). This server understands both and tells them apart from the first message. [ADR-0002](../../adr/0002-dual-era-mcp.md) decides; this is a lookup.
 

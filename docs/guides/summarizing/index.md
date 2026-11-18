@@ -2,8 +2,6 @@
 
 **Reader:** people who read a summary or a comparison and want to know where each number comes from and when not to trust it, or who change `perf_report.py`, `analysis.py`, `metrics.py` or `experiments.py`. Reviewed 2026-11-17.
 
-Español: [Resumir y analizar](../../es/guides/resumir-y-analizar/index.md)
-
 **In short:** after a program is recorded, a script boils the huge recording down to one small file of numbers (frames per
 second, stutters, memory). Other tools read those small files back, compare two runs and say "better", "worse" or "same".
 This guide shows where every number comes from, why one run alone proves little, and when a result should not be trusted.

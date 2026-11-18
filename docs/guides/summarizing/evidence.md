@@ -2,7 +2,7 @@
 
 **Reader:** people who want to check a number of this guide or repeat a command. Reviewed 2026-11-17.
 
-Español: [Evidencia](../../es/guides/resumir-y-analizar/evidencia.md) · Back to the [guide index](./index.md).
+Back to the [guide index](./index.md).
 
 **In short:** every number in this guide comes from a command that was run on two real recordings, or from a formula of the
 code evaluated by hand with `jq`. This page keeps each command with its literal output so you can repeat it. Where a tool

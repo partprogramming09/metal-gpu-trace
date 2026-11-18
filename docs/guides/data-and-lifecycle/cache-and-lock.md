@@ -2,8 +2,6 @@
 
 **Reader:** people who wonder what is in the cache folder, or how two recordings are kept from running together. Reviewed 2026-11-16.
 
-Español: [La caché y el candado](../../es/guides/datos-y-su-ciclo-de-vida/cache-y-candado.md)
-
 > **In short:** the cache folder is not where recordings go: it holds the test programs the tool downloads, and nothing
 > ever cleans it. The lock is a folder saying "a recording is running", so two programs never share the GPU and spoil
 > each other's numbers. A recording that dies leaves a stale lock that the next one takes over.

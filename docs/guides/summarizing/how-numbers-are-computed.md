@@ -2,8 +2,6 @@
 
 **Reader:** people who see a number in a summary and ask where it comes from, or who change `perf_report.py` or `metrics.py`. Reviewed 2026-11-17.
 
-Español: [Cómo se calcula cada número](../../es/guides/resumir-y-analizar/como-se-calculan-los-numeros.md)
-
 **In short:** most numbers come from one list: how many milliseconds pass between the start of one frame and the start of
 the next. The "FPS" is the typical gap turned upside down, a "stutter" is a gap much longer than usual, and a "hitch" is
 the same slow gap with a guess at its cause. This page gives each formula and the line of code that holds it.

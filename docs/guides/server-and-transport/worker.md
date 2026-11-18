@@ -2,7 +2,7 @@
 
 **Reader:** people who change how tool calls are queued, checked, cancelled or reported. Reviewed 2026-11-16.
 
-Español: [Worker](../../es/guides/servidor-y-transporte/worker.md) · [Index](./index.md)
+[Index](./index.md)
 
 **In short:** the worker is the one employee who does the work. Requests wait in a line of at most 64; it takes them one at a time, checks each, runs it and hands back the answer. A client's "stop" is a flag the running tool looks at. With one worker, two recordings never run together.
 

@@ -2,8 +2,6 @@
 
 **Reader:** people who change `recording.py` or `perf_record.sh`. Reviewed 2026-11-18. Labels: see [Recording](./index.md#how-to-read-the-labels).
 
-Español: [El recorrido en macOS](../../es/guides/grabar/recorrido-macos.md)
-
 **In short:** a recording request goes through five stages: it becomes a command, a wrapper checks and prepares the Mac,
 a script is started with a clean environment, the server watches it once a second, and when the script returns the
 server completes the summary. Cancelling or running past the deadline follows a fixed kill sequence that deletes

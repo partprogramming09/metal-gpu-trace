@@ -2,8 +2,6 @@
 
 **Reader:** people who want to check the claims about the cache, the recording steps and retention against real output. Reviewed 2026-11-16.
 
-Español: [Evidencia E8 a E12: la caché, los pasos y las variables](../../es/guides/datos-y-su-ciclo-de-vida/evidencia-cache-y-flujo.md)
-
 > **In short:** the read-only commands behind the claims about the cache, the eight recording steps and the two
 > retention variables, with real output, ending with what could not be reproduced because it needs a recording or deletes files.
 
