@@ -3,6 +3,7 @@ import { onMounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vitepress'
 import mediumZoom from 'medium-zoom'
 import './custom.css'
+import { convertDiagrams, toggleDiagram } from './diagrams'
 
 export default {
   extends: DefaultTheme,
@@ -10,7 +11,8 @@ export default {
   setup() {
     const route = useRoute()
     const zoom = () => mediumZoom('.vp-doc img', { background: 'var(--vp-c-bg)' })
-    onMounted(zoom)
-    watch(() => route.path, () => nextTick(zoom))
+    const diagrams = () => { zoom(); convertDiagrams() }
+    onMounted(() => { diagrams(); document.addEventListener('click', toggleDiagram) })
+    watch(() => route.path, () => nextTick(diagrams))
   },
 }

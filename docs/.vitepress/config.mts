@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitepress'
+import { inlineDiagram } from './diagrams.mts'
 
 // Cambia estos cuatro valores al copiar la plantilla.
 const titulo = 'metal-gpu-trace'
@@ -10,6 +11,15 @@ export default defineConfig({
   title: titulo,
   description: descripcion,
   cleanUrls: true,
+  markdown: {
+    config: (md) => {
+      const image = md.renderer.rules.image!
+      md.renderer.rules.image = (tokens, idx, options, env, self) => {
+        const t = tokens[idx]
+        return inlineDiagram(env.realPath ?? env.path, t.attrGet('src') ?? '', t.content) ?? image(tokens, idx, options, env, self)
+      }
+    },
+  },
   // Plans and internal notes are never published; templates are copied, not published; README.md is the index for people browsing the repository
   srcExclude: ['README.md', 'plans/**', 'estado.md', 'research/**'],
   lastUpdated: true,
