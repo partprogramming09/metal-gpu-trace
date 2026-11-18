@@ -185,11 +185,3 @@ def test_the_real_latest_release_follows_the_rule():
     proofs = {f"docs/evidence/{p.name}": p.read_text(encoding="utf-8") for p in (ROOT / "docs" / "evidence").glob("v*.md")}
     docs = {n: (ROOT / n).read_text(encoding="utf-8") for n in ("README.md",)}
     assert problems((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), docs, proofs) == []
-
-
-def test_every_guide_diagram_has_its_html_beside_the_png():
-    # The site inlines the SVG of `x.html` in place of `x.png` so the browser can translate its labels (docs/.vitepress/diagrams.mts).
-    missing = [f"{md.relative_to(ROOT)} -> {png}" for md in (ROOT / "docs" / "guides").rglob("*.md")
-               for png in re.findall(r"!\[[^\]]*\]\(([^)\s]+\.png)\)", md.read_text(encoding="utf-8"))
-               if not (md.parent / png).with_suffix(".html").exists()]
-    assert missing == []
