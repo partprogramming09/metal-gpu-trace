@@ -704,8 +704,13 @@ def test_daemon_candidates():
     exe = "vegaflow_daemon.exe"
     expected = [pathlib.Path("..") / "build" / exe, pathlib.Path("build") / exe, ROOT.parent / "build" / exe,
                 ROOT / "build" / exe]
-    assert prw.daemon_candidates() == expected, prw.daemon_candidates()
-    assert prw.daemon_candidates("x.exe")[0] == pathlib.Path("x.exe")
+    saved = os.environ.pop("METAL_TRACE_DAEMON_NAMES", None)  # a name set in the environment would add candidates
+    try:
+        assert prw.daemon_candidates() == expected, prw.daemon_candidates()
+        assert prw.daemon_candidates("x.exe")[0] == pathlib.Path("x.exe")
+    finally:
+        if saved is not None:
+            os.environ["METAL_TRACE_DAEMON_NAMES"] = saved
 
 
 def test_record_new_summary(tmp_path):
