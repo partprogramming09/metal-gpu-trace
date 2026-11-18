@@ -104,3 +104,13 @@ def test_record_run_hands_over_the_path_and_always_removes_it(tmp_path):
     finally:
         recording.run_recording = old
     assert seen["env"].startswith("A=1 ") and not seen["file"].parent.exists()
+
+
+def test_a_huge_cell_does_not_raise_and_keeps_the_rows_before_it(tmp_path):
+    block = app_metrics.read(put(tmp_path, "", b"t_ms,a\n0,1\n1," + b"9" * 200000 + b"\n2,3\n"))
+    assert block["samples"] >= 1 and block["issues"]["unreadable"] is True
+
+
+def test_absurd_times_keep_every_number_finite(tmp_path):
+    block = app_metrics.read(put(tmp_path, "t_ms,a\n1e308,1\n-1e308,2\n0,3\n"))
+    assert block["samples"] == 1 and block["issues"]["dropped_rows"] == 2 and block["duration_ms"] == 0

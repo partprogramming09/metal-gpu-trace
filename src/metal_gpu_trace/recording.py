@@ -339,7 +339,7 @@ def finish(summary, json_path, layer, tier, app_file=None):
     is `json_path`'s; not while another recording runs, whose .trace is being written into the same folder): when files
     had to go, notes it in the summary's `retention`; writes the JSON and returns the summary. Both engines end here."""
     summary["layer"], summary["context"] = layer, run_context()
-    if app_file and (block := app_metrics.read(app_file)):  # the program's own telemetry, when it wrote any
+    if app_file and (block := app_metrics.safe_read(app_file)):  # the program's own telemetry, when it wrote any
         summary["app_metrics"] = block
     if "common" in summary:  # built before the layer was known
         summary["common"] = metrics.common_block(summary)

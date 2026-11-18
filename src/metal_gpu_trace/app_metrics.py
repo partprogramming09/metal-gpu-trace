@@ -13,6 +13,7 @@ from metal_gpu_trace import metrics
 ENV = "METAL_TRACE_APP_METRICS"
 MAX_BYTES = 8 * 2**20  # shortcut: the first 8 MiB only, when a program needs more, raise it or sample less
 MAX_COLUMNS = 32
+MAX_T_MS = 1e12  # about 31 years: a larger t_ms is a bug in the program, and 1e308 would overflow the duration
 NAME = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 
 
@@ -50,10 +51,14 @@ def read(path):
     text = data[:MAX_BYTES].decode("utf-8-sig", errors="replace")
     if truncated:
         text = text.rsplit("\n", 1)[0]  # the last line may be cut
-    rows = list(csv.reader(io.StringIO(text)))
+    rows, unreadable = [], False
+    try:
+        rows.extend(csv.reader(io.StringIO(text)))
+    except csv.Error:  # a cell over the csv field limit: keep the rows before it
+        unreadable = True
     block = {"source": "app-file", "comparable": False,
              "reason": "the names and meaning of the columns belong to the program", "samples": 0}
-    issues = {}
+    issues = {"unreadable": True} if unreadable else {}
     if truncated:
         block["truncated"] = True
     if not rows:
@@ -73,7 +78,7 @@ def read(path):
     samples, dropped, bad = [], 0, 0
     for row in rows[1:]:
         t = number(row[0]) if len(row) == len(header) else None
-        if t is None:
+        if t is None or abs(t) > MAX_T_MS:
             dropped += 1
             continue
         samples.append((t, row))
@@ -98,3 +103,11 @@ def read(path):
     if issues:
         block["issues"] = issues
     return block
+
+
+def safe_read(path):
+    """read(), but a failure to read the file gives None: the program's telemetry never aborts a recording."""
+    try:
+        return read(path)
+    except (OSError, ValueError, MemoryError):
+        return None
