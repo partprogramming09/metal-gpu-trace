@@ -1,8 +1,5 @@
 import { defineConfig } from 'vitepress'
-import { fileURLToPath } from 'node:url'
 import { inlineDiagram } from './diagrams.mts'
-
-const docsRoot = fileURLToPath(new URL('..', import.meta.url)) // the docs folder
 
 // Cambia estos cuatro valores al copiar la plantilla.
 const titulo = 'metal-gpu-trace'
@@ -19,7 +16,7 @@ export default defineConfig({
       const image = md.renderer.rules.image!
       md.renderer.rules.image = (tokens, idx, options, env, self) => {
         const t = tokens[idx]
-        return inlineDiagram(env.realPath ?? env.path, t.attrGet('src') ?? '', t.content, docsRoot) ?? image(tokens, idx, options, env, self)
+        return inlineDiagram(env.realPath ?? env.path, t.attrGet('src') ?? '', t.content) ?? image(tokens, idx, options, env, self)
       }
     },
   },
