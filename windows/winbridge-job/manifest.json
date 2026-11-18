@@ -27,17 +27,6 @@
       "session": 1,
       "description": "metal-gpu-trace: install the published package and record drawstress with and without the VegaFlow daemon (no parameters; runs elevated)",
       "params": {}
-    },
-    "metal-trace-attach": {
-      "script": "metal-trace-attach.ps1",
-      "timeout_s": 900,
-      "session": 1,
-      "description": "metal-gpu-trace: record a program that is already running with perf_attach (Process, Seconds, Label; runs elevated)",
-      "params": {
-        "Process": "^[A-Za-z0-9_.-]{1,60}\\.exe$",
-        "Seconds": "^[0-9]{1,3}$",
-        "Label": "^[A-Za-z0-9_.-]{1,30}$"
-      }
     }
   },
   "env": {
