@@ -86,3 +86,10 @@ export function toggleDiagram(ev: Event) {
   const fig = (ev.target as Element).closest?.('.dg')
   if (fig) fig.classList.toggle('dg-open')
 }
+
+// The same from the keyboard: Enter or Space on a focused diagram, Escape closes it.
+export function keyDiagram(ev: KeyboardEvent) {
+  const fig = (ev.target as Element).closest?.('.dg')
+  if (fig && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); fig.classList.toggle('dg-open') }
+  else if (ev.key === 'Escape') document.querySelector('.dg-open')?.classList.remove('dg-open')
+}
