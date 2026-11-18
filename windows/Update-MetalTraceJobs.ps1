@@ -9,7 +9,7 @@
 .PARAMETER Bundle
     Folder of the verified, freshly extracted WinBridge bundle (the one that holds bootstrap\jobs\). Required.
 .PARAMETER Packages
-    Folder that holds the job packages. Default: windows\winbridge-job\ of this repository.
+    Folder that holds the job packages. Default (when omitted): windows\winbridge-job\ next to this script.
 .PARAMETER DryRun
     Resolve paths and the hash and print the command, without running it (works without administrator).
 .EXAMPLE
@@ -17,10 +17,18 @@
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Bundle,
-    [string]$Packages = (Join-Path $PSScriptRoot 'winbridge-job'),
+    [string]$Packages,
     [switch]$DryRun
 )
 $ErrorActionPreference = 'Stop'
+
+# $PSScriptRoot is empty inside param() on Windows PowerShell 5.1, so the default is resolved here.
+if (-not $Packages) {
+    $here = $PSScriptRoot
+    if (-not $here -and $MyInvocation.MyCommand.Path) { $here = Split-Path -Parent $MyInvocation.MyCommand.Path }
+    if (-not $here) { throw 'Cannot tell where this script lives; pass -Packages explicitly.' }
+    $Packages = Join-Path $here 'winbridge-job'
+}
 
 if (-not (Test-Path -LiteralPath $Bundle -PathType Container)) { throw "-Bundle folder not found: $Bundle" }
 $Bundle = (Resolve-Path -LiteralPath $Bundle).Path
