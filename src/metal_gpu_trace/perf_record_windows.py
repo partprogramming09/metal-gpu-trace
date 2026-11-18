@@ -216,15 +216,18 @@ def _enrich_device_with_vegaflow(device, vf_data):
 
         # Extract bus and channel topology e.g. "bus dual-channel 128-bit"
         channel_top = text(ram_info.get("channel_topology")) or ""
+        width = ram_info.get("memory_bus_width_bits")
+        if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
+            width = None  # a bool, text or object is not a width
         m_ram = re.search(r"([A-Za-z0-9\-]+-Channel)\s*\((?:.*?)?(\d+-bit)", channel_top, re.IGNORECASE)
         if m_ram:
             bus_tag = f"bus {m_ram.group(1).lower()} {m_ram.group(2).lower()}"
         elif "dual-channel" in channel_top.lower():
-            bus_tag = "bus dual-channel 128-bit" if ram_info.get("memory_bus_width_bits") == 128 else "bus dual-channel"
+            bus_tag = "bus dual-channel 128-bit" if width == 128 else "bus dual-channel"
         elif "single-channel" in channel_top.lower():
-            bus_tag = "bus single-channel 64-bit" if ram_info.get("memory_bus_width_bits") == 64 else "bus single-channel"
-        elif ram_info.get("memory_bus_width_bits"):
-            bus_tag = f"bus {ram_info.get('memory_bus_width_bits')}-bit"
+            bus_tag = "bus single-channel 64-bit" if width == 64 else "bus single-channel"
+        elif width:
+            bus_tag = f"bus {width}-bit"
         else:
             bus_tag = ""
 
@@ -238,9 +241,9 @@ def _enrich_device_with_vegaflow(device, vf_data):
 
 def daemon_names():
     """Returns the file names to look for: vegaflow_daemon.exe and those in METAL_TRACE_DAEMON_NAMES (comma-separated;
-    an entry with a path in it is ignored, so the variable cannot point outside build/)."""
+    an entry with a path in it, `.` or `..` is ignored, so the variable cannot point outside build/)."""
     extra = [n.strip() for n in os.environ.get("METAL_TRACE_DAEMON_NAMES", "").split(",")]
-    return ["vegaflow_daemon.exe"] + [n for n in extra if n and pathlib.PurePath(n).name == n]
+    return ["vegaflow_daemon.exe"] + [n for n in extra if n and n not in (".", "..") and not set(n) & set("/\\")]
 
 
 def daemon_candidates(daemon_path=None):
@@ -257,7 +260,8 @@ def daemon_info(exe):
     """Returns (data, None) from `exe --system-info`, or (None, reason) with reason `timeout`, `invalid_json` (not JSON,
     or JSON that is not an object) or `missing` (it would not run, exited non-zero or printed nothing)."""
     try:
-        res = subprocess.run([str(exe), "--system-info"], capture_output=True, text=True, timeout=1.0, check=False)
+        res = subprocess.run([str(exe), "--system-info"], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                             timeout=1.0, check=False)
     except subprocess.TimeoutExpired:
         return None, "timeout"
     except Exception:

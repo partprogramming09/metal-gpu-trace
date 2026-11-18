@@ -12,6 +12,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 ### Fixed
 
 - 🛠️ A daemon that answers a null, blank or non-text `cpu_architecture` or `gpu_architecture` no longer writes the text `None` or an empty value: the key is absent.
+- 🛠️ The hardware daemon's memory bus width must be a positive number (no more `bus True-bit`), its output that is not text now counts as `invalid_json`, and `METAL_TRACE_DAEMON_NAMES` ignores `.`, `..` and names with a slash or backslash.
 - 🛠️ The first progress line of a Windows recording no longer says "including read-back" (there is none there).
 - 🛠️ The README says what the code does for the deadline of a recording: 15 s per recorded second plus 180 (55 with GPU counters), not 10 s plus 120.
 

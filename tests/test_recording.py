@@ -1553,6 +1553,29 @@ def test_daemon_architecture_empty_or_null_is_an_absent_key():
     assert device == {"cpu_architecture": "Zen 2", "gpu_architecture": "Vega 6 / GCN 5.0"}, device
 
 
+def test_daemon_bus_width_must_be_a_positive_number():
+    """A bus width that is a bool, text, blank, an object or not positive is absent: no `bus True-bit`."""
+    from metal_gpu_trace import perf_record_windows as prw
+    for bad in (True, "   ", "None", {"a": 1}, 0, -64, None):
+        device = {}
+        prw._enrich_device_with_vegaflow(device, {"ram": {"memory_bus_width_bits": bad}})
+        assert device == {}, (bad, device)
+    device = {}
+    prw._enrich_device_with_vegaflow(device, {"ram": {"memory_bus_width_bits": 128}})
+    assert device == {"gpu_architecture": "bus 128-bit"}, device
+
+
+def test_daemon_output_that_is_not_utf8_is_invalid_json_not_missing(tmp_path):
+    """Bytes that are not text come back as `invalid_json` (the daemon answered, badly), not `missing`."""
+    if sys.platform == "win32":
+        return  # the fake daemon is a shell script
+    from metal_gpu_trace import perf_record_windows as prw
+    exe = tmp_path / "daemon.sh"
+    exe.write_text("#!/bin/sh\nprintf '\\377\\376'\n")
+    exe.chmod(0o755)
+    assert prw.daemon_info(exe) == (None, "invalid_json")
+
+
 def test_daemon_that_does_not_answer_says_why_without_its_path(tmp_path):
     """`--system-info` that times out, prints no JSON, a JSON that is not an object, nothing, or exits non-zero says
     a short reason in the device block; the daemon's path is never in it."""
@@ -1592,7 +1615,7 @@ def test_daemon_names_are_configurable():
     """METAL_TRACE_DAEMON_NAMES lists other file names to look for; a name with a path in it is ignored."""
     from metal_gpu_trace import perf_record_windows as prw
     saved = os.environ.get("METAL_TRACE_DAEMON_NAMES")
-    os.environ["METAL_TRACE_DAEMON_NAMES"] = "other.exe, ../evil.exe,,sub/x.exe"
+    os.environ["METAL_TRACE_DAEMON_NAMES"] = "other.exe, ../evil.exe,,sub/x.exe, .., ., a\\b.exe"
     try:
         names = {c.name for c in prw.daemon_candidates()}
     finally:
