@@ -19,8 +19,8 @@ if [[ $wine == native ]]; then
 fi
 if [[ $wine == attach ]]; then
   pid=$1
-  # a name matches the newest process whose command line holds it, such as Game.exe under Wine
-  [[ $pid == <-> ]] || pid=$(ps -axo pid=,command= | awk -v name="$1" 'index($0, name) && !/xctrace|awk|zsh|perf_record|ps -axo/ {p = $1} END {print p}')
+  # a name matches the newest process whose command line holds it, such as Game.exe under Wine (never the caller: PERF_PARENT_PID)
+  [[ $pid == <-> ]] || pid=$(ps -axo pid=,command= | awk -v name="$1" -v skip="${PERF_PARENT_PID:-0}" '$1 != skip && index($0, name) && !/xctrace|awk|zsh|perf_record|ps -axo/ {p = $1} END {print p}')
   [[ -n $pid ]] && kill -0 $pid 2>/dev/null || { echo "no running process matches $1" >&2; exit 2; }
 fi
 name=${label}_$(date +%Y%m%d-%H%M%S)
