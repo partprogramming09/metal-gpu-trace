@@ -564,6 +564,34 @@ def test_gpu_counters(tmp_path):
     assert seen == [False, True] and registry.RECORD_PROPS["counters"]["type"] == "boolean", seen
     assert recording.deadline(10, True) > recording.deadline(10) and recording.deadline(10) == 330
 
+def test_power_state_reads_low_power_mode_and_thermal_warning():
+    """power_state() says whether low power mode is on and whether the Mac warns of heat or limits its CPU; a fact it cannot
+    read is None, never a guess (no pmset, empty output, text it does not know, a Mac with no battery)."""
+    def state(power, therm):
+        facts = {("pmset", "-g"): power, ("pmset", "-g", "therm"): therm}
+        return perf_report.power_state(facts.__getitem__)
+    calm = "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\n"
+    assert state(" sleep 0\n lowpowermode         0\n", calm) == {"low_power_mode": False, "thermal_warning": False}
+    assert state(" lowpowermode 1\n", "CPU_Speed_Limit \t= 80\n") == {"low_power_mode": True, "thermal_warning": True}
+    assert state(" lowpowermode 0\n", "CPU_Speed_Limit \t= 100\n")["thermal_warning"] is False
+    assert state(" lowpowermode 0\n", "Note: Thermal warning level has been recorded (2)\n")["thermal_warning"] is True
+    assert state(" sleep 0\n", "") == {"low_power_mode": None, "thermal_warning": None}  # a desktop Mac: no key, no text
+    assert state("modo raro\n", "algo que no conozco\n") == {"low_power_mode": None, "thermal_warning": None}
+    assert perf_report.power_state({}.__getitem__) == {"low_power_mode": None, "thermal_warning": None}  # no pmset
+    def broken(argv):
+        raise subprocess.TimeoutExpired(argv, 10)
+    assert perf_report.power_state(broken) == {"low_power_mode": None, "thermal_warning": None}
+
+
+def test_power_block_marks_what_changed_during_the_recording():
+    """power_block(start, end) keeps both readings and says `changed` only when a fact known at both ends differs."""
+    off, on = {"low_power_mode": False, "thermal_warning": False}, {"low_power_mode": True, "thermal_warning": False}
+    assert perf_report.power_block(off, off) == {"start": off, "end": off, "changed": False}
+    assert perf_report.power_block(off, on)["changed"] is True
+    unknown = {"low_power_mode": None, "thermal_warning": None}
+    assert perf_report.power_block(off, unknown)["changed"] is False  # nothing known at the end: nothing to say changed
+
+
 def test_machine(tmp_path):
     """machine_info() names the chip, cores, RAM and macOS without host name or UUID, and gives None when the machine
     is not the one that recorded the trace or its facts cannot be read."""

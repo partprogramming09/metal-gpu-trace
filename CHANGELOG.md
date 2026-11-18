@@ -9,6 +9,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - 🩺 On Windows, when a hardware daemon is found but gives no usable answer, the `device` block says why in `daemon_info_error` (`timeout`, `invalid_json` or `missing`), never with its path. `METAL_TRACE_DAEMON_NAMES` adds other daemon file names to look for.
 
+- 🔋 On macOS, `machine.power` says whether low power mode was on and whether the Mac warned of heat or limited its CPU, read when the recording starts and when it ends, with `changed` when a fact moved in between. `perf_compare` adds a `power` note when two runs differ in that (or one changed while recording); a summary without the key gets no note.
+
 ### Fixed
 
 - 🛠️ A daemon that answers a null, blank or non-text `cpu_architecture` or `gpu_architecture` no longer writes the text `None` or an empty value: the key is absent.

@@ -383,6 +383,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
         except OSError as error:
             raise paths.ToolError(f"recording failed: {error}") from error
         return finish(summary, json_path, layer, tier)
+    power_start = perf_report.power_state()
     before = set(config.OUT.glob(f"{label}_*"))
     tmp = pathlib.Path(os.environ.get("TMPDIR", "/tmp"))
     ktraces = set(tmp.glob("instruments*.ktrace"))
@@ -434,6 +435,8 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", m
         raise paths.ToolError(f"the program did no GPU work: it ended ({ended}) after {summary.get('duration_s', 0):.1f} s "
                               f"of recording, and its summary was not saved{kept}; check that it starts (under Wine: "
                               "the Wine build, the prefix and the program's own log)")
+    if isinstance(summary.get("machine"), dict):  # the machine is known: say its power state at both ends
+        summary["machine"]["power"] = perf_report.power_block(power_start, perf_report.power_state())
     return finish(summary, new[-1], layer, tier)
 
 

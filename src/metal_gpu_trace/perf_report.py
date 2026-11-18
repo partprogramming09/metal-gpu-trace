@@ -614,6 +614,32 @@ def screen_locked(read=read_command):
         return None
 
 
+def power_state(read=read_command):
+    """Returns {"low_power_mode", "thermal_warning"} of this Mac from `pmset`: low power mode on or off, and whether the Mac
+    has recorded a thermal or performance warning or limits its CPU speed (below 100). A fact `pmset` does not give (no
+    `pmset`, a Mac with no such key, text this does not know) is None, never a guess."""
+    state = {"low_power_mode": None, "thermal_warning": None}
+    try:
+        low = re.search(r"^\s*lowpowermode\s+(\d)\s*$", read(("pmset", "-g")), re.MULTILINE)
+        therm = read(("pmset", "-g", "therm"))
+    except (KeyError, OSError, subprocess.SubprocessError):
+        return state
+    if low:
+        state["low_power_mode"] = low.group(1) == "1"
+    speed = re.search(r"CPU_Speed_Limit\s*=\s*(\d+)", therm)
+    warned = [line for line in therm.splitlines() if "warning level" in line.lower() and "no " not in line.lower()]
+    if speed or warned or "warning level" in therm.lower():
+        state["thermal_warning"] = bool(warned) or (speed is not None and int(speed.group(1)) < 100)
+    return state
+
+
+def power_block(start, end):
+    """Returns the `power` block of `machine`: both readings, and `changed` true when a fact known at both ends differs
+    (the run's conditions moved while it was recorded)."""
+    return {"start": start, "end": end,
+            "changed": any(None not in (start[k], end[k]) and start[k] != end[k] for k in start)}
+
+
 def machine_info(device, read=read_command):
     """Returns the chip, CPU and GPU core counts, RAM, macOS and whether the screen is locked (a locked session may leave
     windows unpaced by the display) of this Mac, with no name or UUID, or None when its RAM

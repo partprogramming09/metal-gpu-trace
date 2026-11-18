@@ -453,6 +453,19 @@ def test_windows_against_metal(tmp_path):
                 near["gpu_performance_state_share"] = share_b
             (tmp_path / "mac2.json").write_text(json.dumps(near))
             assert "gpu_state" not in analysis.tool_perf_compare("mac", "mac2"), share_b
+        for run, low, changed in (("mac", False, False), ("mac2", True, False)):
+            power_summary = summary("macOS", 60.0)
+            power_summary["machine"] = {"power": {"start": {"low_power_mode": low, "thermal_warning": False},
+                                                  "end": {"low_power_mode": low, "thermal_warning": False}, "changed": changed}}
+            (tmp_path / f"{run}.json").write_text(json.dumps(power_summary))
+        power = analysis.tool_perf_compare("mac", "mac2")["power"]
+        assert power["a"]["low_power_mode"] is False and power["b"]["low_power_mode"] is True and "low power" in power["note"], power
+        power_summary["machine"]["power"]["changed"] = True  # same state at the start, but it changed in the middle of b
+        power_summary["machine"]["power"]["start"]["low_power_mode"] = False
+        (tmp_path / "mac2.json").write_text(json.dumps(power_summary))
+        assert "changed during" in analysis.tool_perf_compare("mac", "mac2")["power"]["note"]
+        (tmp_path / "mac2.json").write_text(json.dumps(summary("macOS", 60.0)))  # a generation without the key: no warning
+        assert "power" not in analysis.tool_perf_compare("mac", "mac2")
         locked_summary["machine"] = {"screen_locked": True}
         (tmp_path / "mac2.json").write_text(json.dumps(locked_summary))
         assert "screen" not in analysis.tool_perf_compare("mac", "mac2")
