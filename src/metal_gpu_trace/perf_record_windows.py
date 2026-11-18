@@ -263,7 +263,11 @@ def loaded_graphics_modules(pid):
     from ctypes import wintypes
     try:
         psapi, kernel32 = ctypes.WinDLL("psapi", use_last_error=True), ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes, kernel32.OpenProcess.restype = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        psapi.EnumProcessModulesEx.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.HMODULE), wintypes.DWORD,
+                                               ctypes.POINTER(wintypes.DWORD), wintypes.DWORD]
+        psapi.GetModuleFileNameExW.argtypes = [wintypes.HANDLE, wintypes.HMODULE, wintypes.LPWSTR, wintypes.DWORD]
         handle = kernel32.OpenProcess(0x0410, False, pid)  # PROCESS_QUERY_INFORMATION | PROCESS_VM_READ
         if not handle:
             return None
@@ -281,7 +285,7 @@ def loaded_graphics_modules(pid):
             return found
         finally:
             kernel32.CloseHandle(handle)
-    except (OSError, AttributeError, ValueError):
+    except (OSError, AttributeError, ValueError, ctypes.ArgumentError):
         return None
 
 
