@@ -164,9 +164,7 @@ def test_a_release_of_fixes_only_needs_no_improvements():
 
 
 def test_the_numbers_here_match_claude_md():
-    claude_md = ROOT / "CLAUDE.md"  # working material, not versioned: absent in a clean clone
-    if claude_md.exists():
-        assert re.search(r"(?m)^lanzamientos: continuo$", claude_md.read_text(encoding="utf-8"))
+    assert re.search(r"(?m)^lanzamientos: continuo$", (ROOT / "CLAUDE.md").read_text(encoding="utf-8"))
     assert (MIN_IMPROVEMENTS, MAX_IMPROVEMENTS) == (0, 10**9)
 
 
