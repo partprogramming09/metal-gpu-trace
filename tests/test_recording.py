@@ -39,6 +39,19 @@ def test_disk_guard(tmp_path):
                              capture_output=True, text=True, timeout=60)
     assert default.returncode != 0, "a missing TMPDIR volume must not pass the guard"
 
+@macos_only
+def test_attach_by_name_never_picks_the_process_that_called_it(tmp_path):
+    """The caller's own command line may hold the program's name (python -c "...Game.exe..."): the script must not attach to it."""
+    token = "NoSuchGame-4f1c9.exe"
+    # the command line must hold the name but none of the words the script already skips (zsh, perf_record, awk, xctrace)
+    code = ("import os, subprocess; e = os.environ; env = dict(e, PERF_PARENT_PID=str(os.getpid()), PERF_LOCK=e['T'] + '/.l', "
+            "PERF_OUT=e['T'], PERF_MIN_FREE_GB='99999999'); sh = 'z' + 'sh'; "
+            "p = subprocess.run([sh, e['S'], 'a', '5', 'attach', '-', '-', '" + token + "'], env=env, capture_output=True, text=True); "
+            "print(p.returncode); print(p.stderr)")
+    proc = subprocess.run([sys.executable, "-c", code], env={**os.environ, "S": str(PKG / "perf_record.sh"), "T": str(tmp_path)},
+                          capture_output=True, text=True, timeout=60)
+    assert proc.stdout.splitlines()[0] == "2" and f"no running process matches {token}" in proc.stdout, proc
+
 def test_levers(tmp_path):
     """memory_free_pct holds memory_pressure around a recording and stops it even when the recording fails;
     background sets PERF_PREFIX for perf_record.sh; out-of-range or Windows use is refused before anything starts."""

@@ -18,6 +18,7 @@ ADR status: proposed · accepted · rejected · superseded by NNNN.
 | [adr/0008-lift-the-standard-library-only-rule.md](adr/0008-lift-the-standard-library-only-rule.md) | Why a dependency is allowed when it saves work, and the Python 3.9 floor stays (accepted) |
 | [adr/0009-keep-the-trace-uncompressed.md](adr/0009-keep-the-trace-uncompressed.md) | Why the `.trace` is not compressed, measured with the standard library's lzma (accepted) |
 | [evidence/README.md](evidence/README.md) | How each release proves its improvements, and the rule `tests/test_docs.py` checks |
+| [evidence/reference-runs-windows.md](evidence/reference-runs-windows.md) | Reference runs on Windows: `drawstress` with and without the VegaFlow daemon, what the numbers show and what they do not |
 | [guides/run-from-a-clone.md](guides/run-from-a-clone.md) | Commands to run the server, the scripts and the checks from a clone |
 | [guides/data-and-lifecycle/](guides/data-and-lifecycle/index.md) | What a recording leaves on disk, the summary key by key, the two retention settings, the cache and the lock |
 | [guides/recording/](guides/recording/index.md) | The path of one recording, why one at a time and 30 s under Wine, what preflight checks and says, the test programs and their pins, the Windows engine, what happens when it fails |
