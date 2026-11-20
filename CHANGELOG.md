@@ -22,6 +22,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Fixed
 
+- 🩹 `perf_attach` by name no longer attaches to the process that called it when that process's own command line holds the name (it then recorded the caller and failed with «did no GPU work»); the name now skips the caller.
+
 - 🛠️ `command_buffer_errors` counted the errors of every process on the Mac; it now counts only the recorded program's command buffers (matched through `cmdbuffer-id`, since the error table has no process column), and `command_buffer_errors_scope` says `program` (a summary without that key counted every process; with no encoders table it says `all_processes`).
 - 🛠️ A daemon that answers a null, blank or non-text `cpu_architecture` or `gpu_architecture` no longer writes the text `None` or an empty value: the key is absent.
 - 🛠️ The hardware daemon's memory bus width must be a positive number (no more `bus True-bit`), its output that is not text now counts as `invalid_json`, and `METAL_TRACE_DAEMON_NAMES` ignores `.`, `..` and names with a slash or backslash.
