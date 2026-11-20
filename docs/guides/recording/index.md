@@ -2,8 +2,6 @@
 
 **Reader:** people who change how a recording is made (`recording.py`, `preflight.py`, `workloads.py`, the two recording scripts and the files in `data/`), or who need to know why a recording was refused, stopped or came back empty. Reviewed 2026-11-16.
 
-Español: [Grabar](../../es/guides/grabar/index.md)
-
 **In short:** when an agent asks to record a program, the server first checks the computer in milliseconds, then starts
 a script that runs Apple's Instruments tool on the program, waits, turns the raw capture into a small summary and
 deletes the raw capture. If anything fails, or the client cancels, no file is left behind. On Windows a separate engine

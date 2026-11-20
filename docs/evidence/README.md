@@ -37,6 +37,5 @@ Icons: ✨ new · 🔍 analysis · 🩺 diagnosis · ⚡ speed · 🛡️ safety
 
 ## The README
 
-Both READMEs get a "What's new" (`es/README.md`: "Novedades") section when a release ships: one row per improvement,
-the same rows in both, each with its icon, title, one or two sentences and a link to its heading here
-(`docs/evidence/vX.Y.Z.md#anchor`, with `../` in `es/README.md`).
+The README gets a "What's new" section when a release ships: one row per improvement, each with its icon, title,
+one or two sentences and a link to its heading here (`docs/evidence/vX.Y.Z.md#anchor`).

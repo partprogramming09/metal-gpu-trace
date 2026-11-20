@@ -2,8 +2,6 @@
 
 **Reader:** people who debug a recording that stopped half-way or a folder with odd leftovers. Reviewed 2026-11-16.
 
-Español: [Cuando falla](../../es/guides/datos-y-su-ciclo-de-vida/cuando-falla.md)
-
 > **In short:** most failures clean up after themselves. The exceptions are a script killed with no chance to clean up, a
 > table cut short and a run that did no GPU work. For each failure: what stays on disk and who removes it.
 

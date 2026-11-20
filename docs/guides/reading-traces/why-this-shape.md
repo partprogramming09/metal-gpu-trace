@@ -2,8 +2,6 @@
 
 **Reader:** people who change `traces.py` or `gputrace_read.py` and want to know why it is built as it is. Reviewed 2026-11-16.
 
-Español: [Por qué tiene esta forma](../../es/guides/leer-trazas/por-que-asi.md)
-
 > **In short:** each choice answers one worry: do not fill the disk, do not need Xcode, do not report a change that may not
 > exist, do not let a client open any file on the machine. Each row names the simpler option left out and what would go wrong.
 

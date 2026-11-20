@@ -2,8 +2,6 @@
 
 **Reader:** people who use `perf_compare`, `perf_check`, `perf_gate` and friends and want to know what each really does, or who change `analysis.py`. Reviewed 2026-11-17.
 
-Español: [Leer y comparar](../../es/guides/resumir-y-analizar/leer-y-comparar.md)
-
 **In short:** once summaries exist, `analysis.py` lists them, compares two, builds a "normal range" from several equal runs,
 and checks a new run against it. Comparing only says what moved; checking says better, worse or same; a gate is a fixed bar.
 Missing data stays "unknown" and is never turned into zero.

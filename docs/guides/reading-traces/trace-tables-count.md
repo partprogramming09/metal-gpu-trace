@@ -5,8 +5,6 @@
 > **Since the tables file:** when the `.trace` is gone, both tools read `<run>.tables.sqlite`, which holds the tables the summary
 > read (`trace_count` says "not in this trace's tables file" for the others). See [the tables file](tables-file.md).
 
-Español: [`trace_tables` y `trace_count`](../../es/guides/leer-trazas/tablas-y-conteo.md)
-
 > **In short:** a recording holds many tables, like the sheets of a spreadsheet, and some are empty. `trace_tables` lists
 > their names; `trace_count` says which have rows, so nobody reads a page of nothing. Then read one with [`trace_query`](./trace-query.md).
 

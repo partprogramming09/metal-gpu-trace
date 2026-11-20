@@ -2,8 +2,6 @@
 
 **Reader:** people who run `perf_baseline_record`, `perf_ab`, `perf_cold_warm` or `perf_sweep`, or who change `experiments.py`. Reviewed 2026-11-16.
 
-Español: [Los experimentos](../../es/guides/resumir-y-analizar/experimentos.md)
-
 **In short:** one measurement of a program is not trustworthy, because equal runs differ a little by themselves. The
 experiments record the program several times in a planned order, then use the readers of the previous page to say whether a
 difference is real. They take minutes per run, so use them on purpose.

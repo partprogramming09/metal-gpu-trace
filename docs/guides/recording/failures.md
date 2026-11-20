@@ -2,8 +2,6 @@
 
 **Reader:** people who debug a refused, stopped or empty recording, and people who change the recorder. Reviewed 2026-11-16. Labels: see [Recording](./index.md#how-to-read-the-labels).
 
-Español: [Cuando falla](../../es/guides/grabar/fallos.md)
-
 **In short:** whatever goes wrong, a recording either gives a summary or leaves nothing behind: no half-finished files
 and no stuck lock. This page lists, for each failure, the message seen and what is left on disk, then the rules for
 changing the recorder so the cleanup keeps working. Example: if the client cancels, the answer is

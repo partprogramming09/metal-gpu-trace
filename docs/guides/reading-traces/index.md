@@ -2,8 +2,6 @@
 
 **Reader:** people who ask the server what is inside a recording (a `.trace`, a `.gputrace` or the frames of a run), or who change `traces.py` or `gputrace_read.py`. Reviewed 2026-11-16.
 
-Español: [Leer trazas](../../es/guides/leer-trazas/index.md)
-
 > **In short:** a recording is the raw file a measurement leaves behind; a summary is the few numbers taken from it. These
 > seven tools open the raw file, so you can ask "what is in it?" without Instruments or Xcode: three read an Instruments
 > `.trace`, one turns a run's frames into a timeline Perfetto shows, three read a Metal `.gputrace`. One example of each below.

@@ -2,8 +2,6 @@
 
 **Reader:** people who plan a fix in this area or change it. Reviewed 2026-11-16.
 
-Español: [Límites conocidos y tocarlo sin romperlo](../../es/guides/datos-y-su-ciclo-de-vida/limites.md)
-
 > **In short:** eleven surprising behaviours of today's code. Nine are still open and written down; two (rows 1 and 6)
 > were fixed on 2026-11-16 and stay listed with their commits. Then come the rules for changing the data area without
 > breaking older recordings, the cleanup or the privacy of shared summaries.

@@ -2,7 +2,7 @@
 
 **Reader:** people who add or change a number, a table, a comparison or a threshold in `perf_report.py`, `metrics.py`, `analysis.py` or `experiments.py`. Reviewed 2026-11-16.
 
-Español: [Tocarlo sin romperlo](../../es/guides/resumir-y-analizar/tocarlo-sin-romperlo.md) · Back to the [guide index](./index.md).
+Back to the [guide index](./index.md).
 
 **In short:** the rule that holds everything together is that a number nobody could measure is "missing", never zero. A
 second rule: the readers work after the recording is gone, so they never open the trace (`analysis.py` reads only summaries

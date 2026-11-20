@@ -4,8 +4,6 @@
 
 <!-- mcp-name: io.github.partprogramming09/metal-gpu-trace -->
 
-English · [Español](es/README.md)
-
 ## In short
 
 metal-gpu-trace measures how hard a program works the graphics chip (the GPU) of a Mac with Apple silicon, and whether its pictures come out evenly. It is for people who port or test games and apps on a Mac (Windows games under Wine included), and for the AI coding agents that help them.
@@ -78,7 +76,7 @@ Version 0.28.0. Older versions: [changelog](CHANGELOG.md).
 
 ## For developers
 
-Measures how a Wine or macOS program uses the GPU on an Apple silicon Mac, from the command line or through an AI coding agent: GPU time per frame, frame pacing, FPS and memory; whether a translation layer splits the work into too many short encoders; `.gputrace` captures read without Xcode; and Apple's published facts per GPU family. Python 3.9+ standard library, `zsh`, and Xcode (for `xctrace`). MIT license ([LICENSE](LICENSE)). [Español](es/README.md).
+Measures how a Wine or macOS program uses the GPU on an Apple silicon Mac, from the command line or through an AI coding agent: GPU time per frame, frame pacing, FPS and memory; whether a translation layer splits the work into too many short encoders; `.gputrace` captures read without Xcode; and Apple's published facts per GPU family. Python 3.9+ standard library, `zsh`, and Xcode (for `xctrace`). MIT license ([LICENSE](LICENSE)).
 
 Architecture, decisions and guides: [`docs/README.md`](docs/README.md). Sending a change: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 

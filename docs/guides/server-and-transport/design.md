@@ -2,7 +2,7 @@
 
 **Reader:** people who change the structure of the server or wonder why a choice was made. Reviewed 2026-11-16.
 
-Español: [Diseño](../../es/guides/servidor-y-transporte/diseno.md) · [Index](./index.md)
+[Index](./index.md)
 
 **In short:** the server does one job at a time on purpose: two recordings at once would spoil both measurements. The
 "doors" (stdio and HTTP) only receive and queue requests; one worker does the work, so the rules live in one place.

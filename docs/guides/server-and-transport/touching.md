@@ -2,7 +2,7 @@
 
 **Reader:** people who add a tool, a method, an HTTP check, a transport or a limit. Reviewed 2026-11-16.
 
-Español: [Tocarlo sin romperlo](../../es/guides/servidor-y-transporte/tocarlo.md) · [Index](./index.md)
+[Index](./index.md)
 
 **In short:** a checklist per kind of change. Most touch several files because tests and the README count the tools on purpose.
 

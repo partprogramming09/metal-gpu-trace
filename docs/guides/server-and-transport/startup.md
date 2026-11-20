@@ -2,7 +2,7 @@
 
 **Reader:** people who change the command line, the transports' start-up or what gets configured on import. Reviewed 2026-11-16.
 
-Español: [Arranque](../../es/guides/servidor-y-transporte/arranque.md) · [Index](./index.md)
+[Index](./index.md)
 
 **In short:** one command starts the server. With no extra word it listens on stdin/stdout (how an agent usually launches it); with `--http` it listens on a local web address and refuses to start without a secret token. Before serving, two internal pieces are wired together once, on import.
 

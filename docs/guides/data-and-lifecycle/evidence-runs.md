@@ -2,8 +2,6 @@
 
 **Reader:** people who want to check the claims of this guide against real output. Reviewed 2026-11-16.
 
-Español: [Evidencia E1 a E7: la carpeta de corridas](../../es/guides/datos-y-su-ciclo-de-vida/evidencia-corridas.md)
-
 > **In short:** the commands really run on a real runs folder, with their output, backing the claims about files, sizes,
 > keys and cleanup. Each block is E1 to E7 and the other pages point to it. Where a command could not be run, it says "not reproduced".
 

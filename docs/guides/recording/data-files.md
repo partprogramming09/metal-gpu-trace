@@ -2,8 +2,6 @@
 
 **Reader:** people who add a GPU family or a test program by editing JSON in `src/metal_gpu_trace/data/`. Reviewed 2026-11-16. Labels: see [Recording](./index.md#how-to-read-the-labels).
 
-Español: [Los archivos de datos](../../es/guides/grabar/archivos-de-datos.md)
-
 **In short:** the project keeps two lists of facts in plain files instead of in the code: which Apple graphics chips
 belong to which GPU family, and which test programs exist with their download fingerprints. Adding one is an edit of a
 file plus a test, not a change of logic. Example: adding a key `Apple11` to the families file makes its resource appear by itself.

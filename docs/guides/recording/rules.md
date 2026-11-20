@@ -2,8 +2,6 @@
 
 **Reader:** people who change the lock or the advice about recording length. Reviewed 2026-11-16. Labels: see [Recording](./index.md#how-to-read-the-labels).
 
-Español: [Dos reglas](../../es/guides/grabar/reglas.md)
-
 **In short:** only one recording may run at a time on a Mac, because two programs sharing the graphics chip spoil each
 other's numbers. Under Wine, a recording should last 30 seconds or more, because the first seconds are spent starting up.
 Example: a second `perf_record` while one is running is refused before it starts anything.

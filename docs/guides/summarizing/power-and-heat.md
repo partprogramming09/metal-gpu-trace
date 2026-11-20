@@ -3,8 +3,6 @@
 **Reader:** people who compare two recordings made on a Mac, and anyone who reads a `power` note or a `machine.power`
 block and wants to know what it means. Reviewed 2026-11-17.
 
-Español: [Energía y calor en los dos extremos de una corrida](../../es/guides/resumir-y-analizar/energia-y-calor.md)
-
 Back to the [guide index](./index.md).
 
 **In short:** a Mac in low power mode, or a hot Mac, slows its chip to save power or to cool down, and the frames slow

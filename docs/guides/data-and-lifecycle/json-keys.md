@@ -2,8 +2,6 @@
 
 **Reader:** people who add, read or change a key of the summary JSON. Reviewed 2026-11-18.
 
-Español: [El resumen, clave por clave](../../es/guides/datos-y-su-ciclo-de-vida/claves-del-resumen.md)
-
 > **In short:** the summary is the small file with the numbers of one recording. Three pieces of code add keys one after
 > another, and some keys depend on what the recording captured, so a reader must treat conditional keys as optional.
 

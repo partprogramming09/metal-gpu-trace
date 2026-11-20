@@ -2,7 +2,7 @@
 
 **Reader:** people who add, rename or describe a tool. Reviewed 2026-11-16.
 
-Español: [Registro](../../es/guides/servidor-y-transporte/registro.md) · [Index](./index.md)
+[Index](./index.md)
 
 **In short:** the registry is the menu of what an agent can ask for: 26 tools, a few read-only data files and three ready-made prompts. It is plain data, one row per tool; the same row feeds the list the agent sees, the check of its arguments and the function that runs. Tests keep the menu and the README in agreement.
 

@@ -2,8 +2,6 @@
 
 **Reader:** people who want to repeat a check on the pinned test programs, the cache or the GPU families file. Reviewed 2026-11-16. Labels: see [Recording](./index.md#how-to-read-the-labels).
 
-Español: [Evidencia: datos](../../es/guides/grabar/evidencia-datos.md)
-
 **In short:** this page has the commands, with their real output, behind the test programs (sizes, hashes, the files they
 hold), what the download cache contained on the machine checked, and the GPU families file (E4, E5, E7). The other checks
 (E1, E2, E3, E6, E8, E9, E10) and what was not reproduced are in [Evidence](./evidence.md).

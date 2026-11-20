@@ -2,8 +2,6 @@
 
 **Reader:** people who change `gputrace_read.py` or wonder how much to trust what the capture tools say. Reviewed 2026-11-16.
 
-Español: [El formato `.gputrace`](../../es/guides/leer-trazas/formato-gputrace.md)
-
 > **In short:** a `.gputrace` is the capture Xcode saves of a program's Metal drawing commands. This project reads its main
 > file as a list of numbered entries, one Metal call each, keeping the call number and the readable text inside. **Important:**
 > nobody here has examined a real capture, so everything below is what the code assumes, not checked against Xcode.

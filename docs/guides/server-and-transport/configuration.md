@@ -2,7 +2,9 @@
 
 **Reader:** people who set up the server: environment variables and project files.
 
-Español: [Configuración](../../es/guides/servidor-y-transporte/configuracion.md) · [Index](./index.md)
+[Index](./index.md)
+
+**In short:** the server reads its settings from environment variables (named values set before it starts) and from a small project file, `metal-gpu-trace.json`, that a repository can hold. Set two things first: where recordings go (`METAL_TRACE_OUT`, as an absolute path; a project file takes precedence) and how much is kept (`KEEP_RUNS` for the number of recordings, `METAL_TRACE_MAX_DISK_MB` for the disk size). The tables below list every setting and what it changes.
 
 ## Environment variables
 

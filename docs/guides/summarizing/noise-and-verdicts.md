@@ -2,7 +2,7 @@
 
 **Reader:** people deciding whether a change really made a program faster or slower. Reviewed 2026-11-17.
 
-Español: [Ruido y veredictos](../../es/guides/resumir-y-analizar/ruido-y-veredictos.md) · Back to the [guide index](./index.md).
+Back to the [guide index](./index.md).
 
 **In short:** measuring the same program twice never gives the same number. So the project does not call a change "real"
 until it falls outside what equal runs already do. Four tools look alike and answer different questions; this page puts

@@ -2,8 +2,6 @@
 
 **Reader:** people who change settings, the project file or anything that opens a file of the runs folder. Reviewed 2026-11-16.
 
-Español: [El archivo de proyecto, `config.py` y `paths.py`](../../es/guides/datos-y-su-ciclo-de-vida/proyecto-y-configuracion.md)
-
 > **In short:** a repository can carry a small file saying "keep this project's recordings here". Because cleanup deletes
 > files in that folder, it is checked hard. `config.py` holds the settings; `paths.py` stops a caller from naming a file it should not touch, even through a link.
 

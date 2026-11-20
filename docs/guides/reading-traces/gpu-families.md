@@ -2,8 +2,6 @@
 
 **Reader:** people who ask what a GPU can do, or who change `gpu_family` or its data file. Reviewed 2026-11-16.
 
-Español: [Los datos de las familias de GPU](../../es/guides/leer-trazas/familias-gpu.md)
-
 > **In short:** a small reference book, not a reader of recordings. Give it a chip name such as `M1 Pro` and it returns the
 > facts Apple publishes about that GPU family, with their source links: "what can this GPU do?" while reading a trace.
 

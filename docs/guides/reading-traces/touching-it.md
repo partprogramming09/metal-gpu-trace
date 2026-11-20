@@ -2,8 +2,6 @@
 
 **Reader:** people who add or change a tool in `traces.py` or `gputrace_read.py`. Reviewed 2026-11-16.
 
-Español: [Tocarlo sin romperlo](../../es/guides/leer-trazas/tocarlo.md)
-
 > **In short:** one rule per kind of change. The idea behind most: never trust a name or a path from a client, never count a
 > guess as a fact, and keep tests and the client contract in step with the code.
 

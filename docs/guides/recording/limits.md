@@ -2,8 +2,6 @@
 
 **Reader:** people who decide what to fix next in recording. Reviewed 2026-11-16. Labels: see [Recording](./index.md#how-to-read-the-labels).
 
-Español: [Límites conocidos](../../es/guides/grabar/limites.md)
-
 **In short:** things recording does today that a reader might not expect: a few error messages show a local path, the
 README and the code disagree on the deadline, some Windows details are rougher than on macOS. Each item says where it
 is in the code and how sure we are; none is fixed by this guide.
