@@ -24,6 +24,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Fixed
 
+- 🧪 The `kill_program` test builds its SIGTERM-ignoring program with `cc` instead of copying `/bin/sleep`: newer macOS kills a copied system binary with SIGKILL as it starts, so the test never saw the process.
+
 - 🩹 `perf_attach` by name no longer attaches to the process that called it when that process's own command line holds the name (it then recorded the caller and failed with «did no GPU work»); the name now skips the caller.
 
 - 🛠️ `command_buffer_errors` counted the errors of every process on the Mac; it now counts only the recorded program's command buffers (matched through `cmdbuffer-id`, since the error table has no process column), and `command_buffer_errors_scope` says `program` (a summary without that key counted every process; with no encoders table it says `all_processes`).
