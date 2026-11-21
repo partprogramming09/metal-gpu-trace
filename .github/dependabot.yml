@@ -1,0 +1,11 @@
+# pip reads pyproject.toml (the uv ecosystem needs a uv.lock, which this repo does not keep)
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
