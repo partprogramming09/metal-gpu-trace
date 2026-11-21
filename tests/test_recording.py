@@ -502,7 +502,6 @@ def test_kill_program_and_watchdog(tmp_path):
     """kill_program ends a program that ignores SIGTERM, and perf_record.sh stops its recording, frees its lock and
     its program when the server named in PERF_PARENT_PID dies."""
     import secrets
-    import shutil
     import time
     from metal_gpu_trace import recording
     from support import wait_until
@@ -513,8 +512,11 @@ def test_kill_program_and_watchdog(tmp_path):
     program = hung.rename(tmp_path / f"hang-{token}")
     # a program that ignores SIGTERM
     stubborn = tmp_path / f"ig-{token}"
-    shutil.copy(shutil.which("sleep"), stubborn)
-    proc = subprocess.Popen(["sh", "-c", f"trap '' TERM; exec {stubborn} 60"])
+    # built here, not a copy of /bin/sleep: macOS kills a copied system binary with SIGKILL as it starts
+    source = tmp_path / "ig.c"
+    source.write_text("#include <unistd.h>\nint main(void) { sleep(60); return 0; }\n")
+    subprocess.run(["cc", "-o", str(stubborn), str(source)], check=True)
+    proc = subprocess.Popen(["sh", "-c", f"trap '' TERM; exec {stubborn}"])
     wait_until(lambda: subprocess.run(["pgrep", "-x", stubborn.name], capture_output=True).returncode == 0)
     recording.kill_program(stubborn.name)
     assert proc.wait(timeout=15) is not None, "kill_program must escalate to SIGKILL"
