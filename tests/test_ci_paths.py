@@ -58,6 +58,20 @@ def test_ci_supply_chain():
     assert re.search(r"sha256sum -c", publish)
 
 
+def test_dependabot_and_secret_scan():
+    """Dependabot updates the pip dependencies and the pinned actions weekly, and every pull request is scanned for
+    secrets by a fixed gitleaks CLI checked against its SHA-256 (the CLI needs no GITLEAKS_LICENSE)."""
+    dependabot = (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+    for ecosystem in ("pip", "github-actions"):
+        assert re.search(rf'package-ecosystem: "{ecosystem}"\n\s+directory: "/"\n\s+schedule:\n\s+interval: "weekly"',
+                         dependabot), ecosystem
+    security = (ROOT / ".github" / "workflows" / "security.yml").read_text(encoding="utf-8")
+    assert re.search(r"^on:\n  pull_request:", security, re.M)
+    assert "fetch-depth: 0" in security and "gitleaks-action" not in security
+    assert re.search(r"gitleaks/releases/download/v\d+\.\d+\.\d+/", security) and "sha256sum -c" in security
+    assert re.search(r"gitleaks git .*--log-opts=", security)
+
+
 def test_ci_lint():
     """CI lints with a pinned ruff, configured in pyproject.toml for Python 3.9 and 120-character lines."""
     workflow = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
