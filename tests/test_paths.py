@@ -123,6 +123,8 @@ def test_a_folder_without_permission_is_a_clear_error_without_a_temporary(tmp_pa
     """Where the folder cannot be written, the error names the reason and no temporary file is left in it."""
     from metal_gpu_trace import paths
 
+    if sys.platform == "win32":  # no geteuid, and chmod does not keep a file from being created
+        return None
     if os.geteuid() == 0:  # root writes anywhere
         return None
     folder = tmp_path / "runs"
