@@ -37,6 +37,17 @@ def test_diagnose(tmp_path):
         assert got["bottleneck"] == "CPU_SUBMISSION_BOUND" and got["hitches"]["count"] == 3, got
         assert any("compilador gráfico" in r for r in got["recommendations"]), got
         assert not any("FlipQueueSize" in r for r in got["recommendations"]), got
+        for hz, fps, p50, p95, label in ((60, 60.1, 16.6, 17.2, "DISPLAY_SYNCED"), (120, 119.9, 8.33, 8.9, "DISPLAY_SYNCED"),
+                                         (None, 60.1, 16.6, 25.0,"CPU_SUBMISSION_BOUND"),
+                                         (None, 45.0, 22.2, 22.8, "CPU_SUBMISSION_BOUND")):
+            vs = {**busy, "template": "Windows Native Trace",
+                  "gpu": {**busy["gpu"], "fps_estimate": fps,
+                          "frame_interval_ms": {"count": 499, "mean": 16.7, "p50": p50, "p95": p95}}}
+            (tmp_path / "vs.json").write_text(json.dumps(vs))
+            got = analysis.tool_perf_diagnose("vs")
+            assert got["bottleneck"] == label and got["display_synced_hz"] == hz, (fps, got["bottleneck"])
+            advice = " ".join(got["recommendations"])
+            assert ("instancing" in advice or "FlipQueueSize" in advice) == (label == "CPU_SUBMISSION_BOUND"), got
         for fps, p50, p95, synced in ((119.9, 8.33, 8.9, 120), (60.1, 16.6, 17.2, 60), (119.9, 8.3, 14.0, None),
                                       (97.0, 10.3, 10.6, None), (None, None, None, None),
                                       (118.9, 8.41, 9.824, 120)):

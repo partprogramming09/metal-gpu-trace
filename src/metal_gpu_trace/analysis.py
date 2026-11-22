@@ -411,7 +411,8 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
     elif idle_share is None:
         bottleneck = "UNKNOWN"
     elif has_frame_data and (idle_share >= 0.25 or (too_many_short and idle_share >= 0.20)):
-        bottleneck = "CPU_SUBMISSION_BOUND"
+        # A program locked to the display waits for it, so its GPU idle time says nothing about the CPU.
+        bottleneck = "DISPLAY_SYNCED" if display_synced_hz(gpu) else "CPU_SUBMISSION_BOUND"
     elif has_frame_data and idle_share <= 0.15 and gpu_ms_mean > 0 and (
             gpu_ms_mean >= 0.80 * interval_ms_mean if interval_ms_mean > 0 else True):
         bottleneck = "GPU_BOUND"
