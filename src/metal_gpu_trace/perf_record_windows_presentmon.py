@@ -3,27 +3,32 @@ frame intervals. Part of perf_record_windows, which re-exports these names."""
 import csv
 import os
 import pathlib
+import shutil
 import statistics
 
 from metal_gpu_trace import perf_report
 
 
-def presentmon_dir():
-    """Returns the directory presentmon_install saves PresentMon in: %LOCALAPPDATA%\\metal-gpu-trace."""
-    return pathlib.Path(os.environ.get("LOCALAPPDATA", "~")).expanduser() / "metal-gpu-trace"
+def presentmon_dir(environ=None):
+    """Returns the directory presentmon_install saves PresentMon in: %LOCALAPPDATA%\\metal-gpu-trace, read from
+    `environ` (the caller's environment) and not from the process's own."""
+    environ = os.environ if environ is None else environ
+    return pathlib.Path(environ.get("LOCALAPPDATA", "~")).expanduser() / "metal-gpu-trace"
 
 
-def find_presentmon():
+def find_presentmon(environ=None, which=None):
     """Returns the path of Intel's PresentMon console application, or None: $PRESENTMON_EXE, then
-    %LOCALAPPDATA%\\metal-gpu-trace\\PresentMon*.exe, then PATH."""
-    import shutil
-    explicit = os.environ.get("PRESENTMON_EXE")
+    %LOCALAPPDATA%\\metal-gpu-trace\\PresentMon*.exe, then PATH. `environ` and `which` default to the process's own,
+    so a caller that passes its own environment (preflight's report, a test) is obeyed."""
+    environ = os.environ if environ is None else environ
+    which = shutil.which if which is None else which
+    explicit = environ.get("PRESENTMON_EXE")
     if explicit:
         return explicit if pathlib.Path(explicit).is_file() else None
-    cache = presentmon_dir()
+    cache = presentmon_dir(environ)
     for candidate in sorted(cache.glob("PresentMon*.exe"), reverse=True):
         return str(candidate)
-    return shutil.which("PresentMon") or shutil.which("PresentMon-x64")
+    return which("PresentMon") or which("PresentMon-x64")
 
 
 def read_presentmon_csv(path):

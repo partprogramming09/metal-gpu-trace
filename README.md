@@ -106,7 +106,7 @@ Each recording keeps a JSON summary and three CSVs, about 2 MB for 10 s (most of
 
 ### Install
 
-The server runs with [`uvx`](https://docs.astral.sh/uv/) from [PyPI](https://pypi.org/project/metal-gpu-trace/), with nothing to clone (`brew install uv` installs it). Recording also needs Xcode (`xcrun xctrace version` prints a version).
+The server runs with [`uvx`](https://docs.astral.sh/uv/) from [PyPI](https://pypi.org/project/metal-gpu-trace/), with nothing to clone (`brew install uv` installs it). Recording also needs Xcode: `xcrun --find xctrace` must find `xctrace`, which the Command Line Tools alone do not include (install Xcode from the App Store and point `xcode-select` at it).
 
 ```sh
 uvx metal-gpu-trace
@@ -118,8 +118,8 @@ Environment variables and project files: [Configuration](docs/guides/server-and-
 
 ### One command: `init`
 
-`uvx metal-gpu-trace init` finds the AI apps installed on this Mac (Claude Code, Claude Desktop, Cursor, Codex CLI)
-and adds the server to each, with the absolute path of `uvx` and `METAL_TRACE_OUT` set to `~/perf-runs`, resolved.
+`uvx metal-gpu-trace init` finds the AI apps installed on this Mac or PC (Claude Code, Claude Desktop, Cursor, Codex
+CLI) and adds the server to each, with the absolute path of `uvx` and `METAL_TRACE_OUT` set to `~/perf-runs`, resolved.
 
 ```sh
 uvx metal-gpu-trace init --dry-run                       # show what it would write, write nothing
@@ -131,8 +131,8 @@ Options: `--client claude-code|claude-desktop|cursor|codex|vscode`, `--wine DIR`
 merged (your other servers stay) and copied to `<file>.bak` first; a file that is not valid JSON is refused untouched.
 For Codex the block is appended to `config.toml` when missing, and only shown when `[mcp_servers.metal-trace]` is
 already there. Claude Code is registered with `claude mcp add`, not by editing its file. VS Code needs `--project`
-(it writes `.vscode/mcp.json`); `--project` files hold absolute paths of your machine, so keep them out of git. Paths
-of apps on other systems are not verified yet: init says "not supported yet" there. Restart the app afterwards.
+(it writes `.vscode/mcp.json`); `--project` files hold absolute paths of your machine, so keep them out of git. init is
+supported on macOS and Windows; on other systems it says "not supported yet". Restart the app afterwards.
 
 ### Claude Code
 
@@ -150,11 +150,15 @@ On Windows the server records native programs (`src/metal_gpu_trace/perf_record_
 
 ```powershell
 winget install --id=astral-sh.uv -e
-claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=%USERPROFILE%\perf-runs -- uvx metal-gpu-trace
+uvx metal-gpu-trace init
 claude mcp list
 ```
 
-In JSON clients use `"command": "uvx"` (or the full path `where uvx` prints) and Windows paths with doubled backslashes. Claude Desktop reads `%APPDATA%\Claude\claude_desktop_config.json`. Run the Windows tests with `python -m pytest tests/test_perf_record_windows.py`.
+`init` writes the server into Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`), Cursor
+(`%USERPROFILE%\.cursor\mcp.json`) and Codex (`%USERPROFILE%\.codex\config.toml`), and finds `uvx.exe` on `PATH` or in
+`%USERPROFILE%\.local\bin`; without uv it names the `winget` command. In JSON clients use `"command": "uvx"` (or the
+full path `where uvx` prints) and Windows paths with doubled backslashes. Run the Windows tests with
+`python -m pytest tests/test_perf_record_windows.py`.
 
 ### Claude Desktop, Cursor and other JSON clients
 

@@ -46,7 +46,7 @@ def find_uvx(environ, home, extra_dirs=None, windows=False):
     found = shutil.which("uvx", path=environ.get("PATH", ""))
     if found:
         return os.path.abspath(found)
-    names = ("uvx", "uvx.exe") if windows else ("uvx",)
+    names = ("uvx.exe", "uvx") if windows else ("uvx",)  # .exe first: os.access passes for any file on Windows
     for folder in ((WINDOWS_UVX_DIRS if windows else UVX_DIRS) if extra_dirs is None else extra_dirs):
         base = pathlib.Path(folder.replace("~", str(home), 1))
         for name in names:
@@ -186,17 +186,23 @@ def merge_toml(path, block, dry_run):
 
 
 def claude_code(command, env, scope, dry_run, run=subprocess.run, which=shutil.which):
-    """Registers the server with `claude mcp add` (never editing ~/.claude.json by hand); skips it when present."""
-    argv = ["claude", "mcp", "add", "--scope", scope, NAME]
+    """Registers the server with `claude mcp add` (never editing ~/.claude.json by hand); skips it when present. The
+    path `which` returned is used: on Windows Claude Code is claude.cmd, which subprocess cannot start by bare name."""
+    claude = which("claude")
+    argv = [claude or "claude", "mcp", "add", "--scope", scope, NAME]
     for key, value in env.items():
         argv += ["-e", f"{key}={value}"]
     argv += ["--", command, "metal-gpu-trace"]
     shown = " ".join(shlex.quote(a) for a in argv)
-    if dry_run or not which("claude"):
+    if dry_run or not claude:
         return f"claude-code: {'would run' if dry_run else 'claude is not on PATH; run'}\n  {shown}"
-    if run(["claude", "mcp", "get", NAME], capture_output=True).returncode == 0:
-        return f"claude-code: {NAME} already added (claude mcp remove {NAME} to redo it)"
-    done = run(argv, capture_output=True, text=True)
+    try:
+        if run([claude, "mcp", "get", NAME], capture_output=True).returncode == 0:
+            return f"claude-code: {NAME} already added (claude mcp remove {NAME} to redo it)"
+        done = run(argv, capture_output=True, text=True)
+    except OSError as error:  # a .cmd that still cannot be started: say it, do not abort the other clients
+        raise InitError(f"claude could not be run ({error.strerror or error}); install Claude Code or pass --client "
+                        "for another app") from None
     if done.returncode:
         raise InitError(f"claude mcp add failed: {(done.stderr or done.stdout).strip()}")
     return "claude-code: configured"

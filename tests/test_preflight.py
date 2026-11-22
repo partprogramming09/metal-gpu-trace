@@ -5,7 +5,7 @@ import shutil
 import sys
 
 import support  # noqa: F401  (puts src/ on sys.path)
-from metal_gpu_trace import config, paths, perf_record_windows, perf_record_windows_presentmon, preflight, recording
+from metal_gpu_trace import config, paths, perf_record_windows, preflight, recording
 
 Usage = collections.namedtuple("Usage", "total used free")
 GB = 2**30
@@ -45,13 +45,13 @@ def setup(tmp_path, free_gb=500):
 
 
 class Saved:
-    """Restores what a test changed: config.OUT, config.LOCK, shutil.disk_usage and sys.platform."""
+    """Restores what a test changed: config.OUT, config.LOCK, shutil.disk_usage, sys.platform and preflight.elevated."""
     def __enter__(self):
-        self.state = config.OUT, config.LOCK, shutil.disk_usage, sys.platform, os.kill, shutil.which
+        self.state = config.OUT, config.LOCK, shutil.disk_usage, sys.platform, os.kill, shutil.which, preflight.elevated
         return self
 
     def __exit__(self, *exc):
-        config.OUT, config.LOCK, shutil.disk_usage, sys.platform, os.kill, shutil.which = self.state
+        config.OUT, config.LOCK, shutil.disk_usage, sys.platform, os.kill, shutil.which, preflight.elevated = self.state
 
 
 def test_passes_when_everything_is_in_place(tmp_path):
@@ -117,21 +117,57 @@ def test_missing_xctrace_says_to_install_xcode_not_the_command_line_tools(tmp_pa
         assert str(tmp_path) not in found[0]["solution"], found[0]
 
 
+def windows_report(tmp_path, which):
+    """Returns the environment report of a Windows PC that has `which` and no Process Monitor in its cache."""
+    return preflight.environment_report(wine="native", seconds=30, environ={"PATH": str(tmp_path / "empty"),
+                                                                            "LOCALAPPDATA": str(tmp_path / "local")},
+                                        read=lambda argv: "no lock here", alive=lambda pid: False,
+                                        platform="win32", which=which)
+
+
+def test_xctrace_is_found_with_the_callers_environment(tmp_path):
+    """xcrun must see the DEVELOPER_DIR of the request, not the process's own: passing environ only to `which` was half
+    the check, and `xcode-select` can point at the Command Line Tools while DEVELOPER_DIR names Xcode."""
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    xcrun = stubs / "xcrun"
+    xcrun.write_text('#!/bin/sh\n[ "$DEVELOPER_DIR" = "test-developer-dir-4f1c9" ] && echo xctrace\n')
+    xcrun.chmod(0o755)
+    environ = {"PATH": str(stubs), "DEVELOPER_DIR": "test-developer-dir-4f1c9"}
+    assert preflight.xctrace_problem(environ, shutil.which) is None
+    assert preflight.xctrace_problem({"PATH": str(stubs)}, shutil.which) is not None
+
+
 def test_windows_without_presentmon_says_how_to_install_it(tmp_path):
-    """PresentMon is optional (the engine falls back to the desktop compositor), so the report names it without refusing."""
+    """PresentMon is optional (the engine falls back to the desktop compositor), so the report names it without refusing.
+    The lookup uses the `which` and `environ` the report received, not the process's own."""
     with Saved():
-        kw = setup(tmp_path)
-        sys.platform = "win32"
-        saved = perf_record_windows_presentmon.find_presentmon
-        perf_record_windows_presentmon.find_presentmon = lambda: None
-        try:
-            report = preflight.environment_report(wine="native", seconds=30, environ={"PATH": str(tmp_path / "empty")},
-                                                  read=kw["read"], alive=kw["alive"])
-            found = [item for item in report["checks"] if item["name"] == "presentmon"]
-            assert found[0]["status"] == "missing" and "presentmon_install" in found[0]["solution"], report
-            assert report["ok"] is True, "without PresentMon the engine still records: the report must not refuse it"
-        finally:
-            perf_record_windows_presentmon.find_presentmon = saved
+        report = windows_report(tmp_path, which=lambda name, **kw: None)
+        found = [item for item in report["checks"] if item["name"] == "presentmon"]
+        assert found[0]["status"] == "missing" and "presentmon_install" in found[0]["solution"], report
+        assert report["ok"] is True, "without PresentMon the engine still records: the report must not refuse it"
+
+
+def test_windows_presentmon_found_is_ok(tmp_path):
+    with Saved():
+        report = windows_report(tmp_path, which=lambda name, **kw: str(tmp_path / name))
+        found = [item for item in report["checks"] if item["name"] == "presentmon"]
+        assert found[0]["status"] == "ok" and "solution" not in found[0], report
+
+
+def test_windows_permissions_say_whether_it_is_elevated_without_refusing(tmp_path):
+    """PresentMon wants administrator rights; the file is still written, so the check is not fatal."""
+    with Saved():
+        for admin, status in ((False, "missing"), (True, "ok"), (None, "unknown")):
+            preflight.elevated = lambda admin=admin: admin
+            report = windows_report(tmp_path, which=lambda name, **kw: None)
+            found = [item for item in report["checks"] if item["name"] == "permissions"][0]
+            assert found["status"] == status and found["fatal"] is False, (admin, report)
+            if admin is False:
+                assert "not elevated" in found["solution"], found
+            else:
+                assert "solution" not in found, found
+            assert report["ok"] is True, report
 
 
 def test_not_enough_disk_names_the_override(tmp_path):
@@ -144,6 +180,16 @@ def test_not_enough_disk_names_the_override(tmp_path):
         preflight.check(**kw)
         kw["environ"]["PERF_MIN_FREE_GB"] = "nonsense"  # not a number: the formula applies
         refused(["26 GB needed"], **kw)
+
+
+def test_unreadable_disk_is_an_entry_of_the_environment_report(tmp_path):
+    with Saved():
+        kw = setup(tmp_path)
+        shutil.disk_usage = lambda path: (_ for _ in ()).throw(OSError("gone"))
+        report = preflight.environment_report(seconds=30, environ=kw["environ"], read=kw["read"], alive=kw["alive"])
+        found = [item for item in report["checks"] if item["name"].startswith("disk (")]
+        assert len(found) == 2 and all(i["status"] == "missing" and i["fatal"] for i in found), report
+        assert all("cannot be read" in i["solution"] and str(tmp_path) not in i["solution"] for i in found), found
 
 
 def test_disk_formula_matches_the_shell():

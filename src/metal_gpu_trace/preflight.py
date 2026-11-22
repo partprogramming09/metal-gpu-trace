@@ -101,9 +101,9 @@ def xctrace_problem(environ, which):
     xcrun = which("xcrun", path=environ.get("PATH", ""))
     if not xcrun:
         return XTRACE_MISSING
-    try:
-        found = subprocess.run([xcrun, "--find", "xctrace"], capture_output=True, text=True, timeout=20)
-    except (OSError, subprocess.SubprocessError):
+    try:  # the caller's environment, so DEVELOPER_DIR (and a test's PATH) is the one xcrun sees
+        found = subprocess.run([xcrun, "--find", "xctrace"], capture_output=True, text=True, timeout=20, env=environ)
+    except (OSError, ValueError, subprocess.SubprocessError):  # a value with a null byte never reaches xcrun
         return XTRACE_MISSING
     return None if found.returncode == 0 else XTRACE_MISSING
 
@@ -140,8 +140,8 @@ def environment_report(*, wine=None, seconds=None, environ=None, read=perf_repor
         add("wine", "missing" if problem else "ok", True, problem)
     if windows:
         from metal_gpu_trace import perf_record_windows_presentmon
-        try:  # the engine's own lookup; a test that fakes the platform may not have shutil.which's Windows branch
-            presentmon = perf_record_windows_presentmon.find_presentmon()
+        try:  # the caller's environment, not ours; a faked platform has no Windows branch in shutil.which
+            presentmon = perf_record_windows_presentmon.find_presentmon(environ, which)
         except (AttributeError, OSError):
             presentmon = None
         add("presentmon", "ok" if presentmon else "missing", False, None if presentmon else PRESENTMON_MISSING)

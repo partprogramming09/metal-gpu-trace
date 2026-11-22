@@ -36,6 +36,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - 🎯 Cancelling or ending a native recording (or the server dying mid-recording) stopped every process with the program's name, so another copy of Godot or Python the user had open died too. It now stops only the program the recording launched and the children it started: `perf_record.sh` finds that program among its own descendants, keeps its process group in the recording lock, and every stop ends that group (SIGTERM, then SIGKILL for one that ignores it). Before each signal the stop checks that the group's leader still runs the program (or is gone while the group lives on), so a group number since reused by another program is left alone; group 0 or 1, the recording script's group and the server's are never signalled. Known limit: a child that leaves the program's group (`setsid` or `setpgid`) is not stopped, since following it would mean tracking every descendant. Attach recordings still leave their program running, and Wine recordings still end their prefix with `wineserver -k`.
 
+- 🩺 `preflight.environment_report()` asks for PresentMon through the `environ` and `which` it was given (a test or `doctor` no longer has to monkey-patch it), and runs `xcrun --find xctrace` with that environment, so `DEVELOPER_DIR` is obeyed; an environment with a null byte is still a `ToolError`, not a crash.
+
+- 🪟 `metal-gpu-trace init` prefers `uvx.exe` over a plain `uvx` shim in the Windows fallback folders, and runs the `claude` path `which` resolved: a `claude.cmd` that still cannot be started is an error with what to do, not an exception that leaves the other clients unwritten.
+
 - 🧪 The `kill_program` test builds its SIGTERM-ignoring program with `cc` instead of copying `/bin/sleep`: newer macOS kills a copied system binary with SIGKILL as it starts, so the test never saw the process.
 
 - 🩹 `perf_attach` by name no longer attaches to the process that called it when that process's own command line holds the name (it then recorded the caller and failed with «did no GPU work»); the name now skips the caller.
