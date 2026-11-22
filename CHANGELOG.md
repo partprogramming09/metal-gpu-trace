@@ -7,6 +7,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Added
 
+- 📈 `METAL_TRACE_APP_METRICS_MAX_MB` raises how much of the program's telemetry file is read (default 8 MiB), for programs that write more. A value that is not a whole number of 1 or more keeps 8 MiB and says so in `app_metrics.issues.max_mb`.
+
 - 🔐 CI: Dependabot proposes updates to the pip dependencies and the pinned actions every week (`.github/dependabot.yml`), and every pull request's commits are scanned for secrets by the gitleaks CLI 8.30.1, a fixed download checked against its SHA-256 that needs no `GITLEAKS_LICENSE` (`.github/workflows/security.yml`).
 
 - 🛠️ `windows/Update-MetalTraceJobs.ps1`: one command as administrator to update the WinBridge jobs on the Windows PC. It takes the folder of the verified WinBridge bundle (`-Bundle`), reads the `runner.ps1` hash from that bundle's `manifest.json` and runs its `Install-WinBridgeJobs.ps1 -Update`; `-DryRun` prints the resolved command without running it.

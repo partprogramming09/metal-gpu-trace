@@ -23,6 +23,7 @@
 | `KEEP_RUNS` | Keeps only the newest N recordings. It never removes a `.trace`, and `baselines.json` is never removed. [Retention](../../guides/data-and-lifecycle/retention.md) |
 | `METAL_TRACE_LOCK` | The lock that keeps recordings one at a time, whatever folder each goes to (default `~/Library/Caches/metal-gpu-trace/recording.lock`). [Cache and lock](../../guides/data-and-lifecycle/cache-and-lock.md) |
 | `PERF_ENV` | `NAME=VALUE` pairs, separated by spaces, set for the recorded program. |
+| `METAL_TRACE_APP_METRICS_MAX_MB` | How many MiB of the program's telemetry file are read (default 8), a whole number of 1 or more. Any other value keeps 8 and says so in `app_metrics.issues.max_mb`. [Program telemetry](../recording/macos-journey.md#program-telemetry) |
 | `PERF_INSTRUMENTS` | Instruments added to the Metal System Trace template, separated by `;` (`xcrun xctrace list instruments` names them). Their tables need the `.trace`: pair it with `KEEP_TRACE=1`. |
 
 ## Projects

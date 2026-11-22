@@ -125,3 +125,20 @@ def test_blank_first_line_and_quotes_do_not_hide_rows(tmp_path):
 def test_only_plain_ascii_numbers_count(tmp_path):
     block = app_metrics.read(put(tmp_path, "t_ms,a\n0,1_0\n1,٣\n2,5\n"))
     assert block["columns"]["a"]["count"] == 1 and block["issues"]["bad_cells"] == 2
+
+
+def test_limit_comes_from_the_environment(tmp_path):
+    path = put(tmp_path, "t_ms,a\n" + "".join(f"{i},1\n" for i in range(200_000)))  # about 1.8 MiB
+    one = app_metrics.read(path, {app_metrics.ENV_MAX_MB: "1"})
+    assert one["truncated"] is True and 0 < one["samples"] < 200_000
+    block = app_metrics.read(path, {app_metrics.ENV_MAX_MB: " 2 "})
+    assert "truncated" not in block and "issues" not in block and block["samples"] == 200_000
+    assert "issues" not in app_metrics.read(path, {})  # unset: the 8 MiB default, no complaint
+
+
+def test_a_bad_limit_keeps_the_default_and_says_so(tmp_path):
+    path = put(tmp_path, "t_ms,a\n" + "".join(f"{i},1\n" for i in range(200_000)))
+    for bad in ("0", "-1", "x", "1.5", "1_0", "٣", ""):
+        block = app_metrics.read(path, {app_metrics.ENV_MAX_MB: bad})
+        assert block["samples"] == 200_000, bad  # read with the 8 MiB default
+        assert block["issues"]["max_mb"] == "METAL_TRACE_APP_METRICS_MAX_MB must be a whole number of 1 or more", bad
