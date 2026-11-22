@@ -27,7 +27,8 @@ def test_ci_paths():
         assert patterns["windows"].search(f) and patterns["macos"].search(f), f
     for f in (f for f in files if f.startswith("tests/")):
         assert patterns["macos"].search(f), f
-    for f in ("tests/test_perf_record_windows.py", "tests/conftest.py"):  # the Windows job runs these
+    for f in ("tests/test_perf_record_windows.py", "tests/test_windows_pure.py", "tests/run.py", "tests/support.py",
+              "tests/conftest.py"):  # the Windows job runs these
         assert patterns["windows"].search(f), f
     assert not any(p.search("README.md") for p in patterns.values())
 
