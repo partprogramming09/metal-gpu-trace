@@ -4,16 +4,13 @@ Records Windows programs, workloads (such as bgfx 17-drawstress with D3D11 / D3D
 and attached processes, producing telemetry CSVs and a summary JSON matching the schema
 expected by perf_report.py and perf_compare.
 """
-import csv
 import ctypes
 from ctypes import wintypes
 import json
 import os
 import pathlib
-import platform
 import re
 import shlex
-import statistics
 import subprocess
 import sys
 import threading
@@ -21,18 +18,38 @@ import time
 
 if __package__ in (None, ""):  # run by path: make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from metal_gpu_trace import metrics, perf_report, tables  # noqa: E402
+from metal_gpu_trace import metrics, perf_record_windows_presentmon, perf_record_windows_processes  # noqa: E402
+from metal_gpu_trace import perf_record_windows_system, tables  # noqa: E402
 
 # the numbers shared with perf_report live in metrics, so Mac and Windows summaries keep one schema
 SHORT_US, stats, label_name = metrics.SHORT_US, metrics.stats, metrics.label_name
 encoder_stats, idle_gaps, public_arguments = metrics.encoder_stats, metrics.idle_gaps, metrics.public_arguments
 
-
-TH32CS_SNAPPROCESS = 0x00000002
-PROCESS_QUERY_INFORMATION = 0x0400
-PROCESS_VM_READ = 0x0010
-PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-PROCESS_TERMINATE = 0x0001
+# processes, the machine and PresentMon live in their own perf_record_windows_* modules; these names keep the interface
+TH32CS_SNAPPROCESS = perf_record_windows_processes.TH32CS_SNAPPROCESS
+PROCESS_QUERY_INFORMATION = perf_record_windows_processes.PROCESS_QUERY_INFORMATION
+PROCESS_VM_READ = perf_record_windows_processes.PROCESS_VM_READ
+PROCESS_QUERY_LIMITED_INFORMATION = perf_record_windows_processes.PROCESS_QUERY_LIMITED_INFORMATION
+PROCESS_TERMINATE = perf_record_windows_processes.PROCESS_TERMINATE
+PROCESSENTRY32 = perf_record_windows_processes.PROCESSENTRY32
+PROCESS_MEMORY_COUNTERS = perf_record_windows_processes.PROCESS_MEMORY_COUNTERS
+list_running_processes = perf_record_windows_processes.list_running_processes
+get_process_rss_kib = perf_record_windows_processes.get_process_rss_kib
+find_attached_process = perf_record_windows_processes.find_attached_process
+kill_process_tree = perf_record_windows_processes.kill_process_tree
+MEMORYSTATUSEX, system_ram_bytes = perf_record_windows_system.MEMORYSTATUSEX, perf_record_windows_system.system_ram_bytes
+_enrich_device_with_vegaflow = perf_record_windows_system._enrich_device_with_vegaflow
+graphics_api, GRAPHICS_DLLS = perf_record_windows_system.graphics_api, perf_record_windows_system.GRAPHICS_DLLS
+loaded_graphics_modules = perf_record_windows_system.loaded_graphics_modules
+GPU_ENGINE_COUNTER = perf_record_windows_system.GPU_ENGINE_COUNTER
+parse_gpu_engines, gpu_noise = perf_record_windows_system.parse_gpu_engines, perf_record_windows_system.gpu_noise
+sample_gpu_engines = perf_record_windows_system.sample_gpu_engines
+daemon_names, daemon_info = perf_record_windows_system.daemon_names, perf_record_windows_system.daemon_info
+daemon_candidates = perf_record_windows_system.daemon_candidates
+collect_device_info = perf_record_windows_system.collect_device_info
+presentmon_dir, find_presentmon = perf_record_windows_presentmon.presentmon_dir, perf_record_windows_presentmon.find_presentmon
+read_presentmon_csv = perf_record_windows_presentmon.read_presentmon_csv
+compute_precision_telemetry = perf_record_windows_presentmon.compute_precision_telemetry
 
 
 class UNSIGNED_RATIO(ctypes.Structure):
@@ -122,340 +139,6 @@ class DWM_TIMING_INFO_LEGACY(ctypes.Structure):
     ]
 
 
-class PROCESSENTRY32(ctypes.Structure):
-    _fields_ = [
-        ("dwSize", wintypes.DWORD),
-        ("cntUsage", wintypes.DWORD),
-        ("th32ProcessID", wintypes.DWORD),
-        ("th32DefaultHeapID", ctypes.c_size_t),
-        ("th32ModuleID", wintypes.DWORD),
-        ("cntThreads", wintypes.DWORD),
-        ("th32ParentProcessID", wintypes.DWORD),
-        ("pcPriClassBase", wintypes.LONG),
-        ("dwFlags", wintypes.DWORD),
-        ("szExeFile", ctypes.c_char * 260),
-    ]
-
-
-class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
-    _fields_ = [
-        ("cb", wintypes.DWORD),
-        ("PageFaultCount", wintypes.DWORD),
-        ("PeakWorkingSetSize", ctypes.c_size_t),
-        ("WorkingSetSize", ctypes.c_size_t),
-        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
-        ("QuotaPagedPoolUsage", ctypes.c_size_t),
-        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
-        ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
-        ("PagefileUsage", ctypes.c_size_t),
-        ("PeakPagefileUsage", ctypes.c_size_t),
-    ]
-
-
-class MEMORYSTATUSEX(ctypes.Structure):
-    _fields_ = [
-        ("dwLength", wintypes.DWORD),
-        ("dwMemoryLoad", wintypes.DWORD),
-        ("ullTotalPhys", ctypes.c_uint64),
-        ("ullAvailPhys", ctypes.c_uint64),
-        ("ullTotalPageFile", ctypes.c_uint64),
-        ("ullAvailPageFile", ctypes.c_uint64),
-        ("ullTotalVirtual", ctypes.c_uint64),
-        ("ullAvailVirtual", ctypes.c_uint64),
-        ("ullAvailExtendedVirtual", ctypes.c_uint64),
-    ]
-
-
-def system_ram_bytes():
-    """Returns the total physical RAM in bytes."""
-    try:
-        stat = MEMORYSTATUSEX()
-        stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
-            return stat.ullTotalPhys
-    except Exception:
-        pass
-    return 0
-
-
-def _enrich_device_with_vegaflow(device, vf_data):
-    """Enriches device dict with VegaFlow low-level hardware telemetry."""
-    if not isinstance(vf_data, dict):
-        return
-
-    def text(value):
-        """Returns the stripped text of a non-blank string, else None (null, blank, numbers and objects are absent)."""
-        return value.strip() or None if isinstance(value, str) else None
-
-    def block(name):
-        value = vf_data.get(name)
-        return value if isinstance(value, dict) else {}
-
-    # 1. CPU Architecture / detailed model (e.g. Zen 2 Renoir 7nm)
-    cpu_info = block("cpu")
-    cpu_arch = (
-        text(vf_data.get("cpu_architecture"))
-        or text(cpu_info.get("microarchitecture"))
-        or text(cpu_info.get("brand_string"))
-    )
-    if cpu_arch:
-        device["cpu_architecture"] = cpu_arch
-
-    # 2. GPU Architecture / UMA topology (e.g. Vega 6 / GCN 5.0, bus dual-channel 128-bit)
-    if text(vf_data.get("gpu_architecture")):
-        device["gpu_architecture"] = text(vf_data["gpu_architecture"])
-    else:
-        gpu_info = block("gpu")
-        ram_info = block("ram")
-        adapter_name = text(gpu_info.get("adapter_name")) or ""
-        arch_desc = text(gpu_info.get("architecture")) or ""
-
-        # Extract specific GPU silicon tag e.g. "Vega 6 / GCN 5.0"
-        m_gpu = re.search(r"\(([^)]*(?:Vega|GCN|RDNA|Graphics)[^)]*)\)", adapter_name, re.IGNORECASE)
-        gpu_tag = m_gpu.group(1).strip() if m_gpu else (adapter_name or arch_desc)
-
-        # Extract bus and channel topology e.g. "bus dual-channel 128-bit"
-        channel_top = text(ram_info.get("channel_topology")) or ""
-        width = ram_info.get("memory_bus_width_bits")
-        if isinstance(width, bool) or not isinstance(width, int) or width <= 0:
-            width = None  # a bool, text or object is not a width
-        m_ram = re.search(r"([A-Za-z0-9\-]+-Channel)\s*\((?:.*?)?(\d+-bit)", channel_top, re.IGNORECASE)
-        if m_ram:
-            bus_tag = f"bus {m_ram.group(1).lower()} {m_ram.group(2).lower()}"
-        elif "dual-channel" in channel_top.lower():
-            bus_tag = "bus dual-channel 128-bit" if width == 128 else "bus dual-channel"
-        elif "single-channel" in channel_top.lower():
-            bus_tag = "bus single-channel 64-bit" if width == 64 else "bus single-channel"
-        elif width:
-            bus_tag = f"bus {width}-bit"
-        else:
-            bus_tag = ""
-
-        if gpu_tag and bus_tag:
-            device["gpu_architecture"] = f"{gpu_tag}, {bus_tag}"
-        elif gpu_tag:
-            device["gpu_architecture"] = gpu_tag
-        elif bus_tag:
-            device["gpu_architecture"] = bus_tag
-
-
-def graphics_api(modules):
-    """Returns {"runtime", "translation_layer"} from `modules`, the (file name, loaded from the system folder) pairs of
-    the graphics DLLs a process holds: the runtime is the newest Direct3D present (d3d12, d3d11, d3d9), else vulkan, else
-    opengl; the layer is `dxvk` (d3d9/d3d11/dxgi loaded from outside the system folder) or `vkd3d-proton` (d3d12 from
-    outside it), None for a system copy. An empty list, or None (it could not be read), is `unknown`: never a guess."""
-    names = {name.lower(): system for name, system in modules or ()}
-    runtime = next((r for r, dll in (("d3d12", "d3d12.dll"), ("d3d11", "d3d11.dll"), ("d3d9", "d3d9.dll"),
-                                     ("vulkan", "vulkan-1.dll"), ("opengl", "opengl32.dll")) if dll in names), "unknown")
-    layer = None
-    if runtime == "d3d12" and names["d3d12.dll"] is False:
-        layer = "vkd3d-proton"
-    elif runtime in ("d3d11", "d3d9") and names.get(f"{runtime}.dll") is False:
-        layer = "dxvk"
-    return {"runtime": runtime, "translation_layer": layer}
-
-
-def loaded_graphics_modules(pid):
-    """Returns the (file name, from the system folder) pairs of the graphics DLLs process `pid` has loaded, or None when
-    they cannot be read (a protected process, a 32/64-bit mismatch, an exited process). Only the names and that flag
-    leave this function, never a path."""
-    import ctypes
-    from ctypes import wintypes
-    try:
-        psapi, kernel32 = ctypes.WinDLL("psapi", use_last_error=True), ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.OpenProcess.argtypes, kernel32.OpenProcess.restype = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE
-        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-        psapi.EnumProcessModulesEx.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.HMODULE), wintypes.DWORD,
-                                               ctypes.POINTER(wintypes.DWORD), wintypes.DWORD]
-        psapi.GetModuleFileNameExW.argtypes = [wintypes.HANDLE, wintypes.HMODULE, wintypes.LPWSTR, wintypes.DWORD]
-        handle = kernel32.OpenProcess(0x0410, False, pid)  # PROCESS_QUERY_INFORMATION | PROCESS_VM_READ
-        if not handle:
-            return None
-        try:
-            mods, needed = (wintypes.HMODULE * 2048)(), wintypes.DWORD()
-            if not psapi.EnumProcessModulesEx(handle, mods, ctypes.sizeof(mods), ctypes.byref(needed), 0x03):  # LIST_MODULES_ALL
-                return None
-            system = os.environ.get("SystemRoot", r"C:\Windows").lower()
-            found, buffer = [], ctypes.create_unicode_buffer(1024)
-            for module in mods[:needed.value // ctypes.sizeof(wintypes.HMODULE)]:
-                if psapi.GetModuleFileNameExW(handle, module, buffer, len(buffer)):
-                    path = pathlib.PureWindowsPath(buffer.value)
-                    if path.name.lower() in GRAPHICS_DLLS:
-                        found.append((path.name, str(path.parent).lower().startswith(system)))
-            return found
-        finally:
-            kernel32.CloseHandle(handle)
-    except (OSError, AttributeError, ValueError, ctypes.ArgumentError):
-        return None
-
-
-GRAPHICS_DLLS = frozenset(("d3d9.dll", "d3d11.dll", "d3d12.dll", "dxgi.dll", "vulkan-1.dll", "opengl32.dll"))
-GPU_ENGINE_COUNTER = r"\GPU Engine(*)\Utilization Percentage"
-
-
-def parse_gpu_engines(text):
-    """Returns {pid: percent} from the output of `typeperf "<GPU Engine counter>" -sc 1`: each engine instance of a process
-    adds its utilization. {} when the text has no header and a row of values."""
-    lines = [line for line in text.splitlines() if line.strip()]
-    start = next((i for i, line in enumerate(lines) if line.startswith('"(PDH-CSV')), None)
-    if start is None or start + 1 >= len(lines):
-        return {}
-    heads, values = next(csv.reader([lines[start]])), next(csv.reader([lines[start + 1]]))
-    by_pid = {}
-    for head, value in zip(heads[1:], values[1:]):
-        found = re.search(r"pid_(\d+)_", head)
-        try:
-            by_pid[int(found.group(1))] = by_pid.get(int(found.group(1)), 0.0) + float(value) if found else 0.0
-        except ValueError:
-            continue
-    return {pid: round(pct, 3) for pid, pct in by_pid.items()}
-
-
-def gpu_noise(samples, pid):
-    """Returns {"flag", "process_busy_pct", "external_pct", "samples"} from `samples` ({pid: percent} per reading): the
-    program's mean GPU use and the mean of every other process together; `flag` when the others used
-    metrics.NOISY_EXTERNAL_PCT points or more. None without a sample."""
-    if not samples:
-        return None
-    own = sum(s.get(pid, 0.0) for s in samples) / len(samples)
-    other = sum(sum(v for k, v in s.items() if k != pid) for s in samples) / len(samples)
-    return {"flag": round(other, 1) >= metrics.NOISY_EXTERNAL_PCT, "process_busy_pct": round(own, 1),
-            "external_pct": round(other, 1), "samples": len(samples)}
-
-
-def sample_gpu_engines(stop, samples, every=2.0):
-    """Reads the `GPU Engine` counters with typeperf every `every` seconds until `stop` is set, appending one
-    {pid: percent} per reading to `samples`. A reading that fails or times out is skipped: no noise value is better than
-    a made-up one."""
-    while not stop.is_set():
-        try:
-            out = subprocess.run(["typeperf", GPU_ENGINE_COUNTER, "-sc", "1"], capture_output=True, text=True,
-                                 timeout=10, check=False).stdout
-            reading = parse_gpu_engines(out)
-            if reading:
-                samples.append(reading)
-        except (OSError, subprocess.SubprocessError):
-            pass
-        stop.wait(every)
-
-
-def daemon_names():
-    """Returns the file names to look for: vegaflow_daemon.exe and those in METAL_TRACE_DAEMON_NAMES (comma-separated;
-    an entry with a path in it, `.` or `..` is ignored, so the variable cannot point outside build/)."""
-    extra = [n.strip() for n in os.environ.get("METAL_TRACE_DAEMON_NAMES", "").split(",")]
-    return ["vegaflow_daemon.exe"] + [n for n in extra if n and n not in (".", "..") and not set(n) & set("/\\")]
-
-
-def daemon_candidates(daemon_path=None):
-    """Returns where a daemon (see `daemon_names`) may be, in order: the given path, build/ under the working directory
-    and its parent, then build/ in the clone root and its parent (the package lives in <clone>/src/metal_gpu_trace)."""
-    clone = pathlib.Path(__file__).resolve().parents[2]
-    candidates = [pathlib.Path(daemon_path)] if daemon_path is not None else []
-    for build in (pathlib.Path("..") / "build", pathlib.Path("build"), clone.parent / "build", clone / "build"):
-        candidates += [build / name for name in daemon_names()]
-    return candidates
-
-
-def daemon_info(exe):
-    """Returns (data, None) from `exe --system-info`, or (None, reason) with reason `timeout`, `invalid_json` (not JSON,
-    or JSON that is not an object) or `missing` (it would not run, exited non-zero or printed nothing)."""
-    try:
-        res = subprocess.run([str(exe), "--system-info"], capture_output=True, text=True, encoding="utf-8", errors="replace",
-                             timeout=1.0, check=False)
-    except subprocess.TimeoutExpired:
-        return None, "timeout"
-    except Exception:
-        return None, "missing"
-    if res.returncode != 0 or not res.stdout.strip():
-        return None, "missing"
-    try:
-        data = json.loads(res.stdout)
-    except ValueError:
-        return None, "invalid_json"
-    return (data, None) if isinstance(data, dict) else (None, "invalid_json")
-
-
-def collect_device_info(daemon_path=None):
-    """Collects system and hardware device info, optionally enriched via VegaFlow telemetry.
-
-    Queries VegaFlow low-level hardware telemetry if vegaflow_daemon.exe is available,
-    enriching the device block with detailed CPU/GPU architecture while preserving
-    standard schema fields. Gracefully falls back to native Win32 on any failure.
-    """
-    device = {
-        "platform": "Windows",
-        "model": platform.processor(),
-        "memory-size": str(system_ram_bytes()),
-        "os-version": platform.version(),
-    }
-
-    candidates = daemon_candidates(daemon_path)
-
-    daemon_exe = None
-    for cand in candidates:
-        try:
-            if cand.is_file():
-                daemon_exe = cand.resolve()
-                break
-        except Exception:
-            continue
-
-    if daemon_exe:
-        vf_data, reason = daemon_info(daemon_exe)
-        if reason:
-            device["daemon_info_error"] = reason  # a short word, never the daemon's path
-        else:
-            _enrich_device_with_vegaflow(device, vf_data)
-
-    return device
-
-
-def list_running_processes():
-    """Returns a list of (pid, exe_name) for running processes on Windows."""
-    kernel32 = ctypes.windll.kernel32
-    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
-    if snapshot in (-1, 0):
-        return []
-    pe = PROCESSENTRY32()
-    pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
-    procs = []
-    try:
-        if kernel32.Process32First(snapshot, ctypes.byref(pe)):
-            while True:
-                exe = pe.szExeFile.decode("mbcs", errors="ignore")
-                procs.append((pe.th32ProcessID, exe))
-                if not kernel32.Process32Next(snapshot, ctypes.byref(pe)):
-                    break
-    finally:
-        kernel32.CloseHandle(snapshot)
-    return procs
-
-
-def get_process_rss_kib(pid):
-    """Returns working set memory of process `pid` in KiB (bytes // 1024)."""
-    if pid <= 0:
-        return 0
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid)
-    if not handle:
-        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-    if not handle:
-        return 0
-    try:
-        pmc = PROCESS_MEMORY_COUNTERS()
-        pmc.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
-        fn = getattr(kernel32, "K32GetProcessMemoryInfo", None)
-        if not fn:
-            fn = ctypes.windll.psapi.GetProcessMemoryInfo
-        if fn(handle, ctypes.byref(pmc), pmc.cb):
-            return int(pmc.WorkingSetSize // 1024)
-    except Exception:
-        pass
-    finally:
-        kernel32.CloseHandle(handle)
-    return 0
-
-
 def is_process_alive(pid):
     """Returns True if process `pid` is currently running."""
     if not 0 < pid < 2**31:  # OpenProcess takes a 32-bit pid, and a stale lock file can hold anything
@@ -539,94 +222,6 @@ def sample_dwm_frame_times(pid, stop_event, frame_samples):
         pass
 
 
-def presentmon_dir():
-    """Returns the directory presentmon_install saves PresentMon in: %LOCALAPPDATA%\\metal-gpu-trace."""
-    return pathlib.Path(os.environ.get("LOCALAPPDATA", "~")).expanduser() / "metal-gpu-trace"
-
-
-def find_presentmon():
-    """Returns the path of Intel's PresentMon console application, or None: $PRESENTMON_EXE, then
-    %LOCALAPPDATA%\\metal-gpu-trace\\PresentMon*.exe, then PATH."""
-    import shutil
-    explicit = os.environ.get("PRESENTMON_EXE")
-    if explicit:
-        return explicit if pathlib.Path(explicit).is_file() else None
-    cache = presentmon_dir()
-    for candidate in sorted(cache.glob("PresentMon*.exe"), reverse=True):
-        return str(candidate)
-    return shutil.which("PresentMon") or shutil.which("PresentMon-x64")
-
-
-def read_presentmon_csv(path):
-    """Returns (intervals_ms, gpu_ms) from a PresentMon CSV: MsBetweenPresents per frame, and MsGPUTime when the
-    column exists and is positive (None for a frame without it)."""
-    intervals, gpu = [], []
-    try:
-        with open(path, newline="", encoding="utf-8-sig") as f:
-            for row in csv.DictReader(f):
-                try:
-                    interval = float(row["MsBetweenPresents"])
-                except (KeyError, TypeError, ValueError):
-                    continue
-                if interval <= 0:
-                    continue
-                intervals.append(interval)
-                try:
-                    value = float(row.get("MsGPUTime") or 0)
-                except ValueError:
-                    value = 0.0
-                gpu.append(value if value > 0 else None)
-    except OSError:
-        pass
-    return intervals, gpu
-
-
-def find_attached_process(target):
-    """Finds a running process by numerical PID or executable name substring.
-
-    Raises RuntimeError with 'no running process matches <target>' if not found.
-    """
-    target_str = str(target).strip()
-    running = list_running_processes()
-    if target_str.isdigit():
-        pid = int(target_str)
-        match = next((p for p in running if p[0] == pid), None)
-        if match:
-            return match[0], match[1]
-        # Check if handle can be opened directly
-        kernel32 = ctypes.windll.kernel32
-        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-        if handle:
-            kernel32.CloseHandle(handle)
-            return pid, f"pid_{pid}"
-        raise RuntimeError(f"no running process matches {target_str}")
-
-    current_pid = os.getpid()
-    matches = [p for p in running if target_str.lower() in p[1].lower() and p[0] != current_pid]
-    if not matches:
-        raise RuntimeError(f"no running process matches {target_str}")
-    # Pick the newest / highest PID
-    matches.sort(key=lambda p: p[0])
-    return matches[-1][0], matches[-1][1]
-
-
-def compute_precision_telemetry(gaps, totals):
-    """Returns FPS, 1% and 0.1% lows, stutter rate, jitter and throttling drift from frame intervals (ms, start to
-    start) and GPU ms per frame, as perf_report.frame_pacing computes them, with None for what cannot be judged."""
-    pacing = perf_report.frame_pacing(gaps, totals)
-    med = statistics.median(gaps) if gaps else 0
-    fps = round(1000.0 / med, 1) if med > 0 else None
-    return {
-        "fps_estimate": fps,
-        "fps_1pct_low": pacing.get("fps_1pct_low"),
-        "fps_01pct_low": pacing.get("fps_01pct_low"),
-        "stutter_rate_pct": pacing.get("stutter_rate_pct"),
-        "frame_jitter_ms": pacing.get("frame_jitter_ms"),
-        "throttling_analysis": pacing.get("throttling_analysis") or {
-            "thermal_throttling_detected": None, "fps_initial": fps, "fps_final": fps, "fps_drift_pct": None},
-    }
-
-
 def clean_runs(out_dir, keep_runs):
     """Keeps the newest `keep_runs` recordings in `out_dir`."""
     if keep_runs is None or keep_runs < 1:
@@ -645,39 +240,6 @@ def clean_runs(out_dir, keep_runs):
                 related.unlink()
             except OSError:
                 pass
-
-
-def kill_process_tree(pid):
-    """Terminates process `pid` and all its descendants forcibly."""
-    if pid <= 0:
-        return
-    children = []
-    kernel32 = ctypes.windll.kernel32
-    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
-    if snapshot not in (-1, 0):
-        pe = PROCESSENTRY32()
-        pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
-        try:
-            if kernel32.Process32First(snapshot, ctypes.byref(pe)):
-                while True:
-                    if pe.th32ParentProcessID == pid:
-                        children.append(pe.th32ProcessID)
-                    if not kernel32.Process32Next(snapshot, ctypes.byref(pe)):
-                        break
-        finally:
-            kernel32.CloseHandle(snapshot)
-    for cpid in children:
-        kill_process_tree(cpid)
-    handle = kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
-    if handle:
-        try:
-            kernel32.TerminateProcess(handle, 1)
-        finally:
-            kernel32.CloseHandle(handle)
-    try:
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, timeout=0.5)
-    except Exception:
-        pass
 
 
 def record_windows(label, seconds, wine, prefix, workdir, command, program_env="", out_dir=None, timeout=None,

@@ -7,6 +7,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Added
 
+- 🔐 CI: Dependabot proposes updates to the pip dependencies and the pinned actions every week (`.github/dependabot.yml`), and every pull request's commits are scanned for secrets by the gitleaks CLI 8.30.1, a fixed download checked against its SHA-256 that needs no `GITLEAKS_LICENSE` (`.github/workflows/security.yml`).
+
 - 🛠️ `windows/Update-MetalTraceJobs.ps1`: one command as administrator to update the WinBridge jobs on the Windows PC. It takes the folder of the verified WinBridge bundle (`-Bundle`), reads the `runner.ps1` hash from that bundle's `manifest.json` and runs its `Install-WinBridgeJobs.ps1 -Update`; `-DryRun` prints the resolved command without running it.
 
 - 🛡️ A WinBridge job, `metal-trace-daemon` (`windows/winbridge-job/`), installs the published package and records `drawstress` once with the VegaFlow daemon stopped and once running, then leaves the daemon as it found it. Run on the Windows PC by hand with the same steps (stop, record, start, record): 392 and 388 frames.
@@ -23,6 +25,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - 🪟 On Windows, `noisy_environment` and `gpu_noise` (`process_busy_pct`, `external_pct`, `samples`) come from the `GPU Engine` counters, read every 2 s while recording; 20 points or more of other processes' GPU use is the flag, the same threshold as on macOS.
 
 ### Fixed
+
+- 🧪 The `kill_program` test builds its SIGTERM-ignoring program with `cc` instead of copying `/bin/sleep`: newer macOS kills a copied system binary with SIGKILL as it starts, so the test never saw the process.
 
 - 🩹 `perf_attach` by name no longer attaches to the process that called it when that process's own command line holds the name (it then recorded the caller and failed with «did no GPU work»); the name now skips the caller.
 
