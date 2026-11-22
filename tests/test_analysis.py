@@ -48,6 +48,17 @@ def test_diagnose(tmp_path):
             assert got["bottleneck"] == label and got["display_synced_hz"] == hz, (fps, got["bottleneck"])
             advice = " ".join(got["recommendations"])
             assert ("instancing" in advice or "FlipQueueSize" in advice) == (label == "CPU_SUBMISSION_BOUND"), got
+        # too many short encoders lowers the CPU threshold to 0.20; at 60 Hz that idle is still the display's wait
+        for idle, fps, p95, label in ((0.22, 60.1, 17.2, "DISPLAY_SYNCED"), (0.22, 60.1, 25.0, "CPU_SUBMISSION_BOUND"),
+                                      (0.19, 60.1, 17.2, "BALANCED")):
+            shorty = {**no_spans, "encoders": {**no_spans["encoders"], "per_frame": {"count": 9, "p50": 8},
+                                               "short_share": {"25": 0.5}},
+                      "gpu": {**no_spans["gpu"], "fps_estimate": fps,
+                              "frame_interval_ms": {"count": 499, "mean": 16.7, "p50": 16.6, "p95": p95}},
+                      "gpu_idle": {**no_spans["gpu_idle"], "idle_share": idle}}
+            (tmp_path / "shorty.json").write_text(json.dumps(shorty))
+            got = analysis.tool_perf_diagnose("shorty")
+            assert got["too_many_short_encoders"] and got["bottleneck"] == label, (idle, p95, got["bottleneck"])
         for fps, p50, p95, synced in ((119.9, 8.33, 8.9, 120), (60.1, 16.6, 17.2, 60), (119.9, 8.3, 14.0, None),
                                       (97.0, 10.3, 10.6, None), (None, None, None, None),
                                       (118.9, 8.41, 9.824, 120)):

@@ -450,12 +450,18 @@ def test_diagnose_bottlenecks_and_recommendations(tmp_path):
         assert diag_gpu["stutter_analysis"]["verdict"] == "SMOOTH"
         assert any("FSR" in r for r in diag_gpu["recommendations"])
 
-        # 2. CPU_SUBMISSION_BOUND
-        (tmp_path / "cpu_bound.json").write_text(json.dumps(make_summary(8.0, 16.6, 0.45, 800.0, 4.0, 2.0)))
+        # 2. CPU_SUBMISSION_BOUND: irregular intervals (p95 far above p50), so no vsync
+        (tmp_path / "cpu_bound.json").write_text(json.dumps(make_summary(8.0, 16.6, 0.45, 800.0, 4.0, 6.0)))
         diag_cpu = analysis.tool_perf_diagnose("cpu_bound")
         assert diag_cpu["bottleneck"] == "CPU_SUBMISSION_BOUND"
         assert diag_cpu["stutter_analysis"]["verdict"] == "MICRO_STUTTER"
         assert any("FlipQueueSize=3" in r for r in diag_cpu["recommendations"])
+
+        # 2b. same idle at 60 Hz with regular intervals: DISPLAY_SYNCED, no CPU advice
+        (tmp_path / "vsync.json").write_text(json.dumps(make_summary(8.0, 16.6, 0.45, 800.0, 4.0, 2.0)))
+        diag_vs = analysis.tool_perf_diagnose("vsync")
+        assert diag_vs["bottleneck"] == "DISPLAY_SYNCED" and diag_vs["display_synced_hz"] == 60, diag_vs
+        assert not any("FlipQueueSize" in r or "instancing" in r for r in diag_vs["recommendations"]), diag_vs
 
         # 3. MEMORY_PRESSURE_SUSPECTED (a hypothesis: bandwidth is not measured)
         (tmp_path / "mem_bound.json").write_text(json.dumps(make_summary(12.0, 16.6, 0.18, 2500.0, 8.5, 5.5)))
