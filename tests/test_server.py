@@ -176,22 +176,33 @@ def test_progress_and_cancel(tmp_path):
     import threading
     from metal_gpu_trace import config, paths, recording, registry, worker
     from metal_gpu_trace import metal_trace_mcp  # noqa: F401  (configures protocol and worker)
+    import secrets
+    from support import pids_named, stubborn_program
     stubs, out, program = hang_stubs(tmp_path)
+    # a program that ignores SIGTERM, and another process of its name that the cancel must leave running
+    stubborn = stubborn_program(tmp_path / f"ig-{secrets.token_hex(4)}")
+    bystander = subprocess.Popen([str(stubborn)], start_new_session=True)
     seen, cancel = [], threading.Event()
     saved = config.OUT, config.PROGRESS_TICKS, os.environ["PATH"]
     config.OUT, config.PROGRESS_TICKS = out, 1
     os.environ["PATH"] = f"{stubs}:{saved[2]}"
-    recording.RUN.cancel, recording.RUN.progress = cancel, lambda *a: seen.append(a) or (len(seen) == 2 and cancel.set())
+    # cancelled from the second progress line on, once the script has found the program it launched
+    recording.RUN.cancel = cancel
+    recording.RUN.progress = lambda *a: seen.append(a) or (len(seen) >= 2 and (config.LOCK / "program").is_file()
+                                                           and cancel.set())
     try:
-        recording.tool_perf_record("hang", str(program), seconds=1, wine="native")
+        recording.tool_perf_record("hang", str(stubborn), seconds=1, wine="native")
         raise AssertionError("a cancelled recording must fail")
     except paths.ToolError as error:
         assert "cancelled" in str(error), error
+        assert bystander.poll() is None, "another process with the program's name must keep running"
+        assert pids_named(stubborn.name) == [bystander.pid], "the launched program must be killed"
     finally:
         config.OUT, config.PROGRESS_TICKS, os.environ["PATH"] = saved
         recording.RUN.cancel = recording.RUN.progress = None
-    assert (tmp_path / "pkill.log").read_text().split() == ["-x", program.name], "the launched program must be killed"
-    assert len(seen) == 2 and seen[1][0] > seen[0][0] and seen[0][1] == recording.deadline(1), seen
+        subprocess.run(["pkill", "-KILL", "-x", stubborn.name], capture_output=True)
+        bystander.wait()
+    assert len(seen) >= 2 and seen[1][0] > seen[0][0] and seen[0][1] == recording.deadline(1), seen
     assert not list(out.iterdir()), list(out.iterdir())
     import io
     real, sys.stdout = sys.stdout, io.StringIO()

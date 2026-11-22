@@ -38,7 +38,7 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
                      background=False, size=None, tier="standard"):
     """Records `program` (an .exe under Wine, or a macOS binary with wine="native") or a test `workload` for `seconds` with
     Metal System Trace and returns its summary: GPU ms per frame, frame intervals, FPS, Metal and resident memory. It
-    then stops every program of that Wine prefix (wineserver -k), or every process named like the program with native.
+    then stops every program of that Wine prefix (wineserver -k), or with native the program it launched and its children.
     tier sets memory and counters together; compare recordings of the same tier."""
     memory, counters, keep_trace = resolve_tier(tier, memory, counters)
     if tier == "deep" and sys.platform == "win32":
@@ -247,15 +247,18 @@ def cooldown(seconds):
         left -= step
 
 
-def kill_program(name):
-    """Stops every process named `name`: SIGTERM first, then SIGKILL for the ones that ignore it (a game that catches
-    SIGTERM kept running for 40 minutes after its recording was cancelled)."""
-    subprocess.run(["pkill", "-x", name], capture_output=True, timeout=30)
-    for _ in range(6):
-        if subprocess.run(["pgrep", "-x", name], capture_output=True, timeout=30).returncode:
-            return
-        time.sleep(0.5)
-    subprocess.run(["pkill", "-KILL", "-x", name], capture_output=True, timeout=30)
+def kill_program(group):
+    """Stops the process group `group`, the program a recording launched and the children it started, never another
+    process with its name: SIGTERM first, then SIGKILL when it ignores it (a game that catches SIGTERM kept running
+    for 40 minutes after its recording was cancelled). A group that is gone is left alone."""
+    try:
+        os.killpg(group, signal.SIGTERM)
+        for _ in range(6):
+            time.sleep(0.5)
+            os.killpg(group, 0)
+        os.killpg(group, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def worst_case_message(limit, windows):
@@ -333,6 +336,18 @@ def free_lock(pid):
         return
     if owner == str(pid):
         shutil.rmtree(lock, ignore_errors=True)
+
+
+def launched_group(pid):
+    """Returns the process group of the program that perf_record.sh (pid `pid`) launched, which the script keeps in
+    its lock, or None when the lock belongs to another recording or names no program yet."""
+    try:
+        if (config.LOCK / "pid").read_text().strip() != str(pid):
+            return None
+        text = (config.LOCK / "program").read_text().strip()
+    except OSError:
+        return None
+    return int(text) if text.isdigit() and int(text) > 1 else None
 
 def finish(summary, json_path, layer, tier, app_file=None):
     """Adds `layer`, the run's `context` and `tier` to the summary, applies METAL_TRACE_MAX_DISK_MB (the run just recorded
@@ -412,7 +427,9 @@ def run_recording(label, seconds, wine, prefix, workdir, command, program_env=""
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait()
             if wine == "native":
-                kill_program(pathlib.Path(command[0]).name)
+                group = launched_group(proc.pid)  # read before free_lock removes the lock that keeps it
+                if group:
+                    kill_program(group)
             elif wine != "attach":
                 subprocess.run([str(pathlib.Path(wine) / "bin" / "wineserver"), "-k"],
                                env=dict(env, WINEPREFIX=str(prefix)), capture_output=True, timeout=30)

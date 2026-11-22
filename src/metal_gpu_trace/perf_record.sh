@@ -64,7 +64,7 @@ before=(${tmp%/}/instruments*.ktrace(N))
 # Frees the lock and the temporary .ktrace files that xctrace left in $TMPDIR during this run.
 cleanup() {
   local rc=$?
-  kill ${watchdog:-} ${sampler:-} 2>/dev/null || true
+  kill ${watchdog:-} ${sampler:-} ${finder:-} 2>/dev/null || true
   rm -rf $lock
   for k in ${tmp%/}/instruments*.ktrace(N); do (( ${before[(Ie)$k]} )) || rm -rf $k; done
   # a failed recording leaves no partial files behind
@@ -76,8 +76,29 @@ trap 'rm -rf $out/$name.*(N); exit 143' TERM
 [[ $wine == attach ]] || cd $workdir
 # the resident memory of the program's Wine process, once a second, while Instruments records
 exe=${1:t}
-# stops the program by name: SIGTERM, then SIGKILL for one that ignores it
-stop_program() { pkill -x $exe && { sleep 1; pgrep -x $exe >/dev/null && pkill -KILL -x $exe; }; return 0 }
+# xctrace launches the program as the leader of a process group of its own (so does its DTServiceHub): the finder
+# looks for it by name among this script's descendants only and keeps its group in the lock, where the stops below and
+# the server's cancel read it, so that they end the program and its children and no other process of that name
+if [[ $wine == native ]]; then
+  (
+    own=${$(ps -o pgid= -p $$)// /}
+    while true; do
+      group=$(ps -axo pid=,ppid=,pgid=,comm= | awk -v top=$$ -v own=$own -v exe=$exe '
+        {pp[$1] = $2; pg[$1] = $3; c = $0; sub(/^ *[0-9]+ +[0-9]+ +[0-9]+ +/, "", c); n = split(c, part, "/"); name[$1] = part[n]}
+        END {for (p in pp) if (name[p] == exe && pg[p] != own) for (q = pp[p]; q > 1; q = pp[q]) if (q == top) {print pg[p]; exit}}')
+      [[ -n $group ]] && { echo $group > $lock/program; break; }
+      sleep 0.2
+    done
+  ) &
+  finder=$!
+fi
+# stops the program's process group: SIGTERM, then SIGKILL for one that ignores it
+stop_program() {
+  local group=$(cat $lock/program 2>/dev/null)
+  [[ $group == <2-> ]] || return 0
+  kill -TERM -$group 2>/dev/null && { sleep 1; kill -0 -$group 2>/dev/null && kill -KILL -$group 2>/dev/null; }
+  return 0
+}
 # PERF_PARENT_PID is the server that started this recording: when it dies the recording and its program are stopped
 if [[ -n ${PERF_PARENT_PID:-} ]]; then
   (

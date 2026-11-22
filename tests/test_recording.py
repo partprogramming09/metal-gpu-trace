@@ -498,52 +498,145 @@ def test_a_windows_recording_reaches_the_windows_engine_whatever_was_imported_fi
     assert asked == ["w"]
 
 
+def stubborn_pair(tmp_path):
+    """Returns (program, bystander): a built program that ignores SIGTERM, under a name only this test uses (8 random
+    hex digits keep it within the 15 characters a process name keeps), and another process of that name already
+    running, which no stop may touch."""
+    from support import pids_named, stubborn_program, wait_until
+    program = stubborn_program(tmp_path / f"ig-{secrets.token_hex(4)}")
+    bystander = subprocess.Popen([str(program)], start_new_session=True)
+    wait_until(lambda: pids_named(program.name) == [bystander.pid])
+    return program, bystander
+
+
+def stop_all(program, *procs):
+    """Kills every process left of `program` (the test's own name) and reaps `procs`."""
+    subprocess.run(["pkill", "-KILL", "-x", program.name], capture_output=True)
+    for proc in procs:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+
+
 def test_kill_program_and_watchdog(tmp_path):
-    """kill_program ends a program that ignores SIGTERM, and perf_record.sh stops its recording, frees its lock and
-    its program when the server named in PERF_PARENT_PID dies."""
+    """kill_program ends a process group that ignores SIGTERM, and is harmless on one that is gone; perf_record.sh
+    stops its recording, frees its lock and stops the program it launched (with its child), and no other process of
+    that name, when the server named in PERF_PARENT_PID dies."""
     import time
     from metal_gpu_trace import recording
-    from support import wait_until
-    stubs, out, hung = hang_stubs(tmp_path)
-    # the names pkill -x gets hold only this test's processes: a random token (8 hex digits, so that the name stays
-    # within the 16 characters macOS keeps of a process name)
-    token = secrets.token_hex(4)
-    program = hung.rename(tmp_path / f"hang-{token}")
-    # a program that ignores SIGTERM
-    stubborn = tmp_path / f"ig-{token}"
-    # built here, not a copy of /bin/sleep: macOS kills a copied system binary with SIGKILL as it starts
-    source = tmp_path / "ig.c"
-    source.write_text("#include <unistd.h>\nint main(void) { sleep(60); return 0; }\n")
-    subprocess.run(["cc", "-o", str(stubborn), str(source)], check=True)
-    proc = subprocess.Popen(["sh", "-c", f"trap '' TERM; exec {stubborn}"])
-    wait_until(lambda: subprocess.run(["pgrep", "-x", stubborn.name], capture_output=True).returncode == 0)
-    recording.kill_program(stubborn.name)
-    assert proc.wait(timeout=15) is not None, "kill_program must escalate to SIGKILL"
-    # the recording's parent dies: the script must exit and free its lock
+    from support import pids_named, wait_until
+    stubs, out, _ = hang_stubs(tmp_path)
+    program, bystander = stubborn_pair(tmp_path)
+    target = subprocess.Popen([str(program)], start_new_session=True)  # leads its own group, as xctrace's launch
+    wait_until(lambda: len(pids_named(program.name)) == 2)
+    recording.kill_program(target.pid)
+    assert target.wait(timeout=15) is not None, "kill_program must escalate to SIGKILL"
+    recording.kill_program(target.pid)  # gone: a repeated stop raises nothing
+    assert bystander.poll() is None, "kill_program must stop its group only"
+    # the recording's parent dies: the script must exit, free its lock and stop the program it launched
     parent = subprocess.Popen(["sleep", "60"])
-    (stubs / "pkill").unlink()  # the script needs the real pkill
     # PERF_MIN_FREE_GB=0: the disk check needs 26 GB for 30 s, and a CI runner's free space varies
     env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_PARENT_PID=str(parent.pid),
                PERF_MIN_FREE_GB="0",
                PATH=f"{stubs}:{os.environ['PATH']}")
     logfile = tmp_path / "script.log"  # a file, not a pipe: the stub's orphaned sleep would hold a pipe open
     script = subprocess.Popen(["zsh", str(PKG / "perf_record.sh"), "orphan", "30", "native", "-", str(tmp_path),
-                               str(program)], env=env, stdout=open(logfile, "w"), stderr=subprocess.STDOUT,
+                               str(program), "fork"], env=env, stdout=open(logfile, "w"), stderr=subprocess.STDOUT,
                               start_new_session=True)
     try:
         deadline = time.time() + 40
-        while not (out / ".recording").is_dir() and time.time() < deadline:
+        while not (out / ".recording" / "program").is_file() and time.time() < deadline:
             time.sleep(0.2)
-        assert (out / ".recording").is_dir(), (f"the recording never started; the script's exit code is {script.poll()} "
-                                               f"and its output {logfile.read_text()[-600:]!r}")
+        assert (out / ".recording" / "program").is_file(), (
+            f"the launched program was never found; the script's exit code is {script.poll()} "
+            f"and its output {logfile.read_text()[-600:]!r}")
+        wait_until(lambda: len(pids_named(program.name)) == 3)  # the bystander, the program and its child
         parent.kill()
         parent.wait()
         script.wait(timeout=30)
+        wait_until(lambda: pids_named(program.name) == [bystander.pid], timeout=15)
     finally:
-        if script.poll() is None:
-            script.kill()
-        subprocess.run(["pkill", "-f", str(program)], capture_output=True)  # the xcrun stub holds it in its arguments
+        stop_all(program, script, bystander)
+        subprocess.run(["pkill", "-f", str(PKG / "perf_record.sh")], capture_output=True)
     assert not list(out.iterdir()), f"the lock and the partial files must go: {list(out.iterdir())} {logfile.read_text()[-400:]!r}"
+
+
+def test_cancel_stops_only_the_launched_program(tmp_path):
+    """A cancelled native recording stops the program it launched and that program's child, even though they ignore
+    SIGTERM, and leaves alone another process with the same name (pkill -x killed it too)."""
+    import threading
+    from metal_gpu_trace import config, paths, recording
+    from support import pids_named
+    stubs, out, _ = hang_stubs(tmp_path)
+    program, bystander = stubborn_pair(tmp_path)
+    cancel = threading.Event()
+    saved = config.OUT, config.PROGRESS_TICKS, os.environ["PATH"]
+    config.OUT, config.PROGRESS_TICKS = out, 1
+    os.environ["PATH"] = f"{stubs}:{saved[2]}"
+    ticks = []
+
+    def tick(*_):
+        """Cancels once the launched program and its child run beside the bystander and the script has found them
+        (or 10 s on, should it never find them)."""
+        ticks.append(1)
+        if len(pids_named(program.name)) == 3 and ((config.LOCK / "program").is_file() or len(ticks) > 10):
+            cancel.set()
+    recording.RUN.cancel, recording.RUN.progress = cancel, tick
+    try:
+        recording.tool_perf_record("cancel", str(program), seconds=20, wine="native", args="fork")
+        raise AssertionError("a cancelled recording must fail")
+    except paths.ToolError as error:
+        assert "cancelled" in str(error), error
+        assert bystander.poll() is None, "another process with the program's name must keep running"
+        assert pids_named(program.name) == [bystander.pid], "the launched program and its child must be stopped"
+    finally:
+        config.OUT, config.PROGRESS_TICKS, os.environ["PATH"] = saved
+        recording.RUN.cancel = recording.RUN.progress = None
+        stop_all(program, bystander)
+    assert not list(out.iterdir()), list(out.iterdir())
+
+
+def test_recording_end_stops_only_the_launched_program(tmp_path):
+    """When xctrace returns, perf_record.sh stops what is left of the program it launched (its child here) and
+    nothing else of that name."""
+    from support import pids_named
+    stubs, out, _ = hang_stubs(tmp_path)
+    xcrun = stubs / "xcrun"  # an xctrace that ends after 3 s, its program still running, with an empty trace
+    xcrun.write_text(xcrun.read_text().replace("sleep 60", "sleep 3"))
+    program, bystander = stubborn_pair(tmp_path)
+    env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_MIN_FREE_GB="0",
+               PATH=f"{stubs}:{os.environ['PATH']}")
+    try:
+        proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "end", "1", "native", "-", str(tmp_path),
+                               str(program), "fork"], env=env, capture_output=True, text=True, timeout=60)
+        assert proc.returncode, proc  # the empty trace has nothing to read back
+        assert bystander.poll() is None, "another process with the program's name must keep running"
+        assert pids_named(program.name) == [bystander.pid], "the launched program and its child must be stopped"
+    finally:
+        stop_all(program, bystander)
+
+
+def test_cancelled_attach_leaves_the_program_running(tmp_path):
+    """Cancelling perf_attach stops the recording only: the program it attached to keeps running."""
+    import threading
+    from metal_gpu_trace import config, paths, recording
+    stubs, out, _ = hang_stubs(tmp_path)
+    program, running = stubborn_pair(tmp_path)
+    cancel = threading.Event()
+    saved = config.OUT, config.PROGRESS_TICKS, os.environ["PATH"]
+    config.OUT, config.PROGRESS_TICKS = out, 1
+    os.environ["PATH"] = f"{stubs}:{saved[2]}"
+    recording.RUN.cancel, recording.RUN.progress = cancel, lambda done, *a: done > 0 and cancel.set()
+    try:
+        recording.tool_perf_attach("attach", running.pid, seconds=20)
+        raise AssertionError("a cancelled recording must fail")
+    except paths.ToolError as error:
+        assert "cancelled" in str(error), error
+        assert running.poll() is None, "the attached program must keep running"
+    finally:
+        config.OUT, config.PROGRESS_TICKS, os.environ["PATH"] = saved
+        recording.RUN.cancel = recording.RUN.progress = None
+        stop_all(program, running)
 
 def test_script_failure_cleanup(tmp_path):
     """perf_record.sh frees its lock and deletes its partial files when a recording fails, and refuses a program that

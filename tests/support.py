@@ -7,6 +7,7 @@ import os
 import pathlib
 import secrets
 import struct
+import subprocess
 import sys
 import tempfile
 import time
@@ -71,13 +72,30 @@ def hang_stubs(tmp_path):
     stubs.mkdir()
     out.mkdir()
     xcrun = stubs / "xcrun"
-    xcrun.write_text("#!/bin/zsh\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\nsleep 60\n")
+    # like xctrace, it launches what follows -- as the leader of a process group of its own
+    xcrun.write_text("#!/bin/zsh\nargs=(\"$@\")\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\n"
+                     "i=${args[(i)--]}\n(( i <= $#args )) && python3 -I -c "
+                     "'import os, sys; os.setpgrp(); os.execv(sys.argv[1], sys.argv[1:])' \"${(@)args[i+1,-1]}\" &\n"
+                     "sleep 60\n")
     xcrun.chmod(0o755)
     program = unique_program(tmp_path, "hang")
-    pkill = stubs / "pkill"  # records which program the stop path kills
-    pkill.write_text(f"#!/bin/zsh\necho $@ >> {tmp_path}/pkill.log\n")
-    pkill.chmod(0o755)
     return stubs, out, program
+
+
+def stubborn_program(path):
+    """Builds at `path` a program that ignores SIGTERM and sleeps 60 s; given an argument, it first starts a child of
+    the same name. Built, not a copy of /bin/sleep: macOS kills a copied system binary with SIGKILL as it starts."""
+    source = path.with_suffix(".c")
+    source.write_text("#include <signal.h>\n#include <unistd.h>\nint main(int argc, char **argv) {\n  (void)argv;\n"
+                      "  signal(SIGTERM, SIG_IGN);\n  if (argc > 1) fork();\n  sleep(60);\n  return 0;\n}\n")
+    subprocess.run(["cc", "-o", str(path), str(source)], check=True)
+    return path
+
+
+def pids_named(name):
+    """Returns the sorted pids of the processes named exactly `name`."""
+    found = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True).stdout
+    return sorted(int(pid) for pid in found.split())
 
 GOLDEN = ROOT / "tests" / "golden"
 

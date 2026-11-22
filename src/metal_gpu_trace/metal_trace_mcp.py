@@ -31,7 +31,7 @@ INSTRUCTIONS = (
     "encoders, as translation layers do; perf_compare says how much two runs differ; skip_s on perf_compare and perf_gate leaves out the first seconds (start-up) of each run; perf_history follows FPS, hitches and memory across runs with one name prefix, oldest first; perf_gate says whether a run meets budgets you set (FPS floor, hitch or memory ceiling). trace_tables, trace_count and trace_query "
     "read the .trace when KEEP_TRACE=1 kept it, else the run's tables file (<run>.tables.sqlite, written at every recording: perf_runs tables_kept); "
     "trace_query's where, columns, order_by, group_by and aggregates filter that file without SQL. When perf_record ends it stops every program of its Wine prefix, "
-    "or every process named like a native program. To compare native Metal with a translation layer without a game "
+    "or the native program it launched and that program's children. To compare native Metal with a translation layer without a game "
     "of one's own: workload_list, workload_fetch, then perf_record with workload and api (and example, for a workload "
     "that lists examples), or the compare-layer prompt. The diagnose-stutter prompt tells first-seen shader stutter from "
     "steady stutter; bisect-regression finds the commit that slowed a program. perf_sweep records one run per value of dim, example, api or an "
