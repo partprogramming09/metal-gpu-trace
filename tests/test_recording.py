@@ -428,7 +428,7 @@ def test_stale_lock_macos(tmp_path):
                                  "while [[ $1 != --output ]]; do shift; done\nmkdir -p $2\n")
     (stubs / "pkill").write_text("#!/bin/zsh\nexit 1\n")
     program = unique_program(tmp_path, "stale")
-    for stub in (*stubs.iterdir(), program):
+    for stub in stubs.iterdir():
         stub.chmod(0o755)
     env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_MIN_FREE_GB="0",
                PATH=f"{stubs}:{os.environ['PATH']}")

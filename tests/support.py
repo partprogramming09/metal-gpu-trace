@@ -57,9 +57,9 @@ def macos_only(test):
 def unique_program(directory, prefix="prog"):
     """Writes an executable shell script whose name only this run uses and returns its path.
 
-    perf_record.sh ends the recorded program by name (pkill -x), so a name another suite's process could hold, such as
-    /bin/sh, would end that suite's process. macOS keeps 16 characters of a process name, so the name stays short
-    enough for pkill -x to match it exactly."""
+    perf_record.sh used to end the recorded program by name (pkill -x), so a name another suite's process could hold,
+    such as /bin/sh, ended that suite's process. macOS keeps 16 characters of a process name, so the name stays short
+    enough for that match."""
     program = directory / f"{prefix}-{os.getpid() % 10000:x}{secrets.token_hex(2)}"
     program.write_text("#!/bin/sh\n")
     program.chmod(0o755)
