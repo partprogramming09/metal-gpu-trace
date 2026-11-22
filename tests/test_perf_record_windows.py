@@ -462,14 +462,14 @@ def test_diagnose_bottlenecks_and_recommendations(tmp_path):
         diag_mem = analysis.tool_perf_diagnose("mem_bound")
         assert diag_mem["bottleneck"] == "MEMORY_PRESSURE_SUSPECTED"
         assert diag_mem["stutter_analysis"]["verdict"] == "SEVERE_STUTTER"
-        assert any("sombras de 2048 a 1024" in r for r in diag_mem["recommendations"])
-        assert any("cascadas de sombras a 2" in r for r in diag_mem["recommendations"])
+        assert any("2048 to 1024" in r for r in diag_mem["recommendations"])
+        assert any("shadow cascades to 2" in r for r in diag_mem["recommendations"])
 
         # 4. BALANCED with thermal throttling
         (tmp_path / "balanced.json").write_text(json.dumps(make_summary(10.0, 16.6, 0.18, 900.0, 0.5, 1.0, throttling_detected=True)))
         diag_bal = analysis.tool_perf_diagnose("balanced")
         assert diag_bal["bottleneck"] == "BALANCED"
-        assert any("Estrangulamiento térmico" in r for r in diag_bal["recommendations"])
+        assert any("Thermal throttling" in r for r in diag_bal["recommendations"])
     finally:
         config.OUT = saved
 

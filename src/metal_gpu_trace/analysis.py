@@ -421,58 +421,58 @@ def tool_perf_diagnose(run, min_encoders=4, short_us=25, short_share=0.25):
 
     recommendations = []
     if bottleneck == "GPU_BOUND":
-        recommendations.append("Activar FSR si la GPU está saturada al 100% o usar escalado dinámico de resolución.")
-        recommendations.append("Reducir resolución interna de renderizado, calidad de postprocesado o sombreadores pesados.")
+        recommendations.append("Enable FSR if the GPU is saturated at 100%, or use dynamic resolution scaling.")
+        recommendations.append("Lower the internal render resolution, the post-processing quality or the heavy shaders.")
     elif bottleneck == "CPU_SUBMISSION_BOUND":
         if s.get("template") == "Windows Native Trace":
-            recommendations.append("Fijar FlipQueueSize=3 en el controlador AMD o DirectX para amortiguar el despacho de la CPU.")
-        recommendations.append("Consolidar draw calls mediante instancing o reducir complejidad de geometría y objetos dinámicos.")
+            recommendations.append("Set FlipQueueSize=3 in the AMD or DirectX driver to smooth out the CPU's submission.")
+        recommendations.append("Merge draw calls with instancing, or reduce geometry complexity and dynamic objects.")
     elif bottleneck == "MEMORY_PRESSURE_SUSPECTED":
-        recommendations.append("Hipótesis (el ancho de banda no se mide): reducir resolución de sombras de 2048 a 1024 para aliviar el bus UMA.")
-        recommendations.append("Hipótesis: limitar cascadas de sombras a 2 en exteriores para mitigar el consumo de memoria unificada.")
+        recommendations.append("Hypothesis (bandwidth is not measured): lower the shadow resolution from 2048 to 1024 to ease the UMA bus.")
+        recommendations.append("Hypothesis: limit shadow cascades to 2 outdoors to reduce unified memory use.")
     if too_many_short:
-        recommendations.append("Consolidar render passes y reducir encoders breves para mitigar sobrecarga en la capa de traducción.")
+        recommendations.append("Merge render passes and reduce short encoders to cut the overhead of the translation layer.")
     if stutter_verdict in ("MICRO_STUTTER", "SEVERE_STUTTER"):
-        recommendations.append("Activar un limitador de FPS (framerate cap) o sincronización vertical/VRR para estabilizar los intervalos de presentación.")
+        recommendations.append("Turn on a frame rate cap or vertical sync/VRR to steady the presentation intervals.")
     throttling = gpu.get("throttling_analysis") or {}
     if throttling.get("thermal_throttling_detected"):
         drift_pct = throttling.get("fps_drift_pct", 0)
-        recommendations.append(f"Estrangulamiento térmico detectado ({drift_pct}% caída de FPS): revisar curvas de ventilación y disipación térmica del APU/GPU.")
+        recommendations.append(f"Thermal throttling detected ({drift_pct}% FPS drop): check the fan curves and the cooling of the APU/GPU.")
     hitches = s.get("hitches") or {}
     top_cause = next(iter(hitches.get("causes") or {}), None)
     if top_cause == "shader_compile":
-        recommendations.append("Los tirones coinciden con el compilador gráfico: precompilar o calentar la caché de shaders.")
+        recommendations.append("The hitches coincide with the graphics shader compiler: precompile or warm up the shader cache.")
     elif top_cause == "memory_growth":
-        recommendations.append("Los tirones coinciden con crecimiento de memoria Metal: revisar cargas de recursos en medio de la partida.")
+        recommendations.append("The hitches coincide with Metal memory growth: check for resources loaded in the middle of play.")
     elif top_cause == "thermal":
-        recommendations.append("Los tirones coinciden con un estado térmico distinto de Nominal.")
+        recommendations.append("The hitches coincide with a thermal state other than Nominal.")
     spills = s.get("shader_spills") or {}
     if spills.get("events"):
-        where = f" en {spills['encoders']} encoders" if spills.get("encoders") else ""
-        recommendations.append(f"Hay {spills['events']} derrames de registros de shader ({spills.get('bytes', 0)} bytes{where}): "
-                               "simplificar o dividir el shader que los causa.")
+        where = f" in {spills['encoders']} encoders" if spills.get("encoders") else ""
+        recommendations.append(f"There are {spills['events']} shader register spills ({spills.get('bytes', 0)} bytes{where}): "
+                               "simplify or split the shader that causes them.")
     synced = display_synced_hz(gpu)
     if synced:
-        recommendations.append(f"El FPS ({gpu['fps_estimate']}) coincide con una pantalla de {synced} Hz y los intervalos son regulares: "
-                               "probablemente sincronización vertical; la GPU tiene margen y baja de estado de rendimiento, así que sus ms por frame "
-                               "suben: compare solo ejecuciones con el mismo ritmo.")
+        recommendations.append(f"The FPS ({gpu['fps_estimate']}) matches a {synced} Hz display and the intervals are regular: "
+                               "probably vsync; the GPU has headroom and drops to a lower performance state, so its ms per frame "
+                               "rise: compare only runs with the same pace.")
     activity = s.get("gpu_activity") or {}
     if activity.get("gpu_recovered"):
         n = activity["recoveries"]
-        recommendations.append(f"La GPU se recuperó {n} {'vez' if n == 1 else 'veces'} durante la grabación (recoveryCount del "
-                               "controlador): un cuelgue o un comando que superó su tiempo; las cifras de esta grabación no son fiables.")
+        recommendations.append(f"The GPU recovered {n} {'time' if n == 1 else 'times'} during the recording (the driver's "
+                               "recoveryCount): a hang or a command that timed out; the numbers of this recording are not reliable.")
     if (activity.get("split_scenes") or 0) > 0:
-        recommendations.append(f"El contador SplitSceneCount del controlador creció en {activity['split_scenes']}: la GPU dividió "
-                               f"{activity['split_scenes']} escenas; su causa no se mide aquí, compárelo entre grabaciones.")
+        recommendations.append(f"The driver's SplitSceneCount counter grew by {activity['split_scenes']}: the GPU split "
+                               f"{activity['split_scenes']} scenes; the cause is not measured here, compare it between recordings.")
     stalled = unpresented(**{run: s})
     if stalled:
-        recommendations.insert(0, f"El programa dejó de presentar a los {gpu['unpresented']['from_s']} s (¿ventana tapada o "
-                                  "minimizada, o una carga que no presentó nada): ese trabajo no cuenta como frames y este "
-                                  "diagnóstico solo cubre los frames presentados; grabe de nuevo con la ventana visible.")
+        recommendations.insert(0, f"The program stopped presenting at {gpu['unpresented']['from_s']} s (window covered or "
+                                  "minimized, or a load that presented nothing): that work does not count as frames and this "
+                                  "diagnosis only covers the presented frames; record again with the window visible.")
     if bottleneck == "UNKNOWN":
-        recommendations.append("Sin datos de actividad de GPU en esta grabación: no hay veredicto de cuello de botella.")
+        recommendations.append("No GPU activity data in this recording: there is no bottleneck verdict.")
     elif not recommendations:
-        recommendations.append("Rendimiento equilibrado; no se detectan cuellos de botella críticos.")
+        recommendations.append("Balanced performance; no critical bottlenecks detected.")
 
     return {"run": run, "too_many_short_encoders": too_many_short,
             "thresholds": {"min_encoders": min_encoders, "short_us": int(short_us), "short_share": short_share},
