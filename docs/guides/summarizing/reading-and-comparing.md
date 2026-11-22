@@ -66,12 +66,12 @@ The answer carries `regressed` and `improved` (metric, value, range of each), `u
 
 `perf_history prefix` lists the runs whose name starts with the prefix, oldest first, with six numbers and the change from first to last (`:437-462`). It flags a series that mixes Windows and Metal and says "under 3 runs: not a trend yet" (`:458-461`); read a trend as real only when it exceeds the `spread_pct` of equal runs (`:440-441`).
 
-`perf_diagnose` (`:693-820`) is a rule-based reading of one summary: **a heuristic, and its text is not English**: the recommendations are Spanish sentences (`:756-807`), the only Spanish in the tool output.
+`perf_diagnose` (`:693-820`) is a rule-based reading of one summary: **a heuristic**: its recommendations are English sentences (they were Spanish before this change; see [limit 11](./limits.md)).
 
 | Output | Rule (thresholds are in the code) | Line |
 |---|---|---|
 | `stutter_analysis.verdict` | `UNKNOWN` without the stutter number; `SEVERE_STUTTER` above 7 %; `MICRO_STUTTER` from 2 %; else `SMOOTH` | `:720-727` |
-| `bottleneck` | `MEMORY_PRESSURE_SUSPECTED` when variance is high (jitter at least 3 ms, or p95 minus p50 of the interval at least 5 ms) and the working set is at least 1500 MiB; `UNKNOWN` without `idle_share`; `CPU_SUBMISSION_BOUND` when `idle_share >= 0.25` (or `>= 0.20` with too many short encoders); `GPU_BOUND` when `idle_share <= 0.15` and the GPU ms is at least 80 % of the interval; else `BALANCED` | `:737-752` |
+| `bottleneck` | `MEMORY_PRESSURE_SUSPECTED` when variance is high (jitter at least 3 ms, or p95 minus p50 of the interval at least 5 ms) and the working set is at least 1500 MiB; `UNKNOWN` without `idle_share`; `CPU_SUBMISSION_BOUND` when `idle_share >= 0.25` (or `>= 0.20` with too many short encoders), or `DISPLAY_SYNCED` instead when the run is locked to the display (`display_synced_hz` is set: the idle time is the wait for the display); `GPU_BOUND` when `idle_share <= 0.15` and the GPU ms is at least 80 % of the interval; else `BALANCED` | `:737-752` |
 | `too_many_short_encoders` | encoders per frame p50 at least `min_encoders` (4) **and** the share under `short_us` at least `short_share` (0.25) | `:711` |
 
 The defaults "come from bgfx 17-drawstress on an M1 Pro: 7 encoders per frame and 50 % under 25 µs under Mullion, 2 and 2 % in native Metal" (`:698-699`). The memory verdict is an inference ("memory bandwidth itself is not measured", `:742`). By hand on the two real runs ([E7](./evidence.md#e7)): `SMOOTH` (0.29 %) and `MICRO_STUTTER` (2.63 %), both `CPU_SUBMISSION_BOUND` by the rule (**probable**, tool not run). `perf_memory_breakdown` (`:823-870`) only rearranges the `resource_allocations` block and computes ratios (`live_share_pct`, `allocated_mib_per_live_mib`).

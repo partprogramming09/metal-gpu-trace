@@ -35,8 +35,30 @@ def test_diagnose(tmp_path):
         (tmp_path / "cpu.json").write_text(json.dumps(busy))
         got = analysis.tool_perf_diagnose("cpu")
         assert got["bottleneck"] == "CPU_SUBMISSION_BOUND" and got["hitches"]["count"] == 3, got
-        assert any("compilador gráfico" in r for r in got["recommendations"]), got
+        assert any("shader compiler" in r for r in got["recommendations"]), got
         assert not any("FlipQueueSize" in r for r in got["recommendations"]), got
+        for hz, fps, p50, p95, label in ((60, 60.1, 16.6, 17.2, "DISPLAY_SYNCED"), (120, 119.9, 8.33, 8.9, "DISPLAY_SYNCED"),
+                                         (None, 60.1, 16.6, 25.0,"CPU_SUBMISSION_BOUND"),
+                                         (None, 45.0, 22.2, 22.8, "CPU_SUBMISSION_BOUND")):
+            vs = {**busy, "template": "Windows Native Trace",
+                  "gpu": {**busy["gpu"], "fps_estimate": fps,
+                          "frame_interval_ms": {"count": 499, "mean": 16.7, "p50": p50, "p95": p95}}}
+            (tmp_path / "vs.json").write_text(json.dumps(vs))
+            got = analysis.tool_perf_diagnose("vs")
+            assert got["bottleneck"] == label and got["display_synced_hz"] == hz, (fps, got["bottleneck"])
+            advice = " ".join(got["recommendations"])
+            assert ("instancing" in advice or "FlipQueueSize" in advice) == (label == "CPU_SUBMISSION_BOUND"), got
+        # too many short encoders lowers the CPU threshold to 0.20; at 60 Hz that idle is still the display's wait
+        for idle, fps, p95, label in ((0.22, 60.1, 17.2, "DISPLAY_SYNCED"), (0.22, 60.1, 25.0, "CPU_SUBMISSION_BOUND"),
+                                      (0.19, 60.1, 17.2, "BALANCED")):
+            shorty = {**no_spans, "encoders": {**no_spans["encoders"], "per_frame": {"count": 9, "p50": 8},
+                                               "short_share": {"25": 0.5}},
+                      "gpu": {**no_spans["gpu"], "fps_estimate": fps,
+                              "frame_interval_ms": {"count": 499, "mean": 16.7, "p50": 16.6, "p95": p95}},
+                      "gpu_idle": {**no_spans["gpu_idle"], "idle_share": idle}}
+            (tmp_path / "shorty.json").write_text(json.dumps(shorty))
+            got = analysis.tool_perf_diagnose("shorty")
+            assert got["too_many_short_encoders"] and got["bottleneck"] == label, (idle, p95, got["bottleneck"])
         for fps, p50, p95, synced in ((119.9, 8.33, 8.9, 120), (60.1, 16.6, 17.2, 60), (119.9, 8.3, 14.0, None),
                                       (97.0, 10.3, 10.6, None), (None, None, None, None),
                                       (118.9, 8.41, 9.824, 120)):
@@ -45,26 +67,26 @@ def test_diagnose(tmp_path):
             (tmp_path / "sync.json").write_text(json.dumps(sync))
             got = analysis.tool_perf_diagnose("sync")
             assert got["display_synced_hz"] == synced, (fps, got["display_synced_hz"])
-            assert any("sincronización vertical" in r for r in got["recommendations"]) == bool(synced), got
+            assert any("vsync" in r for r in got["recommendations"]) == bool(synced), got
         hung = {**no_spans, "gpu_activity": {"samples": 9, "device_pct": {"mean": 50}, "split_scenes": 12, "recoveries": 1,
                                              "gpu_recovered": True}}
         (tmp_path / "hung.json").write_text(json.dumps(hung))
         got = analysis.tool_perf_diagnose("hung")
         assert got["gpu_activity"]["gpu_recovered"] is True, got
-        assert any("se recuperó 1 vez" in r for r in got["recommendations"]), got
-        assert any("dividió 12 escenas" in r for r in got["recommendations"]), got
+        assert any("recovered 1 time" in r for r in got["recommendations"]), got
+        assert any("split 12 scenes" in r for r in got["recommendations"]), got
         calm = {**no_spans, "gpu_activity": {"samples": 9, "split_scenes": 0, "recoveries": 0, "gpu_recovered": False}}
         (tmp_path / "calm.json").write_text(json.dumps(calm))
         got = analysis.tool_perf_diagnose("calm")
-        assert not any("recuper" in r or "dividió" in r for r in got["recommendations"]), got
+        assert not any("recovered" in r or "split" in r for r in got["recommendations"]), got
         spilled = {**no_spans, "shader_spills": {"events": 4, "bytes": 8192, "encoders": 2}}
         (tmp_path / "spilled.json").write_text(json.dumps(spilled))
         got = analysis.tool_perf_diagnose("spilled")
-        assert any("derrame" in r and "8192" in r for r in got["recommendations"]), got
+        assert any("spill" in r and "8192" in r for r in got["recommendations"]), got
         (tmp_path / "partial.json").write_text(json.dumps({**no_spans, "shader_spills": {"events": 1}}))
-        assert any("1 derrames" in r and "encoders" not in r for r in analysis.tool_perf_diagnose("partial")["recommendations"])
+        assert any("1 shader register spills" in r and "encoders" not in r for r in analysis.tool_perf_diagnose("partial")["recommendations"])
         (tmp_path / "nospill.json").write_text(json.dumps({**no_spans, "shader_spills": {"events": 0}}))
-        assert not any("derrame" in r for r in analysis.tool_perf_diagnose("nospill")["recommendations"])
+        assert not any("spill" in r for r in analysis.tool_perf_diagnose("nospill")["recommendations"])
         (tmp_path / "winbusy.json").write_text(json.dumps({**busy, "template": "Windows Native Trace"}))
         assert any("FlipQueueSize" in r for r in analysis.tool_perf_diagnose("winbusy")["recommendations"])
         assert not analysis.tool_perf_diagnose("new", min_encoders=8)["too_many_short_encoders"]
@@ -819,7 +841,7 @@ def test_unpresented_is_surfaced(tmp_path):
         (tmp_path / "late.json").write_text(json.dumps(summary(stall)))
         (tmp_path / "late.frames.csv").write_text(frames)
         assert not analysis.tool_perf_gate("late", fps_min=1, skip_s=1)["pass"], "a stall after the cut stays"
-        assert "presentados" in diagnosis["recommendations"][0], diagnosis["recommendations"][0]
+        assert "stopped presenting" in diagnosis["recommendations"][0], diagnosis["recommendations"][0]
     finally:
         config.OUT, config.BASELINES = saved
 

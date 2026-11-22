@@ -5,6 +5,12 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+### Changed
+
+- 🩺 `perf_diagnose` answers `bottleneck: "DISPLAY_SYNCED"` instead of `CPU_SUBMISSION_BOUND` when the GPU idle share is high but the run is locked to the display (`display_synced_hz` is set): the idle time is the wait for the display, not the CPU, so the CPU advice (instancing, `FlipQueueSize`) is no longer given. Idle without vsync stays `CPU_SUBMISSION_BOUND`.
+
+- 🌐 `perf_diagnose`: the `recommendations` text is now in English (it was Spanish); the keys and the verdict values do not change.
+
 ### Added
 
 - 🪟 `metal-gpu-trace init` also sets the server up on Windows: it looks for `uvx.exe` (PATH, then `%USERPROFILE%\.local\bin`) and writes Claude Desktop's `%APPDATA%\Claude\claude_desktop_config.json` and Codex's `%USERPROFILE%\.codex\config.toml`, merging each client's file and leaving the others alone. A missing `uvx` names the Windows install command.

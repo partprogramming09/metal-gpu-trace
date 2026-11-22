@@ -450,26 +450,32 @@ def test_diagnose_bottlenecks_and_recommendations(tmp_path):
         assert diag_gpu["stutter_analysis"]["verdict"] == "SMOOTH"
         assert any("FSR" in r for r in diag_gpu["recommendations"])
 
-        # 2. CPU_SUBMISSION_BOUND
-        (tmp_path / "cpu_bound.json").write_text(json.dumps(make_summary(8.0, 16.6, 0.45, 800.0, 4.0, 2.0)))
+        # 2. CPU_SUBMISSION_BOUND: irregular intervals (p95 far above p50), so no vsync
+        (tmp_path / "cpu_bound.json").write_text(json.dumps(make_summary(8.0, 16.6, 0.45, 800.0, 4.0, 6.0)))
         diag_cpu = analysis.tool_perf_diagnose("cpu_bound")
         assert diag_cpu["bottleneck"] == "CPU_SUBMISSION_BOUND"
         assert diag_cpu["stutter_analysis"]["verdict"] == "MICRO_STUTTER"
         assert any("FlipQueueSize=3" in r for r in diag_cpu["recommendations"])
+
+        # 2b. same idle at 60 Hz with regular intervals: DISPLAY_SYNCED, no CPU advice
+        (tmp_path / "vsync.json").write_text(json.dumps(make_summary(8.0, 16.6, 0.45, 800.0, 4.0, 2.0)))
+        diag_vs = analysis.tool_perf_diagnose("vsync")
+        assert diag_vs["bottleneck"] == "DISPLAY_SYNCED" and diag_vs["display_synced_hz"] == 60, diag_vs
+        assert not any("FlipQueueSize" in r or "instancing" in r for r in diag_vs["recommendations"]), diag_vs
 
         # 3. MEMORY_PRESSURE_SUSPECTED (a hypothesis: bandwidth is not measured)
         (tmp_path / "mem_bound.json").write_text(json.dumps(make_summary(12.0, 16.6, 0.18, 2500.0, 8.5, 5.5)))
         diag_mem = analysis.tool_perf_diagnose("mem_bound")
         assert diag_mem["bottleneck"] == "MEMORY_PRESSURE_SUSPECTED"
         assert diag_mem["stutter_analysis"]["verdict"] == "SEVERE_STUTTER"
-        assert any("sombras de 2048 a 1024" in r for r in diag_mem["recommendations"])
-        assert any("cascadas de sombras a 2" in r for r in diag_mem["recommendations"])
+        assert any("2048 to 1024" in r for r in diag_mem["recommendations"])
+        assert any("shadow cascades to 2" in r for r in diag_mem["recommendations"])
 
         # 4. BALANCED with thermal throttling
         (tmp_path / "balanced.json").write_text(json.dumps(make_summary(10.0, 16.6, 0.18, 900.0, 0.5, 1.0, throttling_detected=True)))
         diag_bal = analysis.tool_perf_diagnose("balanced")
         assert diag_bal["bottleneck"] == "BALANCED"
-        assert any("Estrangulamiento térmico" in r for r in diag_bal["recommendations"])
+        assert any("Thermal throttling" in r for r in diag_bal["recommendations"])
     finally:
         config.OUT = saved
 
