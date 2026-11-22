@@ -135,6 +135,8 @@ Rules for the file:
 - A cell that is not a number, or is NaN or infinite, is skipped (`bad_cells`). A row with a different number of cells,
   or with `t_ms` outside ±1e12 ms, is dropped (`dropped_rows`).
 - Only the first 8 MiB are read. A larger file is cut at its last complete line and the block gets `truncated: true`.
+  `METAL_TRACE_APP_METRICS_MAX_MB` in the server's environment raises that limit (a whole number of MiB, 1 or more;
+  the whole part read is held in memory). Any other value keeps 8 MiB and adds `max_mb` to `issues`.
 - A huge cell or an unclosed quote counts as one bad cell (`bad_cells`); it does not hide the rows after it.
 - A missing file, a symbolic link (a system shortcut) or a folder: no key. An empty file: `samples: 0`.
 
@@ -146,7 +148,7 @@ The block:
 | `samples` | Valid rows kept |
 | `duration_ms` | Time between the first and the last row (only when there are rows) |
 | `columns` | Per column: `count`, `mean`, `p50` (median), `p95`, `max`, `min` and `last` (the last value). Only when there are rows |
-| `issues` | Only the non-zero items: `dropped_rows`, `bad_cells`, `out_of_order_rows`, `ignored_columns`, or `header` |
+| `issues` | Only the non-zero items: `dropped_rows`, `bad_cells`, `out_of_order_rows`, `ignored_columns`, `header`, or `max_mb` (the size limit given was not valid) |
 | `truncated` | `true` only when the file was cut for its size |
 
 `app_metrics` sits at the top level of the summary, not in `common`. See [the summary keys](../data-and-lifecycle/json-keys.md).

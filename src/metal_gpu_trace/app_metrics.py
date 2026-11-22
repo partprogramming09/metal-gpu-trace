@@ -1,6 +1,7 @@
 """The optional telemetry file a recorded program writes: CSV, first column `t_ms`, then named numeric columns. The
 recording gives its path in METAL_TRACE_APP_METRICS; read() turns it into the summary's `app_metrics` block."""
 import math
+import os
 import pathlib
 import re
 import shutil
@@ -9,7 +10,8 @@ import tempfile
 from metal_gpu_trace import metrics
 
 ENV = "METAL_TRACE_APP_METRICS"
-MAX_BYTES = 8 * 2**20  # shortcut: the first 8 MiB only, when a program needs more, raise it or sample less
+ENV_MAX_MB = "METAL_TRACE_APP_METRICS_MAX_MB"  # read by the server, not the program: how many MiB of the file to read
+MAX_BYTES = 8 * 2**20  # the default when ENV_MAX_MB is unset
 MAX_COLUMNS = 32
 MAX_T_MS = 1e12  # about 31 years: a larger t_ms is a bug in the program, and 1e308 would overflow the duration
 NAME = re.compile(r"[A-Za-z0-9_.-]{1,64}")
@@ -39,14 +41,23 @@ def number(text):
     return value if math.isfinite(value) else None
 
 
-def read(path):
-    """Returns the `app_metrics` block for the file at `path`, or None when it is absent, a link or not a file."""
+def read(path, environ=None):
+    """Returns the `app_metrics` block for the file at `path`, or None when it is absent, a link or not a file. Reads
+    the first ENV_MAX_MB MiB (from `environ`, os.environ by default; a whole number of 1 or more) or MAX_BYTES."""
     if path.is_symlink() or not path.is_file():
         return None
+    given = (os.environ if environ is None else environ).get(ENV_MAX_MB)
+    limit, bad_limit = MAX_BYTES, False
+    if given is not None:
+        given = given.strip()
+        if given.isascii() and given.isdigit() and int(given) >= 1:
+            limit = int(given) * 2**20
+        else:
+            bad_limit = True
     with open(path, "rb") as handle:
-        data = handle.read(MAX_BYTES + 1)
-    truncated = len(data) > MAX_BYTES
-    text = data[:MAX_BYTES].decode("utf-8-sig", errors="replace")
+        data = handle.read(limit + 1)
+    truncated = len(data) > limit
+    text = data[:limit].decode("utf-8-sig", errors="replace")
     if truncated:
         text = text.rsplit("\n", 1)[0]  # the last line may be cut
     # no csv module: a quote must not swallow the rows after it, and a huge cell must not raise
@@ -55,12 +66,14 @@ def read(path):
              "reason": "the names and meaning of the columns belong to the program", "samples": 0}
     if truncated:
         block["truncated"] = True
+    issues = {"max_mb": f"{ENV_MAX_MB} must be a whole number of 1 or more"} if bad_limit else {}
     if not rows:
+        if issues:
+            block["issues"] = issues
         return block
-    issues = {}
     header = [cell.strip() for cell in rows[0]]
     if header[0] != "t_ms":
-        block["issues"] = {"header": "first column must be t_ms"}
+        block["issues"] = dict(issues, header="first column must be t_ms")
         return block
     keep, ignored = {}, []  # column index -> name
     for index, name in enumerate(header[1:], 1):
