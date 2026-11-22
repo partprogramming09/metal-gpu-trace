@@ -529,9 +529,9 @@ def test_kill_program_and_watchdog(tmp_path):
     program, bystander = stubborn_pair(tmp_path)
     target = subprocess.Popen([str(program)], start_new_session=True)  # leads its own group, as xctrace's launch
     wait_until(lambda: len(pids_named(program.name)) == 2)
-    recording.kill_program(target.pid)
+    recording.kill_program(target.pid, program.name)
     assert target.wait(timeout=15) is not None, "kill_program must escalate to SIGKILL"
-    recording.kill_program(target.pid)  # gone: a repeated stop raises nothing
+    recording.kill_program(target.pid, program.name)  # gone: a repeated stop raises nothing
     assert bystander.poll() is None, "kill_program must stop its group only"
     # the recording's parent dies: the script must exit, free its lock and stop the program it launched
     parent = subprocess.Popen(["sleep", "60"])
@@ -559,6 +559,88 @@ def test_kill_program_and_watchdog(tmp_path):
         stop_all(program, script, bystander)
         subprocess.run(["pkill", "-f", str(PKG / "perf_record.sh")], capture_output=True)
     assert not list(out.iterdir()), f"the lock and the partial files must go: {list(out.iterdir())} {logfile.read_text()[-400:]!r}"
+
+
+def test_launched_group_reads_only_a_valid_group_of_its_own_lock(tmp_path):
+    """launched_group returns the group perf_record.sh kept in its lock only when the lock is that script's and the
+    group is a number above 1 in ASCII digits (int() also takes other scripts' digits)."""
+    from metal_gpu_trace import config, recording
+    saved, config.LOCK = config.LOCK, tmp_path / "recording.lock"
+    try:
+        assert recording.launched_group(42) is None, "no lock"
+        config.LOCK.mkdir()
+        (config.LOCK / "pid").write_text("42\n")
+        assert recording.launched_group(42) is None, "no program yet"
+        for text, expected in (("", None), ("abc", None), ("0", None), ("1", None), ("-7", None), ("٣٤", None),
+                               ("12 13", None), ("4242\n", 4242)):
+            (config.LOCK / "program").write_text(text)
+            assert recording.launched_group(42) == expected, (text, recording.launched_group(42))
+        assert recording.launched_group(43) is None, "another recording's lock"
+    finally:
+        config.LOCK = saved
+
+
+def test_kill_program_checks_the_group_before_signalling(tmp_path):
+    """kill_program signals nothing for group 0 (the caller's own group), 1 or below, nor a group whose leader now
+    runs another program (its number was reused); a group whose leader is gone while its members live on is still
+    the program's (a pid is not reused while a group holds its number) and is stopped."""
+    import time
+    from metal_gpu_trace import recording
+    from support import pids_named, wait_until
+    sent, real = [], os.killpg
+    os.killpg = lambda group, sig: sent.append((group, sig))
+    try:
+        for group in (0, 1, -5):
+            recording.kill_program(group, "anything")
+    finally:
+        os.killpg = real
+    assert sent == [], sent
+    program, bystander = stubborn_pair(tmp_path)
+    other = subprocess.Popen(["sleep", "30"], start_new_session=True)  # a group led by another program
+    orphaned = subprocess.Popen(["sh", "-c", f"{program} & exit 0"], start_new_session=True)  # its leader exits
+    try:
+        orphaned.wait()
+        wait_until(lambda: len(pids_named(program.name)) == 2)
+        started = time.monotonic()
+        recording.kill_program(other.pid, program.name)
+        assert other.poll() is None and time.monotonic() - started < 2, "another program's group must not be signalled"
+        recording.kill_program(orphaned.pid, program.name)
+        wait_until(lambda: pids_named(program.name) == [bystander.pid])
+        assert bystander.poll() is None
+    finally:
+        stop_all(program, bystander, other)
+
+
+def test_recording_end_spares_a_group_whose_leader_runs_another_program(tmp_path):
+    """perf_record.sh does not signal the kept group when its leader no longer runs the launched program, as when
+    that number now belongs to another process."""
+    import secrets
+    stubs, out, _ = hang_stubs(tmp_path)
+    xcrun = stubs / "xcrun"
+    xcrun.write_text(xcrun.read_text().replace("sleep 60", "sleep 4"))
+    # found under its own name, then it becomes /bin/sleep: the group's leader runs another program
+    program = tmp_path / f"ex-{secrets.token_hex(4)}"
+    source = tmp_path / "ex.c"
+    source.write_text("#include <unistd.h>\nint main(void) {\n  sleep(2);\n"
+                      "  execl(\"/bin/sleep\", \"sleep\", \"30\", (char *)0);\n  return 1;\n}\n")
+    subprocess.run(["cc", "-o", str(program), str(source)], check=True)
+    env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_MIN_FREE_GB="0",
+               PATH=f"{stubs}:{os.environ['PATH']}")
+    script = subprocess.Popen(["zsh", str(PKG / "perf_record.sh"), "spare", "1", "native", "-", str(tmp_path),
+                               str(program)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    group = None
+    try:
+        from support import wait_until
+        wait_until(lambda: (out / ".recording" / "program").is_file(), timeout=20)
+        group = int((out / ".recording" / "program").read_text())
+        script.wait(timeout=60)
+        leader = subprocess.run(["ps", "-o", "comm=", "-p", str(group)], capture_output=True, text=True).stdout
+        assert leader.strip().endswith("sleep"), f"the group's leader must be left running: {leader!r}"
+    finally:
+        if script.poll() is None:
+            script.kill()
+        if group:
+            subprocess.run(["kill", "-KILL", f"-{group}"], capture_output=True)
 
 
 def test_cancel_stops_only_the_launched_program(tmp_path):

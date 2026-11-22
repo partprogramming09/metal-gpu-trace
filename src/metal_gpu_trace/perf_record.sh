@@ -79,24 +79,34 @@ exe=${1:t}
 # xctrace launches the program as the leader of a process group of its own (so does its DTServiceHub): the finder
 # looks for it by name among this script's descendants only and keeps its group in the lock, where the stops below and
 # the server's cancel read it, so that they end the program and its children and no other process of that name
+# the script's own group and the server's, which no stop may signal
+mine=($(ps -o pgid= -p $$))
+if [[ -n ${PERF_PARENT_PID:-} ]]; then mine+=($(ps -o pgid= -p $PERF_PARENT_PID 2>/dev/null || true)); fi
 if [[ $wine == native ]]; then
   (
-    own=${$(ps -o pgid= -p $$)// /}
+    own=$mine[1]
     while true; do
       group=$(ps -axo pid=,ppid=,pgid=,comm= | awk -v top=$$ -v own=$own -v exe=$exe '
         {pp[$1] = $2; pg[$1] = $3; c = $0; sub(/^ *[0-9]+ +[0-9]+ +[0-9]+ +/, "", c); n = split(c, part, "/"); name[$1] = part[n]}
         END {for (p in pp) if (name[p] == exe && pg[p] != own) for (q = pp[p]; q > 1; q = pp[q]) if (q == top) {print pg[p]; exit}}')
-      [[ -n $group ]] && { echo $group > $lock/program; break; }
+      # written whole or not at all: a reader never sees an empty file
+      [[ -n $group ]] && { echo $group > $lock/program.tmp && mv -f $lock/program.tmp $lock/program; break; }
       sleep 0.2
     done
   ) &
   finder=$!
 fi
-# stops the program's process group: SIGTERM, then SIGKILL for one that ignores it
+# whether group $1 is still the program's: its leader runs the program, or the leader is gone while the group lives on
+# (a pid is not reused while a process group holds its number)
+holds_program() { local leader=$(ps -o comm= -p $1 2>/dev/null); [[ -z $leader || ${leader:t} == $exe ]] }
+# stops the program's process group: SIGTERM, then SIGKILL for one that ignores it; never the script's or the server's
+# group, nor one whose number was reused by another program. shortcut: a child that leaves the group (setsid or
+# setpgid) is out of reach; following it means tracking every descendant, worth it only if a program does that
 stop_program() {
   local group=$(cat $lock/program 2>/dev/null)
-  [[ $group == <2-> ]] || return 0
-  kill -TERM -$group 2>/dev/null && { sleep 1; kill -0 -$group 2>/dev/null && kill -KILL -$group 2>/dev/null; }
+  [[ $group == <2-> ]] && (( ! ${mine[(Ie)$group]} )) && holds_program $group || return 0
+  kill -TERM -$group 2>/dev/null &&
+    { sleep 1; holds_program $group && kill -0 -$group 2>/dev/null && kill -KILL -$group 2>/dev/null; }
   return 0
 }
 # PERF_PARENT_PID is the server that started this recording: when it dies the recording and its program are stopped
@@ -173,7 +183,7 @@ else
   # the program outlives the recording; stop what is left of its Wine
   WINEPREFIX=$prefix $wine/bin/wineserver -k || true
 fi
-kill $sampler 2>/dev/null || true
+kill $sampler ${finder:-} 2>/dev/null || true
 [ -d $out/$name.trace ] || { echo "no recording at $out/$name.trace" >&2; exit 1; }
 
 report=(--label $name --out $out)

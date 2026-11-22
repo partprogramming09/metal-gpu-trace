@@ -186,10 +186,11 @@ def test_progress_and_cancel(tmp_path):
     saved = config.OUT, config.PROGRESS_TICKS, os.environ["PATH"]
     config.OUT, config.PROGRESS_TICKS = out, 1
     os.environ["PATH"] = f"{stubs}:{saved[2]}"
-    # cancelled from the second progress line on, once the script has found the program it launched
+    # cancelled from the second progress line on, once the script has found the program it launched (or 10 s on,
+    # should it never find it: the assertions below then fail instead of the test waiting for the deadline)
     recording.RUN.cancel = cancel
-    recording.RUN.progress = lambda *a: seen.append(a) or (len(seen) >= 2 and (config.LOCK / "program").is_file()
-                                                           and cancel.set())
+    recording.RUN.progress = lambda *a: seen.append(a) or (
+        len(seen) >= 2 and ((config.LOCK / "program").is_file() or len(seen) > 10) and cancel.set())
     try:
         recording.tool_perf_record("hang", str(stubborn), seconds=1, wine="native")
         raise AssertionError("a cancelled recording must fail")
