@@ -2,9 +2,9 @@
 
 **Reader:** people who plan a fix in this area or change it. Reviewed 2026-11-16.
 
-> **In short:** eleven surprising behaviours of today's code. Nine are still open and written down; two (rows 1 and 6)
-> were fixed on 2026-11-16 and stay listed with their commits. Then come the rules for changing the data area without
-> breaking older recordings, the cleanup or the privacy of shared summaries.
+> **In short:** eleven surprising behaviours of today's code. Eight are still open and written down; three (rows 1, 6 and
+> 9) were fixed on 2026-11-16 and 2026-11-22 and stay listed with their commits. Then come the rules for changing the
+> data area without breaking older recordings, the cleanup or the privacy of shared summaries.
 
 Back to the [index](./index.md). Example: row 6 was `KEEP_RUNS=2` deleting the big `.trace` of an old run, although [ADR-0006](../../adr/0006-compressed-tables-and-disk-quota.md) says it never prunes a kept `.trace`; the fix (24490ec) makes the code match the ADR.
 
@@ -20,7 +20,7 @@ Back to the [index](./index.md). Example: row 6 was `KEEP_RUNS=2` deleting the b
 | 6 | `KEEP_RUNS` used to delete the `.trace` of an older run, because `${old:r}.*` matched `<run>.trace`, against [ADR-0006](../../adr/0006-compressed-tables-and-disk-quota.md) ("never prunes a kept `.trace`"). The glob now excludes `*.trace`, and the Windows `clean_runs` skips it; only `METAL_TRACE_MAX_DISK_MB` frees a `.trace` | `prune_runs.sh:10`, `perf_record_windows.py:515` | Fixed 2026-11-16 (commit 24490ec). E6 measured the old glob, before 24490ec |
 | 7 | A `.trace` with no `.json` is never counted by `KEEP_RUNS`, so it is never removed by it: a recording with no GPU work, `deep` or `KEEP_TRACE=1`, and an older run whose `.json` `KEEP_RUNS` has already removed. `perf_runs` does not list it. Only `METAL_TRACE_MAX_DISK_MB` removes it; with that variable unset (the default) it stays on disk | `recording.py:427-433`, `prune_runs.sh:10` | Confirmed by the code |
 | 8 | The disk limit can be unreachable and says nothing | `retention.py:65-80`, `recording.py:348` | Confirmed by the code |
-| 9 | The summary is rewritten with a non-atomic write | `perf_report.py:836`, `recording.py:350` | Confirmed by the code |
+| 9 | The summary was rewritten with a non-atomic write, so a crash could leave half a `.json`. It now goes through a unique temporary file in the same folder, flushed to disk and renamed (`paths.write_file`); `fsync` before the rename is by design and a power cut was not simulated | `paths.py:71-100`, `perf_report.py:690`, `recording.py:381`, `perf_record_windows.py:624` | Fixed 2026-11-22 (commit 0610c99) |
 | 10 | A hand recording and a server recording default to different folders | `config.py:16`, `perf_record.sh:28-29` | Confirmed |
 | 11 | No real generation 2 or 3 summary here to compare the key lists against | E3 | Not reproduced |
 
@@ -33,4 +33,7 @@ E3, E5, E6 are in [Evidence E1 to E7](./evidence-runs.md); E8 to E10 in [Evidenc
 - **A new retention rule:** keep the two mechanisms apart; if a change needs both, update both columns of the table in [Retention](./retention.md).
 - **A table:** write with `tables.write`, read with `tables.find` and `tables.open_text`; never open a `.csv` directly, or runs from before or after 0.27.0 will break.
 - **Reading a file of the runs folder:** through `paths.read_object` or `paths.read_text`, so a link is never followed.
+- **Writing a file of the runs folder:** through `paths.write_file`, which writes a unique temporary file beside it and
+  renames it, so a crash or a full disk leaves the previous file or none, never half a file. The lock's `pid` file is
+  the exception: it lives in the lock folder and no tool reads it as a result.
 - **A shared summary** must not carry a machine name, a UUID or an absolute path.
