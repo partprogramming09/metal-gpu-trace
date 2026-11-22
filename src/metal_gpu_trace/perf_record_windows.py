@@ -18,7 +18,7 @@ import time
 
 if __package__ in (None, ""):  # run by path: make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from metal_gpu_trace import metrics, perf_record_windows_presentmon, perf_record_windows_processes  # noqa: E402
+from metal_gpu_trace import metrics, paths, perf_record_windows_presentmon, perf_record_windows_processes  # noqa: E402
 from metal_gpu_trace import perf_record_windows_system, tables  # noqa: E402
 
 # the numbers shared with perf_report live in metrics, so Mac and Windows summaries keep one schema
@@ -621,7 +621,7 @@ def record_windows(label, seconds, wine, prefix, workdir, command, program_env="
             summary["gpu_noise"] = {**noise, "source": "gpu-engine-counters"}
         summary["common"] = metrics.common_block(summary)
         json_path = out_dir / f"{name}.json"
-        json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        paths.write_file(json_path, json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
 
         # Retention check
         keep_runs_env = os.environ.get("KEEP_RUNS")

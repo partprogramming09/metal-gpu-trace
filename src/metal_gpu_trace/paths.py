@@ -1,7 +1,9 @@
 """Names and paths the tools accept, and paging: what a caller may read and how it names a run."""
+import errno
 import json
 import os
 import pathlib
+import tempfile
 
 from metal_gpu_trace import config
 
@@ -66,18 +68,37 @@ def read_object(path, what):
     return data
 
 
+def _write_error(path, error):
+    """Returns the ToolError for a write that failed, naming the reason (never the path) and the file."""
+    reason = {errno.ENOSPC: "the disk is full", errno.EACCES: "permission denied", errno.EROFS: "the folder is read-only",
+              errno.EISDIR: "it is a folder", errno.ENOTDIR: "not a folder"}.get(error.errno)
+    return ToolError(f"{path.name} cannot be written in the runs folder ({reason or error.strerror or 'the write failed'})")
+
+
 def write_file(path, text):
-    """Writes `text` to `path` (UTF-8), replacing the file, and refuses a link instead of writing through it: a runs
-    folder may come from a clone or a download. Where the system cannot refuse a link the caller checks it first."""
-    if path.is_symlink():  # where O_NOFOLLOW does not exist (Windows) the open below would write through it
+    """Writes `text` to `path` (UTF-8) through a unique temporary file beside it, flushed to disk and renamed over it:
+    a crash or a full disk leaves the previous file or none, never half a file. Refuses a link instead of writing
+    through it: a runs folder may come from a clone or a download."""
+    if path.is_symlink():  # refused before the temporary file is made: a runs folder may be a clone
         raise ToolError(f"{path.name} cannot be written in the runs folder (is it a link?)")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        fd = os.open(path, flags, 0o666)
-    except OSError:
-        raise ToolError(f"{path.name} cannot be written in the runs folder (is it a link?)") from None
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(text)
+        handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.",
+                                             suffix=".tmp", delete=False)
+    except OSError as error:  # no write permission, a folder that is not there
+        raise _write_error(path, error) from None
+    try:
+        with handle as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(handle.name, path)
+    except OSError as error:  # the disk filled, the rename was refused
+        raise _write_error(path, error) from None
+    finally:
+        try:
+            os.unlink(handle.name)  # the rename took it: nothing left to remove
+        except OSError:
+            pass
 
 
 def trace_path(trace):

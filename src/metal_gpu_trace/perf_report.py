@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 
 if __package__ in (None, ""):  # run by path (perf_record.sh does): make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from metal_gpu_trace import metrics, perf_report_frames, perf_report_host, tabledb, tables as table_files  # noqa: E402  (summarize has a local named tables)
+from metal_gpu_trace import metrics, paths, perf_report_frames, perf_report_host, tabledb, tables as table_files  # noqa: E402  (summarize has a local named tables)
 
 # the numbers shared with the Windows recorder live in metrics; these names keep perf_report's interface
 SHORT_US, stats, label_name = metrics.SHORT_US, metrics.stats, metrics.label_name
@@ -687,7 +687,7 @@ def summarize(trace, label=None, out=None, memory=True, counters=None, tables_db
         ([frame, round(start, 3)] + [round(frames[frame].get(c, 0.0), 4) for c in channels] + [round(total, 4)]
          for frame, start, total in zip(ordered, starts, totals)))
     summary["common"] = metrics.common_block(summary)
-    (out / f"{label}.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
+    paths.write_file(out / f"{label}.json", json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
     return summary
 
 
@@ -703,7 +703,7 @@ def main():
     try:
         summary = summarize(args.trace, args.label, args.out, memory=not args.no_memory, counters=True if args.counters else None,
                             tables_db=not args.no_tables)
-    except (ValueError, FileNotFoundError, RuntimeError) as error:
+    except (paths.ToolError, ValueError, FileNotFoundError, RuntimeError) as error:
         sys.exit(str(error))
     print(json.dumps({k: summary.get(k) for k in ("gpu", "metal_memory_mib", "process_rss_mib")}, indent=2))
 
