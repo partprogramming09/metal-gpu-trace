@@ -3,7 +3,7 @@ import errno
 import json
 import os
 import pathlib
-import tempfile
+import secrets
 
 from metal_gpu_trace import config
 
@@ -81,22 +81,22 @@ def write_file(path, text):
     through it: a runs folder may come from a clone or a download."""
     if path.is_symlink():  # refused before the temporary file is made: a runs folder may be a clone
         raise ToolError(f"{path.name} cannot be written in the runs folder (is it a link?)")
+    temp = path.parent / f".{path.name}.{secrets.token_hex(8)}.tmp"
     try:
-        handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.",
-                                             suffix=".tmp", delete=False)
+        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)  # 0o666 as before: the umask decides
     except OSError as error:  # no write permission, a folder that is not there
         raise _write_error(path, error) from None
     try:
-        with handle as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(handle.name, path)
+        os.replace(temp, path)
     except OSError as error:  # the disk filled, the rename was refused
         raise _write_error(path, error) from None
     finally:
         try:
-            os.unlink(handle.name)  # the rename took it: nothing left to remove
+            os.unlink(temp)  # the rename took it: nothing left to remove
         except OSError:
             pass
 

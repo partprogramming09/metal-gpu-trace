@@ -4,6 +4,7 @@ import errno
 import json
 import os
 import pathlib
+import stat
 import subprocess
 import sys
 import time
@@ -173,6 +174,23 @@ def test_the_same_write_twice_gives_the_same_file(tmp_path):
     paths.write_file(dest, text)
     assert dest.read_bytes() == first
     assert leftovers(tmp_path, "run.json") == []
+
+
+def test_a_new_summary_keeps_the_umask_mode(tmp_path):
+    """A summary created through write_file gets the mode os.open(..., 0o666) gave before (0o644 under umask 022), not
+    the 0o600 of the temporary file it is renamed from."""
+    from metal_gpu_trace import paths
+
+    if sys.platform == "win32":  # no POSIX permission bits
+        return None
+    old = os.umask(0o022)
+    try:
+        dest = tmp_path / "run.json"
+        paths.write_file(dest, '{"run": "new"}')
+        mode = stat.S_IMODE(dest.stat().st_mode)
+        assert mode == 0o644, oct(mode)
+    finally:
+        os.umask(old)
 
 
 def test_the_summary_writers_write_through_paths():
