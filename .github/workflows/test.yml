@@ -70,7 +70,7 @@ jobs:
             windows=true macos=true
           else
             files=$(git diff --name-only "$BASE" HEAD)
-            grep -qE '^(src/metal_gpu_trace/[^/]+\.py|tests/(test_perf_record_windows|test_windows_pure|conftest)\.py|\.github/workflows/test\.yml)$' <<< "$files" && windows=true
+            grep -qE '^(src/metal_gpu_trace/[^/]+\.py|tests/(test_perf_record_windows|test_windows_pure|conftest|run|support)\.py|\.github/workflows/test\.yml)$' <<< "$files" && windows=true
             grep -qE '^(src/metal_gpu_trace/|tests/|\.github/workflows/test\.yml)' <<< "$files" && macos=true
           fi
           echo "windows=$windows" >> "$GITHUB_OUTPUT"

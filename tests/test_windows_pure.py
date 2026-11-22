@@ -48,8 +48,9 @@ def test_read_presentmon_csv_keeps_valid_frames_and_marks_missing_gpu_time(tmp_p
     """A row with no usable MsBetweenPresents is dropped; MsGPUTime that is missing or not positive is None."""
     csv_path = tmp_path / "pm.csv"
     csv_path.write_text("\ufeffApplication,MsBetweenPresents,MsGPUTime\r\n"
-                        "a.exe,16.0,9.5\r\na.exe,0,5\r\na.exe,x,5\r\na.exe,17.5,\r\na.exe,33.0,-1\r\n", encoding="utf-8")
-    assert prw.read_presentmon_csv(csv_path) == ([16.0, 17.5, 33.0], [9.5, None, None])
+                        "a.exe,16.0,9.5\r\na.exe,0,5\r\na.exe,x,5\r\na.exe,17.5,\r\na.exe,33.0,-1\r\n"
+                        "a.exe,20.0,n/a\r\n", encoding="utf-8")  # a GPU time that is not a number keeps the frame
+    assert prw.read_presentmon_csv(csv_path) == ([16.0, 17.5, 33.0, 20.0], [9.5, None, None, None])
     csv_path.write_text("Application,MsGPUTime\r\na.exe,3\r\n")
     assert prw.read_presentmon_csv(csv_path) == ([], [])
     assert prw.read_presentmon_csv(tmp_path / "missing.csv") == ([], [])
