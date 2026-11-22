@@ -501,7 +501,6 @@ def test_a_windows_recording_reaches_the_windows_engine_whatever_was_imported_fi
 def test_kill_program_and_watchdog(tmp_path):
     """kill_program ends a program that ignores SIGTERM, and perf_record.sh stops its recording, frees its lock and
     its program when the server named in PERF_PARENT_PID dies."""
-    import secrets
     import time
     from metal_gpu_trace import recording
     from support import wait_until
