@@ -680,6 +680,28 @@ def test_tool_shape(tmp_path):
         assert len(tool["description"]) < 4096, tool["name"]
     assert len(metal_trace_mcp.INSTRUCTIONS) < 4096
 
+def test_public_texts_say_windows_is_recorded_with_presentmon():
+    """INSTRUCTIONS, the PyPI and registry descriptions and the README's two summaries name the PresentMon Windows path,
+    and no text holds a user path. INSTRUCTIONS stays under 3900 bytes."""
+    import json
+    import re
+    from metal_gpu_trace import metal_trace_mcp
+    text = metal_trace_mcp.INSTRUCTIONS
+    assert "PresentMon" in text and "Windows" in text, text
+    assert len(text.encode("utf-8")) < 3900, len(text.encode("utf-8"))
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    pypi = re.search(r'^description = "(.*)"$', pyproject, re.M).group(1)
+    registry = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))["description"]
+    assert "PresentMon" in pypi and "Windows" in pypi, pypi
+    assert "PresentMon" in registry and "Windows" in registry, registry
+    assert len(registry) <= 100, len(registry)  # the MCP registry's description limit
+    readme = (ROOT / "README.md").read_text(encoding="utf-8").splitlines()
+    for start in ("metal-gpu-trace measures how hard", "Measures how a Wine or macOS"):
+        line = next(l for l in readme if l.startswith(start))
+        assert "PresentMon" in line and "Windows" in line, line
+    for value in (text, pypi, registry, "\n".join(readme)):
+        assert "/Users/" not in value and "/Volumes/" not in value
+
 def hang_call(label, mid, program, token=None):
     """Returns a perf_record tools/call of `program` whose xctrace (hang_stubs) never finishes."""
     params = {"name": "perf_record", "arguments": {"label": label, "program": str(program), "seconds": 1,

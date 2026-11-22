@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.partprogramming09/metal-gpu-trace",
   "title": "Metal GPU Trace",
-  "description": "Measure Wine and macOS programs' GPU use on Apple silicon with Metal System Trace",
+  "description": "Measure Wine and macOS GPU use on Apple silicon (Metal System Trace) and Windows (PresentMon)",
   "repository": {
     "url": "https://github.com/partprogramming09/metal-gpu-trace",
     "source": "github"

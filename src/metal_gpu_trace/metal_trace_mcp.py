@@ -21,7 +21,7 @@ if __package__ in (None, ""):  # run by path: make the package importable
 from metal_gpu_trace import analysis, http_transport, paths, project, protocol, stdio, worker  # noqa: E402
 
 INSTRUCTIONS = (
-    "Records GPU use on Apple silicon with Metal System Trace. A metal-gpu-trace.json in the repository gives each "
+    "Records GPU use on Apple silicon with Metal System Trace, and native Windows programs with PresentMon. A metal-gpu-trace.json in the repository gives each "
     "project its own recordings folder; project_info says which project is active. One recording runs at a time; keep other GPU work off "
     "the Mac while it records, and keep the program's window visible: a hidden window stops presenting, and the work "
     "after that is left out of the frames (gpu.unpresented; perf_gate fails such a run). Under Wine record 30 s or more: Wine's start-up takes part of the recording. A recording needs about 0.8 GB of free disk "

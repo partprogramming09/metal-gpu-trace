@@ -40,6 +40,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - 🪟 `metal-gpu-trace init` prefers `uvx.exe` over a plain `uvx` shim in the Windows fallback folders, and runs the `claude` path `which` resolved: a `claude.cmd` that still cannot be started is an error with what to do, not an exception that leaves the other clients unwritten.
 
+- 📝 The public texts (the server's `INSTRUCTIONS`, the PyPI and registry descriptions, the README) name the Windows path: native programs are recorded with PresentMon. `INSTRUCTIONS` keeps its usage rules and stays under 3900 bytes.
+>
 - 🧪 The `kill_program` test builds its SIGTERM-ignoring program with `cc` instead of copying `/bin/sleep`: newer macOS kills a copied system binary with SIGKILL as it starts, so the test never saw the process.
 
 - 🩹 `perf_attach` by name no longer attaches to the process that called it when that process's own command line holds the name (it then recorded the caller and failed with «did no GPU work»); the name now skips the caller.
