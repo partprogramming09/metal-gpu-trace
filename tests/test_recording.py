@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import sys
 
-from support import ROOT, PKG, macos_only, hang_stubs  # also puts src/ on sys.path
+from support import ROOT, PKG, macos_only, hang_stubs, unique_program  # also puts src/ on sys.path
 
 
 def test_memory_param(tmp_path):
@@ -384,9 +384,7 @@ def test_overrun(tmp_path):
     xcrun = stubs / "xcrun"
     xcrun.write_text("#!/bin/zsh\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\nsleep 60\n")
     xcrun.chmod(0o755)
-    program = tmp_path / "hang-4242"
-    program.write_text("#!/bin/sh\n")
-    program.chmod(0o755)
+    program = unique_program(tmp_path, "hang")
     saved = config.OUT, recording.deadline, os.environ["PATH"]
     config.OUT, recording.deadline = out, lambda seconds: 3
     os.environ["PATH"] = f"{stubs}:{saved[2]}"
@@ -429,8 +427,7 @@ def test_stale_lock_macos(tmp_path):
     (stubs / "xcrun").write_text(f"#!/bin/zsh\ntouch {tmp_path}/xctrace-ran\n"
                                  "while [[ $1 != --output ]]; do shift; done\nmkdir -p $2\n")
     (stubs / "pkill").write_text("#!/bin/zsh\nexit 1\n")
-    program = tmp_path / "stale-4242"
-    program.write_text("#!/bin/sh\n")
+    program = unique_program(tmp_path, "stale")
     for stub in (*stubs.iterdir(), program):
         stub.chmod(0o755)
     env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_MIN_FREE_GB="0",
@@ -558,9 +555,7 @@ def test_script_failure_cleanup(tmp_path):
     xcrun = stubs / "xcrun"  # an xctrace that fails at once
     xcrun.write_text("#!/bin/zsh\nexit 1\n")
     xcrun.chmod(0o755)
-    program, text = tmp_path / "prog", tmp_path / "notes.txt"
-    program.write_text("#!/bin/sh\n")
-    program.chmod(0o755)
+    program, text = unique_program(tmp_path), tmp_path / "notes.txt"
     text.write_text("x")
     env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_MIN_FREE_GB="0",
                PATH=f"{stubs}:{os.environ['PATH']}")
@@ -791,7 +786,8 @@ def test_takeover_rechecks_the_owner(tmp_path):
     (lock / "pid").write_text("4242\n")
     env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_MIN_FREE_GB="0",
                PATH=f"{stubs}:{os.environ['PATH']}")
-    proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "recheck", "1", "native", "-", str(tmp_path), "/bin/sh"],
+    program = unique_program(tmp_path, "recheck")
+    proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "recheck", "1", "native", "-", str(tmp_path), str(program)],
                           env=env, capture_output=True, text=True, timeout=60)
     assert proc.returncode == 3 and "another recording is running" in proc.stderr, proc
     assert (lock / "pid").read_text() == "4242\n" and not (tmp_path / "xctrace-ran").exists()
@@ -850,10 +846,7 @@ def test_keep_runs_after_a_recording_keeps_baselines_and_panel_layout(tmp_path):
     (stubs / "python3").write_text('#!/bin/zsh\nwhile [[ $1 != --label ]]; do shift; done\necho "{}" > $4/$2.json\n')
     for stub in stubs.iterdir():
         stub.chmod(0o755)
-    # the script ends the program by name (pkill -x): a name only this run has, so it never ends another suite's process
-    program = tmp_path / f"kept-{secrets.token_hex(3)}"
-    program.write_text("#!/bin/sh\n")
-    program.chmod(0o755)
+    program = unique_program(tmp_path, "kept")
     env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", KEEP_RUNS="1",
                PATH=f"{stubs}:{os.environ['PATH']}")
     proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "kept", "1", "native", "-", str(tmp_path), str(program)],
@@ -878,10 +871,7 @@ def test_script_takes_the_shared_lock_by_default(tmp_path):
     lock = home / "Library" / "Caches" / "metal-gpu-trace" / "recording.lock"
     (stubs / "xcrun").write_text(f"#!/bin/zsh\ntest -s {lock}/pid && touch {tmp_path}/locked\nexit 1\n")
     (stubs / "xcrun").chmod(0o755)
-    # the script ends the program by name (pkill -x): a name only this run has, so it never ends another suite's process
-    program = tmp_path / f"byhand-{secrets.token_hex(3)}"
-    program.write_text("#!/bin/sh\n")
-    program.chmod(0o755)
+    program = unique_program(tmp_path, "byhand")
     env = {k: v for k, v in os.environ.items() if k != "PERF_LOCK"}
     env.update(PERF_OUT=str(out), PERF_MIN_FREE_GB="0", HOME=str(home), PATH=f"{stubs}:{os.environ['PATH']}")
     subprocess.run(["zsh", str(PKG / "perf_record.sh"), "byhand", "1", "native", "-", str(tmp_path), str(program)],

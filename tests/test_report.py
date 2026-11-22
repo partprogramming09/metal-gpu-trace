@@ -6,7 +6,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
-from support import PKG, golden  # also puts src/ on sys.path
+from support import PKG, golden, unique_program  # also puts src/ on sys.path
 from metal_gpu_trace import config, perf_report, traces  # noqa: E402
 from test_tabledb import use, xml_table  # noqa: E402
 
@@ -434,9 +434,7 @@ def test_validation(tmp_path):
     xcrun = stubs / "xcrun"  # an xctrace that records its arguments and fails
     xcrun.write_text(f'#!/bin/zsh\nprint -r -- "$@" > {stubs}/args\nexit 1\n')
     xcrun.chmod(0o755)
-    program = tmp_path / "prog"
-    program.write_text("#!/bin/sh\n")
-    program.chmod(0o755)
+    program = unique_program(tmp_path)
 
     def launched(perf_env):
         env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", PERF_ENV=perf_env, PATH=f"{stubs}:{os.environ['PATH']}")

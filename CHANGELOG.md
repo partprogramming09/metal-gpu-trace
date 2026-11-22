@@ -28,7 +28,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Fixed
 
-- 🧪 The recording tests can run twice at once on one machine: the attach test names its fake program with the run's pid and a random token (another suite's command line no longer holds the same name, which the script matched and attached to), and the tests that let `perf_record.sh` end a program by name pass a name only they use instead of `/bin/sh`.
+- 🧪 The recording tests can run twice at once on one machine: the attach test names its fake program with the run's pid and a random token (another suite's command line no longer holds the same name, which the script matched and attached to), and every test that hands `perf_record.sh` a program uses `support.unique_program`, a name only that run has, instead of `/bin/sh` (the stop path ends a program with `pkill -x`, so `/bin/sh` ended any process named `sh` on the machine, another suite's included)
 
 - 🧪 The `kill_program` test builds its SIGTERM-ignoring program with `cc` instead of copying `/bin/sleep`: newer macOS kills a copied system binary with SIGKILL as it starts, so the test never saw the process.
 

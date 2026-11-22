@@ -5,6 +5,7 @@ import functools
 import json
 import os
 import pathlib
+import secrets
 import struct
 import sys
 import tempfile
@@ -53,6 +54,17 @@ def macos_only(test):
         return test(tmp_path)
     return wrapper
 
+def unique_program(directory, prefix="prog"):
+    """Writes an executable shell script whose name only this run uses and returns its path.
+
+    perf_record.sh ends the recorded program by name (pkill -x), so a name another suite's process could hold, such as
+    /bin/sh, would end that suite's process. macOS keeps 16 characters of a process name, so the name stays short
+    enough for pkill -x to match it exactly."""
+    program = directory / f"{prefix}-{os.getpid() % 10000:x}{secrets.token_hex(2)}"
+    program.write_text("#!/bin/sh\n")
+    program.chmod(0o755)
+    return program
+
 def hang_stubs(tmp_path):
     """Returns (stubs directory, runs directory, program) for a recording whose xctrace starts and never finishes."""
     stubs, out = tmp_path / "stubs", tmp_path / "runs"
@@ -61,9 +73,7 @@ def hang_stubs(tmp_path):
     xcrun = stubs / "xcrun"
     xcrun.write_text("#!/bin/zsh\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\nsleep 60\n")
     xcrun.chmod(0o755)
-    program = tmp_path / "hang-4242"
-    program.write_text("#!/bin/sh\n")
-    program.chmod(0o755)
+    program = unique_program(tmp_path, "hang")
     pkill = stubs / "pkill"  # records which program the stop path kills
     pkill.write_text(f"#!/bin/zsh\necho $@ >> {tmp_path}/pkill.log\n")
     pkill.chmod(0o755)
