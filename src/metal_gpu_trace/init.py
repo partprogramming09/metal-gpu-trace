@@ -224,8 +224,10 @@ def main(argv, environ=None, home=None, cwd=None, platform=None, extra_dirs=UVX_
     except InitError as error:
         print(f"metal-gpu-trace init: {error}", file=sys.stderr)
         return 2
-    if platform == "darwin" and not which("xcrun"):
-        print("note: xcrun not found; recording needs Xcode (xcode-select --install)")
+    if platform in ("darwin", "win32"):
+        for item in preflight.environment_report(environ=environ, platform=platform, which=which)["checks"]:
+            if item["status"] == "missing":  # the same report the recording refuses on: one fix, one wording
+                print(f"note: {item['solution']}")
     if not args.client:
         print("found: " + ", ".join(clients))
     failed = False

@@ -382,7 +382,8 @@ def test_overrun(tmp_path):
     out.mkdir()
     # an xctrace that starts its .trace and never finishes
     xcrun = stubs / "xcrun"
-    xcrun.write_text("#!/bin/zsh\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\nsleep 60\n")
+    xcrun.write_text("#!/bin/zsh\n[[ $1 == --find ]] && { echo $0; exit 0 }\n"
+                     "while [[ $1 != --output ]]; do shift; done\nmkdir -p $2\nsleep 60\n")
     xcrun.chmod(0o755)
     program = unique_program(tmp_path, "hang")
     saved = config.OUT, recording.deadline, os.environ["PATH"]
@@ -403,7 +404,8 @@ def test_overrun_removes_lock_with_pid(tmp_path):
     created) is taken during a recording, and removed with its pid file when the recording overruns."""
     from metal_gpu_trace import config, paths, recording
     stubs, out, program = hang_stubs(tmp_path)
-    (stubs / "xcrun").write_text("#!/bin/zsh\ntest -s $PERF_LOCK/pid || exit 9\n"
+    (stubs / "xcrun").write_text("#!/bin/zsh\n[[ $1 == --find ]] && { echo $0; exit 0 }\n"
+                                 "test -s $PERF_LOCK/pid || exit 9\n"
                                  "while [[ $1 != --output ]]; do shift; done\nmkdir -p $2\nsleep 60\n")
     saved = config.OUT, recording.deadline, os.environ["PATH"], config.LOCK
     config.OUT, recording.deadline, config.LOCK = out, lambda seconds: 3, tmp_path / "cache" / "recording.lock"

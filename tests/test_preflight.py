@@ -5,7 +5,7 @@ import shutil
 import sys
 
 import support  # noqa: F401  (puts src/ on sys.path)
-from metal_gpu_trace import config, paths, perf_record_windows, preflight, recording
+from metal_gpu_trace import config, paths, perf_record_windows, perf_record_windows_presentmon, preflight, recording
 
 Usage = collections.namedtuple("Usage", "total used free")
 GB = 2**30
@@ -34,7 +34,7 @@ def setup(tmp_path, free_gb=500):
     program.chmod(0o755)
     stubs = tmp_path / "stubs"
     stubs.mkdir()
-    (stubs / "xcrun").write_text("#!/bin/sh\n")
+    (stubs / "xcrun").write_text('#!/bin/sh\n[ "$1" = --find ] && echo "$0"\n')
     (stubs / "xcrun").chmod(0o755)
     config.OUT = tmp_path / "runs"
     config.OUT.mkdir()
@@ -85,6 +85,53 @@ def test_no_xcrun(tmp_path):
         kw["environ"]["PATH"] = str(tmp_path / "empty")
         shutil.which = lambda name, path=None: None
         refused(["xcrun"], **kw)
+
+
+def test_environment_report_says_ok_for_a_machine_that_can_record(tmp_path):
+    """The reusable report F2.2's doctor and init share: one entry per check, all `ok` here, no invented warning."""
+    with Saved():
+        kw = setup(tmp_path)
+        report = preflight.environment_report(wine=kw["wine"], seconds=30, environ=kw["environ"],
+                                              read=kw["read"], alive=kw["alive"])
+        names = [item["name"] for item in report["checks"]]
+        assert report["ok"] is True, report
+        assert names == ["wine", "xctrace", "disk (temporary folder)", "disk (runs folder)", "screen", "lock"], names
+        assert all(item["status"] == "ok" and "solution" not in item for item in report["checks"]), report
+
+
+def test_missing_xctrace_says_to_install_xcode_not_the_command_line_tools(tmp_path):
+    """xcrun ships with the Command Line Tools, which do not bring xctrace: `xcode-select --install` did not fix it."""
+    with Saved():
+        kw = setup(tmp_path)
+        stub = tmp_path / "stubs" / "xcrun"
+        stub.write_text('#!/bin/sh\necho "xcrun: error: unable to find utility \\"xctrace\\", not a developer tool or in '
+                        'PATH" >&2\nexit 72\n')
+        stub.chmod(0o755)
+        text = refused(["xctrace", "Xcode", "App Store"], **kw)
+        assert "xcode-select --install" not in text, text
+        assert str(tmp_path) not in text, text
+        report = preflight.environment_report(wine=kw["wine"], seconds=30, environ=kw["environ"],
+                                              read=kw["read"], alive=kw["alive"])
+        found = [item for item in report["checks"] if item["name"] == "xctrace"]
+        assert report["ok"] is False and found[0]["status"] == "missing" and "Xcode" in found[0]["solution"], report
+        assert str(tmp_path) not in found[0]["solution"], found[0]
+
+
+def test_windows_without_presentmon_says_how_to_install_it(tmp_path):
+    """PresentMon is optional (the engine falls back to the desktop compositor), so the report names it without refusing."""
+    with Saved():
+        kw = setup(tmp_path)
+        sys.platform = "win32"
+        saved = perf_record_windows_presentmon.find_presentmon
+        perf_record_windows_presentmon.find_presentmon = lambda: None
+        try:
+            report = preflight.environment_report(wine="native", seconds=30, environ={"PATH": str(tmp_path / "empty")},
+                                                  read=kw["read"], alive=kw["alive"])
+            found = [item for item in report["checks"] if item["name"] == "presentmon"]
+            assert found[0]["status"] == "missing" and "presentmon_install" in found[0]["solution"], report
+            assert report["ok"] is True, "without PresentMon the engine still records: the report must not refuse it"
+        finally:
+            perf_record_windows_presentmon.find_presentmon = saved
 
 
 def test_not_enough_disk_names_the_override(tmp_path):
@@ -296,7 +343,8 @@ def test_record_runs_preflight_before_memory_pressure(tmp_path):
 @support.macos_only
 def test_preflight_failure_starts_no_process(tmp_path):
     stubs, out, program = support.hang_stubs(tmp_path)
-    (stubs / "xcrun").write_text(f"#!/bin/zsh\ntouch {tmp_path}/xctrace-ran\n")
+    # --find answers like a real xcrun (the preflight asks it); only a recording's own call touches the marker
+    (stubs / "xcrun").write_text(f"#!/bin/zsh\n[[ $1 == --find ]] && {{ echo {program}; exit 0 }}\ntouch {tmp_path}/xctrace-ran\n")
     saved = config.OUT, config.LOCK, os.environ.get("PATH"), os.environ.pop("PERF_MIN_FREE_GB", None)
     config.OUT = out
     os.environ["PATH"] = f"{stubs}:{saved[2]}"

@@ -72,8 +72,10 @@ def hang_stubs(tmp_path):
     stubs.mkdir()
     out.mkdir()
     xcrun = stubs / "xcrun"
-    # like xctrace, it launches what follows -- as the leader of a process group of its own
-    xcrun.write_text("#!/bin/zsh\nargs=(\"$@\")\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\n"
+    # like xctrace, it launches what follows -- as the leader of a process group of its own; --find answers
+    # `xcrun --find xctrace`, as the real one does for preflight
+    xcrun.write_text("#!/bin/zsh\n[[ $1 == --find ]] && { echo $0; exit 0 }\n"
+                     "args=(\"$@\")\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\n"
                      "i=${args[(i)--]}\n(( i <= $#args )) && python3 -I -c "
                      "'import os, sys; os.setpgrp(); os.execv(sys.argv[1], sys.argv[1:])' \"${(@)args[i+1,-1]}\" &\n"
                      "sleep 60\n")

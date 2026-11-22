@@ -8,7 +8,7 @@ import sys
 import types
 
 from support import ROOT  # noqa: F401  (puts src/ on sys.path)
-from metal_gpu_trace import init
+from metal_gpu_trace import init, perf_record_windows_presentmon
 
 
 def fake_uvx(tmp_path, name="bin dir"):
@@ -21,13 +21,13 @@ def fake_uvx(tmp_path, name="bin dir"):
     return folder, uvx
 
 
-def go(tmp_path, *argv, uvx=True, platform="darwin", run=None, claude=False):
+def go(tmp_path, *argv, uvx=True, platform="darwin", run=None, claude=False, xcrun=None):
     """Runs init.main in a fake HOME under tmp_path; returns (code, home, uvx path)."""
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
     folder, path = fake_uvx(tmp_path) if uvx and not (tmp_path / "bin dir").exists() else (tmp_path / "bin dir", tmp_path / "bin dir" / "uvx")
     environ = {"PATH": str(folder) if uvx else str(tmp_path / "empty")}
-    which = (lambda name, **k: "/x/claude" if name == "claude" and claude else None)
+    which = (lambda name, **k: "/x/claude" if name == "claude" and claude else xcrun if name == "xcrun" else None)
     code = init.main(list(argv), environ=environ, home=home, cwd=tmp_path / "proj", platform=platform,
                      extra_dirs=(), run=run or subprocess.run, which=which)
     return code, home, path
@@ -139,6 +139,46 @@ def test_vscode_needs_project_and_project_file_is_in_cwd(tmp_path):
     code, home, _ = go(tmp_path, "--client", "vscode", "--project")
     data = json.loads((tmp_path / "proj" / ".vscode" / "mcp.json").read_text())
     assert code == 0 and data["servers"]["metal-trace"]["type"] == "stdio"
+
+
+def output_of(run_go):
+    """Returns what `init.main` printed on stdout: the tests' runner hands no capsys (tests/run.py has no pytest)."""
+    import contextlib
+    import io
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = run_go()
+    return code, out.getvalue()
+
+
+def test_init_names_the_missing_xctrace_with_its_real_fix(tmp_path):
+    """`init` looked for xcrun alone and said `xcode-select --install`, which the Command Line Tools satisfy without
+    bringing xctrace: it uses the same report the recording does."""
+    code, out = output_of(lambda: go(tmp_path, "--client", "cursor")[0])  # no xcrun on this PATH
+    assert code == 0 and "xctrace" in out and "xcode-select --install" not in out, out
+
+
+def test_init_says_nothing_when_xctrace_is_found(tmp_path):
+    """A report of `ok` prints no note: no invented warning on a machine that can record."""
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    xcrun = stubs / "xcrun"
+    xcrun.write_text('#!/bin/sh\n[ "$1" = --find ] && [ "$2" = xctrace ] && echo "$2"\n')
+    xcrun.chmod(0o755)
+    code, out = output_of(lambda: go(tmp_path, "--client", "cursor", xcrun=str(xcrun))[0])
+    assert code == 0 and "note:" not in out, out
+
+
+def test_windows_init_notes_a_missing_presentmon_with_its_fix(tmp_path):
+    """A Windows machine without PresentMon still gets the server written, plus the note that says how to install it."""
+    saved = perf_record_windows_presentmon.find_presentmon
+    perf_record_windows_presentmon.find_presentmon = lambda: None
+    try:
+        code, out = output_of(lambda: go(tmp_path, "--client", "cursor", platform="win32")[0])
+    finally:
+        perf_record_windows_presentmon.find_presentmon = saved
+    assert code == 0 and (tmp_path / "home" / ".cursor" / "mcp.json").exists(), out
+    assert "presentmon_install" in out, out
 
 
 def test_unverified_system_says_not_supported(tmp_path):
