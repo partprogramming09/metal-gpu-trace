@@ -66,7 +66,7 @@ The answer carries `regressed` and `improved` (metric, value, range of each), `u
 
 `perf_history prefix` lists the runs whose name starts with the prefix, oldest first, with six numbers and the change from first to last (`:437-462`). It flags a series that mixes Windows and Metal and says "under 3 runs: not a trend yet" (`:458-461`); read a trend as real only when it exceeds the `spread_pct` of equal runs (`:440-441`).
 
-`perf_diagnose` (`:693-820`) is a rule-based reading of one summary: **a heuristic, and its text is not English**: the recommendations are Spanish sentences (`:756-807`), the only Spanish in the tool output.
+`perf_diagnose` (`:693-820`) is a rule-based reading of one summary: **a heuristic**: its recommendations are English sentences (they were Spanish before this change; see [limit 11](./limits.md)).
 
 | Output | Rule (thresholds are in the code) | Line |
 |---|---|---|
