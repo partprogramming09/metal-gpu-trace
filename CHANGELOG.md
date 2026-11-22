@@ -7,6 +7,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Added
 
+- 🪟 `metal-gpu-trace init` also sets the server up on Windows: it looks for `uvx.exe` (PATH, then `%USERPROFILE%\.local\bin`) and writes Claude Desktop's `%APPDATA%\Claude\claude_desktop_config.json` and Codex's `%USERPROFILE%\.codex\config.toml`, merging each client's file and leaving the others alone. A missing `uvx` names the Windows install command.
+
 - 🩺 `preflight.environment_report()`: before a recording starts, preflight runs `xcrun --find xctrace`, so a Mac with only the Command Line Tools is told to install Xcode (the tools do not include `xctrace`) instead of the `xcode-select --install` that did not fix it; on Windows the report names a missing PresentMon (with `presentmon_install`) and whether the process is elevated, and `metal-gpu-trace init` prints the same note. Disk, screen, Wine and lock become entries of the same report, which `doctor` reuses.
 
 - 📈 `METAL_TRACE_APP_METRICS_MAX_MB` raises how much of the program's telemetry file is read (default 8 MiB), for programs that write more. A value that is not a whole number of 1 or more keeps 8 MiB and says so in `app_metrics.issues.max_mb`.

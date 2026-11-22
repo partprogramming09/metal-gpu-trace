@@ -24,23 +24,35 @@ except ImportError:
 NAME = "metal-trace"
 CLIENTS = ("claude-code", "claude-desktop", "cursor", "codex", "vscode")
 UVX_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "~/.local/bin", "~/.cargo/bin")
-NO_UVX = ("uvx not found. Install uv (macOS: `brew install uv`; other systems: https://docs.astral.sh/uv/), "
-          "then run init again.")
+# uv's Windows installer puts uvx.exe in %USERPROFILE%\.local\bin
+WINDOWS_UVX_DIRS = ("~/.local/bin", "~/.cargo/bin")
+NO_UVX = ("uvx not found. Install uv (macOS: `brew install uv`; Windows: `winget install --id=astral-sh.uv -e`; "
+          "other systems: https://docs.astral.sh/uv/), then run init again.")
 
 
 class InitError(Exception):
     """A reason init cannot do what was asked, in words that say what to do."""
 
 
-def find_uvx(environ, home, extra_dirs=UVX_DIRS):
-    """Returns the absolute path of uvx from PATH or the usual install folders; raises InitError when it is nowhere."""
+def appdata_dir(environ, home):
+    """Returns %APPDATA% (the per-user roaming folder Claude Desktop uses on Windows), or its usual place under `home`."""
+    return pathlib.Path(environ.get("APPDATA") or home / "AppData" / "Roaming")
+
+
+def find_uvx(environ, home, extra_dirs=None, windows=False):
+    """Returns the absolute path of uvx from PATH or the usual install folders; raises InitError when it is nowhere.
+    `shutil.which("uvx")` already resolves uvx.exe through PATHEXT on Windows; the fallback folders, which are not
+    searched through PATHEXT, try the .exe name too."""
     found = shutil.which("uvx", path=environ.get("PATH", ""))
     if found:
         return os.path.abspath(found)
-    for folder in extra_dirs:
-        candidate = pathlib.Path(folder.replace("~", str(home), 1)) / "uvx"
-        if preflight.executable(candidate) and candidate.is_file():
-            return str(candidate)
+    names = ("uvx", "uvx.exe") if windows else ("uvx",)
+    for folder in ((WINDOWS_UVX_DIRS if windows else UVX_DIRS) if extra_dirs is None else extra_dirs):
+        base = pathlib.Path(folder.replace("~", str(home), 1))
+        for name in names:
+            candidate = base / name
+            if preflight.executable(candidate) and candidate.is_file():
+                return str(candidate)
     raise InitError(NO_UVX)
 
 
@@ -52,10 +64,15 @@ def server_env(out, wine):
     return env
 
 
-def user_file(client, home, platform):
+def user_file(client, home, platform, appdata=None):
     """Returns the user-level config file of a client, or raises InitError when its path is not verified here."""
     if client == "cursor":
         return home / ".cursor" / "mcp.json"
+    if platform == "win32":
+        if client == "claude-desktop":
+            return (appdata or home / "AppData" / "Roaming") / "Claude" / "claude_desktop_config.json"
+        if client == "codex":
+            return home / ".codex" / "config.toml"
     if platform == "darwin":
         if client == "claude-desktop":
             return home / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
@@ -74,16 +91,18 @@ def project_file(client, cwd):
     return cwd.joinpath(*files[client])
 
 
-def installed(home, platform, which=shutil.which):
+def installed(home, platform, which=shutil.which, appdata=None):
     """Returns the clients that look installed here (vscode is never guessed: it needs --project)."""
     found = []
     if which("claude"):
         found.append("claude-code")
-    if platform == "darwin" and (home / "Library" / "Application Support" / "Claude").is_dir():
+    desktop = {"darwin": home / "Library" / "Application Support" / "Claude",
+               "win32": (appdata or home / "AppData" / "Roaming") / "Claude"}.get(platform)
+    if desktop is not None and desktop.is_dir():
         found.append("claude-desktop")
     if (home / ".cursor").is_dir():
         found.append("cursor")
-    if platform == "darwin" and ((home / ".codex").is_dir() or which("codex")):
+    if platform in ("darwin", "win32") and ((home / ".codex").is_dir() or which("codex")):
         found.append("codex")
     return found
 
@@ -199,16 +218,18 @@ def build_parser():
     return parser
 
 
-def main(argv, environ=None, home=None, cwd=None, platform=None, extra_dirs=UVX_DIRS, run=subprocess.run,
+def main(argv, environ=None, home=None, cwd=None, platform=None, extra_dirs=None, run=subprocess.run,
          which=shutil.which):
     """Runs init and returns the exit code: 0 done, 2 a usage problem or an error (nothing half written)."""
     environ = os.environ if environ is None else environ
     home = pathlib.Path(os.path.expanduser("~") if home is None else home)
     cwd = pathlib.Path.cwd() if cwd is None else pathlib.Path(cwd)
     platform = sys.platform if platform is None else platform
+    windows = platform == "win32"
+    appdata = appdata_dir(environ, home)
     args = build_parser().parse_args(argv)
     try:
-        uvx = find_uvx(environ, home, extra_dirs)
+        uvx = find_uvx(environ, home, extra_dirs, windows)
         wine = args.wine or environ.get("METAL_TRACE_WINE")
         if wine:
             wine = os.path.abspath(os.path.expanduser(wine))
@@ -218,7 +239,7 @@ def main(argv, environ=None, home=None, cwd=None, platform=None, extra_dirs=UVX_
                 wine = None
         out = os.path.abspath(os.path.expanduser(args.out)) if args.out else str(home / "perf-runs")
         env = server_env(out, wine)
-        clients = [args.client] if args.client else installed(home, platform, which)
+        clients = [args.client] if args.client else installed(home, platform, which, appdata)
         if not clients:
             raise InitError("no supported app found; name one with --client " + "|".join(CLIENTS))
     except InitError as error:
@@ -236,7 +257,7 @@ def main(argv, environ=None, home=None, cwd=None, platform=None, extra_dirs=UVX_
             if client == "claude-code":
                 result = claude_code(uvx, env, "project" if args.project else "user", args.dry_run, run, which)
             else:
-                path = project_file(client, cwd) if args.project else user_file(client, home, platform)
+                path = project_file(client, cwd) if args.project else user_file(client, home, platform, appdata)
                 entry = {"command": uvx, "args": ["metal-gpu-trace"], "env": env}
                 if client == "codex":
                     result = merge_toml(path, toml_block(uvx, env), args.dry_run)

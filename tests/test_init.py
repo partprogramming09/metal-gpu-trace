@@ -21,12 +21,12 @@ def fake_uvx(tmp_path, name="bin dir"):
     return folder, uvx
 
 
-def go(tmp_path, *argv, uvx=True, platform="darwin", run=None, claude=False, xcrun=None):
+def go(tmp_path, *argv, uvx=True, platform="darwin", run=None, claude=False, xcrun=None, environ=None):
     """Runs init.main in a fake HOME under tmp_path; returns (code, home, uvx path)."""
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
     folder, path = fake_uvx(tmp_path) if uvx and not (tmp_path / "bin dir").exists() else (tmp_path / "bin dir", tmp_path / "bin dir" / "uvx")
-    environ = {"PATH": str(folder) if uvx else str(tmp_path / "empty")}
+    environ = {"PATH": str(folder) if uvx else str(tmp_path / "empty"), **(environ or {})}
     which = (lambda name, **k: "/x/claude" if name == "claude" and claude else xcrun if name == "xcrun" else None)
     code = init.main(list(argv), environ=environ, home=home, cwd=tmp_path / "proj", platform=platform,
                      extra_dirs=(), run=run or subprocess.run, which=which)
@@ -179,6 +179,72 @@ def test_windows_init_notes_a_missing_presentmon_with_its_fix(tmp_path):
         perf_record_windows_presentmon.find_presentmon = saved
     assert code == 0 and (tmp_path / "home" / ".cursor" / "mcp.json").exists(), out
     assert "presentmon_install" in out, out
+
+
+def test_windows_finds_uvx_exe_in_the_uv_folder(tmp_path):
+    """uv's Windows installer puts uvx.exe in %USERPROFILE%\\.local\\bin, which may not be on PATH: the fallback folders
+    must look for the .exe name (on PATH, `which` already resolves it through PATHEXT)."""
+    home = tmp_path / "home"
+    (home / ".local" / "bin").mkdir(parents=True)
+    uvx = home / ".local" / "bin" / "uvx.exe"
+    uvx.write_text("")
+    uvx.chmod(0o755)
+    assert init.find_uvx({"PATH": str(tmp_path / "empty")}, home, windows=True) == str(uvx)
+
+
+def test_windows_without_uvx_names_the_windows_install_command(tmp_path):
+    try:
+        init.find_uvx({"PATH": str(tmp_path / "empty")}, tmp_path / "home", windows=True)
+    except init.InitError as error:
+        assert "winget install --id=astral-sh.uv -e" in str(error), error
+    else:
+        raise AssertionError("find_uvx should raise on Windows without uvx")
+
+
+def test_windows_writes_claude_desktop_from_appdata_and_leaves_the_others(tmp_path):
+    """The Windows config lives in %APPDATA%\\Claude: an installed client is found there and only its file is written."""
+    home = tmp_path / "home"
+    appdata = home / "Elsewhere" / "Roaming"
+    (appdata / "Claude").mkdir(parents=True)
+    code, _, _ = go(tmp_path, platform="win32", environ={"APPDATA": str(appdata)})
+    path = appdata / "Claude" / "claude_desktop_config.json"
+    assert code == 0 and json.loads(path.read_text())["mcpServers"]["metal-trace"]["args"] == ["metal-gpu-trace"]
+    assert not (home / ".cursor" / "mcp.json").exists() and not (home / ".codex").exists()
+
+
+def test_windows_writes_the_codex_config_under_the_home(tmp_path):
+    path = tmp_path / "home" / ".codex" / "config.toml"
+    code, _, _ = go(tmp_path, "--client", "codex", platform="win32")
+    assert code == 0 and "[mcp_servers.metal-trace]" in path.read_text() and "METAL_TRACE_OUT" in path.read_text()
+
+
+def test_windows_detects_an_installed_codex(tmp_path):
+    (tmp_path / "home" / ".codex").mkdir(parents=True)
+    code, _, _ = go(tmp_path, platform="win32", environ={"APPDATA": str(tmp_path / "home" / "AppData" / "Roaming")})
+    assert code == 0 and (tmp_path / "home" / ".codex" / "config.toml").exists()
+
+
+def test_windows_run_twice_does_not_duplicate_the_entry(tmp_path):
+    appdata = tmp_path / "home" / "AppData" / "Roaming"
+    (appdata / "Claude").mkdir(parents=True)
+    go(tmp_path, platform="win32", environ={"APPDATA": str(appdata)})
+    path = appdata / "Claude" / "claude_desktop_config.json"
+    first = path.read_text()
+    go(tmp_path, platform="win32", environ={"APPDATA": str(appdata)})
+    assert path.read_text() == first and not path.with_name(path.name + ".bak").exists()
+
+
+def test_windows_corrupt_client_json_is_refused_untouched(tmp_path):
+    import contextlib
+    import io
+    appdata = tmp_path / "home" / "AppData" / "Roaming"
+    path = appdata / "Claude" / "claude_desktop_config.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json")
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        code, _, _ = go(tmp_path, "--client", "claude-desktop", platform="win32", environ={"APPDATA": str(appdata)})
+    assert code == 2 and path.read_text() == "{not json" and "not valid JSON" in err.getvalue(), err.getvalue()
 
 
 def test_unverified_system_says_not_supported(tmp_path):
