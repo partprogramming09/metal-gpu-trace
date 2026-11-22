@@ -38,7 +38,7 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
                      background=False, size=None, tier="standard"):
     """Records `program` (an .exe under Wine, or a macOS binary with wine="native") or a test `workload` for `seconds` with
     Metal System Trace and returns its summary: GPU ms per frame, frame intervals, FPS, Metal and resident memory. It
-    then stops every program of that Wine prefix (wineserver -k), or every process named like the program with native.
+    then stops every program of that Wine prefix (wineserver -k), or with native the program it launched and its children.
     tier sets memory and counters together; compare recordings of the same tier."""
     memory, counters, keep_trace = resolve_tier(tier, memory, counters)
     if tier == "deep" and sys.platform == "win32":
@@ -247,15 +247,31 @@ def cooldown(seconds):
         left -= step
 
 
-def kill_program(name):
-    """Stops every process named `name`: SIGTERM first, then SIGKILL for the ones that ignore it (a game that catches
-    SIGTERM kept running for 40 minutes after its recording was cancelled)."""
-    subprocess.run(["pkill", "-x", name], capture_output=True, timeout=30)
-    for _ in range(6):
-        if subprocess.run(["pgrep", "-x", name], capture_output=True, timeout=30).returncode:
-            return
-        time.sleep(0.5)
-    subprocess.run(["pkill", "-KILL", "-x", name], capture_output=True, timeout=30)
+def holds_program(group, name):
+    """Returns whether process group `group` is still the one of the program `name`: its leader runs that program, or
+    the leader is gone while the group lives on (a pid is not reused while a process group holds its number)."""
+    leader = subprocess.run(["ps", "-o", "comm=", "-p", str(group)], capture_output=True, text=True,
+                            timeout=30).stdout.strip()
+    return not leader or pathlib.PurePath(leader).name == name
+
+
+def kill_program(group, name):
+    """Stops the process group `group`, the program `name` a recording launched and the children it started, never
+    another process with its name: SIGTERM first, then SIGKILL when it ignores it (a game that catches SIGTERM kept
+    running for 40 minutes after its recording was cancelled). A group that is gone, 0 or the caller's own, 1 and
+    below, or whose leader now runs another program, is left alone. shortcut: a child that leaves the group (setsid
+    or setpgid) is out of reach; following it means tracking every descendant, worth it only if a program does that."""
+    if group <= 1 or group == os.getpgrp() or not holds_program(group, name):
+        return
+    try:
+        os.killpg(group, signal.SIGTERM)
+        for _ in range(6):
+            time.sleep(0.5)
+            os.killpg(group, 0)
+        if holds_program(group, name):
+            os.killpg(group, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def worst_case_message(limit, windows):
@@ -334,6 +350,19 @@ def free_lock(pid):
     if owner == str(pid):
         shutil.rmtree(lock, ignore_errors=True)
 
+
+def launched_group(pid):
+    """Returns the process group of the program that perf_record.sh (pid `pid`) launched, which the script keeps in
+    its lock, or None when the lock belongs to another recording or names no program yet."""
+    try:
+        if (config.LOCK / "pid").read_text().strip() != str(pid):
+            return None
+        text = (config.LOCK / "program").read_text().strip()
+    except OSError:
+        return None
+    # a pid has at most 10 digits; int() raises on a string of over 4300
+    return int(text) if len(text) <= 10 and text.isascii() and text.isdigit() and int(text) > 1 else None
+
 def finish(summary, json_path, layer, tier, app_file=None):
     """Adds `layer`, the run's `context` and `tier` to the summary, applies METAL_TRACE_MAX_DISK_MB (the run just recorded
     is `json_path`'s; not while another recording runs, whose .trace is being written into the same folder): when files
@@ -409,11 +438,13 @@ def run_recording(label, seconds, wine, prefix, workdir, command, program_env=""
     while True:
         left = limit - (time.monotonic() - started)
         if left <= 0 or cancelled():
+            # read while the script still holds its lock: once it is dead, another recording may take the lock
+            group = launched_group(proc.pid) if wine == "native" else None
             os.killpg(proc.pid, signal.SIGKILL)
             proc.wait()
-            if wine == "native":
-                kill_program(pathlib.Path(command[0]).name)
-            elif wine != "attach":
+            if group:
+                kill_program(group, pathlib.Path(command[0]).name)
+            elif wine not in ("native", "attach"):
                 subprocess.run([str(pathlib.Path(wine) / "bin" / "wineserver"), "-k"],
                                env=dict(env, WINEPREFIX=str(prefix)), capture_output=True, timeout=30)
             free_lock(proc.pid)
