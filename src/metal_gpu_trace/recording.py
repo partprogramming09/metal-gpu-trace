@@ -378,7 +378,7 @@ def finish(summary, json_path, layer, tier, app_file=None):
         removed = retention.prune_to_quota(config.OUT, config.MAX_DISK_MB, json_path.stem)
         if removed["removed"]:
             summary["retention"] = removed
-    json_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    paths.write_file(json_path, json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
     return summary
 
 

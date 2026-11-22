@@ -7,6 +7,8 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Changed
 
+- 🛡️ A recording's summary is written through a unique temporary file in the same folder, flushed to disk and renamed over the previous one: a crash or a full disk leaves the old `.json` or none, never half a file, so `perf_compare`, `perf_history` and `perf_runs` only ever read a whole summary. The macOS summarizer, the Windows engine and `perf_record` write it with `paths.write_file`; a link is still refused.
+
 - 🩺 `perf_diagnose` answers `bottleneck: "DISPLAY_SYNCED"` instead of `CPU_SUBMISSION_BOUND` when the GPU idle share is high but the run is locked to the display (`display_synced_hz` is set): the idle time is the wait for the display, not the CPU, so the CPU advice (instancing, `FlipQueueSize`) is no longer given. Idle without vsync stays `CPU_SUBMISSION_BOUND`.
 
 - 🌐 `perf_diagnose`: the `recommendations` text is now in English (it was Spanish); the keys and the verdict values do not change.
