@@ -2,6 +2,7 @@
 import json
 import os
 import pathlib
+import secrets
 import shutil
 import subprocess
 import sys
@@ -42,7 +43,9 @@ def test_disk_guard(tmp_path):
 @macos_only
 def test_attach_by_name_never_picks_the_process_that_called_it(tmp_path):
     """The caller's own command line may hold the program's name (python -c "...Game.exe..."): the script must not attach to it."""
-    token = "NoSuchGame-4f1c9.exe"
+    # the name is unique per run: a second suite's caller holds this same sentence in its command line, and the script
+    # matches the newest process whose command line holds the name, so a shared name would attach to that other suite
+    token = f"NoSuchGame-{os.getpid()}-{secrets.token_hex(4)}.exe"
     # the command line must hold the name but none of the words the script already skips (zsh, perf_record, awk, xctrace)
     code = ("import os, subprocess; e = os.environ; env = dict(e, PERF_PARENT_PID=str(os.getpid()), PERF_LOCK=e['T'] + '/.l', "
             "PERF_OUT=e['T'], PERF_MIN_FREE_GB='99999999'); sh = 'z' + 'sh'; "
@@ -847,9 +850,13 @@ def test_keep_runs_after_a_recording_keeps_baselines_and_panel_layout(tmp_path):
     (stubs / "python3").write_text('#!/bin/zsh\nwhile [[ $1 != --label ]]; do shift; done\necho "{}" > $4/$2.json\n')
     for stub in stubs.iterdir():
         stub.chmod(0o755)
+    # the script ends the program by name (pkill -x): a name only this run has, so it never ends another suite's process
+    program = tmp_path / f"kept-{secrets.token_hex(3)}"
+    program.write_text("#!/bin/sh\n")
+    program.chmod(0o755)
     env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", KEEP_RUNS="1",
                PATH=f"{stubs}:{os.environ['PATH']}")
-    proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "kept", "1", "native", "-", str(tmp_path), "/bin/sh"],
+    proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "kept", "1", "native", "-", str(tmp_path), str(program)],
                           env=env, capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc
     left = {p.name for p in out.iterdir()}
@@ -871,9 +878,13 @@ def test_script_takes_the_shared_lock_by_default(tmp_path):
     lock = home / "Library" / "Caches" / "metal-gpu-trace" / "recording.lock"
     (stubs / "xcrun").write_text(f"#!/bin/zsh\ntest -s {lock}/pid && touch {tmp_path}/locked\nexit 1\n")
     (stubs / "xcrun").chmod(0o755)
+    # the script ends the program by name (pkill -x): a name only this run has, so it never ends another suite's process
+    program = tmp_path / f"byhand-{secrets.token_hex(3)}"
+    program.write_text("#!/bin/sh\n")
+    program.chmod(0o755)
     env = {k: v for k, v in os.environ.items() if k != "PERF_LOCK"}
     env.update(PERF_OUT=str(out), PERF_MIN_FREE_GB="0", HOME=str(home), PATH=f"{stubs}:{os.environ['PATH']}")
-    subprocess.run(["zsh", str(PKG / "perf_record.sh"), "byhand", "1", "native", "-", str(tmp_path), "/bin/sh"],
+    subprocess.run(["zsh", str(PKG / "perf_record.sh"), "byhand", "1", "native", "-", str(tmp_path), str(program)],
                    env=env, capture_output=True, text=True, timeout=60)
     assert (tmp_path / "locked").exists() and not lock.exists() and not (out / ".recording").exists()
 
