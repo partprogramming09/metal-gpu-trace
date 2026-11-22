@@ -34,7 +34,7 @@ def setup(tmp_path, free_gb=500):
     program.chmod(0o755)
     stubs = tmp_path / "stubs"
     stubs.mkdir()
-    (stubs / "xcrun").write_text("#!/bin/sh\n")
+    (stubs / "xcrun").write_text('#!/bin/sh\n[ "$1" = --find ] && echo "$0"\n')
     (stubs / "xcrun").chmod(0o755)
     config.OUT = tmp_path / "runs"
     config.OUT.mkdir()
@@ -45,13 +45,13 @@ def setup(tmp_path, free_gb=500):
 
 
 class Saved:
-    """Restores what a test changed: config.OUT, config.LOCK, shutil.disk_usage and sys.platform."""
+    """Restores what a test changed: config.OUT, config.LOCK, shutil.disk_usage, sys.platform and preflight.elevated."""
     def __enter__(self):
-        self.state = config.OUT, config.LOCK, shutil.disk_usage, sys.platform, os.kill, shutil.which
+        self.state = config.OUT, config.LOCK, shutil.disk_usage, sys.platform, os.kill, shutil.which, preflight.elevated
         return self
 
     def __exit__(self, *exc):
-        config.OUT, config.LOCK, shutil.disk_usage, sys.platform, os.kill, shutil.which = self.state
+        config.OUT, config.LOCK, shutil.disk_usage, sys.platform, os.kill, shutil.which, preflight.elevated = self.state
 
 
 def test_passes_when_everything_is_in_place(tmp_path):
@@ -87,6 +87,89 @@ def test_no_xcrun(tmp_path):
         refused(["xcrun"], **kw)
 
 
+def test_environment_report_says_ok_for_a_machine_that_can_record(tmp_path):
+    """The reusable report F2.2's doctor and init share: one entry per check, all `ok` here, no invented warning."""
+    with Saved():
+        kw = setup(tmp_path)
+        report = preflight.environment_report(wine=kw["wine"], seconds=30, environ=kw["environ"],
+                                              read=kw["read"], alive=kw["alive"])
+        names = [item["name"] for item in report["checks"]]
+        assert report["ok"] is True, report
+        assert names == ["wine", "xctrace", "disk (temporary folder)", "disk (runs folder)", "screen", "lock"], names
+        assert all(item["status"] == "ok" and "solution" not in item for item in report["checks"]), report
+
+
+def test_missing_xctrace_says_to_install_xcode_not_the_command_line_tools(tmp_path):
+    """xcrun ships with the Command Line Tools, which do not bring xctrace: `xcode-select --install` did not fix it."""
+    with Saved():
+        kw = setup(tmp_path)
+        stub = tmp_path / "stubs" / "xcrun"
+        stub.write_text('#!/bin/sh\necho "xcrun: error: unable to find utility \\"xctrace\\", not a developer tool or in '
+                        'PATH" >&2\nexit 72\n')
+        stub.chmod(0o755)
+        text = refused(["xctrace", "Xcode", "App Store"], **kw)
+        assert "xcode-select --install" not in text, text
+        assert str(tmp_path) not in text, text
+        report = preflight.environment_report(wine=kw["wine"], seconds=30, environ=kw["environ"],
+                                              read=kw["read"], alive=kw["alive"])
+        found = [item for item in report["checks"] if item["name"] == "xctrace"]
+        assert report["ok"] is False and found[0]["status"] == "missing" and "Xcode" in found[0]["solution"], report
+        assert str(tmp_path) not in found[0]["solution"], found[0]
+
+
+def windows_report(tmp_path, which):
+    """Returns the environment report of a Windows PC that has `which` and no Process Monitor in its cache."""
+    return preflight.environment_report(wine="native", seconds=30, environ={"PATH": str(tmp_path / "empty"),
+                                                                            "LOCALAPPDATA": str(tmp_path / "local")},
+                                        read=lambda argv: "no lock here", alive=lambda pid: False,
+                                        platform="win32", which=which)
+
+
+def test_xctrace_is_found_with_the_callers_environment(tmp_path):
+    """xcrun must see the DEVELOPER_DIR of the request, not the process's own: passing environ only to `which` was half
+    the check, and `xcode-select` can point at the Command Line Tools while DEVELOPER_DIR names Xcode."""
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    xcrun = stubs / "xcrun"
+    xcrun.write_text('#!/bin/sh\n[ "$DEVELOPER_DIR" = "test-developer-dir-4f1c9" ] && echo xctrace\n')
+    xcrun.chmod(0o755)
+    environ = {"PATH": str(stubs), "DEVELOPER_DIR": "test-developer-dir-4f1c9"}
+    assert preflight.xctrace_problem(environ, shutil.which) is None
+    assert preflight.xctrace_problem({"PATH": str(stubs)}, shutil.which) is not None
+
+
+def test_windows_without_presentmon_says_how_to_install_it(tmp_path):
+    """PresentMon is optional (the engine falls back to the desktop compositor), so the report names it without refusing.
+    The lookup uses the `which` and `environ` the report received, not the process's own."""
+    with Saved():
+        report = windows_report(tmp_path, which=lambda name, **kw: None)
+        found = [item for item in report["checks"] if item["name"] == "presentmon"]
+        assert found[0]["status"] == "missing" and "presentmon_install" in found[0]["solution"], report
+        assert report["ok"] is True, "without PresentMon the engine still records: the report must not refuse it"
+
+
+def test_windows_presentmon_found_is_ok(tmp_path):
+    with Saved():
+        report = windows_report(tmp_path, which=lambda name, **kw: str(tmp_path / name))
+        found = [item for item in report["checks"] if item["name"] == "presentmon"]
+        assert found[0]["status"] == "ok" and "solution" not in found[0], report
+
+
+def test_windows_permissions_say_whether_it_is_elevated_without_refusing(tmp_path):
+    """PresentMon wants administrator rights; the file is still written, so the check is not fatal."""
+    with Saved():
+        for admin, status in ((False, "missing"), (True, "ok"), (None, "unknown")):
+            preflight.elevated = lambda admin=admin: admin
+            report = windows_report(tmp_path, which=lambda name, **kw: None)
+            found = [item for item in report["checks"] if item["name"] == "permissions"][0]
+            assert found["status"] == status and found["fatal"] is False, (admin, report)
+            if admin is False:
+                assert "not elevated" in found["solution"], found
+            else:
+                assert "solution" not in found, found
+            assert report["ok"] is True, report
+
+
 def test_not_enough_disk_names_the_override(tmp_path):
     with Saved():
         kw = setup(tmp_path)
@@ -97,6 +180,16 @@ def test_not_enough_disk_names_the_override(tmp_path):
         preflight.check(**kw)
         kw["environ"]["PERF_MIN_FREE_GB"] = "nonsense"  # not a number: the formula applies
         refused(["26 GB needed"], **kw)
+
+
+def test_unreadable_disk_is_an_entry_of_the_environment_report(tmp_path):
+    with Saved():
+        kw = setup(tmp_path)
+        shutil.disk_usage = lambda path: (_ for _ in ()).throw(OSError("gone"))
+        report = preflight.environment_report(seconds=30, environ=kw["environ"], read=kw["read"], alive=kw["alive"])
+        found = [item for item in report["checks"] if item["name"].startswith("disk (")]
+        assert len(found) == 2 and all(i["status"] == "missing" and i["fatal"] for i in found), report
+        assert all("cannot be read" in i["solution"] and str(tmp_path) not in i["solution"] for i in found), found
 
 
 def test_disk_formula_matches_the_shell():
@@ -296,7 +389,8 @@ def test_record_runs_preflight_before_memory_pressure(tmp_path):
 @support.macos_only
 def test_preflight_failure_starts_no_process(tmp_path):
     stubs, out, program = support.hang_stubs(tmp_path)
-    (stubs / "xcrun").write_text(f"#!/bin/zsh\ntouch {tmp_path}/xctrace-ran\n")
+    # --find answers like a real xcrun (the preflight asks it); only a recording's own call touches the marker
+    (stubs / "xcrun").write_text(f"#!/bin/zsh\n[[ $1 == --find ]] && {{ echo {program}; exit 0 }}\ntouch {tmp_path}/xctrace-ran\n")
     saved = config.OUT, config.LOCK, os.environ.get("PATH"), os.environ.pop("PERF_MIN_FREE_GB", None)
     config.OUT = out
     os.environ["PATH"] = f"{stubs}:{saved[2]}"

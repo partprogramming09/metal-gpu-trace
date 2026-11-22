@@ -11,23 +11,27 @@ from support import ROOT  # noqa: F401  (puts src/ on sys.path)
 from metal_gpu_trace import init
 
 
-def fake_uvx(tmp_path, name="bin dir"):
-    """Returns (folder, uvx path): an executable uvx in a folder whose name has a space."""
+def fake_uvx(tmp_path, name="bin dir", exe=False):
+    """Returns (folder, uvx path): an executable uvx (uvx.exe on Windows) in a folder whose name has a space."""
     folder = tmp_path / name
     folder.mkdir()
-    uvx = folder / "uvx"
+    uvx = folder / ("uvx.exe" if exe else "uvx")
     uvx.write_text("#!/bin/sh\n")
     uvx.chmod(0o755)
     return folder, uvx
 
 
-def go(tmp_path, *argv, uvx=True, platform="darwin", run=None, claude=False):
-    """Runs init.main in a fake HOME under tmp_path; returns (code, home, uvx path)."""
+def go(tmp_path, *argv, uvx=True, platform="darwin", run=None, claude=False, xcrun=None, environ=None):
+    """Runs init.main in a fake HOME under tmp_path; returns (code, home, uvx path). `environ` is a Windows PC's
+    %LOCALAPPDATA% under tmp_path, so the PresentMon lookup never reads the real one."""
     home = tmp_path / "home"
     home.mkdir(exist_ok=True)
-    folder, path = fake_uvx(tmp_path) if uvx and not (tmp_path / "bin dir").exists() else (tmp_path / "bin dir", tmp_path / "bin dir" / "uvx")
-    environ = {"PATH": str(folder) if uvx else str(tmp_path / "empty")}
-    which = (lambda name, **k: "/x/claude" if name == "claude" and claude else None)
+    exe = sys.platform == "win32"  # the fake file the real PATH resolver can see: uvx.exe on Windows, uvx elsewhere
+    folder, path = (fake_uvx(tmp_path, exe=exe) if uvx and not (tmp_path / "bin dir").exists()
+                    else (tmp_path / "bin dir", tmp_path / "bin dir" / ("uvx.exe" if exe else "uvx")))
+    environ = {"PATH": str(folder) if uvx else str(tmp_path / "empty"),
+               **({"LOCALAPPDATA": str(tmp_path / "local")} if platform == "win32" else {}), **(environ or {})}
+    which = (lambda name, **k: "/x/claude" if name == "claude" and claude else xcrun if name == "xcrun" else None)
     code = init.main(list(argv), environ=environ, home=home, cwd=tmp_path / "proj", platform=platform,
                      extra_dirs=(), run=run or subprocess.run, which=which)
     return code, home, path
@@ -141,6 +145,142 @@ def test_vscode_needs_project_and_project_file_is_in_cwd(tmp_path):
     assert code == 0 and data["servers"]["metal-trace"]["type"] == "stdio"
 
 
+def output_of(run_go):
+    """Returns what `init.main` printed on stdout: the tests' runner hands no capsys (tests/run.py has no pytest)."""
+    import contextlib
+    import io
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = run_go()
+    return code, out.getvalue()
+
+
+def test_init_names_the_missing_xctrace_with_its_real_fix(tmp_path):
+    """`init` looked for xcrun alone and said `xcode-select --install`, which the Command Line Tools satisfy without
+    bringing xctrace: it uses the same report the recording does."""
+    code, out = output_of(lambda: go(tmp_path, "--client", "cursor")[0])  # no xcrun on this PATH
+    assert code == 0 and "xctrace" in out and "xcode-select --install" not in out, out
+
+
+def test_init_says_nothing_when_xctrace_is_found(tmp_path):
+    """A report of `ok` prints no note: no invented warning on a machine that can record."""
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    xcrun = stubs / "xcrun"
+    xcrun.write_text('#!/bin/sh\n[ "$1" = --find ] && [ "$2" = xctrace ] && echo "$2"\n')
+    xcrun.chmod(0o755)
+    code, out = output_of(lambda: go(tmp_path, "--client", "cursor", xcrun=str(xcrun))[0])
+    assert code == 0 and "note:" not in out, out
+
+
+def test_windows_init_notes_a_missing_presentmon_with_its_fix(tmp_path):
+    """A Windows machine without PresentMon still gets the server written, plus the note that says how to install it.
+    No monkey-patch: the report looks through the `which` and `environ` that init received."""
+    code, out = output_of(lambda: go(tmp_path, "--client", "cursor", platform="win32")[0])
+    assert code == 0 and (tmp_path / "home" / ".cursor" / "mcp.json").exists(), out
+    assert "presentmon_install" in out, out
+
+
+def test_windows_init_notes_a_missing_elevation_without_refusing(tmp_path):
+    """PresentMon wants administrator rights but the file is still written: the note says how to fix that."""
+    saved = init.preflight.elevated
+    init.preflight.elevated = lambda: False
+    try:
+        code, out = output_of(lambda: go(tmp_path, "--client", "cursor", platform="win32")[0])
+    finally:
+        init.preflight.elevated = saved
+    assert code == 0 and (tmp_path / "home" / ".cursor" / "mcp.json").exists(), out
+    assert "not elevated" in out, out
+
+
+def test_windows_finds_uvx_exe_in_the_uv_folder(tmp_path):
+    """uv's Windows installer puts uvx.exe in %USERPROFILE%\\.local\\bin, which may not be on PATH: the fallback folders
+    must look for the .exe name (on PATH, `which` already resolves it through PATHEXT)."""
+    home = tmp_path / "home"
+    (home / ".local" / "bin").mkdir(parents=True)
+    uvx = home / ".local" / "bin" / "uvx.exe"
+    uvx.write_text("")
+    uvx.chmod(0o755)
+    assert init.find_uvx({"PATH": str(tmp_path / "empty")}, home, windows=True) == str(uvx)
+
+
+def test_windows_prefers_uvx_exe_over_a_plain_uvx_shim(tmp_path):
+    """On Windows os.access passes for any existing file, so a `uvx` shim (Git Bash, WSL) next to uvx.exe would win:
+    clients that start the server without a shell cannot run it, so the .exe is named first."""
+    home = tmp_path / "home"
+    (home / ".local" / "bin").mkdir(parents=True)
+    shim = home / ".local" / "bin" / "uvx"
+    shim.write_text("#!/bin/sh\n")
+    shim.chmod(0o755)
+    exe = home / ".local" / "bin" / "uvx.exe"
+    exe.write_text("")
+    exe.chmod(0o755)
+    assert init.find_uvx({"PATH": str(tmp_path / "empty")}, home, windows=True) == str(exe)
+
+
+def test_windows_without_uvx_names_the_windows_install_command(tmp_path):
+    try:
+        init.find_uvx({"PATH": str(tmp_path / "empty")}, tmp_path / "home", windows=True)
+    except init.InitError as error:
+        assert "winget install --id=astral-sh.uv -e" in str(error), error
+    else:
+        raise AssertionError("find_uvx should raise on Windows without uvx")
+
+
+def test_windows_writes_claude_desktop_from_appdata_and_leaves_the_others(tmp_path):
+    """The Windows config lives in %APPDATA%\\Claude: an installed client is found there and only its file is written."""
+    home = tmp_path / "home"
+    appdata = home / "Elsewhere" / "Roaming"
+    (appdata / "Claude").mkdir(parents=True)
+    code, _, _ = go(tmp_path, platform="win32", environ={"APPDATA": str(appdata)})
+    path = appdata / "Claude" / "claude_desktop_config.json"
+    assert code == 0 and json.loads(path.read_text())["mcpServers"]["metal-trace"]["args"] == ["metal-gpu-trace"]
+    assert not (home / ".cursor" / "mcp.json").exists() and not (home / ".codex").exists()
+
+
+def test_windows_appdata_falls_back_under_the_home_when_the_variable_is_absent(tmp_path):
+    """A shell without %APPDATA% (or a test) gets the documented place under the user's home, not an error."""
+    home = tmp_path / "home"
+    (home / "AppData" / "Roaming" / "Claude").mkdir(parents=True)
+    code, _, _ = go(tmp_path, platform="win32")  # no APPDATA in the environment
+    assert code == 0 and (home / "AppData" / "Roaming" / "Claude" / "claude_desktop_config.json").exists()
+
+
+def test_windows_writes_the_codex_config_under_the_home(tmp_path):
+    path = tmp_path / "home" / ".codex" / "config.toml"
+    code, _, _ = go(tmp_path, "--client", "codex", platform="win32")
+    assert code == 0 and "[mcp_servers.metal-trace]" in path.read_text() and "METAL_TRACE_OUT" in path.read_text()
+
+
+def test_windows_detects_an_installed_codex(tmp_path):
+    (tmp_path / "home" / ".codex").mkdir(parents=True)
+    code, _, _ = go(tmp_path, platform="win32", environ={"APPDATA": str(tmp_path / "home" / "AppData" / "Roaming")})
+    assert code == 0 and (tmp_path / "home" / ".codex" / "config.toml").exists()
+
+
+def test_windows_run_twice_does_not_duplicate_the_entry(tmp_path):
+    appdata = tmp_path / "home" / "AppData" / "Roaming"
+    (appdata / "Claude").mkdir(parents=True)
+    go(tmp_path, platform="win32", environ={"APPDATA": str(appdata)})
+    path = appdata / "Claude" / "claude_desktop_config.json"
+    first = path.read_text()
+    go(tmp_path, platform="win32", environ={"APPDATA": str(appdata)})
+    assert path.read_text() == first and not path.with_name(path.name + ".bak").exists()
+
+
+def test_windows_corrupt_client_json_is_refused_untouched(tmp_path):
+    import contextlib
+    import io
+    appdata = tmp_path / "home" / "AppData" / "Roaming"
+    path = appdata / "Claude" / "claude_desktop_config.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json")
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        code, _, _ = go(tmp_path, "--client", "claude-desktop", platform="win32", environ={"APPDATA": str(appdata)})
+    assert code == 2 and path.read_text() == "{not json" and "not valid JSON" in err.getvalue(), err.getvalue()
+
+
 def test_unverified_system_says_not_supported(tmp_path):
     code, home, _ = go(tmp_path, "--client", "claude-desktop", platform="linux")
     assert code == 2 and not (home / ".config").exists()
@@ -163,14 +303,30 @@ def test_claude_code_runs_claude_mcp_add_once(tmp_path):
         calls.append(argv)
         return types.SimpleNamespace(returncode=1 if argv[2] == "get" else 0, stdout="", stderr="")
 
-    assert go(tmp_path, "--client", "claude-code", run=run, claude=True)[0] == 0
+    code, _, uvx = go(tmp_path, "--client", "claude-code", run=run, claude=True)
+    assert code == 0
     add = calls[-1]
-    assert add[:6] == ["claude", "mcp", "add", "--scope", "user", "metal-trace"]
-    assert add[-2:] == [str(tmp_path / "bin dir" / "uvx"), "metal-gpu-trace"]
+    # the path `which` returned, not the bare name: on Windows that is claude.cmd, which CreateProcess does not find
+    assert add[0] == "/x/claude" and add[1:6] == ["mcp", "add", "--scope", "user", "metal-trace"]
+    assert add[-2:] == [str(uvx), "metal-gpu-trace"]
     assert not any(a.startswith("~") for a in add)
     calls.clear()
     go(tmp_path, "--client", "claude-code", "--dry-run", run=run, claude=True)
     assert calls == []  # a dry run runs nothing
+
+
+def test_claude_code_reports_a_binary_it_cannot_run(tmp_path):
+    """A claude.cmd that still cannot be started (no shell) was a FileNotFoundError out of main: it is an InitError."""
+    import contextlib
+    import io
+
+    def run(argv, **kwargs):
+        raise FileNotFoundError(2, "no such file or directory", argv[0])
+
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        code, _, _ = go(tmp_path, "--client", "claude-code", run=run, claude=True)
+    assert code == 2 and "claude" in err.getvalue() and "could not be run" in err.getvalue(), err.getvalue()
 
 
 def test_real_home_is_not_touched(tmp_path):

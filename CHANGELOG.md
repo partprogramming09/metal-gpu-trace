@@ -7,6 +7,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Added
 
+- 🪟 `metal-gpu-trace init` also sets the server up on Windows: it looks for `uvx.exe` (PATH, then `%USERPROFILE%\.local\bin`) and writes Claude Desktop's `%APPDATA%\Claude\claude_desktop_config.json` and Codex's `%USERPROFILE%\.codex\config.toml`, merging each client's file and leaving the others alone. A missing `uvx` names the Windows install command.
+
+- 🩺 `preflight.environment_report()`: before a recording starts, preflight runs `xcrun --find xctrace`, so a Mac with only the Command Line Tools is told to install Xcode (the tools do not include `xctrace`) instead of the `xcode-select --install` that did not fix it; on Windows the report names a missing PresentMon (with `presentmon_install`) and whether the process is elevated, and `metal-gpu-trace init` prints the same note. Disk, screen, Wine and lock become entries of the same report, which `doctor` reuses.
+
 - 📈 `METAL_TRACE_APP_METRICS_MAX_MB` raises how much of the program's telemetry file is read (default 8 MiB), for programs that write more. A value that is not a whole number of 1 or more keeps 8 MiB and says so in `app_metrics.issues.max_mb`.
 
 - 🔐 CI: Dependabot proposes updates to the pip dependencies and the pinned actions every week (`.github/dependabot.yml`), and every pull request's commits are scanned for secrets by the gitleaks CLI 8.30.1, a fixed download checked against its SHA-256 that needs no `GITLEAKS_LICENSE` (`.github/workflows/security.yml`).
@@ -31,6 +35,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - 🧪 The recording tests can run twice at once on one machine: the attach test names its fake program with the run's pid and a random token (another suite's command line no longer holds the same name, which the script matched and attached to), and every test that hands `perf_record.sh` a program uses `support.unique_program`, a name only that run has, instead of `/bin/sh` (the stop path used to end a program with `pkill -x`, so `/bin/sh` ended any process named `sh` on the machine, another suite's included)
 
 - 🎯 Cancelling or ending a native recording (or the server dying mid-recording) stopped every process with the program's name, so another copy of Godot or Python the user had open died too. It now stops only the program the recording launched and the children it started: `perf_record.sh` finds that program among its own descendants, keeps its process group in the recording lock, and every stop ends that group (SIGTERM, then SIGKILL for one that ignores it). Before each signal the stop checks that the group's leader still runs the program (or is gone while the group lives on), so a group number since reused by another program is left alone; group 0 or 1, the recording script's group and the server's are never signalled. Known limit: a child that leaves the program's group (`setsid` or `setpgid`) is not stopped, since following it would mean tracking every descendant. Attach recordings still leave their program running, and Wine recordings still end their prefix with `wineserver -k`.
+
+- 🩺 `preflight.environment_report()` asks for PresentMon through the `environ` and `which` it was given (a test or `doctor` no longer has to monkey-patch it), and runs `xcrun --find xctrace` with that environment, so `DEVELOPER_DIR` is obeyed; an environment with a null byte is still a `ToolError`, not a crash.
+
+- 🪟 `metal-gpu-trace init` prefers `uvx.exe` over a plain `uvx` shim in the Windows fallback folders, and runs the `claude` path `which` resolved: a `claude.cmd` that still cannot be started is an error with what to do, not an exception that leaves the other clients unwritten.
 
 - 🧪 The `kill_program` test builds its SIGTERM-ignoring program with `cc` instead of copying `/bin/sleep`: newer macOS kills a copied system binary with SIGKILL as it starts, so the test never saw the process.
 
