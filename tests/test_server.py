@@ -190,7 +190,7 @@ def test_progress_and_cancel(tmp_path):
     finally:
         config.OUT, config.PROGRESS_TICKS, os.environ["PATH"] = saved
         recording.RUN.cancel = recording.RUN.progress = None
-    assert (tmp_path / "pkill.log").read_text().split() == ["-x", "hang-4242"], "the launched program must be killed"
+    assert (tmp_path / "pkill.log").read_text().split() == ["-x", program.name], "the launched program must be killed"
     assert len(seen) == 2 and seen[1][0] > seen[0][0] and seen[0][1] == recording.deadline(1), seen
     assert not list(out.iterdir()), list(out.iterdir())
     import io

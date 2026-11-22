@@ -2,11 +2,12 @@
 import json
 import os
 import pathlib
+import secrets
 import shutil
 import subprocess
 import sys
 
-from support import ROOT, PKG, macos_only, hang_stubs  # also puts src/ on sys.path
+from support import ROOT, PKG, macos_only, hang_stubs, unique_program  # also puts src/ on sys.path
 
 
 def test_memory_param(tmp_path):
@@ -42,7 +43,9 @@ def test_disk_guard(tmp_path):
 @macos_only
 def test_attach_by_name_never_picks_the_process_that_called_it(tmp_path):
     """The caller's own command line may hold the program's name (python -c "...Game.exe..."): the script must not attach to it."""
-    token = "NoSuchGame-4f1c9.exe"
+    # the name is unique per run: a second suite's caller holds this same sentence in its command line, and the script
+    # matches the newest process whose command line holds the name, so a shared name would attach to that other suite
+    token = f"NoSuchGame-{os.getpid()}-{secrets.token_hex(4)}.exe"
     # the command line must hold the name but none of the words the script already skips (zsh, perf_record, awk, xctrace)
     code = ("import os, subprocess; e = os.environ; env = dict(e, PERF_PARENT_PID=str(os.getpid()), PERF_LOCK=e['T'] + '/.l', "
             "PERF_OUT=e['T'], PERF_MIN_FREE_GB='99999999'); sh = 'z' + 'sh'; "
@@ -381,9 +384,7 @@ def test_overrun(tmp_path):
     xcrun = stubs / "xcrun"
     xcrun.write_text("#!/bin/zsh\nwhile [[ $1 != --output ]]; do shift; done\nmkdir -p $2\nsleep 60\n")
     xcrun.chmod(0o755)
-    program = tmp_path / "hang-4242"
-    program.write_text("#!/bin/sh\n")
-    program.chmod(0o755)
+    program = unique_program(tmp_path, "hang")
     saved = config.OUT, recording.deadline, os.environ["PATH"]
     config.OUT, recording.deadline = out, lambda seconds: 3
     os.environ["PATH"] = f"{stubs}:{saved[2]}"
@@ -426,9 +427,8 @@ def test_stale_lock_macos(tmp_path):
     (stubs / "xcrun").write_text(f"#!/bin/zsh\ntouch {tmp_path}/xctrace-ran\n"
                                  "while [[ $1 != --output ]]; do shift; done\nmkdir -p $2\n")
     (stubs / "pkill").write_text("#!/bin/zsh\nexit 1\n")
-    program = tmp_path / "stale-4242"
-    program.write_text("#!/bin/sh\n")
-    for stub in (*stubs.iterdir(), program):
+    program = unique_program(tmp_path, "stale")
+    for stub in stubs.iterdir():
         stub.chmod(0o755)
     env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_MIN_FREE_GB="0",
                PATH=f"{stubs}:{os.environ['PATH']}")
@@ -501,7 +501,6 @@ def test_a_windows_recording_reaches_the_windows_engine_whatever_was_imported_fi
 def test_kill_program_and_watchdog(tmp_path):
     """kill_program ends a program that ignores SIGTERM, and perf_record.sh stops its recording, frees its lock and
     its program when the server named in PERF_PARENT_PID dies."""
-    import secrets
     import time
     from metal_gpu_trace import recording
     from support import wait_until
@@ -555,9 +554,7 @@ def test_script_failure_cleanup(tmp_path):
     xcrun = stubs / "xcrun"  # an xctrace that fails at once
     xcrun.write_text("#!/bin/zsh\nexit 1\n")
     xcrun.chmod(0o755)
-    program, text = tmp_path / "prog", tmp_path / "notes.txt"
-    program.write_text("#!/bin/sh\n")
-    program.chmod(0o755)
+    program, text = unique_program(tmp_path), tmp_path / "notes.txt"
     text.write_text("x")
     env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_MIN_FREE_GB="0",
                PATH=f"{stubs}:{os.environ['PATH']}")
@@ -788,7 +785,8 @@ def test_takeover_rechecks_the_owner(tmp_path):
     (lock / "pid").write_text("4242\n")
     env = dict(os.environ, PERF_OUT=str(out), PERF_LOCK=str(out / ".recording"), PERF_MIN_FREE_GB="0",
                PATH=f"{stubs}:{os.environ['PATH']}")
-    proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "recheck", "1", "native", "-", str(tmp_path), "/bin/sh"],
+    program = unique_program(tmp_path, "recheck")
+    proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "recheck", "1", "native", "-", str(tmp_path), str(program)],
                           env=env, capture_output=True, text=True, timeout=60)
     assert proc.returncode == 3 and "another recording is running" in proc.stderr, proc
     assert (lock / "pid").read_text() == "4242\n" and not (tmp_path / "xctrace-ran").exists()
@@ -847,9 +845,10 @@ def test_keep_runs_after_a_recording_keeps_baselines_and_panel_layout(tmp_path):
     (stubs / "python3").write_text('#!/bin/zsh\nwhile [[ $1 != --label ]]; do shift; done\necho "{}" > $4/$2.json\n')
     for stub in stubs.iterdir():
         stub.chmod(0o755)
+    program = unique_program(tmp_path, "kept")
     env = dict(os.environ, PERF_OUT=str(out), PERF_MIN_FREE_GB="0", KEEP_RUNS="1",
                PATH=f"{stubs}:{os.environ['PATH']}")
-    proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "kept", "1", "native", "-", str(tmp_path), "/bin/sh"],
+    proc = subprocess.run(["zsh", str(PKG / "perf_record.sh"), "kept", "1", "native", "-", str(tmp_path), str(program)],
                           env=env, capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc
     left = {p.name for p in out.iterdir()}
@@ -871,9 +870,10 @@ def test_script_takes_the_shared_lock_by_default(tmp_path):
     lock = home / "Library" / "Caches" / "metal-gpu-trace" / "recording.lock"
     (stubs / "xcrun").write_text(f"#!/bin/zsh\ntest -s {lock}/pid && touch {tmp_path}/locked\nexit 1\n")
     (stubs / "xcrun").chmod(0o755)
+    program = unique_program(tmp_path, "byhand")
     env = {k: v for k, v in os.environ.items() if k != "PERF_LOCK"}
     env.update(PERF_OUT=str(out), PERF_MIN_FREE_GB="0", HOME=str(home), PATH=f"{stubs}:{os.environ['PATH']}")
-    subprocess.run(["zsh", str(PKG / "perf_record.sh"), "byhand", "1", "native", "-", str(tmp_path), "/bin/sh"],
+    subprocess.run(["zsh", str(PKG / "perf_record.sh"), "byhand", "1", "native", "-", str(tmp_path), str(program)],
                    env=env, capture_output=True, text=True, timeout=60)
     assert (tmp_path / "locked").exists() and not lock.exists() and not (out / ".recording").exists()
 
