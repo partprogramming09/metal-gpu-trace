@@ -155,3 +155,13 @@ def test_version_still_prints_the_installed_one():
 
     proc = cli("--version")
     assert proc.returncode == 0 and proc.stdout.strip() == f"metal-gpu-trace {metal_trace_mcp.__version__}", proc.stdout
+
+
+def test_doctor_rejects_extra_arguments_and_every_command_answers_help(tmp_path):
+    """`doctor --bogus` is a usage error like the other commands'; `COMMAND --help` prints the usage and exits 0."""
+    bad = cli("doctor", "--bogus")
+    assert bad.returncode == 2 and "usage: metal-gpu-trace doctor" in bad.stderr
+    for command in ("doctor", "runs", "compare", "check"):
+        for flag in ("--help", "-h"):
+            done = cli(command, flag)
+            assert done.returncode == 0 and "usage: metal-gpu-trace [COMMAND]" in done.stdout, (command, flag)

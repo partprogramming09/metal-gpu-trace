@@ -67,9 +67,11 @@ def _cell(value):
     return str(value)
 
 
-def doctor():
+def doctor(args):
     """Prints preflight's report of what a recording needs here (the checks `init` notes and a recording refuses on):
     one line per check, `ok` or what is missing with the exact fix. Exits 0 when a recording could start, else 2."""
+    if args:
+        return _usage_error("usage: metal-gpu-trace doctor")
     project.apply()
     try:
         project.check()
@@ -175,6 +177,9 @@ def main(args, version):
         print(USAGE, end="")
         return 0
     command, rest = (args[0], args[1:]) if args else (None, [])
+    if command in ("check", "doctor", "runs", "compare") and rest[:1] in (["--help"], ["-h"]):
+        print(USAGE, end="")
+        return 0
     if command == "init":  # before project.apply(): it only edits client config files
         from metal_gpu_trace import init
         return init.main(rest)
@@ -189,7 +194,7 @@ def main(args, version):
         project.apply()
         return _http(rest)
     if command == "doctor":
-        return doctor()
+        return doctor(rest)
     if command == "runs":
         return runs(rest)
     if command == "compare":
