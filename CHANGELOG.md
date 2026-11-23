@@ -7,6 +7,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Changed
 
+- Docs: the links in `docs/index.md` and `docs/guides/index.md` now spell out `.md`, so they work on GitHub and in VitePress, and `tests/test_docs.py` fails on a relative link that points at nothing (code blocks excluded).
 - 🔐 The official MCP SDK the conformance tests run against is pinned in `tests/conformance/requirements.txt`, which Dependabot watches, so a new SDK release now arrives as a pull request instead of going unnoticed; `CONTRIBUTING.md` says how to take it.
 
 ### Added

@@ -183,3 +183,39 @@ def test_the_real_latest_release_follows_the_rule():
     proofs = {f"docs/evidence/{p.name}": p.read_text(encoding="utf-8") for p in (ROOT / "docs" / "evidence").glob("v*.md")}
     docs = {n: (ROOT / n).read_text(encoding="utf-8") for n in ("README.md",)}
     assert problems((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), docs, proofs) == []
+
+
+LINK = re.compile(r"\]\(([^)\s]+)\)")
+SKIPPED_DIRS = {".git", ".claude", "node_modules", "dist", ".venv", ".vitepress"}
+
+
+def broken_links(path, text, exists):
+    """Returns the relative links of a markdown text that point at nothing, as GitHub resolves them (the file must be
+    spelled out: `./how-it-works` works only in VitePress). `exists` says whether a path does. Code is not a link."""
+    text = re.sub(r"`[^`\n]*`", "", re.sub(r"(?ms)^```.*?^```", "", text))
+    wrong = []
+    for link in LINK.findall(text):
+        target = link.split("#")[0]
+        if not target or re.match(r"[a-z][a-z0-9+.-]*:", link) or link.startswith("#"):
+            continue
+        resolved = (ROOT / target.lstrip("/")) if target.startswith("/") else path.parent / target
+        if not exists(resolved):
+            wrong.append(link)
+    return wrong
+
+
+def test_a_broken_link_is_found():
+    here = ROOT / "docs" / "a.md"
+    assert broken_links(here, "[x](./b) [y](b.md) [z](/guides/)", lambda p: p.name == "b.md") == ["./b", "/guides/"]
+    assert broken_links(here, "`[x](./b)`\n```\n[y](./c)\n```\n[w](https://x.org) [v](#top)", lambda p: False) == []
+
+
+def test_every_relative_link_in_the_markdown_files_works_on_github():
+    wrong = {}
+    for path in ROOT.rglob("*.md"):
+        if SKIPPED_DIRS & set(path.relative_to(ROOT).parts):
+            continue
+        found = broken_links(path, path.read_text(encoding="utf-8"), lambda p: p.exists())
+        if found:
+            wrong[str(path.relative_to(ROOT))] = found
+    assert wrong == {}
