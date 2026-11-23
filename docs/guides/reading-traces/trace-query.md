@@ -1,12 +1,12 @@
 # `trace_query`: rows, pages and windows
 
-**Reader:** people who read the rows of a table in a kept `.trace`, or who change `traces.py:92-114`. Reviewed 2026-11-16.
+**Reader:** people who read the rows of a table in a kept `.trace`, or who change `traces.py::check_window`. Reviewed 2026-11-16.
 
 > **In short:** `trace_query` hands you one page of one table, 50 rows by default. For a table too long to read, ask for time
 > windows instead: "how many rows and how much time in each 10 ms". Three rows at 1 ms, 9 ms and 12 ms give two windows, with
 > 2 rows and 1. Every page runs the export again, so big tables are slow.
 
-`tool_trace_query(trace, schema, offset=0, limit=50, pid=None, window_ms=None)` (`traces.py:92-114`), in order:
+`tool_trace_query(trace, schema, offset=0, limit=50, pid=None, window_ms=None)` (`traces.py::check_window`), in order:
 
 | # | Step | Detail | Line |
 |---|---|---|---|
@@ -33,7 +33,7 @@
 `next_offset: null` tells a client it reached the end. Everything comes from a **list of all the rows** (`:111-112` builds it,
 `:94-99` slices it) and each call exports again: a million rows in pages of 500 runs the export 2000 times. No cache
 (**confirmed**); the cost of one export of a large table was **not measured**. If an export takes over 600 s the call ends with
-`subprocess.TimeoutExpired`, which the worker turns into an error (`worker.py:165-168`; timeout at `perf_report.py:49`).
+`subprocess.TimeoutExpired`, which the worker turns into an error (`worker.py::_merge`; timeout at `perf_report.py:49`).
 
 ## Windows
 

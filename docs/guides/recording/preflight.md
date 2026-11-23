@@ -11,7 +11,7 @@ nothing to clean up. Example: `seconds=5000` ends at once with `seconds is a who
 the exact fix, with no path or machine name); `preflight.check` runs it in a fixed order and raises a `ToolError` at the
 first fatal entry ([E1](./evidence.md)). Two checks start a process: `xcrun --find xctrace` (`xctrace_problem`, timeout
 20 s, run with the caller's environment so `DEVELOPER_DIR` is obeyed) and reading the screen state (`ioreg`, timeout
-10 s, `perf_report.py:593-604`). On Windows the report looks for PresentMon on the disk and `PATH` and asks whether the
+10 s, `perf_report.py::summarize`). On Windows the report looks for PresentMon on the disk and `PATH` and asks whether the
 process is elevated; neither entry is fatal, because the engine still records.
 
 ![Seven boxes in a row, left to right: arguments, program, xcrun, disk, screen, lock and start. Under each of the first six the exact message it refuses with is written. If all pass, the recording starts.](./img/preflight-checks.png)
@@ -63,7 +63,7 @@ the odd cases.
 
 | Not checked | Who catches it, and how | Line |
 |---|---|---|
-| That a process to attach to exists (`perf_attach` passes preflight with any text) | The script: `no running process matches <name>` (exit 2). The Windows engine: the same as a `RuntimeError`. It arrives as `recording failed ...` or as a plain `ToolError` | `perf_record.sh:24`; `perf_record_windows.py:475`, `:480` |
+| That a process to attach to exists (`perf_attach` passes preflight with any text) | The script: `no running process matches <name>` (exit 2). The Windows engine: the same as a `RuntimeError`. It arrives as `recording failed ...` or as a plain `ToolError` | `perf_record.sh:24`; `perf_record_windows.py::record_windows`, `:480` |
 | The Wine prefix, the working directory, the `api` against the platform | Used later, by the script or by `Popen` | |
 | That the program is a Mach-O | The script compares the first four bytes against Mach-O magic numbers (and ELF and `#!`, "for the Linux CI") and refuses with `<name> is not a program the system can run (no Mach-O or #! header)` | `perf_record.sh:14-19` |
 
@@ -71,7 +71,7 @@ the odd cases.
 
 | Check | `recording.py` / `preflight.py` | `perf_record.sh` |
 |---|---|---|
-| Label (`record` checks it before preflight) | `recording.py:312` | `:10` (exit 2) |
+| Label (`record` checks it before preflight) | `recording.py::hold_memory_pressure` | `:10` (exit 2) |
 | Seconds 1 to 3600 | `check` | `:11` (exit 2) |
 | Wine directory | `wine_problem` | `:12` (exit 2) |
 | Native program | `check` | `:13`, `:14-19` (exit 2) |

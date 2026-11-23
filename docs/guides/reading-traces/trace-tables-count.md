@@ -16,8 +16,8 @@ returns `{"tables": [<sorted names>]}`: no row counts, no sizes. The cheapest of
 ## `trace_count`: which tables have rows
 
 A table can exist and be empty: the recording of E8 has 26, among them the shader *spill* table (empty unless a program spills
-registers). `tool_trace_count` (`traces.py:124-148`) exports each table named and counts its rows, in all and per process
-(shape asserted by `tests/test_report.py:207-208`, synthetic names; not run):
+registers). `tool_trace_count` (`traces.py::windows_of`) exports each table named and counts its rows, in all and per process
+(shape asserted by `tests/test_report.py::test_trace_count`, synthetic names; not run):
 
 ```text
 {"trace": "<name>", "tables": {"<schema>": {"rows": 3, "by_process": {"<name> (42)": 2, "<name> (7)": 1}}, ...}}
@@ -25,7 +25,7 @@ registers). `tool_trace_count` (`traces.py:124-148`) exports each table named an
 
 | Rule | Behaviour | Line |
 |---|---|---|
-| No `tables` argument | counts the ten of `COUNTED_TABLES`: GPU intervals, encoder list, command-buffer completion, the shader compiler's spill and activity tables, the shader profiler's list and samples, resource allocations, GPU counter intervals, `time-profile` | `traces.py:117-121` |
+| No `tables` argument | counts the ten of `COUNTED_TABLES`: GPU intervals, encoder list, command-buffer completion, the shader compiler's spill and activity tables, the shader profiler's list and samples, resource allocations, GPU counter intervals, `time-profile` | `traces.py::windows_of` |
 | A name not in the table of contents | not an error: `{"rows": None, "note": "not in this trace"}`. **`rows: 0` and "not there" are different answers** | `:133-135` |
 | A name with other characters than letters, digits, `-` | `a table name holds only letters, digits and '-'; trace_tables lists them`; the check protects the xpath, built by inserting the name into a string | `:131-132`, `:136` |
 | `by_process` | the ten processes with most rows, named as the table names them (`name (pid)`), or by pid when the cell has no text | `:142`, `:147` |

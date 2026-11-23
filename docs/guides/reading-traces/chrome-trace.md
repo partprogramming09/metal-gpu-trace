@@ -14,8 +14,8 @@
 
 | # | Step | Detail | Line |
 |---|---|---|---|
-| 1 | Check the run | `paths.run_path(run)`: valid name, `<run>.json` exists, not a link, not `baselines.json`. Unknown: `no run <name>; perf_runs lists them` | `traces.py:14`, `paths.py:33-41` |
-| 2 | Find the table | `table_files.find(config.OUT, f"{run}.frames")`: `<run>.frames.csv.gz` first, `.csv` second, not a link. None: `<run> has no per-frame file; record it again` | `traces.py:15`, `tables.py:13-20`, `:16-17` |
+| 1 | Check the run | `paths.run_path(run)`: valid name, `<run>.json` exists, not a link, not `baselines.json`. Unknown: `no run <name>; perf_runs lists them` | `traces.py::tool_perf_export_trace`, `paths.py:33-41` |
+| 2 | Find the table | `table_files.find(config.OUT, f"{run}.frames")`: `<run>.frames.csv.gz` first, `.csv` second, not a link. None: `<run> has no per-frame file; record it again` | `traces.py::tool_perf_export_trace`, `tables.py::find`, `:16-17` |
 | 3 | One **complete event** per row | `"ph": "X"` (a slice with start and length), named `GPU frame`, process 1, thread 1: `ts = start_ms × 1000`, `dur = gpu_ms_total × 1000` (microseconds); `args` = frame number plus each `gpu_ms_<channel>` except the total, prefix cut (`compute`, `fragment`, `vertex`) | `:22-25` |
 | 4 | Bad table | unreadable, a missing column or a non-number: `<file name> cannot be read; record it again`; no partial file | `:26-27` |
 | 5 | Write | `{"traceEvents": [...], "displayTimeUnit": "ms"}` to `<runs folder>/<run>.chrome-trace`; returns `{"file": "<run>.chrome-trace", "frames": <events>}`. `paths.write_file` replaces an older file and refuses to write through a link | `:28-30`, `paths.py:69-80` |

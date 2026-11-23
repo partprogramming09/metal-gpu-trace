@@ -45,7 +45,7 @@ The rules in the code (`power_state`, `perf_report.py:653-668`):
 
 1. **Before the program starts**: `record_run` calls `power_state()` (`recording.py:386`) before `perf_record.sh` runs.
 2. **After the summary is written**: `record_run` calls it again, and `power_block` puts both readings in `machine.power`
-   (`recording.py:438-439`, `perf_report.py:672-676`).
+   (`recording.py::run_recording`, `perf_report.py:672-676`).
 
 The block exists only when the summary has a `machine` block. `machine` is `null` in the JSON when this Mac is not the one
 that recorded the trace (its RAM or macOS version differs from the trace's device) or when a fact about the machine cannot

@@ -8,7 +8,7 @@
 
 ## The command line
 
-`main()` (`metal_trace_mcp.py:79-95`) reads it in this order and stops at the first match:
+`main()` (`metal_trace_mcp.py::check_cli`) reads it in this order and stops at the first match:
 
 | Command line | What happens | Line |
 |---|---|---|
@@ -22,7 +22,7 @@ There is no `--stdio` flag: stdio is what is left (see [limit 4](./limits.md)).
 
 ## stdio
 
-`serve_stdio` (`stdio.py:25-57`) is the whole transport:
+`serve_stdio` (`stdio.py::serve_stdio`) is the whole transport:
 
 - Switches stdout to UTF-8 (`:27-28`) and reads stdin as bytes, decoding each line as UTF-8 (`:29-34`), so encoding does not depend on the launcher's language settings. A line that is not UTF-8 gets `-32700` and the server keeps going.
 - Reads stdin line by line until the client closes it (`:29`); empty lines are skipped (`:35-36`).
@@ -33,7 +33,7 @@ There is no `--stdio` flag: stdio is what is left (see [limit 4](./limits.md)).
 
 ## HTTP
 
-`serve_http(port)` (`http_transport.py:182-196`), in this order:
+`serve_http(port)` (`http_transport.py::serve_http`), in this order:
 
 | # | Step | Line |
 |---|---|---|
@@ -48,4 +48,4 @@ Each connection is handled by the `Handler` class that `http_handler(token)` bui
 
 Importing `metal_trace_mcp` has two side effects every transport and test relies on: `protocol.configure(instructions, version)` and `worker.configure(send=stdio.send, answer=protocol.answer, finish=protocol.finish)` (`:49-50`). That is why tests that build a handler or call `protocol.handle` first `import metal_trace_mcp  # noqa: F401  (configures protocol and worker)` (for example `tests/test_server.py:525-529`). The architecture tests check that using `worker` or `protocol` before that fails with a message naming the fix (`tests/test_architecture.py:147`, `:201`).
 
-`INSTRUCTIONS` (`:23-47`) is the text a client reads on connecting, sent in the reply to `initialize` (`protocol.py:112`) and `server/discover` (`:115`). The usage rules (one recording at a time, 30 s or more under Wine, compare recordings of 100 frames or more) travel with the server, not a README; a test checks each full stop is followed by a space (`tests/test_server.py:1090`).
+`INSTRUCTIONS` (`:23-47`) is the text a client reads on connecting, sent in the reply to `initialize` (`protocol.py::handle`) and `server/discover` (`:115`). The usage rules (one recording at a time, 30 s or more under Wine, compare recordings of 100 frames or more) travel with the server, not a README; a test checks each full stop is followed by a space (`tests/test_server.py:1090`).

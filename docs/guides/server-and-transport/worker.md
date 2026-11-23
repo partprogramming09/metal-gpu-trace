@@ -26,7 +26,7 @@ The thread takes the first item and runs `reply(_answer(message))`: `_answer` is
 
 ## Checks before a tool runs (`call`, `:143-172`)
 
-`protocol.handle` calls `worker.call` for a `tools/call` (`protocol.py:170`):
+`protocol.handle` calls `worker.call` for a `tools/call` (`protocol.py::handle`):
 
 | Step | Fails when | The client gets | Line |
 |---|---|---|---|
@@ -38,7 +38,7 @@ The thread takes the first item and runs `reply(_answer(message))`: `_answer` is
 | The result | Is not a dictionary | `<tool> returned <type>, not an object` | `:159-160` |
 | The result | JSON longer than `MAX_TEXT` (40 000 characters) | `the result has N characters; ask for a smaller page with limit` | `:161-163`, `config.py:45` |
 
-`check_arguments` checks only names (`required`, `properties`); types are each tool's job (`worker.py:130-132`). A success returns `content` (JSON as text) and `structuredContent` (the same object) (`:164`). The 40 000 comes from a client limit: `config.py:44` says results stay under Claude Code's 50 000-character limit, above which it saves them to a file. `fields` is the one argument every tool takes: a list of dotted paths (`common.frame_pacing.fps_1pct_low`) that cuts the result before it is sized and sent. `tools/list` adds it to each tool's `inputSchema`, and `call` removes it before `check_arguments`, so no tool sees it. A path to an object keeps the whole object; a path through a list applies to each item. On the paged tools (`perf_runs`, `trace_query`, `capture_records`) the paths apply to each row, and `total`, `offset`, `rows` and `next_offset` stay. A path that matches nothing is not invented: the body stays as is and `_meta.fields_missing` lists it. An object left empty stays `{}`. The cut comes before the `MAX_TEXT` check, so an answer that would be refused as too large can fit with `fields`; `structuredContent` and the text hold the same cut value, and `schema_version` does not change because the saved summary is untouched. An empty list means no cut; a value that is not a list of non-empty strings is a `bad arguments` error.
+`check_arguments` checks only names (`required`, `properties`); types are each tool's job (`worker.py::check_arguments`). A success returns `content` (JSON as text) and `structuredContent` (the same object) (`:164`). The 40 000 comes from a client limit: `config.py:44` says results stay under Claude Code's 50 000-character limit, above which it saves them to a file. `fields` is the one argument every tool takes: a list of dotted paths (`common.frame_pacing.fps_1pct_low`) that cuts the result before it is sized and sent. `tools/list` adds it to each tool's `inputSchema`, and `call` removes it before `check_arguments`, so no tool sees it. A path to an object keeps the whole object; a path through a list applies to each item. On the paged tools (`perf_runs`, `trace_query`, `capture_records`) the paths apply to each row, and `total`, `offset`, `rows` and `next_offset` stay. A path that matches nothing is not invented: the body stays as is and `_meta.fields_missing` lists it. An object left empty stays `{}`. The cut comes before the `MAX_TEXT` check, so an answer that would be refused as too large can fit with `fields`; `structuredContent` and the text hold the same cut value, and `schema_version` does not change because the saved summary is untouched. An empty list means no cut; a value that is not a list of non-empty strings is a `bad arguments` error.
 
 Last, `call` logs `<tool> ok|error in <seconds> s` (`:171`): no argument, label, path or result ([Logs](./logs.md)).
 
@@ -48,11 +48,11 @@ Two cancels, because stdio and HTTP know different things about their clients.
 
 | Cancel | Key | What it does |
 |---|---|---|
-| `cancel_call(request_id)` (`:93-115`) | **id** | A queued call is taken out and answered at once with `the call was cancelled before it started` (`:101-111`); a running one gets its flag set (`:112-115`) and stops at its next look. Either way the id stays in `CANCELLED` until the reply is out, so a transport that can stay silent (stdio) writes nothing (`stdio.py:19-22`). An id that cannot be a dictionary key is ignored (`:96-99`) |
+| `cancel_call(request_id)` (`:93-115`) | **id** | A queued call is taken out and answered at once with `the call was cancelled before it started` (`:101-111`); a running one gets its flag set (`:112-115`) and stops at its next look. Either way the id stays in `CANCELLED` until the reply is out, so a transport that can stay silent (stdio) writes nothing (`stdio.py::reply_unless_cancelled`). An id that cannot be a dictionary key is ignored (`:96-99`) |
 | `cancel_item(message, event)` (`:118-127`) | **identity** | Used by HTTP when a modern client closes its connection: two HTTP clients can send the same id, so it matches the very message and flag, takes a queued message out without answering (its client is gone) and sets the flag (`test_http_close_spares_another_client_with_the_same_id`, `tests/test_server.py:1107`) |
 
-The recording notices the flag through `recording.cancelled()`, a thread-local (`recording.py:224-230`) that `worker.call` fills with the call's flag at its start (`worker.py:147-148`); see [Recording](../recording/index.md).
+The recording notices the flag through `recording.cancelled()`, a thread-local (`recording.py::cancelled`) that `worker.call` fills with the call's flag at its start (`worker.py::_take`); see [Recording](../recording/index.md).
 
 ## Progress
 
-Only a request with a `progressToken` has progress. `worker.call` sets `recording.RUN.progress` to a function sending `notifications/progress` (`worker.py:149-151`), unless the id is already cancelled; `recording.progress` calls it every `config.PROGRESS_TICKS` (5) seconds while recording. It goes out through `_send`, which `metal_trace_mcp.py:50` set to `stdio.send`: right for stdio, wrong for HTTP, which is why the HTTP handler removes `progressToken` before queueing (`http_transport.py:145-151`; [limit 11](./limits.md)).
+Only a request with a `progressToken` has progress. `worker.call` sets `recording.RUN.progress` to a function sending `notifications/progress` (`worker.py::_take`), unless the id is already cancelled; `recording.progress` calls it every `config.PROGRESS_TICKS` (5) seconds while recording. It goes out through `_send`, which `metal_trace_mcp.py:50` set to `stdio.send`: right for stdio, wrong for HTTP, which is why the HTTP handler removes `progressToken` before queueing (`http_transport.py::do_POST`; [limit 11](./limits.md)).

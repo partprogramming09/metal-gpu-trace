@@ -61,12 +61,12 @@ started (never an attached one), deletes every file starting with the run's name
 | | macOS | Windows |
 |---|---|---|
 | Recorder | `perf_record.sh` driving `xctrace` | `perf_record_windows.py`, in the server's own process |
-| Tiers | `light`, `standard`, `deep` | `deep` refused (`recording.py:49-50`); `memory` has no effect: no Metal memory table |
+| Tiers | `light`, `standard`, `deep` | `deep` refused (`recording.py::tool_perf_record`); `memory` has no effect: no Metal memory table |
 | `memory_free_pct`, `background` | allowed | refused (`recording.py:283-284`) |
 | Disk needed | `2 + 0.8 GB` per second, in `TMPDIR` and the runs folder | 1 GB, in the runs folder (`preflight.py:50`, `:123-124`) |
 | `xcrun`, screen | checked | not checked (`preflight.py:120`, `:132`) |
 | Program's stop at the end | by name (`native`) or `wineserver -k` | the process tree (`kill_process_tree`, `:521-551`) |
-| Wine | yes | no: `wine` becomes `native` when none is given (`recording.py:61-65`), and an api marked `wine: true` runs natively (`workloads.py:88-89`) |
+| Wine | yes | no: `wine` becomes `native` when none is given (`recording.py::tool_perf_record`), and an api marked `wine: true` runs natively (`workloads.py::workload_command`) |
 | Lock life | `mkdir` + takeover under a second lock | `mkdir` + one stale takeover, no second lock ([limit 3](./limits.md)) |
 | Frame table | `frames.csv.gz` with one `gpu_ms_<channel>` per channel | `frames.csv.gz` with `gpu_ms_draw` and `gpu_ms_total` (`:847`) |
 

@@ -7,6 +7,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Changed
 
+- Docs: 282 `file.py:line` citations in the guides now name the function (`file.py::function`); only those whose function is the same in the guide's last commit and today were changed. 327 stay as lines (their code moved, or they point at module-level code), and the dated `evidence*.md` pages keep their lines on purpose.
 - 🔐 The official MCP SDK the conformance tests run against is pinned in `tests/conformance/requirements.txt`, which Dependabot watches, so a new SDK release now arrives as a pull request instead of going unnoticed; `CONTRIBUTING.md` says how to take it.
 
 ### Added

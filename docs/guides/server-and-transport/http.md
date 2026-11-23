@@ -13,23 +13,23 @@ A client that cannot start a stdio server sends `POST http://127.0.0.1:8765/mcp`
 ![Seven boxes in a row, left to right: path, host and origin, token, size, JSON, headers and run. Under each of the first six, the status it answers with: 404, 403, 401, 413, 400 with a parse error, and 400 or 404 with a JSON-RPC error. If all pass, the request runs.](./img/server-http-checks.png)
 *Figure 2. What `do_POST` checks before anything runs. Source: `img/server-http-checks.html`.*
 
-The order matters: a client with no token never gets its body read. Statuses 404, 403, 401 and 413 have an **empty** body on purpose (`reply(code)` with no body, `http_transport.py:99-101`, lines `:119-129`): a refusal tells the client nothing it did not know. [E1](./evidence.md#e1-every-status-the-http-handler-answers-with-its-line) lists every `self.reply` with its line.
+The order matters: a client with no token never gets its body read. Statuses 404, 403, 401 and 413 have an **empty** body on purpose (`reply(code)` with no body, `http_transport.py::reply`, lines `:119-129`): a refusal tells the client nothing it did not know. [E1](./evidence.md#e1-every-status-the-http-handler-answers-with-its-line) lists every `self.reply` with its line.
 
 | # | Check | Status | The reply | Pinned by |
 |---|---|---|---|---|
-| 0 | The method is POST (`do_GET`, `do_DELETE`) | 405 | Empty; before any other check. `PUT`, `HEAD` and the rest are answered by the standard library (**probable**: 501; not run) | `tests/test_server.py:321`, `:893` |
+| 0 | The method is POST (`do_GET`, `do_DELETE`) | 405 | Empty; before any other check. `PUT`, `HEAD` and the rest are answered by the standard library (**probable**: 501; not run) | `tests/test_server.py::test_http`, `:893` |
 | 1 | `self.path == "/mcp"` | 404 | Empty | `:322` |
 | 2 | Host is `localhost` or `127.0.0.1`, and an Origin, when sent, is too | 403 | Empty | `:317-320` |
 | 3 | `Authorization` carries the token | 401 | Empty | `:315-316` |
-| 4 | `Content-Length` is digits, at most 12, between 0 and `MAX_BODY` (1 000 000) | 413 | Empty | `tests/test_adversarial.py:225` |
+| 4 | `Content-Length` is digits, at most 12, between 0 and `MAX_BODY` (1 000 000) | 413 | Empty | `tests/test_adversarial.py::test_http_content_length_unicode_digit_or_huge_is_answered` |
 | 5 | The body is UTF-8 JSON not nested beyond what the parser accepts | 400 | `-32700 parse error`, `id: null` | `:1031` |
 | 6 | `check_headers` | 400 or 404 | A JSON-RPC error (codes below) | `:838`, `:847` |
 
 | Check | Detail |
 |---|---|
-| **Host and Origin** (`foreign`, `:108-111`; `local_host`, `:17-20`) | Removes a leading `scheme://` and anything after `/`, takes what precedes the first `:`, accepts only `localhost` or `127.0.0.1`; the port does not matter. An `Origin` is checked only when sent; a missing `Host` is not local. Tests: `http://evil.example`, `http://localhost.evil.example` and `Host: evil.example` give 403, `http://localhost:<port>` gives 200 (`tests/test_server.py:317-320`). Why both: a page on `evil.example` whose name resolves to `127.0.0.1` sends `Host: evil.example` (Host check stops it); a browser sends an `Origin` on a cross-site POST, which stops a page that needs no rebinding |
-| **The token** (`unauthorized`, `:113-116`) | `Bearer ` is removed if present and the rest compared with `hmac.compare_digest` (same time whatever the first wrong byte). Read once at start (`:186`), never logged, printed or replied; the only message is the refusal to start ([E5](./evidence.md#e5-how-the-command-line-is-read), `:188`). Missing, empty and wrong are all 401 (`tests/test_server.py:315-316`) |
-| **Size** (`:125-129`) | A `Content-Length` that is not ASCII digits (`²` passes `str.isdigit()` and fails `int()`), has more than 12 characters or exceeds 1 000 000 is 413 without reading the body; a test uses `0xB2` and 5 000 nines (`tests/test_adversarial.py:225-232`). No `Content-Length` counts as 0: a body without it, or with `Transfer-Encoding: chunked`, is read as empty and answered 400 `-32700` ([limit 8](./limits.md)) |
+| **Host and Origin** (`foreign`, `:108-111`; `local_host`, `:17-20`) | Removes a leading `scheme://` and anything after `/`, takes what precedes the first `:`, accepts only `localhost` or `127.0.0.1`; the port does not matter. An `Origin` is checked only when sent; a missing `Host` is not local. Tests: `http://evil.example`, `http://localhost.evil.example` and `Host: evil.example` give 403, `http://localhost:<port>` gives 200 (`tests/test_server.py::test_http`). Why both: a page on `evil.example` whose name resolves to `127.0.0.1` sends `Host: evil.example` (Host check stops it); a browser sends an `Origin` on a cross-site POST, which stops a page that needs no rebinding |
+| **The token** (`unauthorized`, `:113-116`) | `Bearer ` is removed if present and the rest compared with `hmac.compare_digest` (same time whatever the first wrong byte). Read once at start (`:186`), never logged, printed or replied; the only message is the refusal to start ([E5](./evidence.md#e5-how-the-command-line-is-read), `:188`). Missing, empty and wrong are all 401 (`tests/test_server.py::test_http`) |
+| **Size** (`:125-129`) | A `Content-Length` that is not ASCII digits (`²` passes `str.isdigit()` and fails `int()`), has more than 12 characters or exceeds 1 000 000 is 413 without reading the body; a test uses `0xB2` and 5 000 nines (`tests/test_adversarial.py::test_http_content_length_unicode_digit_or_huge_is_answered`). No `Content-Length` counts as 0: a body without it, or with `Transfer-Encoding: chunked`, is read as empty and answered 400 `-32700` ([limit 8](./limits.md)) |
 
 ## `check_headers`: when the headers do not match the body
 
@@ -43,7 +43,7 @@ The order matters: a client with no token never gets its body read. Statuses 404
 | Modern | `MCP-Protocol-Version` or `Mcp-Method` missing | 400, `-32020` `Header mismatch: ... are required` | `:70-71` |
 | Modern | `Mcp-Method` is not the body's `method` | 400, `-32020` | `:72-73` |
 | Modern | The version header is not the `_meta` version | 400, `-32020` | `:74-75` |
-| Modern | The version is not `2026-07-28` | 400, `-32022 Unsupported protocol version`, `data` lists supported and requested | `:76-77`, `protocol.py:52-55` |
+| Modern | The version is not `2026-07-28` | 400, `-32022 Unsupported protocol version`, `data` lists supported and requested | `:76-77`, `protocol.py::version_error` |
 | Modern | The method is not a modern one (`ping` is not) | 404, `-32601 unknown method` | `:78-79`, `protocol.py:28-29` |
 | Modern | `tools/call`, `prompts/get` or `resources/read` and `Mcp-Name` is not `params.name` (or `params.uri`) | 400, `-32020` | `:80-81` |
 

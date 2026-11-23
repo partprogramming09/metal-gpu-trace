@@ -10,7 +10,7 @@ Back to the [guide index](./index.md). Lines are in `analysis.py` unless another
 
 ## Finding and reading a run
 
-`perf_runs` lists `*.json` in the runs folder, newest first, skipping `baselines.json`, the old `panel.json` (`:51-62`) and a file still being written or not a summary (`:80-81`). A name must be letters, digits, `.`, `_`, `-`; a link is never followed (`paths.run_path` `paths.py:33-41`, `paths.read_object` `:54-66`). Every tool that reads a summary is wrapped by `reads_recordings` (`:37-48`): a summary whose sections have the wrong type (a hand edit, another version) becomes a `ToolError` naming the kind of error, never a path. Older summaries have fewer keys: `metrics.schema_of` says which generation (`metrics.py:13-16`) and the comparison says "summaries written before version 0.4.0 have no encoder numbers" instead of failing (`:223-227`).
+`perf_runs` lists `*.json` in the runs folder, newest first, skipping `baselines.json`, the old `panel.json` (`:51-62`) and a file still being written or not a summary (`:80-81`). A name must be letters, digits, `.`, `_`, `-`; a link is never followed (`paths.run_path` `paths.py:33-41`, `paths.read_object` `:54-66`). Every tool that reads a summary is wrapped by `reads_recordings` (`:37-48`): a summary whose sections have the wrong type (a hand edit, another version) becomes a `ToolError` naming the kind of error, never a path. Older summaries have fewer keys: `metrics.schema_of` says which generation (`metrics.py::schema_of`) and the comparison says "summaries written before version 0.4.0 have no encoder numbers" instead of failing (`:223-227`).
 
 ## `skip_s`: the steady state
 
@@ -25,7 +25,7 @@ Example: a program that compiles shaders in its first 3 seconds looks slow if th
 | `cpu` block, `throttling_analysis` | dropped (`:569`, `:592`) |
 | hitch **causes** | kept only for the 20 the summary lists; `causes_partial` says when there were more (`:579-586`) |
 
-With fewer than 2 frames left it refuses: `<run> has under 2 frames after the first N s; use a smaller skip_s` (`:565-566`). `skip_s` is 0 to 600 (`paths.py:118-126`). `suggested_actions` proposes one itself: when every `shader_compile` hitch among the 20 longest ends within the first quarter of the run, it suggests the whole seconds that cover them (`_startup_skip_s`, `:670-690`; tests `tests/test_analysis.py:1162-1180`, not run).
+With fewer than 2 frames left it refuses: `<run> has under 2 frames after the first N s; use a smaller skip_s` (`:565-566`). `skip_s` is 0 to 600 (`paths.py:118-126`). `suggested_actions` proposes one itself: when every `shader_compile` hitch among the 20 longest ends within the first quarter of the run, it suggests the whole seconds that cover them (`_startup_skip_s`, `:670-690`; tests `tests/test_analysis.py::test_memory_breakdown_says_why_it_cannot`, not run).
 
 ## `perf_compare`
 
@@ -56,7 +56,7 @@ Keys the tool description no longer spells out: `skipped_s` appears when `skip_s
 
 `judge(metric, value, span, margin_pct)` (`:317-330`): where higher is worse (GPU ms, the counts), `worse` if `value > span.max × (1 + margin)`, `better` if `value < span.min × (1 - margin)`, else `same`; for FPS the sides swap. The margin is `margin_pct / 100` (default **3**, `:334`) for FPS and GPU ms, and **0** for the two `_p50` counts (`:325`): an encoder count is exact and one more encoder per frame is a change. Then (`:351-368`): a metric the run or the reference lacks is `unchecked`; if one side is Windows and the other Metal, only FPS is judged (`cross`, `:350-354`); the verdict is **`regressed` if any metric is worse, `improved` if any is better and none worse, `same` otherwise** (`:368`).
 
-The answer carries `regressed` and `improved` (metric, value, range of each), `unchecked`, the `range` and the full `perf_compare` of the reference's *first* run against this run (`:369-371`). A reference of one run whose verdict is not `same` also carries a `note` saying its noise is not measured (`:378-380`). Frame pacing, short encoders and idle time are in the comparison but **never decide**: they "vary too much between equal runs" (13 % and 7 points in the changelog, `:338-340`). The 3 % is a default the project chose (**not verified** as measured; the 4.4 % and 6.1 % spreads of the [index](./index.md#why-this-part-is-shaped-this-way) are why the reference is a range); `perf_check` **does not read** the baseline's `spread_pct` ([limit 8](./limits.md)). Test: `test_judge_matches_perf_check` (`tests/test_analysis.py:342`, not run) pins that `judge` says `worse` for exactly the metrics `perf_check` lists as regressed, and `better` for those it lists as improved.
+The answer carries `regressed` and `improved` (metric, value, range of each), `unchecked`, the `range` and the full `perf_compare` of the reference's *first* run against this run (`:369-371`). A reference of one run whose verdict is not `same` also carries a `note` saying its noise is not measured (`:378-380`). Frame pacing, short encoders and idle time are in the comparison but **never decide**: they "vary too much between equal runs" (13 % and 7 points in the changelog, `:338-340`). The 3 % is a default the project chose (**not verified** as measured; the 4.4 % and 6.1 % spreads of the [index](./index.md#why-this-part-is-shaped-this-way) are why the reference is a range); `perf_check` **does not read** the baseline's `spread_pct` ([limit 8](./limits.md)). Test: `test_judge_matches_perf_check` (`tests/test_analysis.py::test_cold_warm`, not run) pins that `judge` says `worse` for exactly the metrics `perf_check` lists as regressed, and `better` for those it lists as improved.
 
 ## `perf_gate`: a bar, not a reference
 
@@ -84,4 +84,4 @@ The defaults "come from bgfx 17-drawstress on an M1 Pro: 7 encoders per frame an
 | `perf_check` | `unchecked`; `hint_unchecked` says a pre-0.4.0 summary has no encoder numbers (`:359-361`, `:382-383`) |
 | `perf_gate` | the budget **fails** (`value` null, `ok` false): "a gate must not pass on missing data" (`:476-477`, `:490`) |
 | `perf_history` | `null` in the row (`dig`, `:424-428`) |
-| `perf_diagnose`, a short run | `UNKNOWN` verdicts (`:720-721`, `:744-745`); `fps_1pct_low` and `fps_01pct_low` are `None` (`perf_report.py:264`) |
+| `perf_diagnose`, a short run | `UNKNOWN` verdicts (`:720-721`, `:744-745`); `fps_1pct_low` and `fps_01pct_low` are `None` (`perf_report.py::counter_stats`) |
