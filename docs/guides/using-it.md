@@ -22,7 +22,7 @@ Not installed yet? Follow "Start in 4 steps" in the [README](https://github.com/
 
 Say: **"Record my game for 30 seconds and tell me its FPS, how long the GPU takes per frame and whether it stutters."**
 
-Give your agent the program's path (and the Wine you use, if the server does not know it yet). Then play normally, or let the game sit in a busy scene, until the recording ends. Under Wine use **30 seconds or more**: Wine's own start-up eats part of a short recording.
+Give your agent the program's path (in Finder, hold Option and right-click the file, then choose "Copy as Pathname") (and the Wine you use, if the server does not know it yet). Then play normally, or let the game sit in a busy scene, until the recording ends. Under Wine use **30 seconds or more**: Wine's own start-up eats part of a short recording.
 
 Read the answer like this:
 
@@ -68,10 +68,10 @@ Most failures are a refusal **before** anything starts, and the message says wha
 
 | The message says | What to do |
 |---|---|
-| `xctrace` is missing | Install Xcode from the App Store, open it once, then point the Mac at it: `sudo xcode-select --switch /Applications/Xcode.app`. The Command Line Tools alone are not enough. |
+| `xctrace` is missing | Install Xcode from the App Store, open it once, then point the Mac at it: `sudo xcode-select --switch /Applications/Xcode.app` (`sudo` runs a command as administrator and asks for your Mac password). The Command Line Tools alone are not enough. |
 | The screen is locked | Unlock the Mac and keep it unlocked. |
 | Not enough free disk | Free the space the message names. |
-| Another recording is running | Wait. If none is running, the message names the lock folder to remove. |
+| Another recording is running | Wait. If none is running, the message names a folder that marks a recording in progress; delete that folder only if you are sure none is running. |
 | No Wine at `bin/wine`, or not an executable file | Check the path you gave. |
 
 To see everything the server finds missing on this computer, run `uvx metal-gpu-trace init --dry-run`: it writes nothing and prints a `note:` for each missing piece, with the fix. If a recording started but the answer looks wrong, say: **"Why does this recording look wrong?"** The agent reads the summary and the checks. Deeper detail: [Preflight](./recording/preflight.md) and [Failures](./recording/failures.md).
