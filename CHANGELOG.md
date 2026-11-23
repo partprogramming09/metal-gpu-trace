@@ -9,17 +9,17 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Changed
 
-- 🛡️ A recording's summary is written through a unique temporary file in the same folder, flushed to disk and renamed over the previous one: a crash or a full disk leaves the old `.json` or none, never half a file, so `perf_compare`, `perf_history` and `perf_runs` only ever read a whole summary. The macOS summarizer, the Windows engine and `perf_record` write it with `paths.write_file`; a link is still refused. [prueba](docs/evidence/v0.29.0.md#a-summary-is-written-atomically)
+- 🛡️ A recording's summary is written through a unique temporary file in the same folder, flushed to disk and renamed over the previous one: a crash or a full disk leaves the old `.json` or none, never half a file, so `perf_compare`, `perf_history` and `perf_runs` only ever read a whole summary. The macOS summarizer, the Windows engine and `perf_record` write it with `paths.write_file`; a link is still refused. [proof](docs/evidence/v0.29.0.md#a-summary-is-written-atomically)
 
-- 🩺 `perf_diagnose` answers `bottleneck: "DISPLAY_SYNCED"` instead of `CPU_SUBMISSION_BOUND` when the GPU idle share is high but the run is locked to the display (`display_synced_hz` is set): the idle time is the wait for the display, not the CPU, so the CPU advice (instancing, `FlipQueueSize`) is no longer given. Idle without vsync stays `CPU_SUBMISSION_BOUND`. [prueba](docs/evidence/v0.29.0.md#perf_diagnose-tells-a-display-locked-run-from-a-cpu-bound-one)
+- 🩺 `perf_diagnose` answers `bottleneck: "DISPLAY_SYNCED"` instead of `CPU_SUBMISSION_BOUND` when the GPU idle share is high but the run is locked to the display (`display_synced_hz` is set): the idle time is the wait for the display, not the CPU, so the CPU advice (instancing, `FlipQueueSize`) is no longer given. Idle without vsync stays `CPU_SUBMISSION_BOUND`. [proof](docs/evidence/v0.29.0.md#perf_diagnose-tells-a-display-locked-run-from-a-cpu-bound-one)
 
 - 🌐 `perf_diagnose`: the `recommendations` text is now in English (it was Spanish); the keys and the verdict values do not change.
 
 ### Added
 
-- 🪟 `metal-gpu-trace init` also sets the server up on Windows: it looks for `uvx.exe` (PATH, then `%USERPROFILE%\.local\bin`) and writes Claude Desktop's `%APPDATA%\Claude\claude_desktop_config.json` and Codex's `%USERPROFILE%\.codex\config.toml`, merging each client's file and leaving the others alone. A missing `uvx` names the Windows install command. [prueba](docs/evidence/v0.29.0.md#metal-gpu-trace-init-sets-the-server-up-on-windows)
+- 🪟 `metal-gpu-trace init` also sets the server up on Windows: it looks for `uvx.exe` (PATH, then `%USERPROFILE%\.local\bin`) and writes Claude Desktop's `%APPDATA%\Claude\claude_desktop_config.json` and Codex's `%USERPROFILE%\.codex\config.toml`, merging each client's file and leaving the others alone. A missing `uvx` names the Windows install command. [proof](docs/evidence/v0.29.0.md#metal-gpu-trace-init-sets-the-server-up-on-windows)
 
-- 🩺 `preflight.environment_report()`: before a recording starts, preflight runs `xcrun --find xctrace`, so a Mac with only the Command Line Tools is told to install Xcode (the tools do not include `xctrace`) instead of the `xcode-select --install` that did not fix it; on Windows the report names a missing PresentMon (with `presentmon_install`) and whether the process is elevated, and `metal-gpu-trace init` prints the same note. Disk, screen, Wine and lock become entries of the same report, which `doctor` reuses. [prueba](docs/evidence/v0.29.0.md#preflight-checks-xctrace-and-presentmon-before-a-recording)
+- 🩺 `preflight.environment_report()`: before a recording starts, preflight runs `xcrun --find xctrace`, so a Mac with only the Command Line Tools is told to install Xcode (the tools do not include `xctrace`) instead of the `xcode-select --install` that did not fix it; on Windows the report names a missing PresentMon (with `presentmon_install`) and whether the process is elevated, and `metal-gpu-trace init` prints the same note. Disk, screen, Wine and lock become entries of the same report, which `doctor` reuses. [proof](docs/evidence/v0.29.0.md#preflight-checks-xctrace-and-presentmon-before-a-recording)
 
 - ✅ The Windows engine's pure tests (`tests/test_windows_pure.py`: precision telemetry, PresentMon CSV reading) run on Linux and macOS in every pull request, and the Windows job runs all of `test_perf_record_windows.py` instead of only `cancel or timeout`.
 
@@ -29,7 +29,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - 📈 A recorded program can write its own numbers (VRAM, a frame counter, anything numeric) to the CSV whose path is in `METAL_TRACE_APP_METRICS`, on macOS (the Windows engine passes the same variable; not yet run there); the summary carries them as `app_metrics` (samples, duration and, per column, count, mean, p50, p95, max, min, last), always `comparable: false`, with what was ignored in `issues`. The file is read from a private temporary folder and removed.
 
-- 🩺 On Windows, when a hardware daemon is found but gives no usable answer, the `device` block says why in `daemon_info_error` (`timeout`, `invalid_json` or `missing`), never with its path. `METAL_TRACE_DAEMON_NAMES` adds other daemon file names to look for. [prueba](docs/evidence/v0.29.0.md#the-device-block-says-why-a-hardware-daemon-gave-no-answer)
+- 🩺 On Windows, when a hardware daemon is found but gives no usable answer, the `device` block says why in `daemon_info_error` (`timeout`, `invalid_json` or `missing`), never with its path. `METAL_TRACE_DAEMON_NAMES` adds other daemon file names to look for. [proof](docs/evidence/v0.29.0.md#the-device-block-says-why-a-hardware-daemon-gave-no-answer)
 
 - 🔋 On macOS, `machine.power` says whether low power mode was on and whether the Mac warned of heat or limited its CPU, read when the recording starts and when it ends, with `changed` when a fact moved in between. `perf_compare` adds a `power` note when two runs differ in that (or one changed while recording); a summary without the key gets no note.
 
