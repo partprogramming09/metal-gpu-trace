@@ -5,18 +5,18 @@ description: What metal-gpu-trace is, who it is for and how it is used, in plain
 
 # What this is about
 
-**Reader:** anyone arriving at the project: what it is, who it is for, and which guide to read next. Reviewed 2026-11-16.
+**Reader:** anyone arriving at the project: what it is, who it is for, and which guide to read next. Reviewed 2026-11-23.
 
-**In short:** metal-gpu-trace measures how hard a program works the graphics chip of a Mac and whether its pictures come out evenly; each guide below explains one part.
+**In short:** metal-gpu-trace measures how hard a program works the graphics chip of a Mac or a Windows PC and whether its pictures come out evenly; each guide below explains one part.
 
 ## In one sentence
-metal-gpu-trace measures how hard a program works the graphics chip (the GPU) of a Mac with Apple silicon, and whether its pictures come out evenly.
+metal-gpu-trace measures how hard a program works the graphics chip (the GPU) of a Mac with Apple silicon or a Windows PC, and whether its pictures come out evenly.
 
 ## Install it in one command
 `uvx metal-gpu-trace init` adds the server to the AI apps it finds (Claude Code, Claude Desktop, Cursor, Codex CLI) with the absolute path of `uvx`, and never overwrites your other servers (a `.bak` copy is made first). `--dry-run` shows what it would write; `--client` names one app; `--wine DIR` sets the Wine directory; `--project` writes the project's own file instead (it holds paths of this machine: keep it out of git). The README has the details.
 
 ## What problem it solves
-People who port or test games and apps on a Mac, Windows games run through Wine included, need numbers, not impressions, to know whether a change made the program faster. This tool has Instruments (Apple's profiler, installed with Xcode) record the program and hands back a short summary; run it again after a change and it says whether the program got faster, slower or stayed the same. It does not fix the program, and it needs Xcode to record.
+People who port or test games and apps on a Mac, Windows games run through Wine included, need numbers, not impressions, to know whether a change made the program faster. On a Mac the tool has Instruments (Apple's profiler, installed with Xcode) record the program; on Windows it uses PresentMon. Either way it hands back a short summary; run it again after a change and it says whether the program got faster, slower or stayed the same. It does not fix the program, and it needs Xcode to record on a Mac.
 
 ## How it is used, with an example
 You ask your AI agent: "Record my app for 30 seconds, then tell me its FPS and how long the GPU takes per frame." The agent calls the server, which records, and answers with frames per second, the GPU time per frame, how often the picture stutters and how much memory was used. After a change you ask for the same recording and a comparison. Repeat a run before calling a difference real.
