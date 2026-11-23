@@ -26,33 +26,33 @@ Everything below is **confirmed** by the lines named. The files it leaves are in
    | `deep` | yes | yes | yes (unless the disk limit drops it) | counters add about 40 s of read-back per recorded second (`recording.py::tool_perf_record`) |
 
    A `memory` or `counters` passed on its own replaces that part of the tier. `deep` is refused on Windows (`recording.py::tool_perf_record`).
-2. `check_levers` refuses a `memory_free_pct` outside 20 to 60 and either lever on Windows (`recording.py:274-284`).
+2. `check_levers` refuses a `memory_free_pct` outside 20 to 60 and either lever on Windows (`recording.py::check_levers`).
 3. `check_env` accepts only space-separated `NAME=VALUE` pairs (`recording.py::check_env`): the script splits on spaces.
 4. With `workload`, `workloads.workload_command` supplies the program, Wine mode, arguments and environment
-   (`recording.py::tool_perf_record`; [The test programs](./test-programs.md)). `size` without a workload is refused (`:57-58`); no `program` is refused (`:59-60`).
-5. Without `wine`, `METAL_TRACE_WINE` is used; on macOS with neither, the call is refused (`:61-65`). The program must
-   exist (`:66-68`); the error names the file, not the path.
-6. `perf_attach` skips most of that: `record(label, seconds, "attach", "-", "-", [process])` (`recording.py:95`). It
-   has no tier, so the summary has no `tier` key (`recording.py:344-345`), and the program keeps running afterwards.
+   (`recording.py::tool_perf_record`; [The test programs](./test-programs.md)). `size` without a workload is refused (`recording.py::tool_perf_record`); no `program` is refused (`recording.py::tool_perf_record`).
+5. Without `wine`, `METAL_TRACE_WINE` is used; on macOS with neither, the call is refused (`recording.py::tool_perf_record`). The program must
+   exist (`recording.py::tool_perf_record`); the error names the file, not the path.
+6. `perf_attach` skips most of that: `record(label, seconds, "attach", "-", "-", [process])` (`recording.py::tool_perf_attach`). It
+   has no tier, so the summary has no `tier` key (`recording.py::finish`), and the program keeps running afterwards.
 
 ## Step 2: the wrapper
 
-`record`, `recording.py:309-322`. In this order:
+`record`, `recording.py::record`. In this order:
 
 | # | What | Line |
 |---|---|---|
-| 1 | The label: letters, digits, `.`, `_`, `-`, at most 100 | `:312` |
-| 2 | The levers | `:314` |
-| 3 | **Preflight** ([Preflight](./preflight.md)) | `:315` |
-| 4 | `memory_pressure` if `memory_free_pct` was given: waits up to 90 s for "Stable at percent free" and refuses if it never comes (`hold_memory_pressure`) | `:316`, `:287-306` |
-| 5 | `record_run`. A `finally` stops the pressure whatever happens | `:319-322` |
+| 1 | The label: letters, digits, `.`, `_`, `-`, at most 100 | `recording.py::record` |
+| 2 | The levers | `recording.py::record` |
+| 3 | **Preflight** ([Preflight](./preflight.md)) | `recording.py::record` |
+| 4 | `memory_pressure` if `memory_free_pct` was given: waits up to 90 s for "Stable at percent free" and refuses if it never comes (`hold_memory_pressure`) | `recording.py::record`, `recording.py::hold_memory_pressure` |
+| 5 | `record_run`. A `finally` stops the pressure whatever happens | `recording.py::record` |
 
 Preflight goes before the pressure on purpose: a refused run must start nothing. `test_record_runs_preflight_before_memory_pressure`
-and `test_preflight_failure_starts_no_process` (`tests/test_preflight.py:275`, `:296`) pin that (not run for this guide).
+and `test_preflight_failure_starts_no_process` (`tests/test_preflight.py::test_preflight_failure_starts_no_process`, `tests/test_preflight.py::test_preflight_failure_starts_no_process`) pin that (not run for this guide).
 
 ## Step 3: the environment the script gets
 
-`record_run` builds it at `recording.py:360-370` ([E6](./evidence.md)).
+`record_run` builds it at `recording.py::run_recording` ([E6](./evidence.md)).
 
 | Variable | Set when | Meaning for the script |
 |---|---|---|
@@ -62,21 +62,21 @@ and `test_preflight_failure_starts_no_process` (`tests/test_preflight.py:275`, `
 | `PERF_ENV` | always | the program's `NAME=VALUE` variables, from the environment plus `env` and the workload |
 | `PERF_MEMORY=0` | `memory` is false | skip the Metal memory table |
 | `KEEP_TRACE=1` | tier `deep` | keep the `.trace` |
-| `PERF_PREFIX` | `background` | run the program under `taskpolicy -b` (`recording.py:271`) |
+| `PERF_PREFIX` | `background` | run the program under `taskpolicy -b` (`recording.py::BACKGROUND_PREFIX`) |
 | `PERF_INSTRUMENTS` | counters | add the `Metal GPU Counters` instrument |
 
-`KEEP_RUNS` and `PERF_MIN_FREE_GB` are read by the script from the environment the server passed on (`dict(os.environ, ...)`, `recording.py:360`).
-Then `layer_of` runs (`recording.py:370`): it asks Wine for its version (`wine --version`, timeout 30 s, `:140-143`) and
+`KEEP_RUNS` and `PERF_MIN_FREE_GB` are read by the script from the environment the server passed on (`dict(os.environ, ...)`, `recording.py::run_recording`).
+Then `layer_of` runs (`recording.py::layer_of`): it asks Wine for its version (`wine --version`, timeout 30 s, `recording.py::layer_of`) and
 fingerprints the layer ([What identifies a run](#what-identifies-a-run)).
 
 ## Step 4: the watch loop
 
-`record_run`, `recording.py:386-421`.
+`record_run`, `recording.py::record_run`.
 
-- **Before starting**, the server remembers which `<label>_*` files and `instruments*.ktrace` already exist (`:386-388`), so it never deletes a file it did not create.
-- **The start**: `start_new_session=True` (`:389-392`) makes the script lead its own process group, which `os.killpg` kills.
-- **The loop** (`:394-421`) turns at most once a second. If time is over or the client cancelled, it goes to the kill
-  sequence; otherwise it waits up to a second for the script and, every `PROGRESS_TICKS` (5, `config.py:48`) turns,
+- **Before starting**, the server remembers which `<label>_*` files and `instruments*.ktrace` already exist (`recording.py::run_recording`), so it never deletes a file it did not create.
+- **The start**: `start_new_session=True` (`recording.py::run_recording`) makes the script lead its own process group, which `os.killpg` kills.
+- **The loop** (`recording.py::run_recording`) turns at most once a second. If time is over or the client cancelled, it goes to the kill
+  sequence; otherwise it waits up to a second for the script and, every `PROGRESS_TICKS` (5, `config.py::PROGRESS_TICKS`) turns,
   sends "recording and reading back: N s of up to M s".
 
 ## Step 5: when the script returns
@@ -84,22 +84,22 @@ fingerprints the layer ([What identifies a run](#what-identifies-a-run)).
 | The script ends with | The server does | Line |
 |---|---|---|
 | A non-zero exit, or no new `.json` | `recording failed (exit N): <last line of stderr>` | `recording.py::run_recording` |
-| A summary with no GPU intervals | The program did no GPU work: the run's files are deleted and the error says how it ended ([When it fails](./failures.md)) | `:427-436` |
-| Otherwise | `finish` adds `layer`, `context`, `tier`, applies the disk limit and rewrites the summary. Key tables: [data guide](../data-and-lifecycle/json-keys.md#the-summary-key-by-key) | `recording.py:337-351`, `:437` |
-| The summary has a `machine` block | `machine.power` gets the two power readings: one taken before the script starts, one after the summary is written ([power and heat](../summarizing/power-and-heat.md)) | `recording.py:386`, `:438-439` |
+| A summary with no GPU intervals | The program did no GPU work: the run's files are deleted and the error says how it ended ([When it fails](./failures.md)) | `recording.py::run_recording` |
+| Otherwise | `finish` adds `layer`, `context`, `tier`, applies the disk limit and rewrites the summary. Key tables: [data guide](../data-and-lifecycle/json-keys.md#the-summary-key-by-key) | `recording.py::finish`, `recording.py::run_recording` |
+| The summary has a `machine` block | `machine.power` gets the two power readings: one taken before the script starts, one after the summary is written ([power and heat](../summarizing/power-and-heat.md)) | `recording.py::run_recording` |
 
 ## The kill sequence
 
-Cancel and overrun end the same way, in this order (`recording.py:396-413`):
+Cancel and overrun end the same way, in this order (`recording.py::run_recording`):
 
-1. `os.killpg(proc.pid, SIGKILL)`: the script and everything it started (`:397`). `SIGKILL` cannot be caught, so the script's trap does not run and the server cleans up itself.
-2. Stop the program: `native`, every process of that name (`kill_program`, `:255-263`: `SIGTERM`, up to 3 s, then `SIGKILL`); Wine, `wineserver -k` for the prefix (`:402-403`); `attach`, nothing: the program was not ours (`:401`).
-3. `free_lock(proc.pid)`: remove the lock only if it still holds the script's pid (`:326-335`).
-4. Delete the files this run created: new `<label>_*` entries and new `instruments*.ktrace` (`:406-407`).
-5. Raise `the recording was cancelled; nothing was saved`, or, for an overrun, the message naming the likely cause (a hidden window) (`:408-413`).
+1. `os.killpg(proc.pid, SIGKILL)`: the script and everything it started (`recording.py::run_recording`). `SIGKILL` cannot be caught, so the script's trap does not run and the server cleans up itself.
+2. Stop the program: `native`, every process of that name (`recording.py::kill_program`: `SIGTERM`, up to 3 s, then `SIGKILL`); Wine, `wineserver -k` for the prefix (`recording.py::run_recording`); `attach`, nothing: the program was not ours (`recording.py::run_recording`).
+3. `free_lock(proc.pid)`: remove the lock only if it still holds the script's pid (`recording.py::free_lock`).
+4. Delete the files this run created: new `<label>_*` entries and new `instruments*.ktrace` (`recording.py::run_recording`).
+5. Raise `the recording was cancelled; nothing was saved`, or, for an overrun, the message naming the likely cause (a hidden window) (`recording.py::run_recording`).
 
 `test_overrun`, `test_overrun_removes_lock_with_pid` and `test_free_lock_only_frees_its_own`
-(`tests/test_recording.py:358`, `:387`, `:733`) pin this (not run for this guide).
+(`tests/test_recording.py::test_overrun`, `tests/test_recording.py::test_overrun_removes_lock_with_pid`, `tests/test_recording.py::test_free_lock_only_frees_its_own`) pin this (not run for this guide).
 
 ## Program telemetry
 
@@ -160,15 +160,15 @@ The block:
 
 Computed in the server, not the script, because it must read the machine and the repository. Example: two runs of the
 same game, one on CrossOver and one on a newer Wine, get different fingerprints, so `perf_compare` says "different
-layers" before it says one is faster (`layer_change`, `:205-223`).
+layers" before it says one is faster (`recording.py::layer_change`).
 
 | Piece | What it records | Line |
 |---|---|---|
-| **`layer_of`** | The translation layer the recording ran on. `native` gives `{"none": "native Metal, no translation layer"}`, `attach` gives `{"unknown": ...}` | `recording.py::layer_of`, `:134-137` |
-| (with Wine) version | `wine_version`, which joins CrossOver's "Product Name" and "Public Version" lines | `:117-124` |
-| (with Wine) overrides | The `WINEDLLOVERRIDES` the script will pass, and the prefix's DLL overrides read from `user.reg` (`registry_overrides`) | `:102-114` |
-| (with Wine) DLLs | Size and SHA-256 of five DLLs (`d3d12`, `d3d12core`, `d3d11`, `d3d10core`, `dxgi`, `LAYER_DLLS`) in Wine and in the prefix, plus a 12-character fingerprint of all of it | `:99` |
+| **`layer_of`** | The translation layer the recording ran on. `native` gives `{"none": "native Metal, no translation layer"}`, `attach` gives `{"unknown": ...}` | `recording.py::layer_of` |
+| (with Wine) version | `wine_version`, which joins CrossOver's "Product Name" and "Public Version" lines | `recording.py::wine_version` |
+| (with Wine) overrides | The `WINEDLLOVERRIDES` the script will pass, and the prefix's DLL overrides read from `user.reg` (`registry_overrides`) | `recording.py::registry_overrides` |
+| (with Wine) DLLs | Size and SHA-256 of five DLLs (`d3d12`, `d3d12core`, `d3d11`, `d3d10core`, `dxgi`, `LAYER_DLLS`) in Wine and in the prefix, plus a 12-character fingerprint of all of it | `recording.py::LAYER_DLLS` |
 | **`run_context`** | The short commit and whether tracked files changed, of the repository holding the project file, and `xctrace`'s version. It drops every `GIT_*` variable so none can point git elsewhere, and leaves out branch, path and user name: summaries are shared | `recording.py::run_context` |
 
-- Which of the two DLL copies Wine really loads is **not known** (`:128-130`: Instruments does not keep Wine's own log), so the fingerprint treats the prefix's copy as effective when it exists (`effective_dlls`, `:160-162`).
+- Which of the two DLL copies Wine really loads is **not known** (`recording.py::layer_of`: Instruments does not keep Wine's own log), so the fingerprint treats the prefix's copy as effective when it exists (`recording.py::effective_dlls`).
 - A workload through MoltenVK or Rosetta passes its own `layer` (`workloads.workload_layer`, `workloads.py::workload_layer`), so a comparison against native says "different layers".

@@ -56,7 +56,7 @@ by `awk`; the test pinning it is `tests/test_analysis.py::test_cold_warm`.
 
 **2. "Which parts of this table are busy?"** `trace_query` with `window_ms=10` on `metal-gpu-intervals` returns one entry per
 10 ms window. Rows starting at 1 ms (2 ms long), 9 ms (1 ms) and 12 ms (4 ms) give `{"start_ms": 0, "count": 2, "duration_ms": 3.0}`
-and `{"start_ms": 10, "count": 1, "duration_ms": 4.0}` (`tests/test_traces.py:42-48`, not run; E6 by hand).
+and `{"start_ms": 10, "count": 1, "duration_ms": 4.0}` (`tests/test_traces.py::test_window_ms_groups_rows_by_window`, not run; E6 by hand).
 
 **3. "What did my change add to the draw calls?"** `capture_diff` on two `.gputrace` captures counts the confirmed Metal calls in
 each. The [proof of 0.26.0](../../evidence/v0.26.0.md#capture_diff-compares-two-captures) shows `drawPrimitives` 3 against 5
@@ -74,21 +74,21 @@ each. The [proof of 0.26.0](../../evidence/v0.26.0.md#capture_diff-compares-two-
 | A run name: its frames in Perfetto | `perf_export_trace` | no | no (reads the per-frame table, which stays) |
 | A `.gputrace` saved from Xcode | `capture_summary`, `capture_diff`, `capture_records` | no | not a `.trace`; names, counts, labels, no time ([capture tools](./capture-tools.md)) |
 
-`perf_runs` also has `tables_kept` (`analysis.py:80`): true when `<run>.tables.sqlite` exists and is not a link; [the tables file](./tables-file.md) says what it holds.
+`perf_runs` also has `tables_kept` (`analysis.py::tool_perf_runs`): true when `<run>.tables.sqlite` exists and is not a link; [the tables file](./tables-file.md) says what it holds.
 
-`perf_runs` has a `trace_kept` flag per run (`analysis.py:79`): true when the `<run>.trace` folder exists and is not a link, so
+`perf_runs` has a `trace_kept` flag per run (`analysis.py::tool_perf_runs`): true when the `<run>.trace` folder exists and is not a link, so
 it tells whether the first three rows can work (**confirmed**; a trace is kept with `KEEP_TRACE=1` or the `deep` tier, see the
 [data guide](../data-and-lifecycle/index.md)).
 
 | Piece | File | What it does |
 |---|---|---|
-| The seven tools | `traces.py` | `tool_perf_export_trace` `:9`, `tool_trace_tables` `:33`, `tool_trace_query` `:92`, `tool_trace_count` `:124`, `tool_capture_summary` `:151`, `tool_capture_diff` `:160`, `tool_capture_records` `:169` |
-| Registry entries | `registry.py` | name, schema and hints (`:129`, `:159`, `:160`, `:165`, `:172`, `:173`, `:177`); window grouping lives in `traces.py`: `check_window` `:42`, `windows_of` `:54` |
-| The `xctrace` layer | `perf_report.py` | `export` `:49`, `toc_of` `:81`, `table_xpath` `:90`, `rows` `:143`, `pid_of` `:182` (same code as the summary) |
-| The `.gputrace` reader | `gputrace_read.py` | `CALLS` `:20`, `records` `:48`, `stream_of` `:64`, `summarize` `:72`, `counts` `:100`, `diff` `:124`; also a script (`main` `:144`) |
-| Paths and paging | `paths.py` | `allowed` `:17`, `trace_path` `:83`, `page` `:94` |
+| The seven tools | `traces.py` | `tool_perf_export_trace` `traces.py::tool_perf_export_trace`, `tool_trace_tables` `traces.py::tool_trace_tables`, `tool_trace_query` `traces.py::tool_trace_query`, `tool_trace_count` `traces.py::tool_trace_count`, `tool_capture_summary` `traces.py::tool_trace_query`, `tool_capture_diff` `traces.py::tool_trace_query`, `tool_capture_records` `traces.py::tool_trace_query` |
+| Registry entries | `registry.py` | name, schema and hints (`registry.py::TOOLS`); window grouping lives in `traces.py`: `check_window` `traces.py::check_window`, `windows_of` `traces.py::windows_of` |
+| The `xctrace` layer | `perf_report.py` | `export` `perf_report.py::export`, `toc_of` `perf_report.py::toc_of`, `table_xpath` `perf_report.py::toc_of`, `rows` `perf_report.py::rows`, `pid_of` `perf_report.py::rows` (same code as the summary) |
+| The `.gputrace` reader | `gputrace_read.py` | `CALLS` `gputrace_read.py::CALLS`, `records` `gputrace_read.py::records`, `stream_of` `gputrace_read.py::stream_of`, `summarize` `gputrace_read.py::summarize`, `counts` `gputrace_read.py::counts`, `diff` `gputrace_read.py::diff`; also a script (`main` `gputrace_read.py::main`) |
+| Paths and paging | `paths.py` | `allowed` `paths.py::allowed`, `trace_path` `paths.py::trace_path`, `page` `paths.py::page` |
 | Per-frame tables | `tables.py` | `find` and `open_text`: both `.csv.gz` and the older `.csv` ([data guide](../data-and-lifecycle/index.md)) |
-| What happens to an error | `worker.py` | `call` turns a failure into an `isError` result (`:165-168`) |
+| What happens to an error | `worker.py` | `call` turns a failure into an `isError` result (`worker.py::call`) |
 
 `gpu_family` also lives in `traces.py` but reads no recording: [the GPU family facts](./gpu-families.md).
 

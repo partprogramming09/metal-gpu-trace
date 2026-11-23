@@ -11,12 +11,12 @@ changing the recorder so the cleanup keeps working. Example: if the client cance
 
 | What goes wrong | What they get | What is left | Line |
 |---|---|---|---|
-| A preflight check fails | The message in the [table](./preflight.md) | Nothing: no process was started | `preflight.py:101-137` |
-| `memory_pressure` is missing, or does not reach the percentage in 90 s | `memory_pressure is not available`, or `memory_pressure did not reach that free percentage; the Mac may already be below it` | Nothing; the helper is stopped | `recording.py:287-306` |
+| A preflight check fails | The message in the [table](./preflight.md) | Nothing: no process was started | `preflight.py::check` |
+| `memory_pressure` is missing, or does not reach the percentage in 90 s | `memory_pressure is not available`, or `memory_pressure did not reach that free percentage; the Mac may already be below it` | Nothing; the helper is stopped | `recording.py::hold_memory_pressure` |
 | The script itself refuses (label, program header, no process to attach to, disk, lock) | `recording failed (exit N): <the script's last line>`; exit 2 for arguments, 4 for disk, 3 for the lock | Nothing: the script exits before it takes the lock or writes | `perf_record.sh:10-24`, `:37`, `:47-50`; `recording.py::run_recording` |
 | Instruments fails or dies at once | `recording failed (exit 1): no recording at <path>` | Nothing: the trap deletes the run's files | `perf_record.sh:139-156`; `test_script_failure_cleanup` `:534` |
 | Instruments dies **part-way** | See [below](#what-happens-if-instruments-dies-part-way) | | |
-| The client cancels | `the recording was cancelled; nothing was saved` | Nothing (the [kill sequence](./macos-journey.md#the-kill-sequence)) | `recording.py:396-409` |
+| The client cancels | `the recording was cancelled; nothing was saved` | Nothing (the [kill sequence](./macos-journey.md#the-kill-sequence)) | `recording.py::run_recording` |
 | The recording runs past its deadline | `the recording took over N s and was stopped; nothing was saved. The likely cause is a hidden window: ...` | Nothing | `recording.py::run_recording` |
 | The program does no GPU work | `the program did no GPU work: it ended (<reason>) after N s of recording, and its summary was not saved; check that it starts (under Wine: the Wine build, the prefix and the program's own log)` | The `.trace` only if it was asked to be kept; the message says so | `recording.py::run_recording` |
 | The server dies mid-recording | Nothing to see | A watcher loop in the script stops the program and Instruments | `perf_record.sh:82-92` |
@@ -42,26 +42,26 @@ continues to `kill $sampler` (`:155`) and then:
 
 | What goes wrong | The message | Line |
 |---|---|---|
-| Bad label or seconds (run by hand) | `label may hold only letters, digits, '.', '_' and '-'`, `seconds must be 1 to 3600` | `perf_record_windows.py:560-564` |
-| A live recording holds the lock | `another recording is running (<lock>); remove it if none is` | `:597` |
-| No process matches the attach target | `no running process matches <target>` | `:475`, `:480` |
-| The program cannot be started | `recording failed: <the OS's message>` (an `OSError`) | `recording.py:383-384` |
-| Cancel or overrun | the two messages of [step 5](./windows-engine.md#step-by-step-figure-1) | `:744-746` |
-| No frames, PresentMon ran | `no frame data: PresentMon saw no Present() calls from this process; it is idle, minimized, or a launcher whose game runs in another process (use perf_attach on the game)` plus PresentMon's last stderr line | `:833-839` |
-| No frames, no PresentMon | `no frame data: the program wrote no DRAWSTRESS_LOG, PresentMon is not installed (call presentmon_install) and DWM gave no samples (DwmGetCompositionTimingInfo needs the interactive desktop session, not SSH or a service)` | `:840-844` |
+| Bad label or seconds (run by hand) | `label may hold only letters, digits, '.', '_' and '-'`, `seconds must be 1 to 3600` | `perf_record_windows.py::record_windows` |
+| A live recording holds the lock | `another recording is running (<lock>); remove it if none is` | `perf_record_windows.py::record_windows` |
+| No process matches the attach target | `no running process matches <target>` | `perf_record_windows.py::find_attached_process` |
+| The program cannot be started | `recording failed: <the OS's message>` (an `OSError`) | `recording.py::run_recording` |
+| Cancel or overrun | the two messages of [step 5](./windows-engine.md#step-by-step-figure-1) | `perf_record_windows.py::record_windows` |
+| No frames, PresentMon ran | `no frame data: PresentMon saw no Present() calls from this process; it is idle, minimized, or a launcher whose game runs in another process (use perf_attach on the game)` plus PresentMon's last stderr line | `perf_record_windows.py::record_windows` |
+| No frames, no PresentMon | `no frame data: the program wrote no DRAWSTRESS_LOG, PresentMon is not installed (call presentmon_install) and DWM gave no samples (DwmGetCompositionTimingInfo needs the interactive desktop session, not SSH or a service)` | `perf_record_windows.py::record_windows` |
 
-A `RuntimeError` or `ValueError` from the engine becomes a `ToolError` with the same text (`recording.py:381-382`). All
+A `RuntimeError` or `ValueError` from the engine becomes a `ToolError` with the same text (`recording.py::run_recording`). All
 **not reproduced** (no Windows machine); `test_no_frame_data_is_an_error`, `test_timeout_and_cleanup` and
-`test_lock_handling` (`tests/test_perf_record_windows.py:623`, `:281`, `:87`) pin them (not run for this guide).
+`test_lock_handling` (`tests/test_perf_record_windows.py::test_lock_handling`, `tests/test_perf_record_windows.py::test_timeout_and_cleanup`, `tests/test_perf_record_windows.py::test_lock_handling`) pin them (not run for this guide).
 
 ## Touching it without breaking it
 
 | You add | Do this |
 |---|---|
 | A new refusal | Put it in `preflight.check` **before** anything that starts a process, make the message say what to do, keep paths out, add the test beside its siblings in `tests/test_preflight.py` (each asserts the wording). If the script should refuse too, repeat it there with its exit code and update the [table](./preflight.md#what-each-layer-repeats) |
-| A new variable for the script | Set it in `record_run` (`recording.py:360-370`), read it in `perf_record.sh`, document it in the [table](./macos-journey.md#step-3-the-environment-the-script-gets). `PERF_ENV` pairs are split on spaces: no value may hold one (`check_env`) |
-| Anything the server kills on cancel | List it **before** it starts, as `record_run` does with `before` and `ktraces` (`recording.py:386-388`): a cleanup that deletes what it did not create deletes a person's file |
+| A new variable for the script | Set it in `record_run` (`recording.py::record_run`), read it in `perf_record.sh`, document it in the [table](./macos-journey.md#step-3-the-environment-the-script-gets). `PERF_ENV` pairs are split on spaces: no value may hold one (`check_env`) |
+| Anything the server kills on cancel | List it **before** it starts, as `record_run` does with `before` and `ktraces` (`recording.py::record_run`): a cleanup that deletes what it did not create deletes a person's file |
 | A new field in the summary | Write it in the shared code in `metrics.py` for both engines (see the [data guide](../data-and-lifecycle/limits.md#touching-it-without-breaking-it)) |
 | A new test program | See [To add a program](./data-files.md#the-workloads-file). Never pin by tag or name: the hash is the identity |
-| Windows code that asks whether a process is alive | Not `os.kill` (it ends the process there): use `is_process_alive` (`preflight.py:18-20`) |
-| A new file for a Windows run | The engine's `finally` deletes every file starting with the run's name (`:937-941`): keep it as prefix so it is cleaned and pruned with the run |
+| Windows code that asks whether a process is alive | Not `os.kill` (it ends the process there): use `is_process_alive` (`preflight.py::process_alive`) |
+| A new file for a Windows run | The engine's `finally` deletes every file starting with the run's name (`perf_record_windows.py::record_windows`): keep it as prefix so it is cleaned and pruned with the run |

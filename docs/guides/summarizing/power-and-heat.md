@@ -36,20 +36,20 @@ Two commands that ship with macOS answer them. Nothing is installed for this.
 | `pmset -g` (`pmset` is the macOS tool for power settings) | a line `lowpowermode 1` or `lowpowermode 0` | `low_power_mode`: `true` or `false` |
 | `pmset -g therm` (the thermal state) | a line with "warning level" when the Mac warned of heat, and `CPU_Speed_Limit`, which is 100 when the CPU runs at full speed | `thermal_warning`: `true` when a warning line does not say "no", or when `CPU_Speed_Limit` is below 100 |
 
-The rules in the code (`power_state`, `perf_report.py:653-668`):
+The rules in the code (`power_state`, `perf_report_host.py::power_state`):
 
 - A fact the Mac does not give is `null`, never a guess. The same holds when `pmset` is missing or fails.
 - If `pmset -g therm` shows neither a `CPU_Speed_Limit` line nor a warning line, `thermal_warning` stays `null`, not `false`.
 
 ## When the two questions are asked
 
-1. **Before the program starts**: `record_run` calls `power_state()` (`recording.py:386`) before `perf_record.sh` runs.
+1. **Before the program starts**: `record_run` calls `power_state()` (`recording.py::record_run`) before `perf_record.sh` runs.
 2. **After the summary is written**: `record_run` calls it again, and `power_block` puts both readings in `machine.power`
-   (`recording.py::run_recording`, `perf_report.py:672-676`).
+   (`recording.py::run_recording`, `perf_report_host.py::power_block`).
 
 The block exists only when the summary has a `machine` block. `machine` is `null` in the JSON when this Mac is not the one
 that recorded the trace (its RAM or macOS version differs from the trace's device) or when a fact about the machine cannot
-be read (`machine_info`, `perf_report.py:679`). Then there is no `power` either.
+be read (`machine_info`, `perf_report.py::machine_info`). Then there is no `power` either.
 
 ## What `changed` means
 
@@ -59,7 +59,7 @@ at the start and `null` at the end leaves `changed` as `false`.
 
 ## What perf_compare does with it
 
-`compare_summaries` (`analysis.py:191-203`) reads both runs' `machine.power`. It adds a `power` key only when both
+`compare_summaries` (`analysis_compare.py::compare_summaries`) reads both runs' `machine.power`. It adds a `power` key only when both
 summaries have the block and one of two things holds:
 
 | Condition | Note in the answer | `changed_in` |
@@ -74,7 +74,7 @@ gets no note. No note means "not measured", not "no heat".
 ## How it differs from thermal_state_share
 
 `thermal_state_share` is a full record: the time the Mac spent in each thermal state during the recording, read from the
-`device-thermal-state-intervals` table (`perf_report.py:782-790`). `machine.power` is only two readings. Use
+`device-thermal-state-intervals` table (`perf_report.py::summarize`). `machine.power` is only two readings. Use
 `thermal_state_share` to see a slowdown in the middle of a run; use `power` to learn whether the Mac came into the run
 already slow.
 

@@ -7,6 +7,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Changed
 
+- Docs: about 700 more `file.py:line` citations in the guides now name the function, class or constant (`file.py::name`), resolved against the code each guide was written against and checked to exist today; a few dozen stay as lines because they point at module docstrings, imports, shell scripts or ranges over several functions. The dated `evidence*.md` pages keep their lines on purpose.
 - Docs: two links from site pages to `README.md` files, which the site leaves out, now use the GitHub address; `pnpm docs:build` passes again.
 - Docs: the README and the user guide explain the Terminal, Homebrew, vsync, CSV, the Wine prefix, `sudo` and how to copy a file's path, for readers who never used a terminal.
 - Docs: a user guide, `docs/guides/using-it.md` (five typical jobs, with the sentence to say to the agent), and a "Where to start" map for users, AI agents and contributors in `docs/README.md`. The README's What's new no longer names a `doctor` command, which does not exist yet: `init` prints the notes.

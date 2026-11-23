@@ -6,7 +6,7 @@
 
 **In short:** the server writes a short line to stderr when a tool finishes or something breaks. Never what you asked for, a path or the token: only names, results and durations. stdout is reserved for the conversation with the client.
 
-`logs.py` (`:6-9`) prints `metal-trace: <message>` to stderr and flushes, unless `METAL_TRACE_LOG` is exactly `off`. `send` (`stdio.py::send`) is the only writer of stdout; `serve_http` prints one more line directly (`http_transport.py::serve_http`, the token message), which `METAL_TRACE_LOG=off` does **not** silence.
+`logs.py` (`logs.py::log`) prints `metal-trace: <message>` to stderr and flushes, unless `METAL_TRACE_LOG` is exactly `off`. `send` (`stdio.py::send`) is the only writer of stdout; `serve_http` prints one more line directly (`http_transport.py::serve_http`, the token message), which `METAL_TRACE_LOG=off` does **not** silence.
 
 The docstring and the README say "one stderr line per tool call"; the code has seven callers ([E6](./evidence.md#e6-every-place-that-writes-a-log-line)):
 

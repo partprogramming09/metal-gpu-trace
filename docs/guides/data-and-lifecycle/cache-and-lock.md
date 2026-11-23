@@ -28,8 +28,8 @@ One recording at a time, whatever folder each goes to (`perf_record.sh:40`). The
 | Step | What happens | Where |
 |---|---|---|
 | Taking it | `mkdir $lock`; if that fails and the owner is dead (`ps -p`), take over under a second lock (`$lock.takeover`) so two recordings finding the same dead lock cannot both take it; if the owner is alive, exit with code 3 and `another recording is running`; then `echo $$ > $lock/pid` | `perf_record.sh:52-62`, `:44-61`, `:47-50`, `:62` |
-| Checking it without taking it | `preflight.check` refuses when the lock names a live process; `lock_owner_alive` reads at most 32 bytes of `pid`, never through a link, and treats a missing, odd or dead owner as not running. `recording.finish` uses the same check so it never prunes while another recording writes | `preflight.py:135-137`, `:74-94`; `recording.py:346` |
-| Releasing it | The script's `EXIT` trap; the server on cancel or timeout (`recording.free_lock`), only if `pid` still holds the script's own pid | `perf_record.sh:65-73`; `recording.py:326-335`, called at `:404` |
-| Windows | `perf_record_windows.py`: `mkdir` the lock, write `pid`, take over a stale one once, release in `finally` | `perf_record_windows.py:574-597`, `:942-946` |
+| Checking it without taking it | `preflight.check` refuses when the lock names a live process; `lock_owner_alive` reads at most 32 bytes of `pid`, never through a link, and treats a missing, odd or dead owner as not running. `recording.finish` uses the same check so it never prunes while another recording writes | `preflight.py::check`, `preflight.py::lock_owner_alive`; `recording.py::finish` |
+| Releasing it | The script's `EXIT` trap; the server on cancel or timeout (`recording.free_lock`), only if `pid` still holds the script's own pid | `perf_record.sh:65-73`; `recording.py::free_lock`, called at `recording.py::record_run` |
+| Windows | `perf_record_windows.py`: `mkdir` the lock, write `pid`, take over a stale one once, release in `finally` | `perf_record_windows.py::record_windows` |
 
 The cache holds no lock now (E8), as expected between recordings. A held lock was **not reproduced**: holding it means recording.
