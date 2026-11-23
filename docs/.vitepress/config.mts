@@ -27,6 +27,7 @@ export default defineConfig({
       '/guides/': [{ text: 'Guides', items: [
         { text: 'What this is about', link: '/guides/' },
         { text: 'Using it', link: '/guides/using-it' },
+        { text: 'How this project is documented', link: '/guides/how-we-document' },
         { text: 'How it works', link: '/guides/how-it-works' },
         { text: 'Run from a clone', link: '/guides/run-from-a-clone' },
         { text: 'Data and its lifecycle', link: '/guides/data-and-lifecycle/', collapsed: true, items: [

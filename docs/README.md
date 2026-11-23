@@ -17,6 +17,7 @@ ADR status: proposed · accepted · rejected · superseded by NNNN.
 | Document | Answers |
 |---|---|
 | [guides/using-it.md](guides/using-it.md) | "I installed it, now what?": five typical jobs with the sentence to say to your agent and how to read the answer |
+| [guides/how-we-document.md](guides/how-we-document.md) | The documentation habits of this project, which ones a test enforces, and how to copy them |
 | [guides/how-it-works.md](guides/how-it-works.md) | How the modules are layered, how one request flows through them, where recordings live and what reads them |
 | [adr/0001-src-layout.md](adr/0001-src-layout.md) | Why the code is a package in `src/` with tests in `tests/` (accepted) |
 | [adr/0002-dual-era-mcp.md](adr/0002-dual-era-mcp.md) | Why the server speaks both MCP eras, and where it deviates (accepted) |
