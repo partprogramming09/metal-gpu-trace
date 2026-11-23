@@ -7,11 +7,14 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Changed
 
-- Docs: a user guide (`docs/guides/using-it.md`) and a "Where to start" map; the README and guides explain the terminal steps for newcomers; the guides cite code by function name instead of line number, and a test fails on a relative link or a cited name that points at nothing.
+- Docs: a user guide (`docs/guides/using-it.md`) and a "Where to start" map; the README and guides explain the terminal steps for newcomers; the guides cite code by function name instead of line number, and a test fails on a relative link or on a cited name its file does not define.
 - 🔐 The official MCP SDK the conformance tests run against is pinned in `tests/conformance/requirements.txt`, which Dependabot watches, so a new SDK release now arrives as a pull request instead of going unnoticed; `CONTRIBUTING.md` says how to take it.
 
 ### Added
 
+- ✨ `metal-gpu-trace --help` (and `-h`) prints the commands in the terminal, and an unknown command answers usage and exits 2; before, both fell through to the stdio server and waited for a client. With no command the server still serves MCP on stdin and stdout, so MCP clients do not change.
+- 🩺 `metal-gpu-trace doctor` prints preflight's report of what a recording needs here (xctrace or PresentMon, disk, screen, lock, Wine), one line per check with the exact fix and no path, and exits 2 when something fatal is missing; it reuses `preflight.environment_report`, the same report a recording refuses on.
+- 🔍 `metal-gpu-trace runs [--limit N]` lists the recordings newest first and `metal-gpu-trace compare A B [--markdown]` compares two of them, reusing `perf_runs` and `perf_compare`: the shell answer and the MCP answer are the same numbers, and `--markdown` prints `perf_compare`'s report for a PR comment.
 - 📝 The README recommends pinning a version (`uvx metal-gpu-trace@X.Y.Z`) and says what is guaranteed today; [ADR-0010](docs/adr/0010-stability-policy-and-the-road-to-1-0.md) proposes what counts as the public surface and when 1.0 comes (a draft, not decided).
 
 ## 0.29.0 — 2026-11-22

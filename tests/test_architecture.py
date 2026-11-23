@@ -20,7 +20,7 @@ LAYERS = {
     "registry": 3,
     "worker": 4,
     "protocol": 5,
-    "stdio": 6, "http_transport": 6,
+    "stdio": 6, "http_transport": 6, "cli": 6,
     "metal_trace_mcp": 7,
 }
 

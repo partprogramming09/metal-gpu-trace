@@ -11,14 +11,13 @@ summaries never); METAL_TRACE_ALLOW_LOCKED=1 records with the screen locked (it 
 METAL_TRACE_LOG=off silences the one stderr line per call. Test programs that workload_fetch
 downloads go to ~/Library/Caches/metal-gpu-trace.
 """
-import json
 import pathlib
 import sys
 
 __version__ = "0.29.0"
 if __package__ in (None, ""):  # run by path: make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from metal_gpu_trace import analysis, http_transport, paths, project, protocol, stdio, worker  # noqa: E402
+from metal_gpu_trace import cli, protocol, stdio, worker  # noqa: E402
 
 INSTRUCTIONS = (
     "Records GPU use on Apple silicon with Metal System Trace, and native Windows programs with PresentMon. A metal-gpu-trace.json in the repository gives each "
@@ -54,52 +53,16 @@ worker.configure(send=stdio.send, answer=protocol.answer, finish=protocol.finish
 
 
 def check_cli(args):
-    """Runs `check RUN BASELINE [--margin-pct N]` for CI: prints perf_check's verdict, reasons and hints as one JSON
-    line and returns 0 when the run is the same or improved, 1 when it regressed, 2 when it could not be judged
-    (no such run or reference), too short to judge (under 100 frames) or its program stopped presenting."""
-    run, baseline, margin = (args + [None, None])[:2] + [3.0]
-    if "--margin-pct" in args:
-        try:
-            margin = float(args[args.index("--margin-pct") + 1])
-        except (IndexError, ValueError):
-            print("usage: metal-gpu-trace check RUN BASELINE [--margin-pct N]", file=sys.stderr)
-            return 2
-    if not run or not baseline or run.startswith("--") or baseline.startswith("--"):
-        print("usage: metal-gpu-trace check RUN BASELINE [--margin-pct N]", file=sys.stderr)
-        return 2
-    try:
-        project.check()
-        result = analysis.tool_perf_check(run, baseline, margin)
-    except (paths.ToolError, FileNotFoundError, ValueError) as error:
-        print(f"metal-gpu-trace: {error}", file=sys.stderr)
-        return 2
-    print(json.dumps({k: v for k, v in result.items() if k not in ("comparison", "range")}))
-    if "hint" in result or "unpresented" in result:
-        return 2
-    return 1 if result["verdict"] == "regressed" else 0
+    """Runs `check RUN BASELINE [--margin-pct N]` for CI (the command lives in cli.py; kept here for callers and docs)."""
+    return cli.check_cli(args)
 
 
 def main():
-    """Serves newline-delimited JSON-RPC on stdin and stdout until stdin closes; --version prints the version, and
-    `check` judges a run for CI (see check_cli), and `init` adds the server to AI apps (see init)."""
-    if sys.argv[1:] == ["--version"]:
-        print(f"metal-gpu-trace {__version__}")
-        return
-    if sys.argv[1:2] == ["init"]:  # before project.apply(): it only edits client config files
-        from metal_gpu_trace import init
-        sys.exit(init.main(sys.argv[2:]))
-    project.apply()
-    if sys.argv[1:2] == ["check"]:
-        sys.exit(check_cli(sys.argv[2:]))
-    if sys.argv[1:2] == ["--http"]:
-        try:
-            port = int(sys.argv[3]) if sys.argv[2:3] == ["--port"] else 8765
-        except (IndexError, ValueError):
-            print("usage: metal-gpu-trace --http [--port N]", file=sys.stderr)
-            sys.exit(2)
-        sys.exit(http_transport.serve_http(port))
-    stdio.serve_stdio()
+    """Runs the command in sys.argv: with none it serves newline-delimited JSON-RPC on stdin and stdout until stdin
+    closes (what MCP clients start), and --version, init, check, --http, doctor, runs and compare answer in the
+    terminal (see cli.py)."""
+    return cli.main(sys.argv[1:], __version__)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -1,6 +1,6 @@
 # How the server starts
 
-**Reader:** people who change the command line, the transports' start-up or what gets configured on import. Reviewed 2026-11-16.
+**Reader:** people who change the command line, the transports' start-up or what gets configured on import. Reviewed 2026-11-23.
 
 [Index](./index.md)
 
@@ -8,17 +8,24 @@
 
 ## The command line
 
-`main()` (`metal_trace_mcp.py::main`) reads it in this order and stops at the first match:
+`main()` (`metal_trace_mcp.py::main`) hands the arguments to `cli.main` (`cli.py::main`), which reads them in this order and stops at the first match:
 
 | Command line | What happens | Line |
 |---|---|---|
-| `--version` | Prints `metal-gpu-trace <version>`; the project file is not read | `metal_trace_mcp.py::main` |
-| anything else | Applies the project file once ([How it works](../how-it-works.md#where-recordings-live-and-what-reads-them)) | `metal_trace_mcp.py::main` |
-| `check RUN BASELINE [--margin-pct N]` | Judges a run for CI, exits 0, 1 or 2; no server | `metal_trace_mcp.py::main`, `metal_trace_mcp.py::check_cli` |
-| `--http [--port N]` | Serves HTTP; port 8765 without `--port`; usage line and exit 2 when the number is missing or not an integer | `metal_trace_mcp.py::main` |
-| nothing else | Serves stdio until stdin closes | `metal_trace_mcp.py::main` |
+| `--version` | Prints `metal-gpu-trace <version>`; the project file is not read | `cli.py::main` |
+| `--help`, `-h` | Prints the commands and exits 0; no server | `cli.py::main` |
+| `init` | Adds the server to the AI apps installed here; the project file is not read | `cli.py::main` |
+| no command | Applies the project file once ([How it works](../how-it-works.md#where-recordings-live-and-what-reads-them)), then serves stdio until stdin closes | `cli.py::main` |
+| `check RUN BASELINE [--margin-pct N]` | Judges a run for CI, exits 0, 1 or 2; no server | `cli.py::check_cli` |
+| `--http [--port N]` | Serves HTTP; port 8765 without `--port`; usage line and exit 2 when the number is missing or not an integer | `cli.py::_http` |
+| `doctor` | Prints what a recording needs here, one line per check with the exact fix; exits 0 when a recording could start, else 2 | `cli.py::doctor` |
+| `runs [--limit N]` | Lists the recordings newest first, as `perf_runs` does | `cli.py::runs` |
+| `compare A B [--markdown]` | Compares two recordings as `perf_compare` does, as a table or its Markdown report | `cli.py::compare` |
+| anything else | Prints the usage on stderr and exits 2 instead of waiting for a client | `cli.py::main` |
 
-There is no `--stdio` flag: stdio is what is left (see [limit 4](./limits.md)).
+`doctor`, `runs` and `compare` only read: they reuse the functions the MCP tools call, so a shell answer and an MCP answer carry the same numbers.
+
+There is no `--stdio` flag: stdio is what is left when no command is given (see [limit 4](./limits.md)).
 
 ## stdio
 

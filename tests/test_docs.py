@@ -2,6 +2,7 @@
 "### Added" that starts with its icon and ends with a link to its proof in docs/evidence/, and both READMEs link each
 proof from their "What's new" section. Experimental (🧪) bullets need their proof too but do not count toward the
 minimum. Older sections keep their own format and are not checked."""
+import ast
 import json
 import re
 
@@ -216,6 +217,73 @@ def test_every_relative_link_in_the_markdown_files_works_on_github():
         if SKIPPED_DIRS & set(path.relative_to(ROOT).parts):
             continue
         found = broken_links(path, path.read_text(encoding="utf-8"), lambda p: p.exists())
+        if found:
+            wrong[str(path.relative_to(ROOT))] = found
+    assert wrong == {}
+
+
+CITE = re.compile(r"(?<![\w.-])((?:[\w-]+/)*[\w-]+\.py)::(\w+(?:\.\w+)*)")
+
+
+def definitions(code):
+    """Returns the dotted names `code` defines: functions and classes (methods as `Class.method`) and module-level
+    names assigned one at a time, also inside `if`/`try`. Imports and tuple assignments are re-exports: not defined.
+    A nested function or method counts by its last name (`do_POST` for `serve.Handler.do_POST`)."""
+    found = set()
+
+    def walk(body, prefix, top):
+        for node in body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                found.add(prefix + node.name)
+                walk(node.body, prefix + node.name + ".", False)
+            elif top and isinstance(node, ast.Assign):
+                found.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            elif top and isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                found.add(node.target.id)
+            elif isinstance(node, (ast.If, ast.Try)):
+                handlers = [n for h in getattr(node, "handlers", []) for n in h.body]
+                walk(node.body + node.orelse + getattr(node, "finalbody", []) + handlers, prefix, top)
+
+    walk(ast.parse(code).body, "", True)
+    return found
+
+
+def wrong_citations(text, sources):
+    """Returns the `file.py::name` citations of a markdown text whose file is unknown, ambiguous or does not define the
+    name. `sources` maps a repo-relative path to its code. Code fences are read too: the guides cite inside them."""
+    wrong = []
+    for path, name in CITE.findall(text):
+        hits = [p for p in sources if p == path or p.endswith("/" + path)]
+        if len(hits) != 1 or not any(d == name or d.endswith("." + name) for d in definitions(sources[hits[0]])):
+            wrong.append(f"{path}::{name}")
+    return wrong
+
+
+def test_a_citation_to_the_wrong_file_is_found():
+    code = {
+        "src/a.py": "def one():\n    pass\nLIMIT = 3\nclass K:\n    def m(self):\n        x = 1\n"
+                    "        if x == 1:\n            pass\n",
+        "src/b.py": "from a import one, LIMIT\nfrom a import (\n    K,\n)\nfoo, bar = 1, 2\n"
+                    'def two():\n    """\n    note: 1\n    """\n',
+    }
+    assert wrong_citations("`a.py::one` `a.py::LIMIT` `a.py::K.m` `./a.py::K` `../src/b.py::two`", code) == []
+    bad = ["a.py::two", "c.py::one", "a.py::K.gone", "a.py::x", "b.py::one", "b.py::K", "b.py::foo", "b.py::note"]
+    assert wrong_citations(" ".join(f"`{c}`" for c in bad), code) == bad
+
+
+def test_a_name_defined_in_an_except_branch_counts():
+    code = {"src/a.py": "try:\n    import x\nexcept ImportError:\n    def fallback():\n        pass\n"}
+    assert wrong_citations("`a.py::fallback`", code) == []
+
+
+def test_every_function_cited_by_name_in_the_docs_is_defined_in_its_file():
+    sources = {str(p.relative_to(ROOT)): p.read_text(encoding="utf-8")
+               for d in ("src", "tests", "windows") for p in (ROOT / d).rglob("*.py")}
+    wrong = {}
+    for path in (ROOT / "docs").rglob("*.md"):
+        if SKIPPED_DIRS & set(path.relative_to(ROOT).parts):
+            continue
+        found = wrong_citations(path.read_text(encoding="utf-8"), sources)
         if found:
             wrong[str(path.relative_to(ROOT))] = found
     assert wrong == {}

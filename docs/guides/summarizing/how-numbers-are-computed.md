@@ -60,4 +60,4 @@ Two things load the GPU: the program and everything else. `device_pct` (driver c
 
 ## Windows
 
-`perf_record_windows.py` calls the same `frame_pacing` (`perf_record_windows.py::compute_precision_telemetry`) and `common_block` (`perf_record_windows.py::record_windows`), so a Windows summary's FPS, lows, stutter and jitter follow these formulas, over PresentMon's frame intervals or the drawstress log's means. What it cannot measure is `null`, not zero, and the source used is `gpu.source` ([recording guide](../recording/windows-engine.md#the-three-sources-of-frames-and-which-one-wins)).
+The Windows engine calls the same `frame_pacing` (`perf_record_windows_presentmon.py::compute_precision_telemetry`) and `common_block` (`perf_record_windows.py::record_windows`), so a Windows summary's FPS, lows, stutter and jitter follow these formulas, over PresentMon's frame intervals or the drawstress log's means. What it cannot measure is `null`, not zero, and the source used is `gpu.source` ([recording guide](../recording/windows-engine.md#the-three-sources-of-frames-and-which-one-wins)).
