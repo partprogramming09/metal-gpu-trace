@@ -12,6 +12,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - Docs: the links in `docs/index.md` and `docs/guides/index.md` now spell out `.md`, so they work on GitHub and in VitePress, and `tests/test_docs.py` fails on a relative link that points at nothing (code blocks excluded).
 - Docs: `docs/evidence/internal-tools.md` says what VegaFlow and WinBridge are (the maintainer's own tools, not needed to use the project), and the proofs that name them link to it.
 - Docs: removed `docs/diagrams/energia-en-los-dos-extremos.html`, a Spanish copy of `power-at-both-ends.html` that nothing linked.
+- Docs: `docs/guides/server-and-transport/http.md` cites code by function or test name instead of line number, as a sample for the other guides; its old `tests/test_server.py` line numbers had already drifted.
 - 🔐 The official MCP SDK the conformance tests run against is pinned in `tests/conformance/requirements.txt`, which Dependabot watches, so a new SDK release now arrives as a pull request instead of going unnoticed; `CONTRIBUTING.md` says how to take it.
 
 ### Added
