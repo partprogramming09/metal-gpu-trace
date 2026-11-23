@@ -81,7 +81,7 @@ runs in a different display mode, so the two numbers do not measure the same thi
 ## Limits
 
 1. **Only the Windows half.** The same comparison on macOS, against Mullion (a translation layer, see the
-   [README glossary](../../README.md#words-used-here)) and against Godot, is not done yet. Those runs are made on a Mac.
+   [README glossary](https://github.com/partprogramming09/metal-gpu-trace#words-used-here)) and against Godot, is not done yet. Those runs are made on a Mac.
 2. **The `ab` figures come from PresentMon through VegaFlow.** They are not a metal-gpu-trace summary, so they do not
    carry the summary keys (`frame_pacing`, `common`).
 3. **Runs started over SSH do not count.** An SSH session is outside the desktop session. There, `drawstress` does not
