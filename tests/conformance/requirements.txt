@@ -1,0 +1,2 @@
+# The official MCP SDK the conformance tests use as a client. Dependabot reads this file (see .github/dependabot.yml).
+mcp==2.3.0

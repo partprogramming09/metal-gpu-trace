@@ -2,7 +2,7 @@
 Streamable HTTP (--http) in the 2026-07-28 era.
 
 Needs the SDK, so tests/run.py leaves it out. Run it with:
-    uvx --python 3.13 --with mcp==2.3.0 --with pytest pytest -q -p no:cacheprovider tests/conformance
+    uvx --python 3.13 --with-requirements tests/conformance/requirements.txt --with pytest pytest -q -p no:cacheprovider tests/conformance
 Client API used (mcp 2.3.0): mcp.client.stdio.stdio_client, mcp.ClientSession.discover() for 2026-07-28 and
 ClientSession.initialize() for the initialize handshake, mcp.client.streamable_http.streamable_http_client with an
 httpx2.AsyncClient that carries the bearer token."""
