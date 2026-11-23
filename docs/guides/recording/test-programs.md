@@ -88,6 +88,6 @@ on Windows. The package pins version 2.6.0 (980 320 bytes, SHA-256
 Running it needs administrator rights or membership of the Performance Log Users group (the tool's own description,
 `workloads.py::tool_presentmon_install`: **not verified** against Intel's documentation).
 
-At **recording** time `find_presentmon` (`perf_record_windows.py::find_presentmon`; [E10](./evidence.md)) looks in this order: the
+At **recording** time `find_presentmon` (`perf_record_windows_presentmon.py::find_presentmon`; [E10](./evidence.md)) looks in this order: the
 file named by `PRESENTMON_EXE` (set but missing means **none**, no fallback), the newest `PresentMon*.exe` in the cache
 folder, then `PresentMon` or `PresentMon-x64` on the `PATH`. The hash is checked at install only ([limit 4](./limits.md)).
