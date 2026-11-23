@@ -219,3 +219,40 @@ def test_every_relative_link_in_the_markdown_files_works_on_github():
         if found:
             wrong[str(path.relative_to(ROOT))] = found
     assert wrong == {}
+
+
+CITE = re.compile(r"(?<![\w/.-])((?:[\w-]+/)*[\w-]+\.py)::(\w+)")
+
+
+def defines(code, name):
+    """Returns whether Python source defines `name`: a def, a class, an assignment or an import (`as` included)."""
+    word = re.escape(name)
+    return bool(re.search(rf"(?m)^\s*(?:(?:async\s+)?def|class)\s+{word}\b|^\s*{word}\s*[:=]|^\s*(?:from|import)\b.*\b{word}\b", code))
+
+
+def wrong_citations(text, sources):
+    """Returns the `file.py::name` citations of a markdown text whose file is unknown, ambiguous or does not define the
+    name. `sources` maps a repo-relative path to its code. Code fences are read too: the guides cite inside them."""
+    wrong = []
+    for path, name in CITE.findall(text):
+        hits = [p for p in sources if p == path or p.endswith("/" + path)]
+        if len(hits) != 1 or not defines(sources[hits[0]], name):
+            wrong.append(f"{path}::{name}")
+    return wrong
+
+
+def test_a_citation_to_the_wrong_file_is_found():
+    code = {"src/a.py": "def one():\n    pass\nLIMIT = 3\nfrom x import y as other\n", "src/b.py": "def two():\n    pass\n"}
+    assert wrong_citations("`a.py::one` `a.py::LIMIT` `a.py::other` `src/b.py::two`", code) == []
+    assert wrong_citations("`a.py::two` `c.py::one`", code) == ["a.py::two", "c.py::one"]
+
+
+def test_every_function_cited_by_name_in_the_guides_is_defined_in_its_file():
+    sources = {str(p.relative_to(ROOT)): p.read_text(encoding="utf-8")
+               for d in ("src", "tests", "windows") for p in (ROOT / d).rglob("*.py")}
+    wrong = {}
+    for path in (ROOT / "docs" / "guides").rglob("*.md"):
+        found = wrong_citations(path.read_text(encoding="utf-8"), sources)
+        if found:
+            wrong[str(path.relative_to(ROOT))] = found
+    assert wrong == {}
