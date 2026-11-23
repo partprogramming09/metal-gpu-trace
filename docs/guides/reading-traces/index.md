@@ -51,8 +51,8 @@ folder and answers `{"file": "a2-proof-first_20261115-085621.chrome-trace", "fra
 ```
 
 `ts` and `dur` are microseconds (the Chrome trace format's unit): 1267.79 ms becomes 1 267 790 and 13.5612 ms becomes 13 561.2.
-The slice starts 1.27 s in and lasts the frame's GPU time. The tool was **not run**: E5 is the arithmetic of `traces.py:22-25`
-by `awk`; the test pinning it is `tests/test_analysis.py:329-332`.
+The slice starts 1.27 s in and lasts the frame's GPU time. The tool was **not run**: E5 is the arithmetic of `traces.py::tool_perf_export_trace`
+by `awk`; the test pinning it is `tests/test_analysis.py::test_cold_warm`.
 
 **2. "Which parts of this table are busy?"** `trace_query` with `window_ms=10` on `metal-gpu-intervals` returns one entry per
 10 ms window. Rows starting at 1 ms (2 ms long), 9 ms (1 ms) and 12 ms (4 ms) give `{"start_ms": 0, "count": 2, "duration_ms": 3.0}`

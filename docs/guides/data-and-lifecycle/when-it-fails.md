@@ -13,9 +13,9 @@ Back to the [index](./index.md). Example: cancel a 60 s recording at second 10 a
 | The script exits with an error, or gets `TERM` | Nothing of that run: the `EXIT` trap removes `$out/$name.*` if the code is not 0 | the script | `perf_record.sh:71`, `:74` |
 | The server dies mid-recording | The recording and its program are stopped by a watcher loop in the script | the script | `perf_record.sh:82-92` |
 | The script is killed with `SIGKILL` (no trap runs) | A stale `recording.lock`, partial files | The next script takes over a lock whose owner is dead (`preflight` does not refuse for it); partial files stay until `KEEP_RUNS` or the quota reaches them | `perf_record.sh:47-61`, `preflight.py:74-98` (probable: not reproduced) |
-| The program did no GPU work | Summary and every file deleted; the `.trace` stays if asked to be kept, and the error says so | the server | `recording.py:427-436` |
-| A table write is interrupted | `<table>.csv.gz.<hex>.tmp`; its name starts with the run's stem, so `KEEP_RUNS` removes it with the run; the quota does not (its suffix is not a table suffix) | `KEEP_RUNS` | `tables.py:40-43`, `retention.py:10` |
-| A `.csv.gz` is cut short or empty | An error saying to record again, not a short table | nobody: the file stays | `tables.py:29-30`, [ADR-0006](../../adr/0006-compressed-tables-and-disk-quota.md) |
+| The program did no GPU work | Summary and every file deleted; the `.trace` stays if asked to be kept, and the error says so | the server | `recording.py::run_recording` |
+| A table write is interrupted | `<table>.csv.gz.<hex>.tmp`; its name starts with the run's stem, so `KEEP_RUNS` removes it with the run; the quota does not (its suffix is not a table suffix) | `KEEP_RUNS` | `tables.py::write`, `retention.py:10` |
+| A `.csv.gz` is cut short or empty | An error saying to record again, not a short table | nobody: the file stays | `tables.py::open_text`, [ADR-0006](../../adr/0006-compressed-tables-and-disk-quota.md) |
 | A pruned table is needed (`perf_compare` with `skip_s`) | "has no per-frame file; record it again" | nobody | `analysis.py:510` |
 | The disk is nearly full | Refused before starting: `2 + (seconds × 8 + 9) / 10` GB (integer division) free is needed in the temporary and runs folders; `PERF_MIN_FREE_GB` overrides | nobody | `perf_record.sh:34-38`, `preflight.py:128-131` |
 

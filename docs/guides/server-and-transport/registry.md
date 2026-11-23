@@ -20,7 +20,7 @@
 
 16 of the 26 tools are read-only and 10 write ([E4](./evidence.md#e4-how-many-tools-how-many-write-which-ask-the-person)); the five that record (`perf_record`, `perf_baseline_record`, `perf_sweep`, `perf_ab`, `perf_cold_warm`) carry `destructiveHint: true`, because they stop programs.
 
-What `tools/list` builds from a row (`protocol.py:146-150`):
+What `tools/list` builds from a row (`protocol.py::handle`):
 
 | Field | Rule |
 |---|---|
@@ -31,11 +31,11 @@ What `tools/list` builds from a row (`protocol.py:146-150`):
 
 ## Resources and prompts
 
-- **Resources** (`RESOURCES`, `registry.py:12-15`): one for all GPU families and one per family in `data/apple-gpu-families.json`, read-only JSON; five in the recorded `resources/list` ([E9](./evidence.md#e9-what-the-server-answers-as-the-tests-recorded-it)). Recordings are served differently: `metal-trace://runs/<run>` is a template (`resources/templates/list`) that `protocol.handle` serves by reading the summary (`protocol.py:118-145`).
-- **Prompts** (`PROMPTS`, `registry.py:193-216`): `compare-layer`, `diagnose-stutter`, `bisect-regression`. Each `render` builds text for the agent; the server runs nothing, and `prompts/list` leaves `render` out (`protocol.py:152-153`). `prompts/get` drops every argument that is empty or fails `paths.name_ok` before `render` (`:159`).
+- **Resources** (`RESOURCES`, `registry.py:12-15`): one for all GPU families and one per family in `data/apple-gpu-families.json`, read-only JSON; five in the recorded `resources/list` ([E9](./evidence.md#e9-what-the-server-answers-as-the-tests-recorded-it)). Recordings are served differently: `metal-trace://runs/<run>` is a template (`resources/templates/list`) that `protocol.handle` serves by reading the summary (`protocol.py::handle`).
+- **Prompts** (`PROMPTS`, `registry.py:193-216`): `compare-layer`, `diagnose-stutter`, `bisect-regression`. Each `render` builds text for the agent; the server runs nothing, and `prompts/list` leaves `render` out (`protocol.py::handle`). `prompts/get` drops every argument that is empty or fails `paths.name_ok` before `render` (`:159`).
 
 ## What pins the registry
 
 - `test_tool_schemas_match_signatures` (`tests/test_server.py:1137`): every argument a function takes is in its schema, every one without a default is required, and an extra schema name is allowed only when the function forwards `**kwargs` (`tools/call` refuses names the schema lacks).
-- `test_readme_lists_every_tool` (`tests/test_server.py:18`): both READMEs hold a row per tool.
-- The count 26 is in four places (`tests/test_server.py:14`, `:139`, `:325`, `:666`) and `tests/golden/protocol.json` holds the full `tools/list`: adding a tool changes all on purpose ([Touching it](./touching.md)).
+- `test_readme_lists_every_tool` (`tests/test_server.py::test_readme_lists_every_tool`): both READMEs hold a row per tool.
+- The count 26 is in four places (`tests/test_server.py::test_perf_panel_is_gone`, `:139`, `:325`, `:666`) and `tests/golden/protocol.json` holds the full `tools/list`: adding a tool changes all on purpose ([Touching it](./touching.md)).

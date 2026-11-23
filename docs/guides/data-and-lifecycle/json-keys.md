@@ -15,7 +15,7 @@ Keys are written in sequence by:
 
 ## The generations
 
-`schema_version` says the generation (`metrics.py:10`, read by `metrics.schema_of`, `metrics.py:13`). Without it a summary is generation 1, and every tool still reads 1, 2 and 3 (`CHANGELOG.md`, 0.27.0, Changed).
+`schema_version` says the generation (`metrics.py:10`, read by `metrics.schema_of`, `metrics.py::schema_of`). Without it a summary is generation 1, and every tool still reads 1, 2 and 3 (`CHANGELOG.md`, 0.27.0, Changed).
 
 | Generation | What it added | Shipped in |
 |---|---|---|
@@ -32,9 +32,9 @@ Keys are written in sequence by:
 | `schema_version` | The generation (first key) | `perf_report.py:648`; `analysis.py:74` via `metrics.schema_of` |
 | `label`, `template`, `duration_s` | Recording label, Instruments template name, seconds recorded | `perf_report.py:649`, `:659`, `:660`; `analysis.py:643`, `:759`, `:673` |
 | `trace` | Name of the `.trace`, kept after the file is deleted | `perf_report.py:650`; nothing in `src/` reads it (`rg`); `perf_runs` tests the file (`analysis.py:79`) |
-| `process` | `name`, `pid`, `termination-reason`, `arguments` (shareable via `public_arguments`) | `perf_report.py:651-652`; `analysis.py:74` (`arguments`), `recording.py:432` (`termination-reason`) |
-| `device` | `platform`, `model`, `memory-size`, `os-version`; machine name and UUID left out on purpose | `perf_report.py:654`; `analysis.py:138`, `metrics.py:55` |
-| `machine` | Chip, cores, RAM, macOS, `screen_locked`, and `power` (low power mode and heat at the start and the end, see [power and heat](../summarizing/power-and-heat.md)). **It can be `null`**: when this Mac is not the one that recorded the trace, or a fact cannot be read; then there is no `power` either | `perf_report.py:740` (`machine_info` `:679`); `recording.py:438-439` (`power`); `analysis.py:195` (locked screen), `:191-203` (`power`) |
+| `process` | `name`, `pid`, `termination-reason`, `arguments` (shareable via `public_arguments`) | `perf_report.py:651-652`; `analysis.py:74` (`arguments`), `recording.py::run_recording` (`termination-reason`) |
+| `device` | `platform`, `model`, `memory-size`, `os-version`; machine name and UUID left out on purpose | `perf_report.py:654`; `analysis.py:138`, `metrics.py::common_block` |
+| `machine` | Chip, cores, RAM, macOS, `screen_locked`, and `power` (low power mode and heat at the start and the end, see [power and heat](../summarizing/power-and-heat.md)). **It can be `null`**: when this Mac is not the one that recorded the trace, or a fact cannot be read; then there is no `power` either | `perf_report.py:740` (`machine_info` `:679`); `recording.py::run_recording` (`power`); `analysis.py:195` (locked screen), `:191-203` (`power`) |
 | `missing_tables` | Instruments tables the trace did not have | `perf_report.py:664`; no reader in `src/` (`rg`) |
 | `gpu` | `intervals`, `frames`, `frame_gpu_ms`, `per_channel_ms`, `frame_interval_ms`, `start_latency_ms`, `fps_estimate`, pacing keys below | `perf_report.py:709`; `perf_runs`, compare, diagnose, gates (`analysis.py`) |
 | `encoders` | Encoders and command buffers per frame, shortest encoders, top 20 labels | `perf_report.py:728`; `analysis.py:223`, `:702` |
@@ -42,8 +42,8 @@ Keys are written in sequence by:
 | `gpu_performance_state_share` | Time share per GPU clock state; `{}` if none | `perf_report.py:771`; `analysis.py:144` |
 | `hitches` | `count`, `per_minute`, `threshold_ms`, `causes`, 20 `worst` | `perf_report.py:822`; `analysis.py:574`, `:773` |
 | `common` | `frame_pacing`, `memory_pressure`, `boundness`, `submission_overhead`, `api` (its `runtime` is `metal` on macOS and `unknown` on Windows, which does not read it from PresentMon yet), from `metrics.common_block` | `perf_report.py:835`, rebuilt `recording.py:343`; `analysis.py:153` |
-| `layer` | Translation layer: Wine with overrides and DLL hashes, `none` (native), `unknown` (attached), MoltenVK, Rosetta | `recording.py:341`; `recording.py:208`, `metrics.layer_label` |
-| `context` | `git` (short commit and `dirty`, or null) and `instruments` (version, or null) | `recording.py:341`, `run_context` at `:168`; `recording.py:195` |
+| `layer` | Translation layer: Wine with overrides and DLL hashes, `none` (native), `unknown` (attached), MoltenVK, Rosetta | `recording.py:341`; `recording.py::identity`, `metrics.layer_label` |
+| `context` | `git` (short commit and `dirty`, or null) and `instruments` (version, or null) | `recording.py:341`, `run_context` at `:168`; `recording.py::context_change` |
 
 A summary from a hand-run `perf_report.py` has no `layer` or `context`: they come from `recording.finish` (confirmed: assigned only at `recording.py:341`).
 
@@ -83,4 +83,4 @@ The pacing keys in `gpu` come from `frame_pacing` (`perf_report.py:253`), only w
 | Added by `finish` | `context`, and `tier`, `retention`, `app_metrics` under the same conditions |
 | Absent | `machine`, `hitches`, `gpu_performance_state_share` and every conditional Metal key: treat each as optional (confirmed: not in the dict at those lines) |
 
-`finish` replaces `layer` with the one `record_run` computed (`recording.py:341`, `:370`, `:385`): for a native Windows run `native Metal, no translation layer` (`recording.py:134-135`) instead of the engine's `native Windows`; `layer_label` calls both `native`, so no reader notices (confirmed by the code, not reproduced).
+`finish` replaces `layer` with the one `record_run` computed (`recording.py:341`, `:370`, `:385`): for a native Windows run `native Metal, no translation layer` (`recording.py::layer_of`) instead of the engine's `native Windows`; `layer_label` calls both `native`, so no reader notices (confirmed by the code, not reproduced).

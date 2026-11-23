@@ -46,12 +46,12 @@ An agent asks, over stdio, to record a program for 30 seconds, and changes its m
 
 | # | What happens | Where |
 |---|---|---|
-| 1 | The stdio loop sees a `tools/call` with an id and does **not** run it: it makes a cancel flag for id 7, queues the message and goes back to reading | `stdio.py:42-48` |
-| 2 | The worker thread (started at the first call, kept for the life of the server) takes it and asks the protocol to answer; the protocol checks the tool name is in the registry and hands the call to `worker.call` | `worker.py:60-72`, `protocol.py:167-169`, `:170` |
-| 3 | `worker.call` checks the project file, then the arguments against the schema, then runs the registry's function. The 30 seconds go here | `worker.py:155-158` |
-| 4 | Meanwhile `{"id":8,"method":"ping"}` arrives. The loop is free and answers `ping` itself, in the reading thread, without the queue | `stdio.py:49`, `:55-56` |
-| 5 | `{"method":"notifications/cancelled","params":{"requestId":7}}` sets the flag of call 7. The recording looks at it every second and kills itself ([Recording, the kill sequence](../recording/macos-journey.md#the-kill-sequence)); the function raises `the recording was cancelled; nothing was saved` and the worker turns it into an error result. stdio writes **nothing** for id 7: the spec says a cancelled call gets no reply | `stdio.py:35-37`, `worker.py:93-115`, `stdio.py:19-22` |
-| 6 | Without a cancel, the function returns a dictionary, written as JSON text (40 000 characters at most) and as one stdout line. Either way the worker writes one stderr line: `metal-trace: perf_record error in <seconds> s` or `... ok in <seconds> s` | `worker.py:171` |
+| 1 | The stdio loop sees a `tools/call` with an id and does **not** run it: it makes a cancel flag for id 7, queues the message and goes back to reading | `stdio.py::serve_stdio` |
+| 2 | The worker thread (started at the first call, kept for the life of the server) takes it and asks the protocol to answer; the protocol checks the tool name is in the registry and hands the call to `worker.call` | `worker.py::work`, `protocol.py::handle`, `:170` |
+| 3 | `worker.call` checks the project file, then the arguments against the schema, then runs the registry's function. The 30 seconds go here | `worker.py::_take` |
+| 4 | Meanwhile `{"id":8,"method":"ping"}` arrives. The loop is free and answers `ping` itself, in the reading thread, without the queue | `stdio.py::serve_stdio`, `:55-56` |
+| 5 | `{"method":"notifications/cancelled","params":{"requestId":7}}` sets the flag of call 7. The recording looks at it every second and kills itself ([Recording, the kill sequence](../recording/macos-journey.md#the-kill-sequence)); the function raises `the recording was cancelled; nothing was saved` and the worker turns it into an error result. stdio writes **nothing** for id 7: the spec says a cancelled call gets no reply | `stdio.py::serve_stdio`, `worker.py::cancel_call`, `stdio.py::reply_unless_cancelled` |
+| 6 | Without a cancel, the function returns a dictionary, written as JSON text (40 000 characters at most) and as one stdout line. Either way the worker writes one stderr line: `metal-trace: perf_record error in <seconds> s` or `... ok in <seconds> s` | `worker.py::cut` |
 
 Over HTTP the middle (steps 2, 3, 6) is the same; the beginning and end differ: see [HTTP](./http.md).
 
@@ -59,8 +59,8 @@ Over HTTP the middle (steps 2, 3, 6) is the same; the beginning and end differ: 
 *Figure 1. One `tools/call`. Source: `img/server-request-sequence.html`.*
 
 The figure differs from [How it works](../how-it-works.md#one-request-end-to-end) in one order: the queue comes **before**
-`protocol.handle` for a `tools/call` (`stdio.py:47`, `http_transport.py:154`; the worker calls `protocol.answer`,
-`worker.py:72`). `ping`, `tools/list`, `resources/*` and `prompts/*` skip the queue and are answered even while a
+`protocol.handle` for a `tools/call` (`stdio.py::serve_stdio`, `http_transport.py::do_POST`; the worker calls `protocol.answer`,
+`worker.py::work`). `ping`, `tools/list`, `resources/*` and `prompts/*` skip the queue and are answered even while a
 recording runs ([limit 1](./limits.md)).
 
 ## See also

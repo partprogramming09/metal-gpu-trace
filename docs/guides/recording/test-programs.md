@@ -19,11 +19,11 @@ Windows, is installed the same way. `workload_list` shows them, `workload_fetch`
 
 `example_traits` lists, for each of the 30 examples, a class (`cpu_submit`, `compute`, `postprocess`, ...) and the encoders
 per frame to expect native and under D3D12 ([E4](./evidence-data.md): 30 examples, 30 traits), so a recording can be
-checked against what the program should do (`tool_workload_list`, `workloads.py:101-112`).
+checked against what the program should do (`tool_workload_list`, `workloads.py::tool_workload_list`).
 
 ## How a request becomes a command
 
-`workload_command`, `workloads.py:65-91`:
+`workload_command`, `workloads.py::workload_command`:
 
 | # | Rule | Message or effect | Line |
 |---|---|---|---|
@@ -40,7 +40,7 @@ dylib's size and SHA-256) for `moltenvk`, `None` otherwise: Wine and native come
 
 ## How a download is verified
 
-`tool_workload_fetch`, `workloads.py:147-176`. A straight line with one refusal at each of 4 and 6, so no figure.
+`tool_workload_fetch`, `workloads.py::tool_workload_fetch`. A straight line with one refusal at each of 4 and 6, so no figure.
 
 1. If `<cache>/<name>-<first 12 hex of sha256>` already exists, return at once (`:154-155`).
 2. Otherwise make a temporary folder **inside the cache**, so the final rename stays on one disk (`:157`).
@@ -59,7 +59,7 @@ archive); `test_workload_downloads` (`tests/test_recording.py:286`) builds a fak
 
 ## The pins
 
-Each archive is pinned by SHA-256 and the cache folder is named with its first 12 characters (`workloads.py:22`), so a
+Each archive is pinned by SHA-256 and the cache folder is named with its first 12 characters (`workloads.py::workload_entry`), so a
 new release is a new folder, never an overwrite ([E4, E5](./evidence-data.md)):
 
 | Workload | Release tag | SHA-256 (full) |
@@ -86,7 +86,7 @@ on Windows. The package pins version 2.6.0 (980 320 bytes, SHA-256
 3. Otherwise downloads into a temporary folder (twice the pinned size is the ceiling, `:201`), checks the SHA-256 and replaces the target (`:199-204`).
 
 Running it needs administrator rights or membership of the Performance Log Users group (the tool's own description,
-`workloads.py:187-190`: **not verified** against Intel's documentation).
+`workloads.py::tool_presentmon_install`: **not verified** against Intel's documentation).
 
 At **recording** time `find_presentmon` (`perf_record_windows.py:420-430`; [E10](./evidence.md)) looks in this order: the
 file named by `PRESENTMON_EXE` (set but missing means **none**, no fallback), the newest `PresentMon*.exe` in the cache

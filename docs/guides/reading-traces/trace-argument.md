@@ -14,7 +14,7 @@ The argument is described as "a run name from perf_runs whose trace_kept or tabl
 | The text is... | It becomes | If it fails |
 |---|---|---|
 | a valid **name** (`name_ok`: letters, digits, `.`, `_`, `-`, at most 120 bytes; `paths.py:25-30`) | `<runs folder>/<name>.trace` (a trailing `.trace` is accepted) | a link there: `<name>.trace cannot be read` (`:88-89`) |
-| anything else, a **path** | resolved by `allowed` (`:91`); inside the runs folder or a folder in `METAL_TRACE_READ` | `<name> is outside the readable directories; add its directory to METAL_TRACE_READ` (`paths.py:20-21`) |
+| anything else, a **path** | resolved by `allowed` (`:91`); inside the runs folder or a folder in `METAL_TRACE_READ` | `<name> is outside the readable directories; add its directory to METAL_TRACE_READ` (`paths.py::allowed`) |
 
 Consequence (**confirmed**, **not run**): `foo.trace` has no `/`, so it is a run name looked up in the runs folder. A `.trace`
 elsewhere needs a path with a directory (`./foo.trace`, or an absolute path inside `METAL_TRACE_READ`). The folder must exist:
@@ -29,10 +29,10 @@ A `.trace` is a **bundle**: a folder Instruments writes and `xctrace` reads. Thi
 
 | Ask | Command | What comes back |
 |---|---|---|
-| The **table of contents** | `xcrun xctrace export --input <trace> --output <temporary.xml> --toc` | XML with root `trace-toc`, `run` elements (the code always reads `run number="1"`, `perf_report.py:92`), each with a `data` element holding one `table` per table; `schema` is the table's name (`traces.py:36`, `:100`) |
-| One **table** | the same with `--xpath '/trace-toc/run[@number="1"]/data/table[@schema="<name>"]'` instead of `--toc` | XML with a `schema` listing the columns (each `col` has a `mnemonic`, the column name) and one `row` per row, cells being children named after the columns (`perf_report.py:143-179`; fixture `tests/test_traces.py:11-16`) |
+| The **table of contents** | `xcrun xctrace export --input <trace> --output <temporary.xml> --toc` | XML with root `trace-toc`, `run` elements (the code always reads `run number="1"`, `perf_report.py:92`), each with a `data` element holding one `table` per table; `schema` is the table's name (`traces.py::source_of`, `:100`) |
+| One **table** | the same with `--xpath '/trace-toc/run[@number="1"]/data/table[@schema="<name>"]'` instead of `--toc` | XML with a `schema` listing the columns (each `col` has a `mnemonic`, the column name) and one `row` per row, cells being children named after the columns (`perf_report.py:143-179`; fixture `tests/test_traces.py::table`) |
 
-- Cells hold the value as text and often a `fmt` attribute with the formatted version (`traces.py:111`).
+- Cells hold the value as text and often a `fmt` attribute with the formatted version (`traces.py::windows_of`).
 - To keep a big table small, `xctrace` writes a repeated value once with an `id` and later cells point to it with `ref`; `rows`
   resolves them while reading (`perf_report.py:131-170`; [summarizing guide](../summarizing/trace-to-summary.md#step-1-export)).
 - The table names are Instruments' own; this project does not list them: they are what `trace_tables` returns.
