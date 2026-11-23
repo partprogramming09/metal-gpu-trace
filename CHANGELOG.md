@@ -5,6 +5,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+### Changed
+
+- 🔐 The official MCP SDK the conformance tests run against is pinned in `tests/conformance/requirements.txt`, which Dependabot watches, so a new SDK release now arrives as a pull request instead of going unnoticed; `CONTRIBUTING.md` says how to take it.
+
 ### Added
 
 - 📝 The README recommends pinning a version (`uvx metal-gpu-trace@X.Y.Z`) and says what is guaranteed today; [ADR-0010](docs/adr/0010-stability-policy-and-the-road-to-1-0.md) proposes what counts as the public surface and when 1.0 comes (a draft, not decided).
