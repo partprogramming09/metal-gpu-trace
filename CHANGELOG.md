@@ -10,7 +10,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - Docs: about 700 more `file.py:line` citations in the guides now name the function, class or constant (`file.py::name`), resolved against the code each guide was written against and checked to exist today; a few dozen stay as lines because they point at module docstrings, imports, shell scripts or ranges over several functions. The dated `evidence*.md` pages keep their lines on purpose.
 - Docs: two links from site pages to `README.md` files, which the site leaves out, now use the GitHub address; `pnpm docs:build` passes again.
 - Docs: the README and the user guide explain the Terminal, Homebrew, vsync, CSV, the Wine prefix, `sudo` and how to copy a file's path, for readers who never used a terminal.
-- Docs: a user guide, `docs/guides/using-it.md` (five typical jobs, with the sentence to say to the agent), and a "Where to start" map for users, AI agents and contributors in `docs/README.md`. The README's What's new no longer names a `doctor` command, which does not exist yet: `init` prints the notes.
+- Docs: a user guide, `docs/guides/using-it.md` (five typical jobs, with the sentence to say to the agent), and a "Where to start" map for users, AI agents and contributors in `docs/README.md`. The README's What's new no longer names a `doctor` command before it existed: `init` prints the notes (0.30.0 adds `doctor`).
 - Docs: the links in `docs/index.md` and `docs/guides/index.md` now spell out `.md`, so they work on GitHub and in VitePress, and `tests/test_docs.py` fails on a relative link that points at nothing (code blocks excluded).
 - Docs: `docs/evidence/internal-tools.md` says what VegaFlow and WinBridge are (the maintainer's own tools, not needed to use the project), and the proofs that name them link to it.
 - Docs: removed `docs/diagrams/energia-en-los-dos-extremos.html`, a Spanish copy of `power-at-both-ends.html` that nothing linked.
@@ -21,6 +21,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Added
 
+- ✨ `metal-gpu-trace --help` (and `-h`) prints the commands in the terminal, and an unknown command answers usage and exits 2; before, both fell through to the stdio server and waited for a client. With no command the server still serves MCP on stdin and stdout, so MCP clients do not change.
+- 🩺 `metal-gpu-trace doctor` prints preflight's report of what a recording needs here (xctrace or PresentMon, disk, screen, lock, Wine), one line per check with the exact fix and no path, and exits 2 when something fatal is missing; it reuses `preflight.environment_report`, the same report a recording refuses on.
+- 🔍 `metal-gpu-trace runs [--limit N]` lists the recordings newest first and `metal-gpu-trace compare A B [--markdown]` compares two of them, reusing `perf_runs` and `perf_compare`: the shell answer and the MCP answer are the same numbers, and `--markdown` prints `perf_compare`'s report for a PR comment.
 - 📝 The README recommends pinning a version (`uvx metal-gpu-trace@X.Y.Z`) and says what is guaranteed today; [ADR-0010](docs/adr/0010-stability-policy-and-the-road-to-1-0.md) proposes what counts as the public surface and when 1.0 comes (a draft, not decided).
 
 ## 0.29.0 — 2026-11-22
