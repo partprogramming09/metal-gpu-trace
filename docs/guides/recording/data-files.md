@@ -19,10 +19,10 @@ matches those documents today was **not verified** ([E7](./evidence-data.md)). R
 
 | Reader / case | What it does | Label | Line |
 |---|---|---|---|
-| `traces.family_of`, `tool_gpu_family` | Finds a family by key (`Apple9`) or chip (`M1 Pro`, `A17 Pro`); the chip match drops `series` and a `pro`/`max`/`ultra` suffix | | `traces.py:177-197` |
+| `traces.family_of`, `tool_gpu_family` | Finds a family by key (`Apple9`) or chip (`M1 Pro`, `A17 Pro`); the chip match drops `series` and a `pro`/`max`/`ultra` suffix | | `traces.py::query_tables_file` |
 | `registry.RESOURCES` | One resource `metal-trace://gpu-families` for the whole file and one per family key; to add a family, add a key | confirmed | `registry.py:12-15` |
 | Unknown name | `unknown family or chip '<name>'; try one of Apple10, Apple7, Apple8, Apple9 or a chip such as M1 Pro, M2, M3 Max, A17 Pro` (list built from the file's keys, E7) | confirmed | `traces.py:193` |
-| Family without `mac_chips` or `other_chips` | A `KeyError` inside `family_of` | **probable**, not tested | `traces.py:181` |
+| Family without `mac_chips` or `other_chips` | A `KeyError` inside `family_of` | **probable**, not tested | `traces.py::query_tables_file` |
 
 ## The workloads file
 
@@ -30,19 +30,19 @@ matches those documents today was **not verified** ([E7](./evidence-data.md)). R
 
 | Field | Meaning | Read by |
 |---|---|---|
-| `title`, `about`, `license` | What `workload_list` shows | `workloads.py:101-112` |
-| `url`, `sha256`, `bytes` | The pinned archive: where it is, its hash, its exact size | `workloads.py:159-161` |
-| `dir` | The folder inside the archive that holds the program | `workloads.py:89` |
-| `apis` | For each api: `program`, `args`, `wine` (true: run under Wine), and optionally `rosetta` or `moltenvk` | `workloads.py:43-47`, `:80-89` |
-| `dim_variable`, `size_variables` | The environment variables that `dim` and `size` set | `workloads.py:76-85` |
-| `examples`, `example_traits` | The names `example` accepts, with the prefix the program takes, and the expected class and encoder counts | `workloads.py:71-75`, `:101-112` |
-| `downloads` | Extra archives from another publisher: `url`, `sha512`, `bytes`, `into` | `workloads.py:163-173` |
+| `title`, `about`, `license` | What `workload_list` shows | `workloads.py::tool_workload_list` |
+| `url`, `sha256`, `bytes` | The pinned archive: where it is, its hash, its exact size | `workloads.py::tool_workload_fetch` |
+| `dir` | The folder inside the archive that holds the program | `workloads.py::workload_command` |
+| `apis` | For each api: `program`, `args`, `wine` (true: run under Wine), and optionally `rosetta` or `moltenvk` | `workloads.py::workload_layer`, `:80-89` |
+| `dim_variable`, `size_variables` | The environment variables that `dim` and `size` set | `workloads.py::workload_command` |
+| `examples`, `example_traits` | The names `example` accepts, with the prefix the program takes, and the expected class and encoder counts | `workloads.py::workload_command`, `:101-112` |
+| `downloads` | Extra archives from another publisher: `url`, `sha512`, `bytes`, `into` | `workloads.py::tool_workload_fetch` |
 
 If an entry is missing or wrong:
 
-- An unknown **name** raises `no workload '<name>'; workload_list lists them` (`workloads.py:19-20`); an unknown **api**, **example**, **dim** or **size** raises the messages in [The test programs](./test-programs.md#how-a-request-becomes-a-command).
+- An unknown **name** raises `no workload '<name>'; workload_list lists them` (`workloads.py::workload_entry`); an unknown **api**, **example**, **dim** or **size** raises the messages in [The test programs](./test-programs.md#how-a-request-becomes-a-command).
 - A **missing field** (say `apis`) would raise a `KeyError` that the tool wrapper turns into an error (**probable**: not traced, not tested).
-- Tests check the shipped file: drawstress must have a 64-character hash and an `https` url, `mtl-x64` must be `rosetta`, and `bgfx-examples` must come from `workloads-8` (`tests/test_recording.py:127-129`, `:281-284`; not run).
+- Tests check the shipped file: drawstress must have a 64-character hash and an `https` url, `mtl-x64` must be `rosetta`, and `bgfx-examples` must come from `workloads-8` (`tests/test_recording.py::test_rosetta_layer`, `:281-284`; not run).
 
 **To add a program:** build and upload an archive with the workflow, take the SHA-256 of what was uploaded, add the entry
-with its `bytes`, and add a test that reads the shipped entry. Pin by hash: the code refuses anything else (`workloads.py:160-161`).
+with its `bytes`, and add a test that reads the shipped entry. Pin by hash: the code refuses anything else (`workloads.py::tool_workload_fetch`).

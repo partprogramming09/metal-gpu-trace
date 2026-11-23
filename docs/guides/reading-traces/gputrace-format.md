@@ -24,13 +24,13 @@ Confirmed as assumptions (`gputrace_read.py:1-8`, `:48-69`):
 | A `.gputrace` | a **folder** (bundle) saved from Xcode; the reader opens **one file**, `capture`; what else a real bundle holds was not examined | `:64-69` |
 | `capture` | a stream called **MTSP**: 4 bytes of ASCII `MTSP`, then a 4-byte word the reader skips (`off = 8`). Without the magic the reader starts at 0 instead of failing | `:51` |
 | Records | one after the other, each `[u32 size][i32 call id]`, little-endian (`struct.unpack_from("<Ii", ...)`); `size` is the **whole** record, those 8 bytes included, so the next starts `size` bytes later | `:53`, `:56`, `:61` |
-| Signature | at offset `0x24` (36) of a record: a short ASCII string ended by a zero byte (`Cuu` in the tests, `tests/test_capture.py:20`). **Speculation:** it names the argument types | `:57-58` |
+| Signature | at offset `0x24` (36) of a record: a short ASCII string ended by a zero byte (`Cuu` in the tests, `tests/test_capture.py::record`). **Speculation:** it names the argument types | `:57-58` |
 | Arguments | not decoded: the **printable ASCII runs of 3 or more characters** after the signature (`re.findall(rb"[ -~]{3,}", tail)`) are `strings`. In a `pushDebugGroup` the first is the **label** the program gave the group: the only argument anything depends on | `:59` |
 | A `u32` at `+0x20` | listed in the docstring; the code never reads it | `:5` |
 
 **Bad data.** A record that cannot be parsed stops the read: if `size` is under 8 or the record runs past the end, `ValueError`:
 `<bundle name>: record at 0x<offset> has size <n>; the stream is not MTSP as expected` (`:54-55`; bundle name only, never its
-path; `tests/test_capture.py:86-97`, not run). Fewer than 8 bytes left at the end are ignored silently
+path; `tests/test_capture.py::test_malformed_record_raises_valueerror`, not run). Fewer than 8 bytes left at the end are ignored silently
 (`while off + 8 <= len(data)`, `:52`, F9).
 
 ## The call ids

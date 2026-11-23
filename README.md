@@ -16,21 +16,23 @@ Ask your agent to record again after a change, and it says with numbers whether 
 
 Your AI agent calls the metal-gpu-trace server. The server starts Instruments (Apple's profiler, installed with Xcode), which records the program for the seconds you asked. It writes a summary (a JSON file with the numbers) and two small tables, one row per frame and one for memory. The agent reads them back and compares them with other recordings or with a saved reference.
 
-![Flow: the AI agent calls the MCP server, Instruments records the program, a JSON summary and CSV tables are written, and the agent reads them back](docs/guides/img/readme-flow.png)
+![Flow: the AI agent calls the MCP server, Instruments records the program, a JSON summary and CSV tables (plain spreadsheet-style text files) are written, and the agent reads them back](docs/guides/img/readme-flow.png)
 
 Details for people who change the code: [How it works](docs/guides/how-it-works.md).
 
 ## Start in 4 steps
 
-1. **Install Xcode** from the App Store. Open the Terminal app and type `xcrun xctrace version`: it should print a version.
-2. **Install uv**, a tool that downloads and runs the server for you. In the Terminal: `brew install uv` (needs Homebrew, see brew.sh).
+1. **Install Xcode** from the App Store. Open the Terminal app (press Cmd+Space, type "Terminal", press Enter; it is a window where you type commands) and type `xcrun xctrace version`: it should print a version.
+2. **Install uv**, a tool that downloads and runs the server for you. In the Terminal: `brew install uv` (Homebrew is the Mac's usual installer for command-line tools; if `brew` is not found, install it from brew.sh first).
 3. **Connect the server to your agent.** An MCP server is a small helper program that gives your AI agent new tools. Run `uvx metal-gpu-trace init` to set up every AI app it finds at once, or, for Claude Code, paste this in the Terminal (`METAL_TRACE_OUT` is the folder where recordings are saved): `claude mcp add --scope user metal-trace -e METAL_TRACE_OUT=$HOME/perf-runs -- uvx metal-gpu-trace`. For other AI apps see [MCP server](#mcp-server).
 4. **Ask:** "Record my app for 30 seconds, then tell me its FPS and how long the GPU takes per frame." For a Windows program under Wine (software that runs Windows programs on a Mac), also add `-e METAL_TRACE_WINE=/path/to/wine` to the command of step 3 (see [Install](#install)).
+
+Already installed? [Using it](docs/guides/using-it.md) walks through five typical jobs. Not sure what to read? [Where to start](docs/README.md#where-to-start) says what to read if you are a user, an AI agent or a contributor.
 
 ## Words used here
 
 - **frame**: one picture the program draws. A game at 60 FPS draws 60 of them each second.
-- **FPS**: frames per second. Higher is smoother, until the screen's refresh rate caps it (vsync).
+- **FPS**: frames per second. Higher is smoother, until the screen's refresh rate caps it (the screen cannot show more pictures per second than it refreshes; this limit is called vsync).
 - **GPU ms per frame**: the milliseconds the graphics chip works on one frame. Lower is better, and unlike FPS the screen does not cap it.
 - **1 % low**: the FPS of the slowest 1 % of frames. It shows the stutter an average hides, and needs at least 100 frames.
 - **hitch**: a frame that takes far longer than its neighbours; you see it as a stutter.
@@ -73,7 +75,7 @@ Version 0.29.0. Older versions: [changelog](CHANGELOG.md).
 - 🛡️ **Summaries are never half written.** A crash or a full disk leaves the previous `.json` or none, so comparing runs never meets a broken file. [Proof](docs/evidence/v0.29.0.md#a-summary-is-written-atomically)
 - 🩺 **A display-locked run is not blamed on the CPU.** `perf_diagnose` says `DISPLAY_SYNCED` when the run waits for the display, and its advice is in English. [Proof](docs/evidence/v0.29.0.md#perf_diagnose-tells-a-display-locked-run-from-a-cpu-bound-one)
 - 🪟 **Setup on Windows.** `metal-gpu-trace init` finds `uvx.exe` and writes Claude Desktop's config on Windows too. [Proof](docs/evidence/v0.29.0.md#metal-gpu-trace-init-sets-the-server-up-on-windows)
-- 🩺 **Checks before you record.** `doctor` tells a Mac without Xcode, or a Windows PC without PresentMon, what to install before a recording fails. [Proof](docs/evidence/v0.29.0.md#preflight-checks-xctrace-and-presentmon-before-a-recording)
+- 🩺 **Checks before you record.** A Mac without Xcode, or a Windows PC without PresentMon, is told what to install before a recording fails; `init` prints the same notes. [Proof](docs/evidence/v0.29.0.md#preflight-checks-xctrace-and-presentmon-before-a-recording)
 - 🩺 **Why the daemon gave no answer.** On Windows, `device.daemon_info_error` says `timeout`, `invalid_json` or `missing`. [Proof](docs/evidence/v0.29.0.md#the-device-block-says-why-a-hardware-daemon-gave-no-answer)
 
 ## For developers
@@ -98,7 +100,7 @@ PERF_OUT=~/perf-runs zsh src/metal_gpu_trace/perf_record.sh game-d3d12 30 /path/
 PERF_OUT=~/perf-runs zsh src/metal_gpu_trace/perf_record.sh app-metal 30 native - /path/to/app ./app
 ```
 
-Arguments: label, seconds, a Wine directory holding `bin/wine` (or `native`), the Wine prefix, the working directory, the program and its arguments. Without `PERF_OUT`, runs go to `./perf-runs`. Reading the trace takes about a minute on an M1 Pro (87 s for a 10 s recording). Through the MCP server the call times out after 15 s per recorded second plus 180 (55 with GPU counters), and an overrun recording leaves no files behind. One recording runs at a time; keep other GPU work off the Mac while it records. Under Wine, record for 30 s: Wine's start-up takes part of the recording. Under 100 frames is too short to compare.
+Arguments: label, seconds, a Wine directory holding `bin/wine` (or `native`), the Wine prefix (the folder holding that Wine's fake Windows drive, `~/.wine` by default), the working directory, the program and its arguments. Without `PERF_OUT`, runs go to `./perf-runs`. Reading the trace takes about a minute on an M1 Pro (87 s for a 10 s recording). Through the MCP server the call times out after 15 s per recorded second plus 180 (55 with GPU counters), and an overrun recording leaves no files behind. One recording runs at a time; keep other GPU work off the Mac while it records. Under Wine, record for 30 s: Wine's start-up takes part of the recording. Under 100 frames is too short to compare.
 
 ## Disk use
 

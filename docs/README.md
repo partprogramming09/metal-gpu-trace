@@ -4,9 +4,20 @@
 
 ADR status: proposed · accepted · rejected · superseded by NNNN.
 
+## Where to start
+
+| If you are... | Read |
+|---|---|
+| **A user** who installed it and wants to measure something | [guides/using-it.md](guides/using-it.md), then the [README](../README.md#words-used-here) glossary |
+| **An AI agent** working with the server | The server's own instructions (what `initialize` returns, kept in `INSTRUCTIONS` in `metal_trace_mcp.py`), then [guides/using-it.md](guides/using-it.md) for what to answer a user, and [../CLAUDE.md](../CLAUDE.md) for the rules of this repository |
+| **A new contributor** | [../CONTRIBUTING.md](../CONTRIBUTING.md), then [guides/how-it-works.md](guides/how-it-works.md) and [guides/run-from-a-clone.md](guides/run-from-a-clone.md) |
+| **Checking a claim** about a release | [evidence/README.md](evidence/README.md) |
+
 ## For people
 | Document | Answers |
 |---|---|
+| [guides/using-it.md](guides/using-it.md) | "I installed it, now what?": five typical jobs with the sentence to say to your agent and how to read the answer |
+| [guides/how-we-document.md](guides/how-we-document.md) | The documentation habits of this project, which ones a test enforces, and how to copy them |
 | [guides/how-it-works.md](guides/how-it-works.md) | How the modules are layered, how one request flows through them, where recordings live and what reads them |
 | [adr/0001-src-layout.md](adr/0001-src-layout.md) | Why the code is a package in `src/` with tests in `tests/` (accepted) |
 | [adr/0002-dual-era-mcp.md](adr/0002-dual-era-mcp.md) | Why the server speaks both MCP eras, and where it deviates (accepted) |
@@ -20,6 +31,7 @@ ADR status: proposed · accepted · rejected · superseded by NNNN.
 | [adr/0010-stability-policy-and-the-road-to-1-0.md](adr/0010-stability-policy-and-the-road-to-1-0.md) | What counts as the public surface and when 1.0 happens (proposed, not decided) |
 | [evidence/README.md](evidence/README.md) | How each release proves its improvements, and the rule `tests/test_docs.py` checks |
 | [evidence/reference-runs-windows.md](evidence/reference-runs-windows.md) | Reference runs on Windows: `drawstress` with and without the VegaFlow daemon, what the numbers show and what they do not |
+| [evidence/internal-tools.md](evidence/internal-tools.md) | What VegaFlow and WinBridge are (the maintainer's own tools, not needed to use the project) |
 | [guides/run-from-a-clone.md](guides/run-from-a-clone.md) | Commands to run the server, the scripts and the checks from a clone |
 | [guides/data-and-lifecycle/](guides/data-and-lifecycle/index.md) | What a recording leaves on disk, the summary key by key, the two retention settings, the cache and the lock |
 | [guides/recording/](guides/recording/index.md) | The path of one recording, why one at a time and 30 s under Wine, what preflight checks and says, the test programs and their pins, the Windows engine, what happens when it fails |

@@ -17,7 +17,7 @@ Back to the [index](./index.md). Example: the project file `{"name": "mygame", "
 | `runs` folder | Must be new, empty (litter such as `.DS_Store` does not count) or carry the mark; a mark with another project's name refuses it. Checked hard because `KEEP_RUNS` deletes files there | `project.py:3-5`, `:17`, `:94-105` |
 | `project.apply` | Points `config.OUT`, `config.READ[0]`, `config.BASELINES` at that folder and writes the mark | `project.py:162-189`, `:192-201` |
 
-`baselines.json` is a JSON object keyed by baseline name; each value has `runs` (run names), `set` (a date), `summaries` (copies of those runs' summaries) and, if asked, `skip_s` (`analysis.py:279-280`). The real file has one baseline of three summaries ([E7](./evidence-runs.md#e7-the-baselines-file)). The copies are the point: `KEEP_RUNS` can delete the runs and `perf_check` still judges against the saved numbers (`config.py:18`).
+`baselines.json` is a JSON object keyed by baseline name; each value has `runs` (run names), `set` (a date), `summaries` (copies of those runs' summaries) and, if asked, `skip_s` (`analysis.py:279-280`). The real file has one baseline of three summaries ([E7](./evidence-runs.md#e7-the-baselines-file)). The copies are the point: `KEEP_RUNS` can delete the runs and `perf_check` still judges against the saved numbers (`config.py::reload`).
 
 ## `config.py`
 
@@ -25,16 +25,16 @@ Every module reads these as `config.NAME` when it uses them, never copied (`conf
 
 | Name | Meaning | Line |
 |---|---|---|
-| `OUT` | The runs folder, resolved | `config.py:16` |
-| `READ` | `OUT` plus the folders in `METAL_TRACE_READ`: what the tools may read | `config.py:17` |
-| `BASELINES` | `OUT/baselines.json` | `config.py:19` |
-| `MAX_DISK_MB` | The limit in MiB: a whole number of 1 or more in `METAL_TRACE_MAX_DISK_MB`, else `None` (no limit; no error for a bad value) | `config.py:22-23` |
+| `OUT` | The runs folder, resolved | `config.py::reload` |
+| `READ` | `OUT` plus the folders in `METAL_TRACE_READ`: what the tools may read | `config.py::reload` |
+| `BASELINES` | `OUT/baselines.json` | `config.py::reload` |
+| `MAX_DISK_MB` | The limit in MiB: a whole number of 1 or more in `METAL_TRACE_MAX_DISK_MB`, else `None` (no limit; no error for a bad value) | `config.py::reload` |
 | `PROJECT`, `PROJECT_ERROR` | The project file in use, or what is wrong with it | `config.py:33-34` |
 | `FAMILIES`, `WORKLOADS` | The two files in `data/`, loaded once at import | `config.py:35-36` |
 | `CACHE`, `LOCK` | The cache folder; the recording lock, shared by every runs folder | `config.py:37-40`, `:42` |
 | `MAX_LIMIT`, `MAX_TEXT` | Rows per page (500), characters per result (40 000) | `config.py:43-45` |
 
-`config.reload` (`config.py:11`) re-reads `METAL_TRACE_OUT`, `METAL_TRACE_READ` and `METAL_TRACE_MAX_DISK_MB` at import and again from `project.apply`; the rest is read once at import.
+`config.reload` (`config.py::reload`) re-reads `METAL_TRACE_OUT`, `METAL_TRACE_READ` and `METAL_TRACE_MAX_DISK_MB` at import and again from `project.apply`; the rest is read once at import.
 
 ## `paths.py`
 

@@ -10,14 +10,14 @@ Back to the [index](./index.md). Example: here the cache weighs 942 MiB in 8 fol
 
 ## The cache is not the recordings
 
-`~/Library/Caches/metal-gpu-trace` holds **the test programs `workload_fetch` downloads**. Each folder is named `<workload>-<first 12 characters of the pinned SHA-256>` (`workloads.py:22`), downloaded once into a temporary folder in the cache, verified and renamed into place (`workloads.py:156-175`); later calls reuse it (`workloads.py:154-155`).
+`~/Library/Caches/metal-gpu-trace` holds **the test programs `workload_fetch` downloads**. Each folder is named `<workload>-<first 12 characters of the pinned SHA-256>` (`workloads.py::workload_entry`), downloaded once into a temporary folder in the cache, verified and renamed into place (`workloads.py::tool_workload_fetch`); later calls reuse it (`workloads.py::tool_workload_fetch`).
 
 | Fact | Value | Evidence |
 |---|---|---|
 | Size of the cache here | 942 MiB in 8 folders | [E8](./evidence-cache-and-flow.md#e8-the-cache-and-the-lock) |
 | Versions pinned by `data/workloads.json` | 3 | [E9](./evidence-cache-and-flow.md#e9-the-versions-the-package-pins) |
 | Folders of older pins nothing uses | 5 of 8: 63 + 65 + 79 + 78 + 23 = 308 MiB | E8, E9 |
-| Code that deletes a cache folder | none: `rg` of `rmtree` and `unlink` finds only the unpacked `part.unlink()` at `workloads.py:173` | [E10](./evidence-cache-and-flow.md#e10-nothing-deletes-a-cache-folder) |
+| Code that deletes a cache folder | none: `rg` of `rmtree` and `unlink` finds only the unpacked `part.unlink()` at `workloads.py::tool_workload_fetch` | [E10](./evidence-cache-and-flow.md#e10-nothing-deletes-a-cache-folder) |
 
 So the cache only grows when a release changes a pin (confirmed; the search covers `workloads.py`, other modules are not known to delete there). Delete a folder by hand and it is downloaded again (known limit 3).
 

@@ -15,21 +15,21 @@ Everything below is **confirmed** by the lines named. The files it leaves are in
 
 ## Step 1: the request becomes a command
 
-`tool_perf_record`, `recording.py:36-73`.
+`tool_perf_record`, `recording.py::tool_perf_record`.
 
-1. `resolve_tier` turns `tier` into three settings (`recording.py:23-33`):
+1. `resolve_tier` turns `tier` into three settings (`recording.py::resolve_tier`):
 
    | Tier | Metal memory | GPU counters | `.trace` kept | What it costs |
    |---|---|---|---|---|
    | `light` | no | no | no | seconds of read-back: to iterate |
    | `standard` (default) | yes | no | no | the memory table is the slowest to read |
-   | `deep` | yes | yes | yes (unless the disk limit drops it) | counters add about 40 s of read-back per recorded second (`recording.py:44`) |
+   | `deep` | yes | yes | yes (unless the disk limit drops it) | counters add about 40 s of read-back per recorded second (`recording.py::tool_perf_record`) |
 
-   A `memory` or `counters` passed on its own replaces that part of the tier. `deep` is refused on Windows (`recording.py:49-50`).
+   A `memory` or `counters` passed on its own replaces that part of the tier. `deep` is refused on Windows (`recording.py::tool_perf_record`).
 2. `check_levers` refuses a `memory_free_pct` outside 20 to 60 and either lever on Windows (`recording.py:274-284`).
-3. `check_env` accepts only space-separated `NAME=VALUE` pairs (`recording.py:76-81`): the script splits on spaces.
+3. `check_env` accepts only space-separated `NAME=VALUE` pairs (`recording.py::check_env`): the script splits on spaces.
 4. With `workload`, `workloads.workload_command` supplies the program, Wine mode, arguments and environment
-   (`recording.py:53-56`; [The test programs](./test-programs.md)). `size` without a workload is refused (`:57-58`); no `program` is refused (`:59-60`).
+   (`recording.py::tool_perf_record`; [The test programs](./test-programs.md)). `size` without a workload is refused (`:57-58`); no `program` is refused (`:59-60`).
 5. Without `wine`, `METAL_TRACE_WINE` is used; on macOS with neither, the call is refused (`:61-65`). The program must
    exist (`:66-68`); the error names the file, not the path.
 6. `perf_attach` skips most of that: `record(label, seconds, "attach", "-", "-", [process])` (`recording.py:95`). It
@@ -83,7 +83,7 @@ fingerprints the layer ([What identifies a run](#what-identifies-a-run)).
 
 | The script ends with | The server does | Line |
 |---|---|---|
-| A non-zero exit, or no new `.json` | `recording failed (exit N): <last line of stderr>` | `recording.py:422-425` |
+| A non-zero exit, or no new `.json` | `recording failed (exit N): <last line of stderr>` | `recording.py::run_recording` |
 | A summary with no GPU intervals | The program did no GPU work: the run's files are deleted and the error says how it ended ([When it fails](./failures.md)) | `:427-436` |
 | Otherwise | `finish` adds `layer`, `context`, `tier`, applies the disk limit and rewrites the summary. Key tables: [data guide](../data-and-lifecycle/json-keys.md#the-summary-key-by-key) | `recording.py:337-351`, `:437` |
 | The summary has a `machine` block | `machine.power` gets the two power readings: one taken before the script starts, one after the summary is written ([power and heat](../summarizing/power-and-heat.md)) | `recording.py:386`, `:438-439` |
@@ -164,11 +164,11 @@ layers" before it says one is faster (`layer_change`, `:205-223`).
 
 | Piece | What it records | Line |
 |---|---|---|
-| **`layer_of`** | The translation layer the recording ran on. `native` gives `{"none": "native Metal, no translation layer"}`, `attach` gives `{"unknown": ...}` | `recording.py:127-157`, `:134-137` |
+| **`layer_of`** | The translation layer the recording ran on. `native` gives `{"none": "native Metal, no translation layer"}`, `attach` gives `{"unknown": ...}` | `recording.py::layer_of`, `:134-137` |
 | (with Wine) version | `wine_version`, which joins CrossOver's "Product Name" and "Public Version" lines | `:117-124` |
 | (with Wine) overrides | The `WINEDLLOVERRIDES` the script will pass, and the prefix's DLL overrides read from `user.reg` (`registry_overrides`) | `:102-114` |
 | (with Wine) DLLs | Size and SHA-256 of five DLLs (`d3d12`, `d3d12core`, `d3d11`, `d3d10core`, `dxgi`, `LAYER_DLLS`) in Wine and in the prefix, plus a 12-character fingerprint of all of it | `:99` |
-| **`run_context`** | The short commit and whether tracked files changed, of the repository holding the project file, and `xctrace`'s version. It drops every `GIT_*` variable so none can point git elsewhere, and leaves out branch, path and user name: summaries are shared | `recording.py:168-188` |
+| **`run_context`** | The short commit and whether tracked files changed, of the repository holding the project file, and `xctrace`'s version. It drops every `GIT_*` variable so none can point git elsewhere, and leaves out branch, path and user name: summaries are shared | `recording.py::run_context` |
 
 - Which of the two DLL copies Wine really loads is **not known** (`:128-130`: Instruments does not keep Wine's own log), so the fingerprint treats the prefix's copy as effective when it exists (`effective_dlls`, `:160-162`).
-- A workload through MoltenVK or Rosetta passes its own `layer` (`workloads.workload_layer`, `workloads.py:39-49`), so a comparison against native says "different layers".
+- A workload through MoltenVK or Rosetta passes its own `layer` (`workloads.workload_layer`, `workloads.py::workload_layer`), so a comparison against native says "different layers".

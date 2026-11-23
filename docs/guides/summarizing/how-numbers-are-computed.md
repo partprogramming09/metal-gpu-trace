@@ -15,7 +15,7 @@ Example first: in the first run of the guide's example, the median gap is 9.4845
 | the gaps | for each pair of consecutive frame numbers `a < b`: `first_start[b] - first_start[a]`, kept only if positive and if no unpresented frame lies between them | `perf_report.py:233-245` |
 | the totals | per frame: the sum of `duration / 1e6` of its intervals | `:685`, `:705` |
 | `gpu.frames`, `frame_gpu_ms`, `frame_interval_ms` | the number of frames kept; `stats(totals)`, `stats(gaps)` | `:711`, `:712`, `:714` |
-| `stats` | `count`, `mean` (3 decimals), `p50 = ordered[n // 2]`, `p95 = ordered[min(n-1, int(n × 0.95))]`, `max` | `metrics.py:75-86` |
+| `stats` | `count`, `mean` (3 decimals), `p50 = ordered[n // 2]`, `p95 = ordered[min(n-1, int(n × 0.95))]`, `max` | `metrics.py::common_block` |
 | `gpu.fps_estimate` | `round(1000 / median(gaps), 1)`, `None` without gaps | `perf_report.py:718` |
 | `gpu.fps_1pct_low`, `fps_01pct_low` | `1000 / ordered_gaps[min(n-1, int(n × 0.99))]` with at least 100 gaps; the same with `0.999` and at least 1000 gaps | `:262-266` |
 | `gpu.stutter_rate_pct` | `100 × (gaps > max(1.5 × median, 8.0 ms)) / n`, two decimals; needs at least 2 gaps | `:250`, `:267-268` |
@@ -23,8 +23,8 @@ Example first: in the first run of the guide's example, the median gap is 9.4845
 | `gpu.throttling_analysis` | with at least 5 gaps: `k = max(1, int(n × 0.2))`; `fps_initial` and `fps_final` are `1000 / median` of the first and last `k` gaps; `drift = (initial - final) / initial × 100`; detected when the drop is over 10 % **and** the mean GPU ms of the last `k` frames is above the first `k` | `:270-279` |
 | `hitches` | the same limit as stutter; each gap above it is one hitch, with a cause | `:283-320` |
 | `gpu.start_latency_ms` | `stats` of the start latency of every row of the program that has one, without the unpresented frames | `:716-717` |
-| `gpu_idle` | the GPU's idle time between the program's own intervals: per frame, gaps over 1 ms, and `idle_share = sum(gaps) / whole span` | `metrics.py:122-138` |
-| `encoders` | encoders and command buffers per frame, each encoder's GPU time, the share shorter than 10, 25, 50, 100, 250, 500 and 1000 µs, the 20 labels with the most GPU time | `metrics.py:94-119` |
+| `gpu_idle` | the GPU's idle time between the program's own intervals: per frame, gaps over 1 ms, and `idle_share = sum(gaps) / whole span` | `metrics.py::encoder_stats` |
+| `encoders` | encoders and command buffers per frame, each encoder's GPU time, the share shorter than 10, 25, 50, 100, 250, 500 and 1000 µs, the 20 labels with the most GPU time | `metrics.py::stats` |
 | `metal_memory_mib` | `peak`, `final`, `mean` of the program's samples; `trend_mib_per_min` is the least-squares slope over the second half of the time, with at least 5 samples and 5 s | `perf_report.py:731-746`, `:438-450` |
 | `gpu_performance_state_share`, `thermal_state_share` | time in each state over the total, 3 decimals | `:765-771`, `:782-790` |
 | `noisy_environment` | `external = device_pct_mean - 100 × (1 - idle_share)`; flagged when `external >= 20` points | `:560-581` |
@@ -56,7 +56,7 @@ The list keeps the 20 longest, each with `frame` (the frame that ended the gap),
 
 ## The noisy-environment flag
 
-Two things load the GPU: the program and everything else. `device_pct` (driver counters, the whole GPU) minus the program's own busy share (`100 × (1 - idle_share)`) is what "everything else" used; 20 points or more is `noisy_environment: true` and adds `noisy_basis` with the other processes' count and share (`:565-581`, `:757-762`). The 20 is "provisional, not a measurement: re-fit it on at least 3 quiet runs of the same Mac" (`:560-561`); a test says the limit is inclusive (`test_noisy_boundary_is_inclusive`, `tests/test_report.py:905`, not run). By hand, neither real run would be flagged ([E7](./evidence.md#e7)); both summaries lack the key because an older version wrote them ([limit 1](./limits.md)).
+Two things load the GPU: the program and everything else. `device_pct` (driver counters, the whole GPU) minus the program's own busy share (`100 × (1 - idle_share)`) is what "everything else" used; 20 points or more is `noisy_environment: true` and adds `noisy_basis` with the other processes' count and share (`:565-581`, `:757-762`). The 20 is "provisional, not a measurement: re-fit it on at least 3 quiet runs of the same Mac" (`:560-561`); a test says the limit is inclusive (`test_noisy_boundary_is_inclusive`, `tests/test_report.py::test_rows_deletes_file_on_early_close_and_on_failure`, not run). By hand, neither real run would be flagged ([E7](./evidence.md#e7)); both summaries lack the key because an older version wrote them ([limit 1](./limits.md)).
 
 ## Windows
 
