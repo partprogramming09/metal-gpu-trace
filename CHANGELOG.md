@@ -7,16 +7,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Changed
 
-- Docs: about 700 more `file.py:line` citations in the guides now name the function, class or constant (`file.py::name`), resolved against the code each guide was written against and checked to exist today; a few dozen stay as lines because they point at module docstrings, imports, shell scripts or ranges over several functions. The dated `evidence*.md` pages keep their lines on purpose.
-- Docs: two links from site pages to `README.md` files, which the site leaves out, now use the GitHub address; `pnpm docs:build` passes again.
-- Docs: the README and the user guide explain the Terminal, Homebrew, vsync, CSV, the Wine prefix, `sudo` and how to copy a file's path, for readers who never used a terminal.
-- Docs: a user guide, `docs/guides/using-it.md` (five typical jobs, with the sentence to say to the agent), and a "Where to start" map for users, AI agents and contributors in `docs/README.md`. The README's What's new no longer names a `doctor` command, which does not exist yet: `init` prints the notes.
-- Docs: the links in `docs/index.md` and `docs/guides/index.md` now spell out `.md`, so they work on GitHub and in VitePress, and `tests/test_docs.py` fails on a relative link that points at nothing (code blocks excluded).
-- Docs: `docs/evidence/internal-tools.md` says what VegaFlow and WinBridge are (the maintainer's own tools, not needed to use the project), and the proofs that name them link to it.
-- Docs: removed `docs/diagrams/energia-en-los-dos-extremos.html`, a Spanish copy of `power-at-both-ends.html` that nothing linked.
-- Docs: `docs/guides/server-and-transport/http.md` cites code by function or test name instead of line number, as a sample for the other guides; its old `tests/test_server.py` line numbers had already drifted.
-- Docs: `docs/guides/how-we-document.md` lists the documentation habits of the project, which ones a test enforces and which are kept by habit, as an example for other repositories.
-- Docs: 282 `file.py:line` citations in the guides now name the function (`file.py::function`); only those whose function is the same in the guide's last commit and today were changed. 327 stay as lines (their code moved, or they point at module-level code), and the dated `evidence*.md` pages keep their lines on purpose.
+- Docs: a user guide (`docs/guides/using-it.md`) and a "Where to start" map; the README and guides explain the terminal steps for newcomers; the guides cite code by function name instead of line number, and a test fails on a relative link or a cited name that points at nothing.
 - 🔐 The official MCP SDK the conformance tests run against is pinned in `tests/conformance/requirements.txt`, which Dependabot watches, so a new SDK release now arrives as a pull request instead of going unnoticed; `CONTRIBUTING.md` says how to take it.
 
 ### Added
