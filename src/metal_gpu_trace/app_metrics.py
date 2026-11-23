@@ -18,11 +18,14 @@ NAME = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 
 
 def path_for(bases=None):
-    """Returns a new file path inside a private folder under the first of `bases` (default: the temp folder) whose
-    path holds no whitespace (PERF_ENV is split on it), or None."""
+    """Returns a new file path inside a private folder under the first of `bases` (default: the temp folder) that can
+    hold it and whose path holds no whitespace (PERF_ENV is split on it), or None."""
     for base in bases or [tempfile.gettempdir()]:
         if not any(c.isspace() for c in str(base)):
-            return pathlib.Path(tempfile.mkdtemp(prefix="mtm-app-", dir=base)) / "app_metrics.csv"
+            try:
+                return pathlib.Path(tempfile.mkdtemp(prefix="mtm-app-", dir=base)) / "app_metrics.csv"
+            except OSError:  # missing, read-only, or no permission: try the next base
+                continue
     return None
 
 

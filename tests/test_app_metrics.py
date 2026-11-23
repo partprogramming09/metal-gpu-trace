@@ -81,6 +81,32 @@ def test_path_for_avoids_spaces(tmp_path):
     assert app_metrics.path_for([spaced]) is None
 
 
+def test_path_for_skips_a_missing_base(tmp_path):
+    good = tmp_path / "good"
+    good.mkdir()
+    path = app_metrics.path_for([tmp_path / "gone", good])
+    assert path is not None and path.parent.parent == good and path.parent.is_dir()
+
+
+def test_path_for_gives_none_when_no_base_can_hold_it(tmp_path):
+    assert app_metrics.path_for([tmp_path / "gone", tmp_path / "also-gone"]) is None
+
+
+def test_path_for_skips_a_read_only_base(tmp_path):
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    good = tmp_path / "good"
+    good.mkdir()
+    os.chmod(locked, 0o500)
+    try:
+        if os.access(locked, os.W_OK):
+            return  # running as root: the folder is not read-only for us, so there is nothing to check
+        path = app_metrics.path_for([locked, good])
+        assert path is not None and path.parent.parent == good
+    finally:
+        os.chmod(locked, 0o700)
+
+
 def test_finish_adds_the_block_when_the_program_wrote_a_file(tmp_path):
     path = put(tmp_path, "t_ms,a\n0,1\n1000,2\n")
     assert recording.finish({}, tmp_path / "r.json", None, None, app_file=path)["app_metrics"]["samples"] == 2
