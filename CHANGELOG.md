@@ -7,7 +7,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Changed
 
-- Docs: a test now checks that every `file.py::name` citation in the guides names a file that defines that name, so a citation that points at the wrong module or at a re-export fails CI; three such citations were corrected.
+- Docs: a test now checks that every `file.py::name` citation in `docs/` names a file that defines that name (a function, a class, `Class.method` or a module-level constant; an import or a re-export does not count), so a citation that points at the wrong module fails CI; five such citations in four guides were corrected.
 - Docs: about 700 more `file.py:line` citations in the guides now name the function, class or constant (`file.py::name`), resolved against the code each guide was written against and checked to exist today; a few dozen stay as lines because they point at module docstrings, imports, shell scripts or ranges over several functions. The dated `evidence*.md` pages keep their lines on purpose.
 - Docs: two links from site pages to `README.md` files, which the site leaves out, now use the GitHub address; `pnpm docs:build` passes again.
 - Docs: the README and the user guide explain the Terminal, Homebrew, vsync, CSV, the Wine prefix, `sudo` and how to copy a file's path, for readers who never used a terminal.
