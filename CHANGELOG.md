@@ -7,6 +7,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Changed
 
+- Docs: `docs/guides/how-we-document.md` lists the documentation habits of the project, which ones a test enforces and which are kept by habit, as an example for other repositories.
 - 🔐 The official MCP SDK the conformance tests run against is pinned in `tests/conformance/requirements.txt`, which Dependabot watches, so a new SDK release now arrives as a pull request instead of going unnoticed; `CONTRIBUTING.md` says how to take it.
 
 ### Added
