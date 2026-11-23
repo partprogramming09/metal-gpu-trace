@@ -38,6 +38,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - 🪟 On Windows, `common.api.runtime` (`d3d9`, `d3d11`, `d3d12`, `vulkan`, `opengl`, else `unknown`) is read from the graphics DLLs the process has loaded, and `translation_layer` says `dxvk` or `vkd3d-proton` when those DLLs come from outside the system folder (the summary's `graphics_api`; no path is kept).
 - 🪟 On Windows, `noisy_environment` and `gpu_noise` (`process_busy_pct`, `external_pct`, `samples`) come from the `GPU Engine` counters, read every 2 s while recording; 20 points or more of other processes' GPU use is the flag, the same threshold as on macOS.
 
+### Removed
+
+- 📝 The Spanish copy of the documentation is gone: `es/README.md` and `docs/es/` (80 files). The guides, the README and the PyPI page are in English only, because the browser translates a page, diagrams included, and a second copy only drifts. Links into `docs/es/` or `es/README.md` no longer work; the English file of the same name holds the same guide.
+
 ### Fixed
 
 - 🧪 The recording tests can run twice at once on one machine: the attach test names its fake program with the run's pid and a random token (another suite's command line no longer holds the same name, which the script matched and attached to), and every test that hands `perf_record.sh` a program uses `support.unique_program`, a name only that run has, instead of `/bin/sh` (the stop path used to end a program with `pkill -x`, so `/bin/sh` ended any process named `sh` on the machine, another suite's included)
