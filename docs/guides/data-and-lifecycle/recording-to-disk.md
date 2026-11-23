@@ -14,17 +14,17 @@ Numbers are those of the figure; proof in [E11](./evidence-cache-and-flow.md#e11
 
 | # | Step | Detail |
 |---|---|---|
-| 1 | **The server checks the lock** | `recording.record` calls `preflight.check` (`recording.py:315`): refuses if a live process owns the lock; never takes it |
+| 1 | **The server checks the lock** | `recording.record` calls `preflight.check` (`recording.py::record`): refuses if a live process owns the lock; never takes it |
 | 2 | **The script takes the lock** | Writes its pid; the folder now belongs to this recording |
 | 3 | **Samplers and Instruments write** | Two background loops write `.rss.csv` and `.agx.csv` once a second while `xctrace` writes the `.trace` |
 | 4 | **The script starts the report** | `python3 -I perf_report.py <trace> --label <stem> --out <folder>` |
-| 5 | **The report writes the tables, then a first summary** | Memory table (`perf_report.py:745`), frames table (`:831`), then the `.json` (`:836`) |
+| 5 | **The report writes the tables, then a first summary** | Memory table (`perf_report.py::summarize`), frames table (`perf_report.py::summarize`), then the `.json` (`perf_report.py::summarize`) |
 | 6 | **The script deletes the `.trace`** | Unless `KEEP_TRACE=1`; then applies `KEEP_RUNS` if set (it removes the older runs' other files, never their `.trace`; see [Retention](./retention.md)) |
 | 7 | **The script frees the lock** | When it exits |
 | 8 | **The server finishes** | `recording.finish` adds `layer`, `context`, `tier`, applies the disk limit if no other recording runs, and **rewrites** the `.json` |
 
 ## Consequences worth knowing
 
-- **The summary is written twice** (steps 5 and 8), so briefly the first version has no `layer` or `context`. Both writes are plain `write_text` (`perf_report.py:836`, `recording.py:350`), not the temporary-name-and-rename of tables, so a reader can in principle catch a half-written file. `perf_runs` skips a summary that does not parse (`analysis.py:80-81`: "a summary still being written"). Confirmed by the code; a half-read was **not reproduced** (known limit 9).
-- **The disk limit only exists on the server's path.** A hand-run `perf_record.sh` stops at step 7: it has `KEEP_RUNS` and `KEEP_TRACE` but no `METAL_TRACE_MAX_DISK_MB`, applied in Python (`recording.py:346`) (confirmed).
+- **The summary is written twice** (steps 5 and 8), so briefly the first version has no `layer` or `context`. Both writes are plain `write_text` (`perf_report.py::summarize`, `recording.py::finish`), not the temporary-name-and-rename of tables, so a reader can in principle catch a half-written file. `perf_runs` skips a summary that does not parse (`analysis.py::tool_perf_runs`: "a summary still being written"). Confirmed by the code; a half-read was **not reproduced** (known limit 9).
+- **The disk limit only exists on the server's path.** A hand-run `perf_record.sh` stops at step 7: it has `KEEP_RUNS` and `KEEP_TRACE` but no `METAL_TRACE_MAX_DISK_MB`, applied in Python (`recording.py::finish`) (confirmed).
 - **`KEEP_RUNS` runs while the lock is held** (step 6 before 7), so no other recording starts mid-deletion.

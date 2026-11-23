@@ -27,14 +27,14 @@ checked against what the program should do (`tool_workload_list`, `workloads.py:
 
 | # | Rule | Message or effect | Line |
 |---|---|---|---|
-| 1 | The `api` must be in the entry | `api is one of mtl, mtl-x64, vk, d3d11, d3d12 for drawstress` | `:69-70` |
-| 2 | A workload with `examples` needs `example` to be one of them; one without them refuses it | | `:71-75` |
-| 3 | `dim` needs the entry to have a `dim_variable` (`DRAWSTRESS_DIM`); `size` needs `size_variables` (`DRAWSTRESS_WIDTH`, `DRAWSTRESS_HEIGHT`) and is `WIDTHxHEIGHT` from 320x240 to 7680x4320 | | `:76-77`, `:52-57`, `:82-85` |
-| 4 | The folder must be downloaded | `<name> is not downloaded yet; call workload_fetch first` | `:78-79` |
-| 5 | `vk` also needs `METAL_TRACE_MOLTENVK`, a folder with `libMoltenVK.dylib` and no spaces, which goes into `DYLD_LIBRARY_PATH` | | `:25-36`, `:86-87` |
-| 6 | The result: the program (`<cache>/<name>-<12 hex>/<dir>/<program>`), `wine` when the api needs it and the platform is not Windows, otherwise `native`; the arguments with each `{dir}` replaced by the quoted folder (`dir_in_args`); the program's environment | | `:88-89`, `:94-98`, `:81-87` |
+| 1 | The `api` must be in the entry | `api is one of mtl, mtl-x64, vk, d3d11, d3d12 for drawstress` | `workloads.py::workload_command` |
+| 2 | A workload with `examples` needs `example` to be one of them; one without them refuses it | | `workloads.py::workload_command` |
+| 3 | `dim` needs the entry to have a `dim_variable` (`DRAWSTRESS_DIM`); `size` needs `size_variables` (`DRAWSTRESS_WIDTH`, `DRAWSTRESS_HEIGHT`) and is `WIDTHxHEIGHT` from 320x240 to 7680x4320 | | `workloads.py::workload_command`, `workloads.py::check_size` |
+| 4 | The folder must be downloaded | `<name> is not downloaded yet; call workload_fetch first` | `workloads.py::workload_command` |
+| 5 | `vk` also needs `METAL_TRACE_MOLTENVK`, a folder with `libMoltenVK.dylib` and no spaces, which goes into `DYLD_LIBRARY_PATH` | | `workloads.py::moltenvk_dir`, `workloads.py::workload_command` |
+| 6 | The result: the program (`<cache>/<name>-<12 hex>/<dir>/<program>`), `wine` when the api needs it and the platform is not Windows, otherwise `native`; the arguments with each `{dir}` replaced by the quoted folder (`dir_in_args`); the program's environment | | `workloads.py::workload_command`, `workloads.py::dir_in_args` |
 
-`workload_layer` (`:39-49`) names the layer for the summary: Rosetta for an api marked `rosetta`, MoltenVK (with the
+`workload_layer` (`workloads.py::workload_layer`) names the layer for the summary: Rosetta for an api marked `rosetta`, MoltenVK (with the
 dylib's size and SHA-256) for `moltenvk`, `None` otherwise: Wine and native come from `layer_of`
 ([The macOS journey](./macos-journey.md#what-identifies-a-run)).
 
@@ -42,20 +42,20 @@ dylib's size and SHA-256) for `moltenvk`, `None` otherwise: Wine and native come
 
 `tool_workload_fetch`, `workloads.py::tool_workload_fetch`. A straight line with one refusal at each of 4 and 6, so no figure.
 
-1. If `<cache>/<name>-<first 12 hex of sha256>` already exists, return at once (`:154-155`).
-2. Otherwise make a temporary folder **inside the cache**, so the final rename stays on one disk (`:157`).
-3. `download` runs `curl -fsSL --proto =https --max-filesize <bytes> --max-time 600` (`:115-120`): https only, never more
+1. If `<cache>/<name>-<first 12 hex of sha256>` already exists, return at once (`workloads.py::tool_workload_fetch`).
+2. Otherwise make a temporary folder **inside the cache**, so the final rename stays on one disk (`workloads.py::tool_workload_fetch`).
+3. `download` runs `curl -fsSL --proto =https --max-filesize <bytes> --max-time 600` (`workloads.py::download`): https only, never more
    than the size the data file says, at most 10 minutes. curl is used because it uses the system's certificates.
 4. The archive's SHA-256 must equal the pinned one, else `<name>'s download does not match the SHA-256 this package
-   pins; nothing was saved` (`:160-161`).
-5. `unpack` refuses any member that is not a plain file or folder, that starts with `/` or holds `..` (`:123-129`).
+   pins; nothing was saved` (`workloads.py::tool_workload_fetch`).
+5. `unpack` refuses any member that is not a plain file or folder, that starts with `/` or holds `..` (`workloads.py::unpack`).
 6. For each entry of `downloads` (Godot's two editors), the same with a **SHA-512** pinned in the data file, `unzip`
-   refusing links and bad paths and restoring Unix modes (`:163-173`, `:132-144`).
-7. Rename the temporary `out` folder to the final name (`:174`): the folder appears whole or not at all.
+   refusing links and bad paths and restoring Unix modes (`workloads.py::tool_workload_fetch`, `workloads.py::unzip`).
+7. Rename the temporary `out` folder to the final name (`workloads.py::tool_workload_fetch`): the folder appears whole or not at all.
 
-If anything raises, the temporary folder goes with its `with` block (`:157`) and nothing reaches the cache
+If anything raises, the temporary folder goes with its `with` block (`workloads.py::tool_workload_fetch`) and nothing reaches the cache
 (**confirmed by the code**). A failed download or a wrong hash was **not reproduced** (it needs the network and a wrong
-archive); `test_workload_downloads` (`tests/test_recording.py:286`) builds a fake one and pins the refusals (not run).
+archive); `tests/test_recording.py::test_workload_downloads` builds a fake one and pins the refusals (not run).
 
 ## The pins
 
@@ -77,17 +77,17 @@ new release is a new folder, never an overwrite ([E4, E5](./evidence-data.md)):
 
 ## PresentMon
 
-`tool_presentmon_install`, `workloads.py:179-205`. Intel's console program (MIT) that logs every `Present()` of a process
+`tool_presentmon_install`, `workloads.py::tool_presentmon_install`. Intel's console program (MIT) that logs every `Present()` of a process
 on Windows. The package pins version 2.6.0 (980 320 bytes, SHA-256
-`b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af`, `workloads.py:180-184`). `presentmon_install`:
+`b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af`, `workloads.py::PRESENTMON`). `presentmon_install`:
 
-1. Refuses on any platform but Windows (`:191-192`).
-2. Does nothing if the file is already in `%LOCALAPPDATA%\metal-gpu-trace` and its hash matches (`:194-197`).
-3. Otherwise downloads into a temporary folder (twice the pinned size is the ceiling, `:201`), checks the SHA-256 and replaces the target (`:199-204`).
+1. Refuses on any platform but Windows (`workloads.py::tool_presentmon_install`).
+2. Does nothing if the file is already in `%LOCALAPPDATA%\metal-gpu-trace` and its hash matches (`workloads.py::tool_presentmon_install`).
+3. Otherwise downloads into a temporary folder (twice the pinned size is the ceiling, `workloads.py::tool_presentmon_install`), checks the SHA-256 and replaces the target (`workloads.py::tool_presentmon_install`).
 
 Running it needs administrator rights or membership of the Performance Log Users group (the tool's own description,
 `workloads.py::tool_presentmon_install`: **not verified** against Intel's documentation).
 
-At **recording** time `find_presentmon` (`perf_record_windows.py:420-430`; [E10](./evidence.md)) looks in this order: the
+At **recording** time `find_presentmon` (`perf_record_windows.py::find_presentmon`; [E10](./evidence.md)) looks in this order: the
 file named by `PRESENTMON_EXE` (set but missing means **none**, no fallback), the newest `PresentMon*.exe` in the cache
 folder, then `PresentMon` or `PresentMon-x64` on the `PATH`. The hash is checked at install only ([limit 4](./limits.md)).

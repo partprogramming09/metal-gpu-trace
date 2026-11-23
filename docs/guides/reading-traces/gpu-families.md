@@ -9,9 +9,9 @@
 
 | Aspect | Behaviour | Line |
 |---|---|---|
-| Accepted names | a family key (`Apple7`) or a chip name (`M1 Pro`, `A15`), lowercased with spaces removed; for a chip with the suffix `ultra`, `max` or `pro` it also tries the name without it | `traces.py::query_tables_file` (`family_of`), `:182` |
-| Data | `src/metal_gpu_trace/data/apple-gpu-families.json`, read once at import; four families: `Apple7`, `Apple8`, `Apple9`, `Apple10` (E7) | `config.py:35` |
-| Unknown name | `unknown family or chip '<name>'; try one of Apple7, ... or a chip such as M1 Pro, M2, M3 Max, A17 Pro` | `traces.py:192-194` |
-| Sources | the facts carry their source URLs | `:195-196` |
+| Accepted names | a family key (`Apple7`) or a chip name (`M1 Pro`, `A15`), lowercased with spaces removed; for a chip with the suffix `ultra`, `max` or `pro` it also tries the name without it | `traces.py::query_tables_file` (`family_of`), `traces.py::family_of` |
+| Data | `src/metal_gpu_trace/data/apple-gpu-families.json`, read once at import; four families: `Apple7`, `Apple8`, `Apple9`, `Apple10` (E7) | `config.py::FAMILIES` |
+| Unknown name | `unknown family or chip '<name>'; try one of Apple7, ... or a chip such as M1 Pro, M2, M3 Max, A17 Pro` | `traces.py::tool_gpu_family` |
+| Sources | the facts carry their source URLs | `traces.py::tool_gpu_family` |
 
 This project restates Apple's pages and does not quote them (README "Credits"). Back to the [index](./index.md).

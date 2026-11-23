@@ -9,11 +9,11 @@
 | | Old era (`initialize`) | Modern era (2026-07-28) | Where |
 |---|---|---|---|
 | How the server knows | Everything else, and always `initialize` | `server/discover`, or `params._meta` holds the version or the client capabilities | `protocol.py::era` |
-| Versions | `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05` | `2026-07-28` | `:23-24` |
-| First message | `initialize`: answered with the client's version when listed, else the newest | No handshake; `server/discover` answers the versions, capabilities and `INSTRUCTIONS` | `:107-115` |
-| `ping` | Answered `{}` | Not a method: `-32601 unknown method ping` | `:116-117`; `:28-29`, `:104-105` |
-| A missing resource | `-32002` | `-32602` | `:106` |
-| The result | As is | Adds `resultType: complete`, name and version in `_meta`, and for lists, reads and discover `ttlMs` and `cacheScope` | `:71-83` |
+| Versions | `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05` | `2026-07-28` | `protocol.py::LEGACY_VERSIONS`, `protocol.py::MODERN_VERSIONS` |
+| First message | `initialize`: answered with the client's version when listed, else the newest | No handshake; `server/discover` answers the versions, capabilities and `INSTRUCTIONS` | `protocol.py::handle` |
+| `ping` | Answered `{}` | Not a method: `-32601 unknown method ping` | `protocol.py::handle`; `protocol.py::MODERN_METHODS` |
+| A missing resource | `-32002` | `-32602` | `protocol.py::handle` |
+| The result | As is | Adds `resultType: complete`, name and version in `_meta`, and for lists, reads and discover `ttlMs` and `cacheScope` | `protocol.py::decorate` |
 | HTTP headers | `MCP-Protocol-Version` optional, and when sent must be a listed old version | `MCP-Protocol-Version` and `Mcp-Method` required, `Mcp-Name` for three methods | `http_transport.py::check_headers` |
 | Cancel over HTTP | `notifications/cancelled` by request id | Closing the connection | `http_transport.py::do_POST` |
 
