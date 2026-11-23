@@ -8,8 +8,9 @@
 
 ## Context
 The project is at 0.29.0. Its first tag, `v0.2.0`, dates from 2026-10-16 and `v0.29.0` from 2026-11-22: 47 tags in 37 days, one
-maintainer. People who install it with `uvx metal-gpu-trace` get the newest version every time, so a
-renamed argument or a moved key reaches them without notice.
+maintainer. People who install it with an unpinned `uvx metal-gpu-trace` keep the version they first downloaded, and a
+`--refresh` or a cache clean moves them to the newest without notice, so a renamed argument or a moved key reaches them
+when they least expect it.
 
 Some rules already exist and are kept by tests and by the maintainer's own notes:
 - An incompatible change is listed under `### Removed (incompatible)` in the `CHANGELOG.md`, with its reason.

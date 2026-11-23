@@ -114,9 +114,9 @@ The server runs with [`uvx`](https://docs.astral.sh/uv/) from [PyPI](https://pyp
 uvx metal-gpu-trace
 ```
 
-`uvx` fetches the newest version each time it starts. To stay on one you have tested, pin it: `uvx metal-gpu-trace@X.Y.Z` (for example `uvx metal-gpu-trace@0.29.0`), in the command each client runs and in a CI job. The project is still 0.x and ships often: an incompatible change is listed under `### Removed (incompatible)` in the [changelog](CHANGELOG.md), and a recording's summary keeps its old keys, so older `.json` files stay readable. What counts as the public surface, and when 1.0 comes, is a proposal: [ADR-0010](docs/adr/0010-stability-policy-and-the-road-to-1-0.md).
+This is the command each client below runs. Desktop apps do not see Homebrew's `PATH`: give them the full path that `which uvx` prints (`/opt/homebrew/bin/uvx` on Apple silicon). Unpinned, `uvx` keeps the version it first downloaded, and a `--refresh` (or a cache clean) moves you to the latest without warning.
 
-This is the command each client below runs. Desktop apps do not see Homebrew's `PATH`: give them the full path that `which uvx` prints (`/opt/homebrew/bin/uvx` on Apple silicon). `uvx` keeps the version it first downloaded; run the command once with `--refresh` to get the latest. `uvx metal-gpu-trace@0.4.0` pins a version.
+Pin the version you have tested: `uvx metal-gpu-trace@X.Y.Z` (for example `uvx metal-gpu-trace@0.29.0`), in the command each client runs and in a CI job. The project is still 0.x and ships often: an incompatible change is listed under `### Removed (incompatible)` in the [changelog](CHANGELOG.md), and a recording's summary keeps its old keys, so older `.json` files stay readable. What counts as the public surface, and when 1.0 comes, is a proposal: [ADR-0010](docs/adr/0010-stability-policy-and-the-road-to-1-0.md).
 
 Environment variables and project files: [Configuration](docs/guides/server-and-transport/configuration.md).
 
