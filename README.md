@@ -70,13 +70,12 @@ Read it like this: 2 034 frames in 20.8 s. `fps_estimate` is 104.5: it comes fro
 
 ## What's new
 
-Version 0.29.0. Older versions: [changelog](CHANGELOG.md).
+Version 0.30.0. Older versions: [changelog](CHANGELOG.md).
 
-- 🛡️ **Summaries are never half written.** A crash or a full disk leaves the previous `.json` or none, so comparing runs never meets a broken file. [Proof](docs/evidence/v0.29.0.md#a-summary-is-written-atomically)
-- 🩺 **A display-locked run is not blamed on the CPU.** `perf_diagnose` says `DISPLAY_SYNCED` when the run waits for the display, and its advice is in English. [Proof](docs/evidence/v0.29.0.md#perf_diagnose-tells-a-display-locked-run-from-a-cpu-bound-one)
-- 🪟 **Setup on Windows.** `metal-gpu-trace init` finds `uvx.exe` and writes Claude Desktop's config on Windows too. [Proof](docs/evidence/v0.29.0.md#metal-gpu-trace-init-sets-the-server-up-on-windows)
-- 🩺 **Checks before you record.** A Mac without Xcode, or a Windows PC without PresentMon, is told what to install before a recording fails; `init` prints the same notes. [Proof](docs/evidence/v0.29.0.md#preflight-checks-xctrace-and-presentmon-before-a-recording)
-- 🩺 **Why the daemon gave no answer.** On Windows, `device.daemon_info_error` says `timeout`, `invalid_json` or `missing`. [Proof](docs/evidence/v0.29.0.md#the-device-block-says-why-a-hardware-daemon-gave-no-answer)
+- ✨ **A command line that answers.** `metal-gpu-trace --help` lists the commands, and a wrong command says so and exits 2, instead of waiting for an AI app. [Proof](docs/evidence/v0.30.0.md#the-command-line-answers-help-instead-of-hanging)
+- 🩺 **`doctor`.** `metal-gpu-trace doctor` says what a recording needs on this machine, one line per check with the exact fix. [Proof](docs/evidence/v0.30.0.md#doctor-says-what-a-recording-needs)
+- 🔍 **`runs`.** `metal-gpu-trace runs` lists your recordings newest first, with fps, GPU time and memory. [Proof](docs/evidence/v0.30.0.md#runs-lists-the-recordings)
+- 🔍 **`compare`.** `metal-gpu-trace compare A B` compares two recordings in a table, or as Markdown for a PR comment. [Proof](docs/evidence/v0.30.0.md#compare-compares-two-recordings)
 
 ## For developers
 
