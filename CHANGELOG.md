@@ -7,6 +7,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Changed
 
+- Docs: a user guide, `docs/guides/using-it.md` (five typical jobs, with the sentence to say to the agent), and a "Where to start" map for users, AI agents and contributors in `docs/README.md`. The README's What's new no longer names a `doctor` command, which does not exist yet: `init` prints the notes.
 - 🔐 The official MCP SDK the conformance tests run against is pinned in `tests/conformance/requirements.txt`, which Dependabot watches, so a new SDK release now arrives as a pull request instead of going unnoticed; `CONTRIBUTING.md` says how to take it.
 
 ### Added

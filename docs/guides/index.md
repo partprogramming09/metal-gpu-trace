@@ -38,6 +38,7 @@ You ask your AI agent: "Record my app for 30 seconds, then tell me its FPS and h
 - A locked Mac session leaves native windows unpaced: record unlocked.
 
 ## Guides
+- [Using it](./using-it.md): "I installed it, now what?" Five typical jobs, each with the sentence to say to your agent.
 - [How it works](./how-it-works): how the modules are layered and how one request flows through them.
 - [Run from a clone](./run-from-a-clone): run and test the code without PyPI.
 - [Data and its lifecycle](./data-and-lifecycle/): what a recording leaves on disk, where it lives, how the summary is

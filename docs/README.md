@@ -4,9 +4,19 @@
 
 ADR status: proposed · accepted · rejected · superseded by NNNN.
 
+## Where to start
+
+| If you are... | Read |
+|---|---|
+| **A user** who installed it and wants to measure something | [guides/using-it.md](guides/using-it.md), then the [README](../README.md#words-used-here) glossary |
+| **An AI agent** working with the server | The server's own instructions (what `initialize` returns, kept in `INSTRUCTIONS` in `metal_trace_mcp.py`), then [guides/using-it.md](guides/using-it.md) for what to answer a user, and [../CLAUDE.md](../CLAUDE.md) for the rules of this repository |
+| **A new contributor** | [../CONTRIBUTING.md](../CONTRIBUTING.md), then [guides/how-it-works.md](guides/how-it-works.md) and [guides/run-from-a-clone.md](guides/run-from-a-clone.md) |
+| **Checking a claim** about a release | [evidence/README.md](evidence/README.md) |
+
 ## For people
 | Document | Answers |
 |---|---|
+| [guides/using-it.md](guides/using-it.md) | "I installed it, now what?": five typical jobs with the sentence to say to your agent and how to read the answer |
 | [guides/how-it-works.md](guides/how-it-works.md) | How the modules are layered, how one request flows through them, where recordings live and what reads them |
 | [adr/0001-src-layout.md](adr/0001-src-layout.md) | Why the code is a package in `src/` with tests in `tests/` (accepted) |
 | [adr/0002-dual-era-mcp.md](adr/0002-dual-era-mcp.md) | Why the server speaks both MCP eras, and where it deviates (accepted) |
