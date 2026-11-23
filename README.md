@@ -74,8 +74,6 @@ Version 0.29.0. Older versions: [changelog](CHANGELOG.md).
 - 🩺 **A display-locked run is not blamed on the CPU.** `perf_diagnose` says `DISPLAY_SYNCED` when the run waits for the display, and its advice is in English. [Proof](docs/evidence/v0.29.0.md#perf_diagnose-tells-a-display-locked-run-from-a-cpu-bound-one)
 - 🪟 **Setup on Windows.** `metal-gpu-trace init` finds `uvx.exe` and writes Claude Desktop's config on Windows too. [Proof](docs/evidence/v0.29.0.md#metal-gpu-trace-init-sets-the-server-up-on-windows)
 - 🩺 **Checks before you record.** `doctor` tells a Mac without Xcode, or a Windows PC without PresentMon, what to install before a recording fails. [Proof](docs/evidence/v0.29.0.md#preflight-checks-xctrace-and-presentmon-before-a-recording)
-- 🧪 **One command updates the WinBridge jobs.** `windows/Update-MetalTraceJobs.ps1`; not run in this release. [Proof](docs/evidence/v0.29.0.md#-one-command-updates-the-winbridge-jobs-on-the-windows-pc)
-- 🧪 **A job records with the daemon stopped and running.** `metal-trace-daemon` in `windows/winbridge-job/`; not run in this release. [Proof](docs/evidence/v0.29.0.md#-a-winbridge-job-records-with-the-daemon-stopped-and-running)
 - 🩺 **Why the daemon gave no answer.** On Windows, `device.daemon_info_error` says `timeout`, `invalid_json` or `missing`. [Proof](docs/evidence/v0.29.0.md#the-device-block-says-why-a-hardware-daemon-gave-no-answer)
 
 ## For developers

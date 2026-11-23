@@ -27,10 +27,6 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - 🔐 CI: Dependabot proposes updates to the pip dependencies and the pinned actions every week (`.github/dependabot.yml`), and every pull request's commits are scanned for secrets by the gitleaks CLI 8.30.1, a fixed download checked against its SHA-256 that needs no `GITLEAKS_LICENSE` (`.github/workflows/security.yml`).
 
-- 🧪 `windows/Update-MetalTraceJobs.ps1`: one command as administrator to update the WinBridge jobs on the Windows PC. It takes the folder of the verified WinBridge bundle (`-Bundle`), reads the `runner.ps1` hash from that bundle's `manifest.json` and runs its `Install-WinBridgeJobs.ps1 -Update`; `-DryRun` prints the resolved command without running it. [prueba](docs/evidence/v0.29.0.md#-one-command-updates-the-winbridge-jobs-on-the-windows-pc)
-
-- 🧪 A WinBridge job, `metal-trace-daemon` (`windows/winbridge-job/`), installs the published package and records `drawstress` once with the VegaFlow daemon stopped and once running, then leaves the daemon as it found it. Run on the Windows PC by hand with the same steps (stop, record, start, record): 392 and 388 frames. [prueba](docs/evidence/v0.29.0.md#-a-winbridge-job-records-with-the-daemon-stopped-and-running)
-
 - 📈 A recorded program can write its own numbers (VRAM, a frame counter, anything numeric) to the CSV whose path is in `METAL_TRACE_APP_METRICS`, on macOS (the Windows engine passes the same variable; not yet run there); the summary carries them as `app_metrics` (samples, duration and, per column, count, mean, p50, p95, max, min, last), always `comparable: false`, with what was ignored in `issues`. The file is read from a private temporary folder and removed.
 
 - 🩺 On Windows, when a hardware daemon is found but gives no usable answer, the `device` block says why in `daemon_info_error` (`timeout`, `invalid_json` or `missing`), never with its path. `METAL_TRACE_DAEMON_NAMES` adds other daemon file names to look for. [prueba](docs/evidence/v0.29.0.md#the-device-block-says-why-a-hardware-daemon-gave-no-answer)
@@ -62,6 +58,14 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - 🛠️ The hardware daemon's memory bus width must be a positive number (no more `bus True-bit`), its output that is not text now counts as `invalid_json`, and `METAL_TRACE_DAEMON_NAMES` ignores `.`, `..` and names with a slash or backslash.
 - 🛠️ The first progress line of a Windows recording no longer says "including read-back" (there is none there).
 - 🛠️ The README says what the code does for the deadline of a recording: 15 s per recorded second plus 180 (55 with GPU counters), not 10 s plus 120.
+
+### Maintainer tooling (not part of the package or a feature)
+
+Scripts for testing on a Windows PC of your own through a job runner. Nobody needs them to record on Windows, where the package works alone with PresentMon.
+
+- `windows/Update-MetalTraceJobs.ps1`: one command as administrator to update the WinBridge jobs on the Windows PC. It takes the folder of the verified WinBridge bundle (`-Bundle`), reads the `runner.ps1` hash from that bundle's `manifest.json` and runs its `Install-WinBridgeJobs.ps1 -Update`; `-DryRun` prints the resolved command without running it.
+
+- A WinBridge job, `metal-trace-daemon` (`windows/winbridge-job/`), installs the published package and records `drawstress` once with the VegaFlow daemon stopped and once running, then leaves the daemon as it found it. Run on the Windows PC by hand with the same steps (stop, record, start, record): 392 and 388 frames.
 
 ## 0.28.0 — 2026-11-16
 
