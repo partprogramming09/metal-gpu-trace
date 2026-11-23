@@ -2,6 +2,8 @@
 
 **Reader:** people
 
+*VegaFlow and WinBridge are the maintainer's own tools; you do not need them. See [Two tools the proofs mention](internal-tools.md).*
+
 **In short:** the same test program ran on one Windows PC twice, once with and once without the VegaFlow daemon (a system
 tuning program that runs in the background). The frame numbers stayed within the normal variation between runs, so
 these runs show no difference that the daemon causes. Three runs per case are few: this shows no difference, it does

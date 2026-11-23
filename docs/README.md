@@ -30,6 +30,7 @@ ADR status: proposed · accepted · rejected · superseded by NNNN.
 | [adr/0010-stability-policy-and-the-road-to-1-0.md](adr/0010-stability-policy-and-the-road-to-1-0.md) | What counts as the public surface and when 1.0 happens (proposed, not decided) |
 | [evidence/README.md](evidence/README.md) | How each release proves its improvements, and the rule `tests/test_docs.py` checks |
 | [evidence/reference-runs-windows.md](evidence/reference-runs-windows.md) | Reference runs on Windows: `drawstress` with and without the VegaFlow daemon, what the numbers show and what they do not |
+| [evidence/internal-tools.md](evidence/internal-tools.md) | What VegaFlow and WinBridge are (the maintainer's own tools, not needed to use the project) |
 | [guides/run-from-a-clone.md](guides/run-from-a-clone.md) | Commands to run the server, the scripts and the checks from a clone |
 | [guides/data-and-lifecycle/](guides/data-and-lifecycle/index.md) | What a recording leaves on disk, the summary key by key, the two retention settings, the cache and the lock |
 | [guides/recording/](guides/recording/index.md) | The path of one recording, why one at a time and 30 s under Wine, what preflight checks and says, the test programs and their pins, the Windows engine, what happens when it fails |
