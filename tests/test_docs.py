@@ -241,7 +241,8 @@ def definitions(code):
             elif top and isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 found.add(node.target.id)
             elif isinstance(node, (ast.If, ast.Try)):
-                walk(node.body + node.orelse + getattr(node, "finalbody", []), prefix, top)
+                handlers = [n for h in getattr(node, "handlers", []) for n in h.body]
+                walk(node.body + node.orelse + getattr(node, "finalbody", []) + handlers, prefix, top)
 
     walk(ast.parse(code).body, "", True)
     return found
@@ -268,6 +269,11 @@ def test_a_citation_to_the_wrong_file_is_found():
     assert wrong_citations("`a.py::one` `a.py::LIMIT` `a.py::K.m` `./a.py::K` `../src/b.py::two`", code) == []
     bad = ["a.py::two", "c.py::one", "a.py::K.gone", "a.py::x", "b.py::one", "b.py::K", "b.py::foo", "b.py::note"]
     assert wrong_citations(" ".join(f"`{c}`" for c in bad), code) == bad
+
+
+def test_a_name_defined_in_an_except_branch_counts():
+    code = {"src/a.py": "try:\n    import x\nexcept ImportError:\n    def fallback():\n        pass\n"}
+    assert wrong_citations("`a.py::fallback`", code) == []
 
 
 def test_every_function_cited_by_name_in_the_docs_is_defined_in_its_file():
