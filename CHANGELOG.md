@@ -7,6 +7,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ### Changed
 
+- Docs: `docs/evidence/internal-tools.md` says what VegaFlow and WinBridge are (the maintainer's own tools, not needed to use the project), and the proofs that name them link to it.
 - 🔐 The official MCP SDK the conformance tests run against is pinned in `tests/conformance/requirements.txt`, which Dependabot watches, so a new SDK release now arrives as a pull request instead of going unnoticed; `CONTRIBUTING.md` says how to take it.
 
 ### Added
