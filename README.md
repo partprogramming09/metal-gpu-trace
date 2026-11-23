@@ -68,11 +68,13 @@ Read it like this: 2 034 frames in 20.8 s. `fps_estimate` is 104.5: it comes fro
 
 ## What's new
 
-Version 0.28.0. Older versions: [changelog](CHANGELOG.md).
+Version 0.29.0. Older versions: [changelog](CHANGELOG.md).
 
-- ✨ **Shorter answers.** Every tool takes `fields` to keep only the paths you ask for. [Proof](docs/evidence/v0.28.0.md#every-tool-takes-fields-and-the-tool-list-is-shorter)
-- ✨ **One setup command.** `metal-gpu-trace init` adds the server to Claude Code, Claude Desktop, Cursor and Codex CLI. [Proof](docs/evidence/v0.28.0.md#metal-gpu-trace-init-sets-the-server-up-in-one-command)
-- ✨ **Tables outlive the `.trace`.** They are kept in `<run>.tables.sqlite`, and `trace_query` filters them. [Proof](docs/evidence/v0.28.0.md#the-tables-are-kept-in-a-sqlite-file-and-queried-with-filters)
+- 🛡️ **Summaries are never half written.** A crash or a full disk leaves the previous `.json` or none, so comparing runs never meets a broken file. [Proof](docs/evidence/v0.29.0.md#a-summary-is-written-atomically)
+- 🩺 **A display-locked run is not blamed on the CPU.** `perf_diagnose` says `DISPLAY_SYNCED` when the run waits for the display, and its advice is in English. [Proof](docs/evidence/v0.29.0.md#perf_diagnose-tells-a-display-locked-run-from-a-cpu-bound-one)
+- 🪟 **Setup on Windows.** `metal-gpu-trace init` finds `uvx.exe` and writes Claude Desktop's config on Windows too. [Proof](docs/evidence/v0.29.0.md#metal-gpu-trace-init-sets-the-server-up-on-windows)
+- 🩺 **Checks before you record.** `doctor` tells a Mac without Xcode, or a Windows PC without PresentMon, what to install before a recording fails. [Proof](docs/evidence/v0.29.0.md#preflight-checks-xctrace-and-presentmon-before-a-recording)
+- 🩺 **Why the daemon gave no answer.** On Windows, `device.daemon_info_error` says `timeout`, `invalid_json` or `missing`. [Proof](docs/evidence/v0.29.0.md#the-device-block-says-why-a-hardware-daemon-gave-no-answer)
 
 ## For developers
 

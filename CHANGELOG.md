@@ -3,21 +3,23 @@
 Versions follow [Semantic Versioning](https://semver.org); each one is a `vX.Y.Z` tag. `metal-gpu-trace --version`
 and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
-## [Unreleased]
+## 0.29.0 — 2026-11-22
+
+(A verdict that tells a display-locked run from a CPU-bound one, summaries written without risk of half a file, and Windows setup and checks. Its proof is [docs/evidence/v0.29.0.md](docs/evidence/v0.29.0.md).)
 
 ### Changed
 
-- 🛡️ A recording's summary is written through a unique temporary file in the same folder, flushed to disk and renamed over the previous one: a crash or a full disk leaves the old `.json` or none, never half a file, so `perf_compare`, `perf_history` and `perf_runs` only ever read a whole summary. The macOS summarizer, the Windows engine and `perf_record` write it with `paths.write_file`; a link is still refused.
+- 🛡️ A recording's summary is written through a unique temporary file in the same folder, flushed to disk and renamed over the previous one: a crash or a full disk leaves the old `.json` or none, never half a file, so `perf_compare`, `perf_history` and `perf_runs` only ever read a whole summary. The macOS summarizer, the Windows engine and `perf_record` write it with `paths.write_file`; a link is still refused. [proof](docs/evidence/v0.29.0.md#a-summary-is-written-atomically)
 
-- 🩺 `perf_diagnose` answers `bottleneck: "DISPLAY_SYNCED"` instead of `CPU_SUBMISSION_BOUND` when the GPU idle share is high but the run is locked to the display (`display_synced_hz` is set): the idle time is the wait for the display, not the CPU, so the CPU advice (instancing, `FlipQueueSize`) is no longer given. Idle without vsync stays `CPU_SUBMISSION_BOUND`.
+- 🩺 `perf_diagnose` answers `bottleneck: "DISPLAY_SYNCED"` instead of `CPU_SUBMISSION_BOUND` when the GPU idle share is high but the run is locked to the display (`display_synced_hz` is set): the idle time is the wait for the display, not the CPU, so the CPU advice (instancing, `FlipQueueSize`) is no longer given. Idle without vsync stays `CPU_SUBMISSION_BOUND`. [proof](docs/evidence/v0.29.0.md#perf_diagnose-tells-a-display-locked-run-from-a-cpu-bound-one)
 
 - 🌐 `perf_diagnose`: the `recommendations` text is now in English (it was Spanish); the keys and the verdict values do not change.
 
 ### Added
 
-- 🪟 `metal-gpu-trace init` also sets the server up on Windows: it looks for `uvx.exe` (PATH, then `%USERPROFILE%\.local\bin`) and writes Claude Desktop's `%APPDATA%\Claude\claude_desktop_config.json` and Codex's `%USERPROFILE%\.codex\config.toml`, merging each client's file and leaving the others alone. A missing `uvx` names the Windows install command.
+- 🪟 `metal-gpu-trace init` also sets the server up on Windows: it looks for `uvx.exe` (PATH, then `%USERPROFILE%\.local\bin`) and writes Claude Desktop's `%APPDATA%\Claude\claude_desktop_config.json` and Codex's `%USERPROFILE%\.codex\config.toml`, merging each client's file and leaving the others alone. A missing `uvx` names the Windows install command. [proof](docs/evidence/v0.29.0.md#metal-gpu-trace-init-sets-the-server-up-on-windows)
 
-- 🩺 `preflight.environment_report()`: before a recording starts, preflight runs `xcrun --find xctrace`, so a Mac with only the Command Line Tools is told to install Xcode (the tools do not include `xctrace`) instead of the `xcode-select --install` that did not fix it; on Windows the report names a missing PresentMon (with `presentmon_install`) and whether the process is elevated, and `metal-gpu-trace init` prints the same note. Disk, screen, Wine and lock become entries of the same report, which `doctor` reuses.
+- 🩺 `preflight.environment_report()`: before a recording starts, preflight runs `xcrun --find xctrace`, so a Mac with only the Command Line Tools is told to install Xcode (the tools do not include `xctrace`) instead of the `xcode-select --install` that did not fix it; on Windows the report names a missing PresentMon (with `presentmon_install`) and whether the process is elevated, and `metal-gpu-trace init` prints the same note. Disk, screen, Wine and lock become entries of the same report, which `doctor` reuses. [proof](docs/evidence/v0.29.0.md#preflight-checks-xctrace-and-presentmon-before-a-recording)
 
 - ✅ The Windows engine's pure tests (`tests/test_windows_pure.py`: precision telemetry, PresentMon CSV reading) run on Linux and macOS in every pull request, and the Windows job runs all of `test_perf_record_windows.py` instead of only `cancel or timeout`.
 
@@ -25,13 +27,9 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 - 🔐 CI: Dependabot proposes updates to the pip dependencies and the pinned actions every week (`.github/dependabot.yml`), and every pull request's commits are scanned for secrets by the gitleaks CLI 8.30.1, a fixed download checked against its SHA-256 that needs no `GITLEAKS_LICENSE` (`.github/workflows/security.yml`).
 
-- 🛠️ `windows/Update-MetalTraceJobs.ps1`: one command as administrator to update the WinBridge jobs on the Windows PC. It takes the folder of the verified WinBridge bundle (`-Bundle`), reads the `runner.ps1` hash from that bundle's `manifest.json` and runs its `Install-WinBridgeJobs.ps1 -Update`; `-DryRun` prints the resolved command without running it.
-
-- 🛡️ A WinBridge job, `metal-trace-daemon` (`windows/winbridge-job/`), installs the published package and records `drawstress` once with the VegaFlow daemon stopped and once running, then leaves the daemon as it found it. Run on the Windows PC by hand with the same steps (stop, record, start, record): 392 and 388 frames.
-
 - 📈 A recorded program can write its own numbers (VRAM, a frame counter, anything numeric) to the CSV whose path is in `METAL_TRACE_APP_METRICS`, on macOS (the Windows engine passes the same variable; not yet run there); the summary carries them as `app_metrics` (samples, duration and, per column, count, mean, p50, p95, max, min, last), always `comparable: false`, with what was ignored in `issues`. The file is read from a private temporary folder and removed.
 
-- 🩺 On Windows, when a hardware daemon is found but gives no usable answer, the `device` block says why in `daemon_info_error` (`timeout`, `invalid_json` or `missing`), never with its path. `METAL_TRACE_DAEMON_NAMES` adds other daemon file names to look for.
+- 🩺 On Windows, when a hardware daemon is found but gives no usable answer, the `device` block says why in `daemon_info_error` (`timeout`, `invalid_json` or `missing`), never with its path. `METAL_TRACE_DAEMON_NAMES` adds other daemon file names to look for. [proof](docs/evidence/v0.29.0.md#the-device-block-says-why-a-hardware-daemon-gave-no-answer)
 
 - 🔋 On macOS, `machine.power` says whether low power mode was on and whether the Mac warned of heat or limited its CPU, read when the recording starts and when it ends, with `changed` when a fact moved in between. `perf_compare` adds a `power` note when two runs differ in that (or one changed while recording); a summary without the key gets no note.
 
@@ -40,7 +38,13 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - 🪟 On Windows, `common.api.runtime` (`d3d9`, `d3d11`, `d3d12`, `vulkan`, `opengl`, else `unknown`) is read from the graphics DLLs the process has loaded, and `translation_layer` says `dxvk` or `vkd3d-proton` when those DLLs come from outside the system folder (the summary's `graphics_api`; no path is kept).
 - 🪟 On Windows, `noisy_environment` and `gpu_noise` (`process_busy_pct`, `external_pct`, `samples`) come from the `GPU Engine` counters, read every 2 s while recording; 20 points or more of other processes' GPU use is the flag, the same threshold as on macOS.
 
+### Removed
+
+- 📝 The Spanish copy of the documentation is gone: `es/README.md` and `docs/es/` (80 files). The guides, the README and the PyPI page are in English only, because the browser translates a page, diagrams included, and a second copy only drifts. Links into `docs/es/` or `es/README.md` no longer work; the English file of the same name holds the same guide.
+
 ### Fixed
+
+- 🛠️ `app_metrics.path_for` no longer raises when a base folder cannot hold the private folder (missing, read-only or no permission): it tries the next base and returns None at the end, so `record_run` never fails before the recording starts because of the optional telemetry file.
 
 - 🧪 The recording tests can run twice at once on one machine: the attach test names its fake program with the run's pid and a random token (another suite's command line no longer holds the same name, which the script matched and attached to), and every test that hands `perf_record.sh` a program uses `support.unique_program`, a name only that run has, instead of `/bin/sh` (the stop path used to end a program with `pkill -x`, so `/bin/sh` ended any process named `sh` on the machine, another suite's included)
 
@@ -60,6 +64,14 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 - 🛠️ The hardware daemon's memory bus width must be a positive number (no more `bus True-bit`), its output that is not text now counts as `invalid_json`, and `METAL_TRACE_DAEMON_NAMES` ignores `.`, `..` and names with a slash or backslash.
 - 🛠️ The first progress line of a Windows recording no longer says "including read-back" (there is none there).
 - 🛠️ The README says what the code does for the deadline of a recording: 15 s per recorded second plus 180 (55 with GPU counters), not 10 s plus 120.
+
+### Maintainer tooling (not part of the package or a feature)
+
+Scripts for testing on a Windows PC of your own through a job runner. Nobody needs them to record on Windows, where the package works alone with PresentMon.
+
+- `windows/Update-MetalTraceJobs.ps1`: one command as administrator to update the WinBridge jobs on the Windows PC. It takes the folder of the verified WinBridge bundle (`-Bundle`), reads the `runner.ps1` hash from that bundle's `manifest.json` and runs its `Install-WinBridgeJobs.ps1 -Update`; `-DryRun` prints the resolved command without running it.
+
+- A WinBridge job, `metal-trace-daemon` (`windows/winbridge-job/`), installs the published package and records `drawstress` once with the VegaFlow daemon stopped and once running, then leaves the daemon as it found it. Run on the Windows PC by hand with the same steps (stop, record, start, record): 392 and 388 frames.
 
 ## 0.28.0 — 2026-11-16
 
