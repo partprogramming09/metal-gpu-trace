@@ -27,7 +27,7 @@ Commands:
 
 def _usage_error(message):
     """Prints why the command cannot run and the usage, and returns the exit code for a bad invocation."""
-    print(f"metal-gpu-trace: {message}", file=sys.stderr)
+    print(message if message.startswith("usage:") else f"metal-gpu-trace: {message}", file=sys.stderr)
     print(USAGE, file=sys.stderr, end="")
     return 2
 

@@ -165,3 +165,11 @@ def test_doctor_rejects_extra_arguments_and_every_command_answers_help(tmp_path)
         for flag in ("--help", "-h"):
             done = cli(command, flag)
             assert done.returncode == 0 and "usage: metal-gpu-trace [COMMAND]" in done.stdout, (command, flag)
+
+
+def test_a_usage_error_names_the_program_once():
+    """The message already starts with `usage:`: it is not prefixed with `metal-gpu-trace:` a second time."""
+    bad = cli("doctor", "--bogus")
+    assert bad.stderr.startswith("usage: metal-gpu-trace doctor"), bad.stderr
+    unknown = cli("bogus")
+    assert unknown.stderr.startswith("metal-gpu-trace: unknown command 'bogus'"), unknown.stderr
