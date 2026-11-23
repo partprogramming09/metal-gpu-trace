@@ -9,10 +9,15 @@ The code is standard-library Python 3.9 or newer in `src/metal_gpu_trace/`; the 
 ```sh
 python3 -I tests/run.py                       # the self-check, prints ok; needs nothing installed
 python -m pytest tests                        # the same tests, plus the Windows ones on Windows
-uvx --python 3.13 --with mcp==2.3.0 --with pytest pytest tests/conformance   # the official MCP SDK as a client
+uvx --python 3.13 --with-requirements tests/conformance/requirements.txt --with pytest pytest tests/conformance   # the official MCP SDK as a client
 sh tests/smoke_wheel.sh                       # builds, installs and starts the wheel (needs uv)
 uvx ruff@0.14.0 check src tests               # the lint CI runs (settings in pyproject.toml)
 ```
+
+The official SDK the conformance tests use as a client is pinned in `tests/conformance/requirements.txt`, and
+Dependabot opens a pull request when a new one comes out. To take it: merge that pull request only if the `conformance`
+job passes; if it fails, the SDK or the standard changed, so fix the server or the client calls in
+`tests/conformance/test_official_client.py` (its docstring names the client API in use) and update that docstring.
 
 Optional: a local hook that scans what you are about to commit for secrets with
 [gitleaks](https://github.com/gitleaks/gitleaks). Put this in `.git/hooks/pre-commit` and make it executable:
