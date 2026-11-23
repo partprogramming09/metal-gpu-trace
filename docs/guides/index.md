@@ -42,8 +42,6 @@ You ask your AI agent: "Record my app for 30 seconds, then tell me its FPS and h
 - [How it works](./how-it-works.md): how the modules are layered and how one request flows through them.
 - [Run from a clone](./run-from-a-clone.md): run and test the code without PyPI.
 - [How this project is documented](./how-we-document.md): the habits behind these pages, which ones a test checks, and how to copy them.
-- [How it works](./how-it-works): how the modules are layered and how one request flows through them.
-- [Run from a clone](./run-from-a-clone): run and test the code without PyPI.
 - [Data and its lifecycle](./data-and-lifecycle/): what a recording leaves on disk, where it lives, how the summary is
   built key by key, and which of `KEEP_RUNS` and `METAL_TRACE_MAX_DISK_MB` deletes what.
 - [Recording](./recording/): the whole path of a recording, why one runs at a time and 30 s or more under Wine, what
