@@ -59,8 +59,8 @@ def check_cli(args):
 
 def main():
     """Runs the command in sys.argv: with none it serves newline-delimited JSON-RPC on stdin and stdout until stdin
-    closes (what MCP clients start), and --version, init, check, --http, doctor, runs and compare answer in the
-    terminal (see cli.py)."""
+    closes (what MCP clients start), and --version, init, check, gate, --http, doctor, runs and compare answer in
+    the terminal (see cli.py)."""
     return cli.main(sys.argv[1:], __version__)
 
 
