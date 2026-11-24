@@ -80,6 +80,7 @@ def gate_cli(args):
         print(GATE_USAGE, file=sys.stderr)
         return 2
     try:
+        project.check()
         result = budgets.gate(rest[0], path)
     except (paths.ToolError, FileNotFoundError, ValueError) as error:
         print(f"metal-gpu-trace: {error}", file=sys.stderr)
