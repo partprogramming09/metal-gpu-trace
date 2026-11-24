@@ -23,6 +23,7 @@ Commands:
   doctor                  say what a recording needs that is missing here
   runs [--limit N]        list the recordings, newest first
   compare A B             compare two recordings, A the reference and B after the change (--markdown for a table)
+  import-bench FILE...    read VegaFlow bench.ps1 results as recordings (only the jitter compares)
   --version               print the version
   --help, -h              print this help
 """
@@ -185,6 +186,18 @@ def compare(args):
     return 0
 
 
+def import_bench(args):
+    """Runs `import-bench FILE...` (the importer lives in bench_import.py); the runs folder is the project's."""
+    from metal_gpu_trace import bench_import
+    project.apply()
+    try:
+        project.check()
+    except paths.ToolError as error:
+        print(f"metal-gpu-trace: {error}", file=sys.stderr)
+        return 2
+    return bench_import.main(args)
+
+
 def _http(args):
     """Serves Streamable HTTP on 127.0.0.1 (`--http [--port N]`) and returns `serve_http`'s exit code."""
     if not args:
@@ -208,7 +221,7 @@ def main(args, version):
         print(USAGE, end="")
         return 0
     command, rest = (args[0], args[1:]) if args else (None, [])
-    if command in ("check", "doctor", "runs", "compare", "gate") and rest[:1] in (["--help"], ["-h"]):
+    if command in ("check", "doctor", "runs", "compare", "gate", "import-bench") and rest[:1] in (["--help"], ["-h"]):
         print(USAGE, end="")
         return 0
     if command == "init":  # before project.apply(): it only edits client config files
@@ -233,4 +246,6 @@ def main(args, version):
         return runs(rest)
     if command == "compare":
         return compare(rest)
+    if command == "import-bench":
+        return import_bench(rest)
     return _usage_error(f"unknown command {command!r}")

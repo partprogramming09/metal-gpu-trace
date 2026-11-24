@@ -8,6 +8,7 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 ### Added
 
 - ✨ `metal-gpu-trace gate RUN [--budgets FILE]` judges a recording against the fixed limits of a versioned file in the project (`metal-gpu-trace.budgets.json` by default), so CI in any project can require "FPS never below 55, p95 GPU ms never over 12.5" without a baseline saved on the machine; it prints one JSON line and exits 0 (within limits), 1 (a number is over its max or under its min) or 2 (it could not judge, a budgeted metric the recording cannot measure included).
+- 📥 `metal-gpu-trace import-bench FILE.json...` reads the results VegaFlow's `bench.ps1` leaves as recordings: `perf_runs`, `perf_compare` and `perf_history` list them, date them by the measurement and compare their frame-time jitter. FPS, the lows and the hitches stay null (VegaFlow's formulas differ from ours under the same names) and keep their own names in a `vegaflow_bench` block; no machine name or path is copied. Proven with the 14 real results (14 imported, 14 `same` the second time; jitter 1.03 → 1.31 in `perf_compare`) and on Python 3.9.
 
 ## 0.30.0 — 2026-11-23
 
