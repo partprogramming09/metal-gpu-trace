@@ -13,9 +13,11 @@ import os
 import pathlib
 import re
 import sys
+import time
 
 from metal_gpu_trace import config, metrics, paths
 
+FIRST_STAMP = 946684800  # 2000-01-01: no bench.ps1 result is older
 MAX_BYTES = 1024 * 1024  # a real result is about 1.2 KB
 RESERVED = {"baselines", "panel"}  # files of the runs folder that are not recordings (paths.name_ok accepts both)
 NUMBERS = ("avg_fps", "fps_1pct_low", "fps_0_1pct_low", "hitches_2x_median", "hitches_per_min", "present_mode_share",
@@ -25,7 +27,12 @@ USAGE = "usage: metal-gpu-trace import-bench FILE.json [FILE.json ...]"
 
 def _number(value):
     """Returns `value` when it is a finite number (not a bool), else None."""
-    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    try:
+        return value if math.isfinite(value) else None
+    except OverflowError:  # an integer too big for a float (isfinite converts it)
+        return None
 
 
 def _seconds(stamp):
@@ -35,7 +42,10 @@ def _seconds(stamp):
         raise ValueError
     text = re.sub(r"\.(\d+)", lambda m: "." + m.group(1).ljust(6, "0")[:6], stamp.strip(), count=1)
     text = text[:-1] + "+00:00" if text.endswith("Z") else text
-    return datetime.datetime.fromisoformat(text).timestamp()
+    seconds = datetime.datetime.fromisoformat(text).timestamp()
+    if not FIRST_STAMP <= seconds <= time.time() + 86400:  # os.utime clamps the extremes: they would top perf_runs
+        raise ValueError
+    return seconds
 
 
 def _name(label):
@@ -47,8 +57,10 @@ def _name(label):
 
 def from_json(text):
     """Returns the schema 3 summary of a `bench.ps1` result, or raises ToolError naming what is wrong (never a path)."""
+    if not isinstance(text, str):
+        raise paths.ToolError("the result must be text")
     try:
-        value = json.loads(text.lstrip("﻿"))
+        value = json.loads(text.lstrip("\ufeff"))
     except (ValueError, RecursionError):
         raise paths.ToolError("not valid JSON (is it empty?)") from None
     if not isinstance(value, dict):

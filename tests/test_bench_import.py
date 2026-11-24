@@ -269,3 +269,38 @@ def test_the_command_prints_one_line_per_file_and_the_exit_code_follows(tmp_path
 def test_the_command_is_listed_in_the_help(tmp_path):
     done = subprocess.run([sys.executable, "-I", str(PKG / "metal_trace_mcp.py"), "--help"], text=True, capture_output=True)
     assert "import-bench" in done.stdout
+
+
+def test_a_huge_number_is_refused_not_a_crash(tmp_path):
+    """`math.isfinite(10 ** 400)` raises OverflowError: a number too big for a float is a bad value, not a traceback."""
+    huge = "1" + "0" * 400
+    text = REAL.read_text(encoding="utf-8-sig").replace('"frames":  3078', f'"frames": {huge}')
+    assert huge in text and "frames" in refused_json(text)
+    # a huge value in an optional key only turns that key null
+    text = REAL.read_text(encoding="utf-8-sig").replace('"avg_fps":  26.78', f'"avg_fps": {huge}')
+    assert bench_import.from_json(text)["vegaflow_bench"]["avg_fps"] is None
+    with Out(tmp_path) as runs:
+        source = tmp_path / "h.json"
+        source.write_text(REAL.read_text(encoding="utf-8-sig").replace('"frames":  3078', f'"frames": {huge}'))
+        done = command(str(source), folder=runs)
+        assert done.returncode == 2 and "Traceback" not in done.stderr and "refused" in done.stdout, done
+
+
+def test_from_json_takes_only_text():
+    for value in (None, b"{}", 5, [], {}):
+        assert "text" in refused_json_value(value), value
+
+
+def refused_json_value(value):
+    try:
+        bench_import.from_json(value)
+    except paths.ToolError as error:
+        return str(error)
+    raise AssertionError("it parsed")
+
+
+def test_a_date_outside_a_plausible_range_is_refused(tmp_path):
+    """A measurement dated before 2000 or after tomorrow would sit at either end of perf_runs for ever (os.utime clamps
+    the year 1 and the year 9999 to the system's limits)."""
+    for stamp in ("0001-01-01T00:00:00Z", "9999-12-31T23:59:59Z", "0001-01-01T00:00:00+23:59", "1999-12-31T23:59:59Z", "2999-01-01T00:00:00Z"):
+        assert "timestamp" in refused_json({**real(), "timestamp": stamp}), stamp
