@@ -221,6 +221,8 @@ jobs:
       - run: METAL_TRACE_OUT=~/perf-runs metal-gpu-trace check "$(ls -t ~/perf-runs/pr_*.json | head -1 | xargs basename -s .json)" main-ref
 ```
 
+Fixed limits instead of a reference saved on the runner: `metal-gpu-trace gate RUN [--budgets FILE]` reads `metal-gpu-trace.budgets.json` from the project (`{"version": 1, "budgets": {"fps": {"min": 55}, "gpu_ms_p95": {"max": 12.5}}}`) and prints one JSON line with a result per budget, in the file's order. Exit code 0: every number within its limits; 1: one is over its `max` or under its `min`; 2: it could not judge (no budgets file or a malformed one, no such run, under 100 frames, a program that stopped presenting, or a budgeted metric the recording cannot measure). The metrics a file may name are `fps`, `fps_1pct_low`, `gpu_ms_mean`, `gpu_ms_p95`, `frame_interval_ms_p95`, `stutter_rate_pct`, `hitches` and `metal_mib_peak`.
+
 ## If you want to understand...
 
 - ...how the code is layered and one request end to end: [How it works](docs/guides/how-it-works.md).
