@@ -5,6 +5,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+### Added
+
+- ✨ `metal-gpu-trace gate RUN [--budgets FILE]` judges a recording against the fixed limits of a versioned file in the project (`metal-gpu-trace.budgets.json` by default), so CI in any project can require "FPS never below 55, p95 GPU ms never over 12.5" without a baseline saved on the machine; it prints one JSON line and exits 0 (within limits), 1 (a number is over its max or under its min) or 2 (it could not judge, a budgeted metric the recording cannot measure included).
+
 ## 0.30.0 — 2026-11-23
 
 (A short command line: `--help`, `doctor`, `runs` and `compare`. Its proof is [docs/evidence/v0.30.0.md](docs/evidence/v0.30.0.md).)

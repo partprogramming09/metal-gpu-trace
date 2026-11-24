@@ -62,6 +62,17 @@ The answer is **same**, **improved** or **regressed**. By default it takes a 3 %
 
 To make a build server do the same, the `metal-gpu-trace check` command gives the answer as an exit code: 0 same or improved, 1 regressed, 2 could not be judged. See [CI gate](https://github.com/partprogramming09/metal-gpu-trace#ci-gate) in the README.
 
+### Fixed limits in a file
+
+A baseline answers "as good as before". A budget file answers "good enough", the same on any machine. `metal-gpu-trace gate RUN [--budgets FILE]` reads `metal-gpu-trace.budgets.json` from the folder it runs in (version 1) and judges one recording against its numbers:
+
+```json
+{"version": 1,
+ "budgets": {"fps": {"min": 55}, "gpu_ms_p95": {"max": 12.5}, "stutter_rate_pct": {"max": 1.0}}}
+```
+
+Each budget holds `min`, `max` or both, for `fps`, `fps_1pct_low`, `gpu_ms_mean`, `gpu_ms_p95`, `frame_interval_ms_p95`, `stutter_rate_pct`, `hitches` or `metal_mib_peak`. Exit code 0 means every number is within its limit, 1 means one is over its `max` or under its `min`, and 2 means the recording could not be judged: under 100 frames, a program that stopped drawing, no such recording, or a file that is missing or malformed, all with the fix on stderr. A number the recording does not have is never a silent pass: name it in a budget and the answer is 2 until the recording can measure it.
+
 ## 4. When a recording fails
 
 Most failures are a refusal **before** anything starts, and the message says what to do. Nothing was recorded, so there is nothing to clean up.

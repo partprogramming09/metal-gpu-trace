@@ -1,5 +1,6 @@
 """The short command line: help answers instead of waiting on stdin, doctor prints preflight's report, runs lists the
-recordings and compare compares two of them; with no command the MCP server still serves stdio."""
+recordings, compare compares two of them and gate judges one against a file of budgets; with no command the MCP server
+still serves stdio."""
 import json
 import os
 import subprocess
@@ -9,10 +10,10 @@ import support  # noqa: F401  (puts src/ on sys.path)
 from support import PKG
 
 
-def cli(*args, env=None, text=None):
+def cli(*args, env=None, text=None, cwd=None):
     """Starts the command line with `args` and returns the finished process; stdin is closed unless `text` is given."""
     return subprocess.run([sys.executable, "-I", str(PKG / "metal_trace_mcp.py"), *args], text=True,
-                          capture_output=True, timeout=60,
+                          capture_output=True, timeout=60, cwd=cwd,
                           **({"input": text} if text is not None else {"stdin": subprocess.DEVNULL}),
                           env={**os.environ, "METAL_TRACE_LOG": "off", **(env or {})})
 
@@ -41,7 +42,7 @@ def test_help_lists_the_commands_and_exits_0(tmp_path):
     for flag in ("--help", "-h"):
         proc = cli(flag)
         assert proc.returncode == 0, (flag, proc.stderr)
-        for word in ("doctor", "runs", "compare", "init", "check", "--http", "--version"):
+        for word in ("doctor", "runs", "compare", "init", "check", "gate", "--http", "--version"):
             assert word in proc.stdout, (flag, word, proc.stdout)
         assert str(tmp_path) not in proc.stdout
 
@@ -161,7 +162,7 @@ def test_doctor_rejects_extra_arguments_and_every_command_answers_help(tmp_path)
     """`doctor --bogus` is a usage error like the other commands'; `COMMAND --help` prints the usage and exits 0."""
     bad = cli("doctor", "--bogus")
     assert bad.returncode == 2 and "usage: metal-gpu-trace doctor" in bad.stderr
-    for command in ("doctor", "runs", "compare", "check"):
+    for command in ("doctor", "runs", "compare", "check", "gate"):
         for flag in ("--help", "-h"):
             done = cli(command, flag)
             assert done.returncode == 0 and "usage: metal-gpu-trace [COMMAND]" in done.stdout, (command, flag)
@@ -173,3 +174,96 @@ def test_a_usage_error_names_the_program_once():
     assert bad.stderr.startswith("usage: metal-gpu-trace doctor"), bad.stderr
     unknown = cli("bogus")
     assert unknown.stderr.startswith("metal-gpu-trace: unknown command 'bogus'"), unknown.stderr
+
+
+def budgets_file(folder, budgets, version=1, name="metal-gpu-trace.budgets.json"):
+    """Writes a version 1 budget file in `folder` and returns its path."""
+    path = folder / name
+    path.write_text(json.dumps({"version": version, "budgets": budgets}))
+    return path
+
+
+def test_gate_passes_a_run_within_its_limits(tmp_path):
+    """`gate RUN --budgets FILE` prints one JSON line with a result per budget, in the file's order, and exits 0."""
+    out = tmp_path / "runs"
+    write_runs(out, [("r1", 60.0)])
+    path = budgets_file(tmp_path, {"fps": {"min": 55}, "gpu_ms_p95": {"max": 12.5}})
+    proc = cli("gate", "r1", "--budgets", str(path), env={"METAL_TRACE_OUT": str(out)})
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    assert proc.stdout.count("\n") == 1, "one JSON line"
+    assert json.loads(proc.stdout) == {"run": "r1", "verdict": "pass", "results": [
+        {"metric": "fps", "value": 60.0, "min": 55, "status": "ok"},
+        {"metric": "gpu_ms_p95", "value": 8.0, "max": 12.5, "status": "ok"}]}, proc.stdout
+    assert str(tmp_path) not in proc.stdout + proc.stderr, "a verdict names no path"
+
+
+def test_gate_fails_a_run_outside_its_limits_with_1(tmp_path):
+    out = tmp_path / "runs"
+    write_runs(out, [("r1", 60.0)])
+    path = budgets_file(tmp_path, {"fps": {"min": 70}, "gpu_ms_p95": {"max": 5}})
+    proc = cli("gate", "r1", "--budgets", str(path), env={"METAL_TRACE_OUT": str(out)})
+    assert proc.returncode == 1, (proc.stdout, proc.stderr)
+    got = json.loads(proc.stdout)
+    assert got["verdict"] == "fail", got
+    assert [(r["metric"], r["status"]) for r in got["results"]] == [("fps", "under"), ("gpu_ms_p95", "over")], got
+    assert str(tmp_path) not in proc.stdout + proc.stderr
+
+
+def test_gate_exits_2_when_it_cannot_judge(tmp_path):
+    """No budgets file, a broken one, a recording without the metric, no such run, under 100 frames or a program that
+    stopped presenting: stderr says what to fix and nothing is printed on stdout."""
+    out = tmp_path / "runs"
+    write_runs(out, [("r1", 60.0)])
+    env = {"METAL_TRACE_OUT": str(out)}
+    good = budgets_file(tmp_path, {"fps": {"min": 55}})
+
+    no_file = cli("gate", "r1", "--budgets", str(tmp_path / "gone.json"), env=env)
+    assert no_file.returncode == 2, no_file.stderr
+    assert no_file.stderr.startswith("metal-gpu-trace: ") and "gone.json" in no_file.stderr, no_file.stderr
+
+    broken = tmp_path / "broken.json"
+    broken.write_text('{"version": 1, "budgets": {"fps": ')
+    bad_file = cli("gate", "r1", "--budgets", str(broken), env=env)
+    assert bad_file.returncode == 2 and "not valid JSON" in bad_file.stderr, bad_file.stderr
+
+    unmeasured = cli("gate", "r1", "--budgets", str(budgets_file(tmp_path, {"fps_1pct_low": {"min": 30}}, name="b.json")),
+                     env=env)
+    assert unmeasured.returncode == 2 and "fps_1pct_low" in unmeasured.stderr, unmeasured.stderr
+
+    missing = cli("gate", "nope", "--budgets", str(good), env=env)
+    assert missing.returncode == 2 and "no run" in missing.stderr, missing.stderr
+
+    for name, summary_with in (("short", {"frames": 99}), ("stalled", {"unpresented": {"from_s": 3.0, "span_s": 5.0}})):
+        (out / f"{name}.json").write_text(json.dumps({**summary(60.0), "gpu": {**summary(60.0)["gpu"], **summary_with}}))
+        proc = cli("gate", name, "--budgets", str(good), env=env)
+        assert proc.returncode == 2, (name, proc.stdout, proc.stderr)
+        assert not proc.stdout, (name, proc.stdout)
+        assert "metal-gpu-trace: " in proc.stderr and str(tmp_path) not in proc.stderr, proc.stderr
+    assert "under 100 frames" in cli("gate", "short", "--budgets", str(good), env=env).stderr
+    assert "stopped presenting" in cli("gate", "stalled", "--budgets", str(good), env=env).stderr
+
+
+def test_gate_reads_the_default_file_where_it_runs(tmp_path):
+    """Without `--budgets`, the file is `metal-gpu-trace.budgets.json` in the folder the command runs in."""
+    out = tmp_path / "runs"
+    write_runs(out, [("r1", 60.0)])
+    where = tmp_path / "repo"
+    where.mkdir()
+    (where / "metal-gpu-trace.budgets.json").write_text(json.dumps({"version": 1, "budgets": {"fps": {"min": 30}}}))
+    proc = cli("gate", "r1", env={"METAL_TRACE_OUT": str(out)}, cwd=where)
+    assert proc.returncode == 0, (proc.stdout, proc.stderr)
+    assert json.loads(proc.stdout)["verdict"] == "pass", proc.stdout
+    assert str(tmp_path) not in proc.stdout + proc.stderr
+
+
+def test_gate_refuses_bad_arguments(tmp_path):
+    """No RUN, a flag nobody knows, a repeated or missing file and an extra argument are usage errors: 2."""
+    out = tmp_path / "runs"
+    write_runs(out, [("r1", 60.0)])
+    env = {"METAL_TRACE_OUT": str(out)}
+    for args in (("gate",), ("gate", "--budgets", "x.json"), ("gate", "r1", "--nope"),
+                 ("gate", "r1", "extra"), ("gate", "r1", "--budgets")):
+        proc = cli(*args, env=env)
+        assert proc.returncode == 2, (args, proc.returncode, proc.stdout, proc.stderr)
+        assert proc.stderr.startswith("usage: metal-gpu-trace gate RUN [--budgets FILE]"), (args, proc.stderr)
+        assert not proc.stdout, (args, proc.stdout)
