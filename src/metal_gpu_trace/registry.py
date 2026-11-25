@@ -1,5 +1,5 @@
 """What clients read: the tool list with its schemas, the resources and the prompts."""
-from metal_gpu_trace import analysis, config, experiments, project, recording, traces, workloads
+from metal_gpu_trace import analysis, config, experiments, project, recording, screenshots, traces, workloads
 
 
 OBJECT = {"type": "object"}
@@ -189,6 +189,12 @@ TOOLS = {
                      hints("Compare two captures")),
     "capture_records": (traces.tool_capture_records, schema({"capture": CAPTURE, **PAGE}, ["capture"]),
                         hints("Read a capture's records")),
+    "screenshots_check": (screenshots.tool_screenshots_check, schema(
+        {"path": {**S, "description": "a PNG, or a folder of PNGs (in a readable folder), 100 at most"},
+         "sequence": {"type": "boolean", "description": "true: the PNGs, in name order, are frames of one run; adds frozen and flicker"},
+         "ignore_rects": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}, "maxItems": 8,
+                          "description": "areas to leave out, [x0, y0, x1, y1] as fractions 0 to 1"}}, ["path"]),
+                          hints("Flag black, flat, frozen or flickering screenshots")),
     "gpu_family": (traces.tool_gpu_family, schema(
         {"name": {**S, "description": "a family (Apple7 to Apple10) or a chip (M1 Pro, M2, M4 Max, A17 Pro)"}},
         ["name"]), hints("Apple GPU family facts")),

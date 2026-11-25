@@ -36,12 +36,14 @@ From the top (the entry point) to the bottom (what everything else rests on):
 | 2 | `experiments` | A/B, cold/warm, sweeps |
 | 2 | `workloads` | Test programs, downloads, PresentMon |
 | 2 | `traces` | `.trace` and `.gputrace` files (`trace_query` with `window_ms`, `capture_diff`), GPU families |
+| 2 | `screenshots` | PNG screenshots of a run: black, flat, frozen or flickering (`screenshots_check`) |
 | 1 | `retention` | Keeps the runs folder under `METAL_TRACE_MAX_DISK_MB`: removes the oldest heavy files, never a summary or a link's target |
 | 1 | `paths` | Names and paths a caller may use, paging, reading a file of the runs folder |
 | 1 | `project` | The `metal-gpu-trace.json` project file: finds it, checks it, points the recordings folder at it |
 | 0 | `fingerprint` | A short hash of the files a run is declared to use, and the names (never the values) of its variables |
 | 0 | `config` | Settings, read as `config.NAME` at use time |
 | 0 | `logs` | One stderr line per tool call |
+| 0 | `fingerprint` | A short hash of the files a run is declared to use, and the names (never the values) of its variables |
 | 0 | `tables` | Reads and writes the per-frame and Metal memory tables, `.csv.gz` or the plain `.csv` of older recordings |
 | 0 | `tabledb` | The `<run>.tables.sqlite` file: writes the tables a summary reads, reads them back through declarative filters ([ADR-0007](../adr/0007-sqlite-tables-beside-the-compressed-tables.md)) |
 | 0 | `metrics` | Numbers that Mac and Windows summaries share |
