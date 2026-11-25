@@ -64,6 +64,8 @@ To make a build server do the same, the `metal-gpu-trace check` command gives th
 
 ### Fixed limits in a file
 
+`metal-gpu-trace import-bench FILE.json...` reads the result file VegaFlow's `bench.ps1` leaves for a Windows run and saves it in the runs folder as a recording, so `perf_runs`, `perf_compare` and `perf_history` list it. Only the frame-time jitter is the same measurement in both tools; FPS, the 1 % low and the hitches use other formulas under the same names, so they stay empty and the imported values keep their own names under `vegaflow_bench`. Because of that, `gate` says a metric cannot be measured on an imported run instead of judging it. Importing the same file again prints `same`.
+
 A baseline answers "as good as before". A budget file answers "good enough", the same on any machine. `metal-gpu-trace gate RUN [--budgets FILE]` reads `metal-gpu-trace.budgets.json` from the folder it runs in (version 1) and judges one recording against its numbers:
 
 ```json

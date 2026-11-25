@@ -30,6 +30,7 @@ From the top (the entry point) to the bottom (what everything else rests on):
 | 4 | `worker` | One tool call at a time, cancel, progress |
 | 3 | `registry` | Tool list and schemas, resources, prompts (`compare-layer`, `diagnose-stutter`, `bisect-regression`: text for the agent; the server runs no command) |
 | 2 | `recording` | Records a run (`perf_record`, `perf_attach`) and writes its `context` |
+| 2 | `bench_import` | `metal-gpu-trace import-bench`: turns a VegaFlow `bench.ps1` result into a summary the readers list and compare (only the jitter is shared; the other numbers keep their own names) |
 | 2 | `preflight` | What a recording needs, checked before any process starts: program, Wine, `xcrun`, disk, screen, lock |
 | 2 | `analysis` | Runs, compare, baselines, checks, gates, diagnose |
 | 2 | `experiments` | A/B, cold/warm, sweeps |
