@@ -141,7 +141,7 @@ def test_ignore_rects_are_checked(tmp_path):
     write(tmp_path, "a.png", png(10, 10, scene(1)))
     with Readable(tmp_path):
         for bad in ("x", [[0, 0, 1]], [[0, 0, 1, "1"]], [[0, 0, 1.5, 1]], [[0.5, 0, 0.5, 1]], [[0, 0, float("nan"), 1]],
-                    [[0, 0, True, 1]], [[0, 0, 1, 1]] * 9, [[-0.1, 0, 1, 1]]):
+                    [[0, 0, True, 1]], [[0, 0, 10**400, 1]], [[0, 0, 1, 1]] * 9, [[-0.1, 0, 1, 1]]):
             assert "ignore_rects" in raises(lambda bad=bad: screenshots.tool_screenshots_check(str(tmp_path), ignore_rects=bad)), bad
         full = screenshots.tool_screenshots_check(str(tmp_path), ignore_rects=[[0, 0, 1, 1]])
     assert full["findings"] == [{"file": "a.png", "problem": "nothing_to_check"}], "a rect over everything leaves nothing"
@@ -205,3 +205,36 @@ def test_the_answer_names_no_folder(tmp_path):
     with Readable(tmp_path):
         text = json.dumps(screenshots.tool_screenshots_check(str(tmp_path)))
     assert str(tmp_path) not in text and "/" not in text, text
+
+
+def test_names_with_other_digits_sort_and_a_png_without_end_or_with_trailing_data_is_refused(tmp_path):
+    good = png(8, 8, scene(1))
+    write(tmp_path, "shot\u00b2.png", good)
+    write(tmp_path, "shot-1.png", good)
+    no_end = good[:-12]
+    padded = good[:-12] + chunk(b"IEND", b"")
+    write(tmp_path, "noend.png", no_end)
+    with Readable(tmp_path):
+        assert screenshots.tool_screenshots_check(str(tmp_path / "shot-1.png"))["frames"] == 1
+        assert "noend.png" in raises(lambda: screenshots.tool_screenshots_check(str(tmp_path / "noend.png")))
+        assert screenshots.tool_screenshots_check(str(tmp_path / "shot\u00b2.png"))["frames"] == 1
+        assert screenshots.files_of(str(tmp_path))
+    assert padded == good
+
+
+def test_one_call_has_a_total_pixel_budget(tmp_path, monkeypatch=None):
+    for i in range(3):
+        write(tmp_path, f"a{i}.png", png(40, 30, scene(i)))
+    saved = screenshots.MAX_TOTAL_PIXELS
+    screenshots.MAX_TOTAL_PIXELS = 2000
+    try:
+        with Readable(tmp_path):
+            assert "pixels" in raises(lambda: screenshots.tool_screenshots_check(str(tmp_path)))
+    finally:
+        screenshots.MAX_TOTAL_PIXELS = saved
+
+
+def test_a_bad_path_argument_is_a_tool_error(tmp_path):
+    with Readable(tmp_path):
+        for bad in ("a\0b", 5, None):
+            assert raises(lambda bad=bad: screenshots.tool_screenshots_check(bad)), bad

@@ -3,6 +3,7 @@ standard library (8-bit RGB or RGBA, not interlaced) that refuses oversized or l
 import math
 import os
 import re
+import stat
 import struct
 import zlib
 
@@ -19,6 +20,7 @@ MAX_FRAMES = 100
 MAX_RECTS = 8
 MAX_PIXELS = 8_500_000  # a 4K frame; the pure-Python decoder takes seconds per frame at this size
 MAX_FILE_BYTES = 64 * 2**20
+MAX_TOTAL_PIXELS = 12_000_000  # across one call: the decoder is pure Python and holds each frame's samples
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
@@ -49,6 +51,8 @@ def decode(data, name="image"):
             idat += body
         ended = kind == b"IEND"
         pos += 12 + length
+    if not ended:
+        raise bad("the PNG is cut short")
     if header is None or not idat:
         raise bad("the PNG has no header or no image data")
     width, height, depth, color, _, _, interlace = header
@@ -65,7 +69,7 @@ def decode(data, name="image"):
         raw = inflater.decompress(bytes(idat), expected + 1)
     except zlib.error:
         raise bad("the PNG's image data is corrupt") from None
-    if len(raw) != expected or inflater.unconsumed_tail:
+    if len(raw) != expected or inflater.unconsumed_tail or not inflater.eof or inflater.unused_data:
         raise bad("the PNG's image data is not the size its header says")
     rows, prev = [], bytearray(stride)
     for y in range(height):
@@ -108,7 +112,7 @@ def check_rects(rects):
     out = []
     for rect in rects if ok else []:
         ok = (isinstance(rect, list) and len(rect) == 4
-              and all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and 0 <= v <= 1
+              and all(isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1 and math.isfinite(v)
                       for v in rect) and rect[0] < rect[2] and rect[1] < rect[3])
         if not ok:
             break
@@ -143,7 +147,7 @@ def single(pixels):
 
 def natural(name):
     """Returns a sort key that puts shot-2 before shot-10."""
-    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
+    return [int(part) if re.fullmatch(r"[0-9]+", part) else part.lower() for part in re.split(r"([0-9]+)", name)]
 
 
 def read_file(path):
@@ -152,8 +156,13 @@ def read_file(path):
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     except OSError:
         raise paths.ToolError(f"{path.name} cannot be opened (missing, a link or no permission)") from None
-    with os.fdopen(fd, "rb") as handle:
-        data = handle.read(MAX_FILE_BYTES + 1)
+    try:
+        with os.fdopen(fd, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise paths.ToolError(f"{path.name} is not a regular file")
+            data = handle.read(MAX_FILE_BYTES + 1)
+    except OSError:
+        raise paths.ToolError(f"{path.name} cannot be read") from None
     if len(data) > MAX_FILE_BYTES:
         raise paths.ToolError(f"{path.name} is over {MAX_FILE_BYTES // 2**20} MiB")
     return data
@@ -184,9 +193,12 @@ def tool_screenshots_check(path, sequence=False, ignore_rects=None):
     if not isinstance(sequence, bool):
         raise paths.ToolError("sequence is true or false")
     files = files_of(path)
-    frames, sizes = [], set()
+    frames, sizes, total = [], set(), 0
     for file in files:
         decoded = decode(read_file(file), file.name)
+        total += decoded[0] * decoded[1]
+        if total > MAX_TOTAL_PIXELS:
+            raise paths.ToolError(f"{file.name}: at most {MAX_TOTAL_PIXELS} pixels are read in one call; check fewer or smaller screenshots")
         sizes.add(decoded[:2])
         frames.append(sample(decoded, rects))
     if sequence and len(sizes) > 1:
