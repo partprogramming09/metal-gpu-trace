@@ -3,7 +3,7 @@ import re
 import statistics
 import sys
 
-from metal_gpu_trace import analysis, fingerprint, paths, recording, workloads
+from metal_gpu_trace import analysis, app_metrics, fingerprint, paths, recording, workloads
 
 
 def tool_perf_baseline_record(name, count=3, skip_s=0, cooldown_s=0, **record):
@@ -147,11 +147,21 @@ def sweep_values(variable, values):
     return values if variable == "dim" else [str(v) for v in values]
 
 
-def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, cooldown_s=0, **record):
+def app_column(metric):
+    """Returns the column name of a metric "app_metrics.<column>" (None for no metric), or raises ToolError."""
+    if metric is None:
+        return None
+    prefix = "app_metrics."
+    if not isinstance(metric, str) or not metric.startswith(prefix) or not app_metrics.NAME.fullmatch(metric[len(prefix):]):
+        raise paths.ToolError("metric is app_metrics.<column>, the name of a column the program's telemetry file writes")
+    return metric[len(prefix):]
+
+
+def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, cooldown_s=0, metric=None, **record):
     """Records the same program once per value of one variable and returns, per value, the median FPS, 1 % low, GPU ms per
     frame and stutter; with 3 or more numeric values also the line GPU ms follows (fixed ms plus ms per unit) with its
     r2. With rounds above 1 the values run in reverse every other round, so drift hits all alike. Runs are `name`-<value
-    number>-r<round>; each takes its seconds plus about a minute of read-back."""
+    number>-r<round>; each takes its seconds plus about a minute of read-back. `metric` app_metrics.<column> adds that telemetry column per value, with a fit."""
     if not paths.name_ok(name):
         raise paths.ToolError("a name holds only letters, digits, '.', '_' and '-'")
     paths.check_skip(skip_s)
@@ -160,6 +170,9 @@ def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, cooldown_s=0, **
     if not 1 <= rounds <= 5:
         raise paths.ToolError("rounds is 1 to 5")
     values = sweep_values(variable, values)
+    column = app_column(metric)
+    if column:
+        record.setdefault("tier", "light")
     if len(values) * rounds > 24:
         raise paths.ToolError("at most 24 recordings: fewer values or rounds")
     base_env = recording.check_env(record.pop("env", ""))
@@ -190,6 +203,10 @@ def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, cooldown_s=0, **
                 if isinstance(item, (int, float)):
                     found.append(item)
             metrics[key] = statistics.median(found) if found else None
+        if column:
+            means = [m for m in (((s.get("app_metrics") or {}).get("columns") or {}).get(column, {}).get("mean")
+                                 for s in summaries) if isinstance(m, (int, float)) and not isinstance(m, bool)]
+            metrics[metric] = statistics.median(means) if means else None
         rows.append({"value": value, "runs": names, "metrics": metrics})
     result = {"name": name, "variable": variable, "rows": rows, "fit": None, "too_short": min(frames, default=0) < 100}
     try:
@@ -201,6 +218,12 @@ def tool_perf_sweep(name, variable, values, rounds=1, skip_s=0, cooldown_s=0, **
     if fit:
         result["fit"] = {"x": "dim^3" if variable == "dim" else variable, "ms_fixed": round(fit[0], 6),
                          "ms_per_unit": round(fit[1], 6), "r2": round(fit[2], 4)}
+    if column:
+        result["metric"] = metric
+        app_points = [(x, r["metrics"][metric]) for x, r in zip(xs, rows) if r["metrics"][metric] is not None]
+        app_fit = line_fit(app_points) if len(app_points) >= 3 else None
+        result["app_fit"] = {"x": "dim^3" if variable == "dim" else variable, "fixed": round(app_fit[0], 6),
+                             "per_unit": round(app_fit[1], 6), "r2": round(app_fit[2], 4)} if app_fit else None
     if paths.check_skip(skip_s):
         result["skipped_s"] = paths.check_skip(skip_s)
     return result

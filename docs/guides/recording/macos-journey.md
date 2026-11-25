@@ -153,6 +153,8 @@ The block:
 
 `app_metrics` sits at the top level of the summary, not in `common`. See [the summary keys](../data-and-lifecycle/json-keys.md).
 
+`perf_sweep` can sweep one of these columns: pass `metric="app_metrics.<column>"` and each value's row carries the median, over rounds, of that column's mean, with `app_fit` (fixed plus per unit, and r2) over the swept variable. The runs are `light` unless you pass a tier. Recording still goes through xctrace; the sweep only skips the memory table.
+
 **Not reproduced on Windows:** the Windows engine takes the same path (the variable reaches the program through
 `PERF_ENV`), but there is no real Windows recording yet with a program that writes this file.
 

@@ -263,7 +263,7 @@
       "readOnlyHint": false,
       "title": "Record one run per value of a variable"
      },
-     "description": "Records the same program once per value of one variable and returns, per value, the median FPS, 1 % low, GPU ms per\nframe and stutter; with 3 or more numeric values also the line GPU ms follows (fixed ms plus ms per unit) with its\nr2. With rounds above 1 the values run in reverse every other round, so drift hits all alike. Runs are `name`-<value\nnumber>-r<round>; each takes its seconds plus about a minute of read-back.",
+     "description": "Records the same program once per value of one variable and returns, per value, the median FPS, 1 % low, GPU ms per\nframe and stutter; with 3 or more numeric values also the line GPU ms follows (fixed ms plus ms per unit) with its\nr2. With rounds above 1 the values run in reverse every other round, so drift hits all alike. Runs are `name`-<value\nnumber>-r<round>; each takes its seconds plus about a minute of read-back. `metric` app_metrics.<column> adds that telemetry column per value, with a fit.",
      "inputSchema": {
       "properties": {
        "api": {
@@ -303,6 +303,10 @@
        },
        "memory_free_pct": {
         "type": "integer"
+       },
+       "metric": {
+        "description": "app_metrics.<column>, a column of the program's telemetry",
+        "type": "string"
        },
        "name": {
         "description": "name: letters, digits, '.', '_', '-'",
@@ -2031,7 +2035,7 @@
       "readOnlyHint": false,
       "title": "Record one run per value of a variable"
      },
-     "description": "Records the same program once per value of one variable and returns, per value, the median FPS, 1 % low, GPU ms per\nframe and stutter; with 3 or more numeric values also the line GPU ms follows (fixed ms plus ms per unit) with its\nr2. With rounds above 1 the values run in reverse every other round, so drift hits all alike. Runs are `name`-<value\nnumber>-r<round>; each takes its seconds plus about a minute of read-back.",
+     "description": "Records the same program once per value of one variable and returns, per value, the median FPS, 1 % low, GPU ms per\nframe and stutter; with 3 or more numeric values also the line GPU ms follows (fixed ms plus ms per unit) with its\nr2. With rounds above 1 the values run in reverse every other round, so drift hits all alike. Runs are `name`-<value\nnumber>-r<round>; each takes its seconds plus about a minute of read-back. `metric` app_metrics.<column> adds that telemetry column per value, with a fit.",
      "inputSchema": {
       "properties": {
        "api": {
@@ -2071,6 +2075,10 @@
        },
        "memory_free_pct": {
         "type": "integer"
+       },
+       "metric": {
+        "description": "app_metrics.<column>, a column of the program's telemetry",
+        "type": "string"
        },
        "name": {
         "description": "name: letters, digits, '.', '_', '-'",

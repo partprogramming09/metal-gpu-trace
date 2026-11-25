@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import sys
+import tempfile
 
 import support  # noqa: F401  (puts src/ on sys.path)
 from metal_gpu_trace import config  # noqa: E402
@@ -286,6 +287,59 @@ def test_perf_sweep(tmp_path):
         assert not made
     finally:
         recording.tool_perf_record, config.OUT = saved
+
+def sweep_with_app_column(tmp_path, columns_by_dim, **call):
+    """Runs perf_sweep over dim with recording stubbed; each run's summary holds the app_metrics `columns_by_dim` gives."""
+    from metal_gpu_trace import config, experiments, recording
+    made, tmp_path = [], pathlib.Path(tempfile.mkdtemp(dir=tmp_path))  # a folder per call: run names repeat
+
+    def fake_record(label, **kw):
+        made.append(kw)
+        dim = kw.get("dim") or 10
+        block = {"columns": columns_by_dim(dim)} if columns_by_dim(dim) is not None else {}
+        (tmp_path / f"{label}_20261018-000000.json").write_text(json.dumps(
+            {"gpu": {"frames": 300, "fps_estimate": 60.0, "frame_gpu_ms": {"mean": 4.0}}, "app_metrics": block}))
+    saved = recording.tool_perf_record, config.OUT
+    recording.tool_perf_record, config.OUT = fake_record, tmp_path
+    try:
+        return experiments.tool_perf_sweep("t", "dim", [10, 20, 30], **call), made
+    finally:
+        recording.tool_perf_record, config.OUT = saved
+
+
+def test_perf_sweep_measures_a_column_of_the_programs_own_telemetry(tmp_path):
+    """metric="app_metrics.<col>" reports the median over rounds of that column's mean per value and fits it on the swept
+    variable; without it the answer has no `metric`, and a light recording is the default."""
+    got, made = sweep_with_app_column(tmp_path, lambda d: {"draws": {"mean": 2.0 * d ** 3 + 5}}, rounds=2,
+                                      metric="app_metrics.draws")
+    assert got["metric"] == "app_metrics.draws", got
+    assert [r["metrics"]["app_metrics.draws"] for r in got["rows"]] == [2005.0, 16005.0, 54005.0], got["rows"]
+    fit = got["app_fit"]
+    assert fit["x"] == "dim^3" and abs(fit["per_unit"] - 2.0) < 1e-6 and abs(fit["fixed"] - 5.0) < 1e-6 and fit["r2"] == 1.0, fit
+    assert all(kw["tier"] == "light" for kw in made), "a program-telemetry sweep needs no memory table"
+    plain, made = sweep_with_app_column(tmp_path, lambda d: {"draws": {"mean": 1.0}})
+    assert "metric" not in plain and "app_fit" not in plain and all("tier" not in kw for kw in made), plain
+    _, made = sweep_with_app_column(tmp_path, lambda d: {"draws": {"mean": 1.0}}, metric="app_metrics.draws", tier="deep")
+    assert all(kw["tier"] == "deep" for kw in made), "an explicit tier wins"
+
+
+def test_perf_sweep_says_when_the_column_is_missing_from_a_run(tmp_path):
+    got, _ = sweep_with_app_column(tmp_path, lambda d: {"draws": {"mean": 3.0}} if d != 20 else None, metric="app_metrics.draws")
+    values = [r["metrics"]["app_metrics.draws"] for r in got["rows"]]
+    assert values == [3.0, None, 3.0] and got["app_fit"] is None, got
+    got, _ = sweep_with_app_column(tmp_path, lambda d: {"other": {"mean": 3.0}}, metric="app_metrics.draws")
+    assert all(r["metrics"]["app_metrics.draws"] is None for r in got["rows"]) and got["app_fit"] is None, got
+
+
+def test_perf_sweep_refuses_a_bad_metric_before_recording(tmp_path):
+    from metal_gpu_trace import experiments, paths
+    for bad in ("fps", "app_metrics.", "app_metrics.a b", "app_metrics.x/y", "app_metrics." + "a" * 65, 7, ""):
+        try:
+            experiments.tool_perf_sweep("t", "dim", [10, 20], metric=bad)
+            raise AssertionError(bad)
+        except paths.ToolError as error:
+            assert "app_metrics" in str(error), error
+
 
 def test_perf_ab(tmp_path):
     """perf_ab records A B B A, passes each side's env on, and calls a metric better or worse only when every B value

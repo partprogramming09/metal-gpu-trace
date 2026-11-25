@@ -83,6 +83,7 @@ TOOLS = {
          "values": {"type": "array", "items": {"type": ["string", "integer"]},
                     "description": "2 to 8 values of the variable, such as [10, 20, 30] for dim"},
          "rounds": {**I, "description": "default 1, at most 5 and 24 recordings in all"},
+         "metric": {**S, "description": "app_metrics.<column>, a column of the program's telemetry"},
          "cooldown_s": COOLDOWN,
                   "skip_s": {"type": "number", "description": SKIP},
          **{k: v for k, v in SAME.items() if k != "label"}}, ["name", "variable", "values"]),
