@@ -3,7 +3,7 @@ import re
 import statistics
 import sys
 
-from metal_gpu_trace import analysis, paths, recording, workloads
+from metal_gpu_trace import analysis, fingerprint, paths, recording, workloads
 
 
 def tool_perf_baseline_record(name, count=3, skip_s=0, cooldown_s=0, **record):
@@ -43,10 +43,11 @@ def ab_verdict(a, b, higher_better):
     return "same"
 
 
-def tool_perf_ab(name, env_a, env_b, rounds=1, skip_s=0, cooldown_s=0, **record):
+def tool_perf_ab(name, env_a, env_b, rounds=1, skip_s=0, cooldown_s=0, fingerprint_paths=None, **record):
     """Records the same program with two environments in the order A B B A (`rounds` times) and says per metric whether B
     is better, worse or the same as A, with every value behind it. Runs are `name`-a1, `name`-b1, ... Each takes its
-    seconds plus about a minute of read-back."""
+    seconds plus about a minute of read-back. `fingerprint_paths` stops it before the next
+    recording if one of those files changed."""
     if not paths.name_ok(name):
         raise paths.ToolError("a name holds only letters, digits, '.', '_' and '-'")
     paths.check_skip(skip_s)
@@ -55,13 +56,26 @@ def tool_perf_ab(name, env_a, env_b, rounds=1, skip_s=0, cooldown_s=0, **record)
     if not 1 <= rounds <= 5:
         raise paths.ToolError("rounds is 1 to 5")
     recording.check_env(env_a), recording.check_env(env_b)
-    runs = {"a": [], "b": []}
+    runs, first = {"a": [], "b": []}, None
+    if fingerprint_paths:
+        record["fingerprint_paths"] = fingerprint_paths
     for side in "abba" * rounds:
+        if fingerprint_paths:
+            now = fingerprint.fingerprint_paths(fingerprint_paths)
+            changed = fingerprint.compare(first, now) if first else None
+            if changed and not changed["same"]:
+                raise paths.ToolError(f"{', '.join(changed['changed'])} changed between the recordings of this perf_ab; "
+                                      "nothing more was recorded. Build once, then run perf_ab again")
+            first = first or now
         if cooldown_s and (runs["a"] or runs["b"]):
             recording.cooldown(cooldown_s)
         label = f"{name}-{side}{len(runs[side]) + 1}"
         runs[side].append(recording.record_new_summary(label, env=env_a if side == "a" else env_b, **record)[0])
-    return ab_report(name, env_a, env_b, runs, skip_s)
+    result = ab_report(name, env_a, env_b, runs, skip_s)
+    if fingerprint_paths:
+        result["fingerprint"] = (fingerprint.compare(first, fingerprint.fingerprint_paths(fingerprint_paths))
+                                 or {"same": True})
+    return result
 
 
 def cold_warm_report(name, first, second):

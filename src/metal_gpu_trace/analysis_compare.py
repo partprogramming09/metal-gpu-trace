@@ -1,5 +1,8 @@
 """Comparing summaries: perf_compare's numbers and Markdown, the notes on unpresented or noisy runs, and the metric
 ranges a perf_check verdict is judged against. Part of analysis, which re-exports these names."""
+import datetime
+import re
+
 from metal_gpu_trace import metrics, paths, recording
 
 
@@ -81,6 +84,30 @@ def memory_pressure_change(sa, sb):
     return {"comparable": True, "source": pa["source"], "change": change(*peaks)}
 
 
+FAR_APART_HOURS = 24
+RUN_STAMP = re.compile(r"_(\d{8}-\d{6})$")
+
+
+def time_apart(a, b):
+    """Returns {"hours", "warning"} when the runs named `a` and `b` were recorded more than FAR_APART_HOURS apart (read
+    from the stamp perf_record puts at the end of a run name), else None: a run with no stamp (an imported one) says
+    nothing. Hours or days apart, the machine, its updates and the heat are not the same."""
+    stamps = []
+    for run in (a, b):
+        found = RUN_STAMP.search(run)
+        try:
+            stamps.append(datetime.datetime.strptime(found[1], "%Y%m%d-%H%M%S") if found else None)
+        except ValueError:
+            stamps.append(None)
+    if None in stamps:
+        return None
+    hours = round(abs((stamps[1] - stamps[0]).total_seconds()) / 3600, 1)
+    if hours <= FAR_APART_HOURS:
+        return None
+    return {"hours": hours, "warning": f"these runs are far apart in time ({hours:g} hours): updates, other programs "
+                                       "or heat may differ; record both again close together before calling a change real"}
+
+
 def compare_summaries(sa, sb, a, b, short_us=25):
     """perf_compare over two loaded summaries named a and b."""
     numbers = {
@@ -104,6 +131,9 @@ def compare_summaries(sa, sb, a, b, short_us=25):
             out[name] = change(None, None)
     short = [r for r, s in ((a, sa), (b, sb)) if (s.get("gpu") or {}).get("frames", 0) < 100]
     result = {"a": a, "b": b, "layer": recording.layer_change(sa, sb, a, b), "context": recording.context_change(sa, sb, a, b), "metrics": out, "too_short": short}
+    apart = time_apart(a, b)
+    if apart:
+        result["time_apart"] = apart
     stalled = unpresented(**{a: sa, b: sb})
     if stalled:
         result["unpresented"] = stalled

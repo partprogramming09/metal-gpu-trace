@@ -84,6 +84,14 @@
         },
         "type": "array"
        },
+       "fingerprint_paths": {
+        "description": "files to hash into the summary; compare shows changes",
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 32,
+        "type": "array"
+       },
        "label": {
         "description": "run name: letters, digits, '.', '_', '-'",
         "type": "string"
@@ -373,7 +381,7 @@
       "readOnlyHint": false,
       "title": "Record two settings in A B B A order"
      },
-     "description": "Records the same program with two environments in the order A B B A (`rounds` times) and says per metric whether B\nis better, worse or the same as A, with every value behind it. Runs are `name`-a1, `name`-b1, ... Each takes its\nseconds plus about a minute of read-back.",
+     "description": "Records the same program with two environments in the order A B B A (`rounds` times) and says per metric whether B\nis better, worse or the same as A, with every value behind it. Runs are `name`-a1, `name`-b1, ... Each takes its\nseconds plus about a minute of read-back. `fingerprint_paths` stops it before the next\nrecording if one of those files changed.",
      "inputSchema": {
       "properties": {
        "api": {
@@ -411,6 +419,14 @@
         "items": {
          "type": "string"
         },
+        "type": "array"
+       },
+       "fingerprint_paths": {
+        "description": "files to hash into the summary; compare shows changes",
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 32,
         "type": "array"
        },
        "memory": {
@@ -1836,6 +1852,14 @@
         },
         "type": "array"
        },
+       "fingerprint_paths": {
+        "description": "files to hash into the summary; compare shows changes",
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 32,
+        "type": "array"
+       },
        "label": {
         "description": "run name: letters, digits, '.', '_', '-'",
         "type": "string"
@@ -2125,7 +2149,7 @@
       "readOnlyHint": false,
       "title": "Record two settings in A B B A order"
      },
-     "description": "Records the same program with two environments in the order A B B A (`rounds` times) and says per metric whether B\nis better, worse or the same as A, with every value behind it. Runs are `name`-a1, `name`-b1, ... Each takes its\nseconds plus about a minute of read-back.",
+     "description": "Records the same program with two environments in the order A B B A (`rounds` times) and says per metric whether B\nis better, worse or the same as A, with every value behind it. Runs are `name`-a1, `name`-b1, ... Each takes its\nseconds plus about a minute of read-back. `fingerprint_paths` stops it before the next\nrecording if one of those files changed.",
      "inputSchema": {
       "properties": {
        "api": {
@@ -2163,6 +2187,14 @@
         "items": {
          "type": "string"
         },
+        "type": "array"
+       },
+       "fingerprint_paths": {
+        "description": "files to hash into the summary; compare shows changes",
+        "items": {
+         "type": "string"
+        },
+        "maxItems": 32,
         "type": "array"
        },
        "memory": {
