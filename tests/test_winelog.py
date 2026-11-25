@@ -46,7 +46,7 @@ def test_parse_reads_the_three_shapes_of_a_wine_line():
 def test_normalize_drops_numbers_addresses_guids_quoted_text_and_paths():
     text = f'Loaded L"C:\\\\users\\\\herda\\\\game.exe" at 0000000140000000 id {GUID} size 4096 from /Users/herda/x/y.dll ok'
     got = winelog.normalize(text)
-    assert got == 'Loaded "S" at N id N size N from <path> ok', got
+    assert got == 'Loaded "S" at N id N size N from <path>', got
     for secret in ("herda", "game", "Users", "4096", "0000000140"):
         assert secret not in got
     assert winelog.normalize("x" * 500) == "x" * winelog.MAX_MESSAGE
@@ -84,7 +84,7 @@ def test_the_longest_silence_between_stamped_lines_names_both_sides_without_raw_
         "9.700:0028:002c:trace:loaddll:fn finally loaded 55",
         "9.800:0028:002c:trace:process:fn end"))
     got = census(tmp_path)["largest_gap"]
-    assert got == {"seconds": 8.5, "file": "a.log", "before": "process:fn start", "after": "loaddll:fn finally loaded N"}, got
+    assert got == {"seconds": 8.5, "file": 1, "before": "process:fn start", "after": "loaddll:fn finally loaded N"}, got
     assert "herda" not in json.dumps(census(tmp_path))
 
 
@@ -142,3 +142,42 @@ def test_a_hostile_line_of_quotes_is_cut_and_does_not_stall_the_scan(tmp_path):
     start = time.monotonic()
     got = census(tmp_path)
     assert time.monotonic() - start < 5 and got["by_level"] == {"warn": 2, "fixme": 1}, got
+
+
+def test_unclosed_quotes_are_linear_and_closed_ones_still_collapse():
+    import time
+    start = time.monotonic()
+    for _ in range(200):
+        winelog.normalize('x ' + '"\\' * 1000)
+    assert time.monotonic() - start < 1
+    assert winelog.unquote('a "b c" d L"e\\"f" g "open') == 'a "S" d "S" g "open'
+
+
+def test_the_gap_names_the_file_by_position_and_hostile_logs_keep_counters_bounded(tmp_path):
+    (tmp_path / "alice-macbook.log").write_text(log("1.000:0028:002c:trace:c:fn x", "4.000:0028:002c:trace:c:fn y"))
+    got = census(tmp_path)
+    assert got["largest_gap"]["file"] == 1 and "alice" not in json.dumps(got), got
+    (tmp_path / "alice-macbook.log").write_text(log(*[f"002c:warn:chan{i}:fn m 0x8{i:07x}" for i in range(winelog.MAX_KEYS + 50)]))
+    got = census(tmp_path)
+    assert got["lines"] == winelog.MAX_KEYS + 50 and got["by_channel"].get("other") == 50, got["by_channel"]
+
+
+def test_a_path_with_spaces_is_hidden_to_the_end_of_the_line():
+    assert winelog.normalize("Cannot open /Users/Mary Ann") == "Cannot open <path>"
+    assert winelog.normalize("Cannot open C:\\Users\\Mary Ann\\x.dll now") == "Cannot open <path>"
+
+
+def test_gaps_are_positive_and_finite_and_a_non_finite_stamp_is_not_a_line(tmp_path):
+    assert winelog.parse("1" + "0" * 400 + ".000:0024:002c:err:x:f a") is None
+    (tmp_path / "a.log").write_text(log("5.000:0024:002c:err:x:f a", "2.000:0024:002c:err:x:f b", "2.500:0024:002c:err:x:f c"))
+    got = census(tmp_path)["largest_gap"]
+    assert got["seconds"] == 0.5, got
+    (tmp_path / "a.log").write_text(log("5.000:0024:002c:err:x:f a", "2.000:0024:002c:err:x:f b"))
+    assert census(tmp_path)["largest_gap"] is None
+    json.dumps(census(tmp_path), allow_nan=False)
+
+
+def test_a_bad_path_argument_is_a_tool_error(tmp_path):
+    with Readable(tmp_path):
+        for bad in ("a\0b", 5, None):
+            assert raises(lambda bad=bad: winelog.tool_wine_log_census(bad)), bad

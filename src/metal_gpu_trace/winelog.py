@@ -1,15 +1,17 @@
 """Wine's debug log, summarised: what it says is missing or wrong (`fixme`, `err`, `warn`) by message, and the longest
 silence between lines that carry a `+timestamp`. Only normalized messages leave this module, never a raw line."""
 import collections
+import io
+import math
 import os
 import re
+import stat
 
 from metal_gpu_trace import paths
 
 # [seconds.millis:][pid:]tid:class:channel:function message (WINEDEBUG=+timestamp,+pid adds the first two)
 LINE = re.compile(r"^(?:(\d+\.\d{3}):)?(?:[0-9a-f]{4}:){1,2}(fixme|err|warn|trace):([\w-]+):([\w.:<>-]+)\s*(.*)$")
 HRESULT = re.compile(r"\b0x8[0-9a-fA-F]{7}\b")
-QUOTED = re.compile(r'L?"(?:[^"\\]|\\.)*"')
 GUID = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 LEVELS = ("fixme", "err", "warn")
 SUFFIXES = {".log", ".txt", ".stderr", ".err", ".out"}
@@ -19,6 +21,7 @@ MAX_GROUPS = 5000  # distinct messages kept; the lines past it are still counted
 MAX_MESSAGE = 160
 MAX_LINE = 2000  # a longer line is cut before it is read: quotes with no end would make the scan quadratic
 MAX_TOP = 100
+MAX_KEYS = 200  # distinct channels and HRESULTs kept; past it they are counted in `other`
 
 
 def parse(line):
@@ -28,15 +31,48 @@ def parse(line):
     if not found:
         return None
     stamp, kind, channel, func, rest = found.groups()
-    return kind, channel, f"{func} {rest}".strip(), float(stamp) if stamp else None
+    seconds = float(stamp) if stamp else None
+    if seconds is not None and not math.isfinite(seconds):
+        return None
+    return kind, channel, f"{func} {rest}".strip(), seconds
+
+
+def unquote(text):
+    """Returns `text` with each quoted string (an L prefix and backslash escapes allowed) replaced by "S" in one pass; a
+    quote that never closes is left as it is. A regex backtracks from every unclosed quote, which made a line of them
+    quadratic."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        start = text.find('"', i)
+        if start < 0:
+            break
+        j = start + 1
+        while j < n and text[j] != '"':
+            j += 2 if text[j] == "\\" else 1
+        if j >= n:
+            break
+        cut = start - 1 if start > i and text[start - 1] == "L" else start
+        out += [text[i:cut], '"S"']
+        i = j + 1
+    out.append(text[i:])
+    return "".join(out)
+
+
+def _squeeze(words):
+    """Returns `words` with each run of `<path>` made one."""
+    return [w for i, w in enumerate(words) if w != "<path>" or i == 0 or words[i - 1] != "<path>"]
 
 
 def normalize(text):
     """Returns `text` with quoted strings, paths, GUIDs, hex values and numbers replaced (`"S"`, `<path>`, N), cut to
     MAX_MESSAGE characters: the same message groups however its numbers change, and no name of a folder, file or person
     that a log line quotes survives."""
-    text = QUOTED.sub('"S"', text)
-    text = " ".join("<path>" if "/" in word or "\\" in word else word for word in text.split(" "))
+    text = unquote(text)
+    words, hidden = [], False  # a path may hold spaces ("/Users/Mary Ann"): once one starts, the rest of the line goes
+    for word in text.split(" "):
+        hidden = hidden or "/" in word or "\\" in word
+        words.append(word if not hidden else "<path>")
+    text = " ".join(_squeeze(words))
     text = GUID.sub("N", text)
     text = re.sub(r"0x[0-9a-fA-F]+", "N", text)
     return re.sub(r"(?<!\w)\d+", "N", text)[:MAX_MESSAGE]
@@ -48,8 +84,13 @@ def read_file(path):
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     except OSError:
         raise paths.ToolError(f"{path.name} cannot be opened (missing, a link or no permission)") from None
-    with os.fdopen(fd, "rb") as handle:
-        data = handle.read(MAX_FILE_BYTES + 1)
+    try:
+        with os.fdopen(fd, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise paths.ToolError(f"{path.name} is not a regular file")
+            data = handle.read(MAX_FILE_BYTES + 1)
+    except OSError:
+        raise paths.ToolError(f"{path.name} cannot be read") from None
     return None if len(data) > MAX_FILE_BYTES else data.decode("utf-8", errors="replace")
 
 
@@ -69,17 +110,6 @@ def files_of(path):
     return [where]
 
 
-def largest_gap(lines):
-    """Returns {"seconds", "before", "after"} for the longest silence between two consecutive stamped lines of one
-    file (the normalized messages on each side), or None when fewer than two lines are stamped."""
-    best, previous = None, None
-    for stamp, message in lines:
-        if previous and (best is None or stamp - previous[0] > best[0]):
-            best = (stamp - previous[0], previous[1], message)
-        previous = (stamp, message)
-    return {"seconds": round(best[0], 3), "before": best[1], "after": best[2]} if best else None
-
-
 def tool_wine_log_census(path, top=15):
     """Counts what a Wine debug log says is missing or wrong, by level, channel and message (numbers, paths and quoted
     text removed so repeats group), plus HRESULTs and the longest silence between +timestamp lines. No raw line leaves."""
@@ -88,26 +118,31 @@ def tool_wine_log_census(path, top=15):
     files = files_of(path)
     levels, channels, hresults = collections.Counter(), collections.Counter(), collections.Counter()
     groups, truncated, read, skipped, gap = {}, False, 0, 0, None
-    for file in files:
+    for index, file in enumerate(files, 1):
         text = read_file(file)
         if text is None:
             skipped += 1
             continue
         read += 1
-        stamped = []
-        for line in text.splitlines():
-            parsed = parse(line[:MAX_LINE])
+        previous = None  # (seconds, channel, raw message) of the last stamped line: the only one kept
+        for line in io.StringIO(text):
+            parsed = parse(line.rstrip("\r\n")[:MAX_LINE])
             if not parsed:
                 continue
             kind, channel, message, stamp = parsed
-            clean = normalize(message)
             if stamp is not None:
-                stamped.append((stamp, f"{channel}:{clean}"))
+                delta = stamp - previous[0] if previous else 0
+                if delta > 0 and math.isfinite(delta) and (gap is None or delta > gap["seconds"]):
+                    gap = {"seconds": delta, "file": index,
+                           "before": f"{previous[1]}:{normalize(previous[2])}", "after": f"{channel}:{normalize(message)}"}
+                previous = (stamp, channel, message)
             if kind not in LEVELS:
                 continue
+            clean = normalize(message)
             levels[kind] += 1
-            channels[channel] += 1
-            hresults.update(HRESULT.findall(message))
+            channels[channel if channel in channels or len(channels) < MAX_KEYS else "other"] += 1
+            for code in HRESULT.findall(message):
+                hresults[code if code in hresults or len(hresults) < MAX_KEYS else "other"] += 1
             key = (kind, channel, clean)
             if key in groups:
                 groups[key] += 1
@@ -115,11 +150,8 @@ def tool_wine_log_census(path, top=15):
                 groups[key] = 1
             else:
                 truncated = True
-        found = largest_gap(stamped)
-        if found and (gap is None or found["seconds"] > gap["seconds"]):
-            gap = {**found, "file": file.name}
     ranked = sorted(groups.items(), key=lambda item: (-item[1], item[0]))[:top]
-    gap = {"seconds": gap["seconds"], "file": gap["file"], "before": gap["before"], "after": gap["after"]} if gap else None
+    gap = {**gap, "seconds": round(gap["seconds"], 3)} if gap else None
     return {"lines": sum(levels.values()), "by_level": dict(levels), "by_channel": dict(channels.most_common(10)),
             "top": [{"level": k[0], "channel": k[1], "message": k[2], "count": n} for k, n in ranked],
             "hresults": dict(hresults.most_common(10)), "groups_truncated": truncated,
