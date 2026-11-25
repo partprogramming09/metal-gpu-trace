@@ -3,6 +3,7 @@ description. Part of perf_report, which re-exports these names."""
 import math
 import re
 import subprocess
+import time
 
 from metal_gpu_trace import metrics
 
@@ -50,6 +51,30 @@ def screen_locked(read=read_command):
         return "CGSSessionScreenIsLocked" in read(("ioreg", "-n", "Root", "-d1", "-a"))
     except (KeyError, OSError, subprocess.SubprocessError):
         return None
+
+
+GPU_UTILIZATION = re.compile(r'"Device Utilization %"\s*=\s*(\d{1,3})\b')
+
+
+def gpu_load(read=read_command, sleep=time.sleep, gap_s=0.25):
+    """Returns {"device_pct", "samples"}: how much of the GPU's device the whole Mac is using right now, from `ioreg`
+    (the busiest accelerator of each reading). A reading under half of NOISY_EXTERNAL_PCT stands alone; otherwise two
+    more are taken `gap_s` apart and averaged, so one spike does not decide. None when `ioreg` gives no percentage
+    (no `ioreg`, no accelerator, text this does not know): never zero for an unknown."""
+    def once():
+        try:
+            found = [int(v) for v in GPU_UTILIZATION.findall(read(("ioreg", "-r", "-d", "1", "-c", "IOAccelerator", "-w0")))]
+        except (OSError, subprocess.SubprocessError):
+            return None
+        found = [v for v in found if v <= 100]
+        return max(found) if found else None
+    values = [first] if (first := once()) is not None else []
+    if values and first >= NOISY_EXTERNAL_PCT / 2:
+        for _ in range(2):
+            sleep(gap_s)
+            if (again := once()) is not None:
+                values.append(again)
+    return {"device_pct": round(sum(values) / len(values), 1), "samples": len(values)} if values else None
 
 
 def power_state(read=read_command):

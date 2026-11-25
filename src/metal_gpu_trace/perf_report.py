@@ -37,6 +37,7 @@ NOISY_EXTERNAL_PCT, noisy_environment = perf_report_host.NOISY_EXTERNAL_PCT, per
 other_processes, read_command = perf_report_host.other_processes, perf_report_host.read_command
 screen_locked, power_state, power_block = perf_report_host.screen_locked, perf_report_host.power_state, perf_report_host.power_block
 machine_info = perf_report_host.machine_info
+gpu_load = perf_report_host.gpu_load
 
 # the tables a summary reads, one xpath each (a multi-table xpath keeps the first table's columns only)
 MEMORY = "metal-current-allocated-size"

@@ -1,8 +1,10 @@
 """preflight: what a recording needs, checked in milliseconds before any process starts."""
 import collections
 import os
+import pathlib
 import shutil
 import sys
+import tempfile
 
 import support  # noqa: F401  (puts src/ on sys.path)
 from metal_gpu_trace import config, paths, perf_record_windows, preflight, recording
@@ -527,3 +529,94 @@ def test_windows_is_process_alive_refuses_a_pid_outside_32_bits_before_the_api()
     """OpenProcess takes a 32-bit pid and a stale lock file can hold anything; on macOS reaching ctypes.windll raises."""
     for pid in (0, -1, 2**31, 2**32 + 1, 10**20):
         assert perf_record_windows.is_process_alive(pid) is False, pid
+
+
+# --- 0.36: the GPU's load before recording ----------------------------------------------------------------------------
+
+def ioreg_with(*percents):
+    """The text `ioreg -c IOAccelerator` prints for accelerators using `percents` of their device."""
+    return "\n".join(f'    | "PerformanceStatistics" = {{"Renderer Utilization %"=1,"Device Utilization %"={p},"x"=2}}'
+                     for p in percents)
+
+
+def sequence_reader(*answers):
+    """A `read` that answers each call with the next of `answers` (the last one again after that) and counts the calls."""
+    calls = []
+
+    def read(argv):
+        calls.append(argv)
+        answer = answers[min(len(calls), len(answers)) - 1]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    read.calls = calls
+    return read
+
+
+def never_sleeps(seconds):
+    raise AssertionError("a quiet GPU needs no second look")
+
+
+def test_a_quiet_gpu_is_read_once_without_waiting():
+    read = sequence_reader(ioreg_with(3))
+    assert preflight.perf_report.gpu_load(read, never_sleeps) == {"device_pct": 3.0, "samples": 1}
+    assert len(read.calls) == 1 and read.calls[0][0] == "ioreg", read.calls
+
+
+def test_a_loaded_gpu_is_read_three_times_and_averaged():
+    slept = []
+    read = sequence_reader(ioreg_with(60), ioreg_with(40), ioreg_with(20))
+    got = preflight.perf_report.gpu_load(read, slept.append)
+    assert got == {"device_pct": 40.0, "samples": 3} and slept == [0.25, 0.25], (got, slept)
+
+
+def test_with_several_accelerators_the_busiest_counts_and_nonsense_is_ignored():
+    assert preflight.perf_report.gpu_load(sequence_reader(ioreg_with(2, 7)), never_sleeps)["device_pct"] == 7.0
+    assert preflight.perf_report.gpu_load(sequence_reader(ioreg_with(250, 1000, 4)), never_sleeps)["device_pct"] == 4.0
+
+
+def test_an_unreadable_gpu_load_is_none_never_zero():
+    for answer in ("", "no gpu here", OSError("no ioreg"), ioreg_with(250)):
+        assert preflight.perf_report.gpu_load(sequence_reader(answer), never_sleeps) is None, answer
+    # a failed second look keeps the first reading
+    got = preflight.perf_report.gpu_load(sequence_reader(ioreg_with(50), OSError("gone"), OSError("gone")), lambda s: None)
+    assert got == {"device_pct": 50.0, "samples": 1}, got
+
+
+def report_with(tmp_path, *answers, platform=None):
+    with Saved():
+        kw = setup(pathlib.Path(tempfile.mkdtemp(dir=tmp_path)))  # a folder per call: setup makes its folders afresh
+        return preflight.environment_report(wine=kw["wine"], seconds=30, environ=kw["environ"],
+                                            read=sequence_reader(*answers), alive=kw["alive"], sleep=lambda s: None,
+                                            platform=platform)
+
+
+def test_the_report_says_a_busy_gpu_without_refusing_to_record(tmp_path):
+    report = report_with(tmp_path, ioreg_with(55))
+    gpu = next(item for item in report["checks"] if item["name"] == "gpu")
+    assert gpu["status"] == "busy" and gpu["fatal"] is False and report["ok"] is True, report
+    assert "55" in gpu["solution"] and "close" in gpu["solution"] and "/" not in gpu["solution"], gpu
+    names = [item["name"] for item in report["checks"]]
+    assert names.index("screen") < names.index("gpu") < names.index("lock"), names
+
+
+def test_the_report_says_ok_for_a_quiet_gpu_and_is_silent_when_it_cannot_tell(tmp_path):
+    quiet = report_with(tmp_path, ioreg_with(2))
+    assert next(item for item in quiet["checks"] if item["name"] == "gpu") == {"name": "gpu", "status": "ok", "fatal": False}
+    assert "gpu" not in [item["name"] for item in report_with(tmp_path, "no gpu here")["checks"]]
+
+
+def test_windows_reports_no_gpu_load(tmp_path):
+    assert "gpu" not in [item["name"] for item in report_with(tmp_path, ioreg_with(90), platform="win32")["checks"]]
+
+
+def test_check_records_on_a_busy_gpu(tmp_path):
+    with Saved():
+        kw = setup(tmp_path)
+        kw["read"] = sequence_reader(ioreg_with(95))
+        preflight.check(**kw)
+
+
+def test_the_real_gpu_load_of_this_mac_is_a_percentage_or_unknown():
+    load = preflight.perf_report.gpu_load()
+    assert load is None or (0 <= load["device_pct"] <= 100 and 1 <= load["samples"] <= 3), load
