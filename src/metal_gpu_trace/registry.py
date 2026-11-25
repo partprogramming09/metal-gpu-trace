@@ -1,5 +1,5 @@
 """What clients read: the tool list with its schemas, the resources and the prompts."""
-from metal_gpu_trace import analysis, config, experiments, project, recording, screenshots, traces, workloads
+from metal_gpu_trace import analysis, config, experiments, project, recording, screenshots, traces, winelog, workloads
 
 
 OBJECT = {"type": "object"}
@@ -195,6 +195,10 @@ TOOLS = {
          "ignore_rects": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}, "maxItems": 8,
                           "description": "areas to leave out, [x0, y0, x1, y1] as fractions 0 to 1"}}, ["path"]),
                           hints("Flag black, flat, frozen or flickering screenshots")),
+    "wine_log_census": (winelog.tool_wine_log_census, schema(
+        {"path": {**S, "description": "a Wine debug log, or a folder of logs (in a readable folder), 50 at most"},
+         "top": {**I, "description": "messages to list, 1 to 100, default 15"}}, ["path"]),
+                        hints("Count what a Wine log says is missing or wrong")),
     "gpu_family": (traces.tool_gpu_family, schema(
         {"name": {**S, "description": "a family (Apple7 to Apple10) or a chip (M1 Pro, M2, M4 Max, A17 Pro)"}},
         ["name"]), hints("Apple GPU family facts")),

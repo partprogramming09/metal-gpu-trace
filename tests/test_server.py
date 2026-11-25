@@ -11,7 +11,7 @@ from support import ROOT, PKG, write_capture, hang_stubs, golden, wait_until  # 
 def test_perf_panel_is_gone():
     """The panel was removed in 0.25.0: no tool, and no word about it in what clients read first."""
     from metal_gpu_trace import metal_trace_mcp, registry
-    assert "perf_panel" not in registry.TOOLS and len(registry.TOOLS) == 27
+    assert "perf_panel" not in registry.TOOLS and len(registry.TOOLS) == 28
     assert "panel" not in metal_trace_mcp.INSTRUCTIONS.lower()
 
 
@@ -131,7 +131,7 @@ def test_server(tmp_path):
     assert [x["uriTemplate"] for x in replies[17]["result"]["resourceTemplates"]] == ["metal-trace://runs/{run}"]
     assert json.loads(replies[26]["result"]["contents"][0]["text"]) == {"gpu": {"frames": 100}}
     assert replies[27]["error"]["code"] == replies[28]["error"]["code"] == -32002, "a bad run name is not found"
-    assert len(replies[2]["result"]["tools"]) == 27
+    assert len(replies[2]["result"]["tools"]) == 28
     assert replies[1]["result"]["capabilities"]["resources"] == {}
     assert "KEEP_TRACE=1" in replies[1]["result"]["instructions"]
     hints = {t["name"]: t["annotations"] for t in replies[2]["result"]["tools"]}
@@ -329,7 +329,7 @@ def test_http(tmp_path):
         assert post(ping, path="/other")[0] == 404
         assert post({"jsonrpc": "2.0", "method": "notifications/initialized"}) == (202, None)
         code, tools = post({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        assert code == 200 and len(tools["result"]["tools"]) == 27 and "perf_panel" not in json.dumps(tools)
+        assert code == 200 and len(tools["result"]["tools"]) == 28 and "perf_panel" not in json.dumps(tools)
         code, runs = post({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
                            "params": {"name": "perf_runs", "arguments": {}, "_meta": {"progressToken": "x"}}})
         assert code == 200 and runs["result"]["structuredContent"]["total"] == 0, runs
@@ -670,7 +670,7 @@ def test_tool_shape(tmp_path):
     from metal_gpu_trace import protocol
     from metal_gpu_trace import metal_trace_mcp
     tools = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-    assert len(tools) == 27
+    assert len(tools) == 28
     info = next(t for t in tools if t["name"] == "project_info")
     assert info["annotations"]["readOnlyHint"] is True and list(info["inputSchema"]["properties"]) == ["fields"] and info["inputSchema"]["additionalProperties"] is False, info
     for tool in tools:
@@ -1363,14 +1363,14 @@ def test_fields_in_tools_list_and_output_schema(tmp_path):
 
 
 def test_tools_list_stays_short():
-    """tools/list is what every client reads on connect: it stays under 34 900 characters (it was 45 186)."""
+    """tools/list is what every client reads on connect: it stays under 35 800 characters (it was 45 186)."""
     from metal_gpu_trace import metal_trace_mcp, protocol  # noqa: F401
     tools = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
     # 45 186 characters before fields; 31 546 with it; 33 072 once trace_query took the tables-file filters (+1 526): a
     # budget, so a new argument has to earn its characters; 33 466 with fingerprint_paths on two tools, 33 652 with
     # perf_sweep's metric (+186); 34 891 with the new
-    # tool screenshots_check (+1 239, about what one tool costs)
-    assert len(json.dumps(tools, ensure_ascii=False)) <= 34900
+    # tool screenshots_check (+1 239, about what one tool costs); 35 787 with wine_log_census (+896)
+    assert len(json.dumps(tools, ensure_ascii=False)) <= 35800
 
 
 def test_fields_cuts_a_big_answer_before_the_size_limit(tmp_path):

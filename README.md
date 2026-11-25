@@ -192,13 +192,13 @@ These apps do not expand `~` or `$HOME`: write absolute paths.
 
 ### Tools
 
-27 tools in four groups. Your agent picks them; you rarely call one yourself. Every tool also takes an optional `fields`, a list of dotted paths such as `common.frame_pacing.fps_1pct_low`: the result keeps only those (on a page, in each row), so the agent reads a few numbers instead of a whole summary. A path that matches nothing is listed in `_meta.fields_missing`. Each tool's arguments are in [Server and transport](docs/guides/server-and-transport/registry.md).
+28 tools in four groups. Your agent picks them; you rarely call one yourself. Every tool also takes an optional `fields`, a list of dotted paths such as `common.frame_pacing.fps_1pct_low`: the result keeps only those (on a page, in each row), so the agent reads a few numbers instead of a whole summary. A path that matches nothing is listed in `_meta.fields_missing`. Each tool's arguments are in [Server and transport](docs/guides/server-and-transport/registry.md).
 
 | Group | Tools (what each is for) |
 | --- | --- |
 | Record | `perf_record` (one run and its summary), `perf_attach` (a program already running), `perf_baseline_record` (several runs saved as a reference), `perf_ab` (two environments, which is better), `perf_sweep` (one run per value of a setting), `perf_cold_warm` (first start-up against the second, shader-compile hitches) |
 | Judge and compare | `perf_compare` (two recordings, what got faster or slower), `perf_check` (same, better or regressed against a reference), `perf_gate` (pass or fail against your limits), `perf_baseline` (saves equal runs and shows their spread), `perf_history` (one number across many runs), `perf_diagnose` (too many tiny GPU pieces, as translation layers cause), `perf_memory_breakdown` (Metal allocations by type) |
-| Dig deeper | `perf_export_trace` (frames for Perfetto or Chrome), `trace_tables`, `trace_count`, `trace_query` (tables of a kept `.trace`), `capture_summary`, `capture_diff`, `capture_records` (`.gputrace` captures), `screenshots_check` (black, flat, frozen or flickering PNG screenshots) |
+| Dig deeper | `perf_export_trace` (frames for Perfetto or Chrome), `trace_tables`, `trace_count`, `trace_query` (tables of a kept `.trace`), `capture_summary`, `capture_diff`, `capture_records` (`.gputrace` captures), `screenshots_check` (black, flat, frozen or flickering PNG screenshots), `wine_log_census` (what a Wine debug log says is missing or wrong) |
 | Setup and test programs | `project_info` (active project), `perf_runs` (recordings, newest first), `gpu_family` (Apple's facts per chip), `workload_list`, `workload_fetch` (test programs, checked by SHA-256; Claude Code asks first), `presentmon_install` (Windows only) |
 
 The test programs, their arguments (`workload`, `api`, `dim`, `size`, `example`) and the Mac levers are in [Test programs](docs/guides/recording/test-programs.md). Reading numbers across runs: [Reading and comparing](docs/guides/summarizing/reading-and-comparing.md).

@@ -36,6 +36,7 @@ From the top (the entry point) to the bottom (what everything else rests on):
 | 2 | `experiments` | A/B, cold/warm, sweeps |
 | 2 | `workloads` | Test programs, downloads, PresentMon |
 | 2 | `traces` | `.trace` and `.gputrace` files (`trace_query` with `window_ms`, `capture_diff`), GPU families |
+| 2 | `winelog` | A Wine debug log by message: `fixme`, `err` and `warn` counted with numbers, paths and quoted text removed, and the longest silence between `+timestamp` lines (`wine_log_census`) |
 | 2 | `screenshots` | PNG screenshots of a run: black, flat, frozen or flickering (`screenshots_check`) |
 | 1 | `retention` | Keeps the runs folder under `METAL_TRACE_MAX_DISK_MB`: removes the oldest heavy files, never a summary or a link's target |
 | 1 | `paths` | Names and paths a caller may use, paging, reading a file of the runs folder |
