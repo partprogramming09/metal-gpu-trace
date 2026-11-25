@@ -1,12 +1,15 @@
 """What a run was made with: a short hash of declared files and the names (never the values) of its variables."""
 import hashlib
 import os
-import pathlib
+import re
+import stat
 
 from metal_gpu_trace import paths
 
 MAX_FILES = 32
 CHUNK = 1 << 20
+MAX_BYTES = 4 << 30  # a game folder's biggest file; past it the hash would stall the single worker
+NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def fingerprint_paths(files):
@@ -21,15 +24,23 @@ def fingerprint_paths(files):
     for item in files:
         if not isinstance(item, (str, os.PathLike)) or "\0" in str(item):
             raise paths.ToolError("fingerprint_paths holds file paths")
-        path = pathlib.Path(item).expanduser()
+        try:
+            path = paths.allowed(item)
+        except RuntimeError:
+            raise paths.ToolError("fingerprint_paths holds file paths") from None
         if path.is_dir():
             raise paths.ToolError(f"{path.name} is a folder; name the files to fingerprint")
         digest, size = hashlib.sha256(), 0
         try:
-            with open(path, "rb") as handle:
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+            with os.fdopen(fd, "rb") as handle:
+                if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                    raise paths.ToolError(f"{path.name} is not a regular file")
                 while block := handle.read(CHUNK):
                     digest.update(block)
                     size += len(block)
+                    if size > MAX_BYTES:
+                        raise paths.ToolError(f"{path.name} is over {MAX_BYTES >> 30} GiB")
         except OSError:
             raise paths.ToolError(f"no readable file named {path.name} for fingerprint_paths") from None
         out.append({"name": path.name, "sha256": digest.hexdigest()[:16], "size": size})
@@ -38,7 +49,8 @@ def fingerprint_paths(files):
 
 def env_keys(env):
     """Returns the sorted, unique variable names of `env` (NAME=VALUE pairs separated by spaces); values are dropped."""
-    return sorted({pair.split("=", 1)[0] for pair in env.split() if "=" in pair})
+    names = (pair.split("=", 1)[0] for pair in env.split() if "=" in pair)
+    return sorted({name for name in names if NAME.fullmatch(name)})
 
 
 def compare(a, b):

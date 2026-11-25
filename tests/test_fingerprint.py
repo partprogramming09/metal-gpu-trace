@@ -5,6 +5,28 @@ import support  # noqa: F401  (puts src/ on sys.path)
 from metal_gpu_trace import analysis, config, experiments, fingerprint, paths, recording
 
 
+class Readable:
+    """Makes `folder` a readable directory, as METAL_TRACE_READ would."""
+    def __init__(self, folder):
+        self.folder = folder
+
+    def __enter__(self):
+        self.saved = config.READ
+        config.READ = [self.folder.resolve()]
+
+    def __exit__(self, *exc):
+        config.READ = self.saved
+
+
+def readable(test):
+    """Runs `test(tmp_path)` with tmp_path among the readable folders."""
+    def run(tmp_path):
+        with Readable(tmp_path):
+            test(tmp_path)
+    run.__name__ = test.__name__
+    return run
+
+
 def raises_tool_error(call):
     try:
         call()
@@ -13,6 +35,7 @@ def raises_tool_error(call):
     raise AssertionError("no ToolError")
 
 
+@readable
 def test_fingerprint_hashes_declared_files_by_content(tmp_path):
     (tmp_path / "game.exe").write_bytes(b"one")
     (tmp_path / "lib.dll").write_bytes(b"two")
@@ -24,11 +47,13 @@ def test_fingerprint_hashes_declared_files_by_content(tmp_path):
     assert fingerprint.fingerprint_paths([]) == []
 
 
+@readable
 def test_fingerprint_keeps_no_folder_in_what_it_returns(tmp_path):
     (tmp_path / "game.exe").write_bytes(b"x")
     assert str(tmp_path) not in json.dumps(fingerprint.fingerprint_paths([tmp_path / "game.exe"]))
 
 
+@readable
 def test_fingerprint_refuses_a_missing_file_a_folder_and_too_many(tmp_path):
     (tmp_path / "dir").mkdir()
     message = raises_tool_error(lambda: fingerprint.fingerprint_paths([tmp_path / "nope.exe"]))
@@ -38,6 +63,24 @@ def test_fingerprint_refuses_a_missing_file_a_folder_and_too_many(tmp_path):
     assert "at most" in raises_tool_error(lambda: fingerprint.fingerprint_paths([tmp_path / "f"] * 33))
     assert "path" in raises_tool_error(lambda: fingerprint.fingerprint_paths(["a\0b"]))
     assert raises_tool_error(lambda: fingerprint.fingerprint_paths("f"))  # a string is not a list of paths
+
+
+def test_fingerprint_refuses_files_outside_the_readable_folders_and_non_regular_ones(tmp_path):
+    inside, outside = tmp_path / "in", tmp_path / "out"
+    inside.mkdir(), outside.mkdir()
+    (outside / "secret.bin").write_bytes(b"x")
+    (inside / "ok.bin").write_bytes(b"x")
+    (inside / "link.bin").symlink_to(outside / "secret.bin")
+    with Readable(inside):
+        assert "outside" in raises_tool_error(lambda: fingerprint.fingerprint_paths([outside / "secret.bin"]))
+        assert "outside" in raises_tool_error(lambda: fingerprint.fingerprint_paths([inside / "link.bin"]))
+        assert raises_tool_error(lambda: fingerprint.fingerprint_paths(["~nosuchuser_zz/x"]))
+        assert fingerprint.fingerprint_paths([inside / "ok.bin"])[0]["name"] == "ok.bin"
+
+
+def test_env_keys_keep_only_variable_names():
+    got = fingerprint.env_keys("WINEDEBUG=-all /Users/alice/games/run.sh?a=1 --opt=v 9X=1 _OK=2")
+    assert got == ["WINEDEBUG", "_OK"], got
 
 
 def test_env_keys_keep_names_and_never_values():
