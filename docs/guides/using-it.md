@@ -47,6 +47,8 @@ Rules that keep the answer honest:
 - Use the same program, the same scene and the same length for both sides.
 - At least two recordings per side; three is better. Repeat a run before calling a difference real.
 - On a laptop, ask for a pause between recordings ("wait 60 seconds between runs") so the Mac cools down.
+- Name the files that must not change ("fingerprint the game's .exe and the translation layer's DLLs"): the summary keeps a short hash of each, `perf_ab` stops before the next recording if one changes in the middle (a rebuild would make A and B differ by more than your setting), and a later comparison says which file changed. Only the file's base name, its hash and its size are kept; the folder never is.
+- A comparison also lists the names (never the values) of the environment variables each run used, and warns when the two runs were recorded more than 24 hours apart.
 
 To just see how two recordings differ, with no verdict: **"Compare these two recordings."** That lists what moved and warns when the comparison may mean nothing (for example, one run stopped drawing).
 

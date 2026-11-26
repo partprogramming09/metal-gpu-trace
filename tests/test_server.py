@@ -1363,12 +1363,13 @@ def test_fields_in_tools_list_and_output_schema(tmp_path):
 
 
 def test_tools_list_stays_short():
-    """tools/list is what every client reads on connect: it stays under 33 500 characters (it was 45 186)."""
+    """tools/list is what every client reads on connect: it stays under 33 700 characters (it was 45 186)."""
     from metal_gpu_trace import metal_trace_mcp, protocol  # noqa: F401
     tools = protocol.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
     # 45 186 characters before fields; 31 546 with it; 33 072 once trace_query took the tables-file filters (+1 526): a
-    # budget, so a new argument has to earn its characters
-    assert len(json.dumps(tools, ensure_ascii=False)) <= 33500
+    # budget, so a new argument has to earn its characters; 33 466 with fingerprint_paths on two tools, 33 652 with
+    # perf_sweep's metric (+186)
+    assert len(json.dumps(tools, ensure_ascii=False)) <= 33700
 
 
 def test_fields_cuts_a_big_answer_before_the_size_limit(tmp_path):

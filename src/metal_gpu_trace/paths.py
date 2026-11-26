@@ -18,7 +18,12 @@ class ToolError(Exception):
 
 def allowed(path, roots=None):
     """Returns `path` resolved, or raises ToolError when it lies outside the readable directories."""
-    resolved = pathlib.Path(path).expanduser().resolve()
+    if not isinstance(path, (str, os.PathLike)) or "\0" in str(path):
+        raise ToolError("path is a text path with no null character")
+    try:
+        resolved = pathlib.Path(path).expanduser().resolve()
+    except RuntimeError:
+        raise ToolError("path names a home folder that does not exist") from None
     if not any(resolved.is_relative_to(root) for root in roots or config.READ):
         raise ToolError(f"{resolved.name} is outside the readable directories; add its directory to METAL_TRACE_READ")
     return resolved

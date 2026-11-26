@@ -8,8 +8,9 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 
-from metal_gpu_trace import config, paths, perf_report
+from metal_gpu_trace import config, metrics, paths, perf_report
 
 WINE_MISSING = "no Wine at bin/wine inside that Wine directory (pass native for a macOS program)"
 # the Command Line Tools give xcrun but not xctrace: `xcode-select --install` alone does not fix a missing xctrace
@@ -22,6 +23,9 @@ PERMISSIONS_MISSING = ("not elevated: PresentMon needs administrator rights or m
                        "group; if your user is in that group, ignore this note")
 SCREEN_LOCKED = ("the screen is locked: a locked session leaves the program's frames unpaced by the display, "
                  "so the numbers do not compare; unlock the Mac, or set METAL_TRACE_ALLOW_LOCKED=1 to record anyway")
+GPU_BUSY = ("the GPU is {pct:g} % busy before the recording starts: something else is using it (a game, a browser "
+            "tab, a render), and its load lands in the numbers; close it, or record anyway and read the summary's "
+            "noisy_environment flag")
 LOCK_RUNNING = ("another recording is running; one runs at a time. If none is, remove the lock folder "
                 "(METAL_TRACE_LOCK names it)")
 
@@ -118,9 +122,10 @@ def elevated():
 
 
 def environment_report(*, wine=None, seconds=None, environ=None, read=perf_report.read_command, alive=None,
-                       platform=None, which=None):
+                       platform=None, which=None, sleep=time.sleep):
     """Returns what a recording needs, one entry per check: {"ok": bool, "checks": [{"name", "status", "fatal",
-    "solution"?}]}, where status is "ok", "missing" or (when it cannot be told) "unknown". `solution` is the exact fix
+    "solution"?}]}, where status is "ok", "missing", "busy" (the `gpu` check: another program is loading the GPU; never
+    fatal, and left out where it cannot be read) or (when it cannot be told) "unknown". `solution` is the exact fix
     and holds no path, machine name or UUID: a report is shared. `seconds` None leaves out the checks of one run (disk,
     screen, lock), which `init` does not need; `wine` None leaves out the Wine check."""
     environ = os.environ if environ is None else environ
@@ -169,6 +174,10 @@ def environment_report(*, wine=None, seconds=None, environ=None, read=perf_repor
         if not windows:
             locked = environ.get("METAL_TRACE_ALLOW_LOCKED") != "1" and perf_report.screen_locked(read) is True
             add("screen", "missing" if locked else "ok", True, SCREEN_LOCKED if locked else None)
+            load = perf_report.gpu_load(read, sleep)
+            if load is not None:
+                busy = load["device_pct"] >= metrics.NOISY_EXTERNAL_PCT
+                add("gpu", "busy" if busy else "ok", False, GPU_BUSY.format(pct=load["device_pct"]) if busy else None)
         running = recording_running(alive)
         add("lock", "missing" if running else "ok", True, LOCK_RUNNING if running else None)
     return {"ok": all(item["status"] == "ok" or not item["fatal"] for item in checks), "checks": checks}

@@ -5,6 +5,16 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+## 0.32.0 — 2026-11-26
+
+(An A/B that records what it was made with, a sweep over the program's own telemetry, and a warning when the GPU is busy. Its proof is [docs/evidence/v0.32.0.md](docs/evidence/v0.32.0.md).)
+
+### Added
+
+- 🔍 An honest A/B: `fingerprint_paths` on `perf_record` and `perf_ab` hashes the files you name (the program, a layer's DLLs) into the summary's `context`; `perf_ab` stops before the next recording when one changed during the measurement, and `perf_compare` reports `context.fingerprint` and `context.env_keys` (variable names only, never values) beside the unchanged `same`, and a `time_apart` warning when the runs are more than 24 hours apart. Proven with a real A B B A of the `drawstress` test program and a saved run of seven days earlier; the file change during a measurement is covered by tests only. [proof](docs/evidence/v0.32.0.md#an-honest-ab-records-what-it-was-made-with)
+- 🩺 Before every recording on a Mac, `preflight` and `doctor` read how much of the GPU the whole machine is using (`ioreg`, up to three readings 0.25 s apart when the first is above 10 %), and the new `gpu` check says `busy` with the percentage when it is 20 % or more (the same threshold the summary's `noisy_environment` uses afterwards). It never refuses a recording, and it is left out where `ioreg` gives no percentage and on Windows. Proven on this Mac: `ok` when idle, `busy` at 67.7 % while a test program ran. [proof](docs/evidence/v0.32.0.md#preflight-says-when-the-gpu-is-busy)
+- 🧪 `perf_sweep` takes `metric="app_metrics.<column>"`: each value's row also carries the median, over rounds, of that column's mean from the program's own telemetry file, and `app_fit` is the line it follows (fixed plus per unit, with its r2); the runs are `light` unless you pass a tier, so no memory table is read. Not proven in this release with a real program: only unit tests cover it. [proof](docs/evidence/v0.32.0.md#perf_sweep-measures-a-column-of-the-programs-telemetry)
+
 ## 0.31.0 — 2026-11-26
 
 (Two commands for projects that measure: a CI gate with fixed limits, and the import of VegaFlow bench results. Its proof is [docs/evidence/v0.31.0.md](docs/evidence/v0.31.0.md).)

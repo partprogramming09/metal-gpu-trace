@@ -38,6 +38,8 @@ def hints(title, destructive=None, idempotent=False, open_world=False):
             "openWorldHint": open_world}
 
 
+FILES = {"type": "array", "items": {"type": "string"}, "maxItems": 32,
+         "description": "files to hash into the summary; compare shows changes"}
 RECORD_PROPS = {"label": {**S, "description": "run name: letters, digits, '.', '_', '-'"},
          "program": {**S, "description": "path of the .exe, or of the macOS binary with wine=native"},
          "seconds": {**I, "description": "seconds, default 20; 30 under Wine (start-up eats part); the export takes minutes under Wine"},
@@ -56,10 +58,11 @@ RECORD_PROPS = {"label": {**S, "description": "run name: letters, digits, '.', '
          "background": {"type": "boolean", "description": "macOS, default false; true throttles the program hard and unevenly (taskpolicy -b): repeat the run"},
          "counters": {"type": "boolean", "description": "default false; true adds gpu_counters; not on Windows; about 40 s of read-back per second"},
          "tier": {**S, "enum": list(recording.TIERS),
-                  "description": "default standard. light: no memory or counters; standard: memory; deep: also counters and a kept .trace (macOS). memory and counters given alone override"}}
+                  "description": "default standard. light: no memory or counters; standard: memory; deep: also counters and a kept .trace (macOS). memory and counters given alone override"},
+         "fingerprint_paths": FILES}
 
 # the experiment tools take perf_record's arguments: the full text is in perf_record, the same list holds it
-SAME = {k: {t: v[t] for t in ("type", "enum") if t in v} for k, v in RECORD_PROPS.items()}
+SAME = {k: {t: v[t] for t in ("type", "enum") if t in v} for k, v in RECORD_PROPS.items() if k != "fingerprint_paths"}
 
 SKIP = "seconds to leave out at the start (shaders compile, resources load), default 0; GPU numbers, hitches and Metal memory are recomputed without them"
 COOLDOWN = {"type": "number", "description": "seconds to rest between recordings, 0 to 600, default 0; 60 on a laptop is a start, thermal_state_share says if it throttled"}
@@ -80,6 +83,7 @@ TOOLS = {
          "values": {"type": "array", "items": {"type": ["string", "integer"]},
                     "description": "2 to 8 values of the variable, such as [10, 20, 30] for dim"},
          "rounds": {**I, "description": "default 1, at most 5 and 24 recordings in all"},
+         "metric": {**S, "description": "app_metrics.<column>, a column of the program's telemetry"},
          "cooldown_s": COOLDOWN,
                   "skip_s": {"type": "number", "description": SKIP},
          **{k: v for k, v in SAME.items() if k != "label"}}, ["name", "variable", "values"]),
@@ -91,6 +95,7 @@ TOOLS = {
          "rounds": {**I, "description": "A B B A rounds, default 1 (4 recordings), at most 5"},
          "cooldown_s": COOLDOWN,
                   "skip_s": {"type": "number", "description": SKIP},
+         "fingerprint_paths": FILES,
          **{k: v for k, v in SAME.items() if k not in ("label", "env")}}, ["name", "env_a", "env_b"]),
         hints("Record two settings in A B B A order", destructive=True)),
     "perf_cold_warm": (experiments.tool_perf_cold_warm, schema(

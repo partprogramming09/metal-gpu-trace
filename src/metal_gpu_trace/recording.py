@@ -14,7 +14,7 @@ import tempfile
 import threading
 import time
 
-from metal_gpu_trace import app_metrics, config, metrics, paths, perf_report, preflight, retention, workloads
+from metal_gpu_trace import app_metrics, config, fingerprint, metrics, paths, perf_report, preflight, retention, workloads
 
 
 TIERS = ("light", "standard", "deep")
@@ -35,7 +35,7 @@ def resolve_tier(tier, memory, counters):
 
 def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, workdir=None, args="", workload=None,
                      api=None, dim=None, memory=None, env="", counters=None, example=None, memory_free_pct=None,
-                     background=False, size=None, tier="standard"):
+                     background=False, size=None, tier="standard", fingerprint_paths=None):
     """Records `program` (an .exe under Wine, or a macOS binary with wine="native") or a test `workload` for `seconds` with
     Metal System Trace and returns its summary: GPU ms per frame, frame intervals, FPS, Metal and resident memory. It
     then stops every program of that Wine prefix (wineserver -k), or with native the program it launched and its children.
@@ -63,9 +63,12 @@ def tool_perf_record(label, program=None, seconds=20, wine=None, prefix=None, wo
         raise paths.ToolError(f"no program at {program.name}")
     workdir = pathlib.Path(workdir).expanduser() if workdir else program.parent
     prefix = pathlib.Path(prefix or os.environ.get("WINEPREFIX", "~/.wine")).expanduser()
+    extra = {"env_keys": fingerprint.env_keys(program_env)}
+    if fingerprint_paths:
+        extra["fingerprint"] = fingerprint.fingerprint_paths(fingerprint_paths)
     return record(label, seconds, wine, prefix, workdir,
                   [str(program.resolve()), *split_args(args)], program_env, memory, layer=layer, counters=counters,
-                  background=background, memory_free_pct=memory_free_pct, keep_trace=keep_trace, tier=tier)
+                  background=background, memory_free_pct=memory_free_pct, keep_trace=keep_trace, tier=tier, context_extra=extra)
 
 
 def check_env(env):
@@ -147,9 +150,9 @@ def layer_of(wine, prefix, program_env=""):
                  for name in LAYER_DLLS},
     }
     # a prefix copy identical to Wine's (Wine's first boot makes one) is the same DLL, so it changes nothing
-    fingerprint = hashlib.sha256(json.dumps({**identity, "dlls": effective_dlls(identity)},
+    layer_hash = hashlib.sha256(json.dumps({**identity, "dlls": effective_dlls(identity)},
                                             sort_keys=True).encode()).hexdigest()[:12]
-    return {"fingerprint": fingerprint, **identity, "program_env": env}
+    return {"fingerprint": layer_hash, **identity, "program_env": env}
 
 
 def effective_dlls(layer):
@@ -186,15 +189,28 @@ def run_context(read=perf_report.read_command):
 def context_change(sa, sb, a, b):
     """Returns whether two runs share a context (commit, dirty flag, Instruments version); a run recorded before
     0.26.0 is named in missing_in, and a run whose commit is unknown (no project file or no git repository) in
-    unknown_in: `same` is then null, because nothing says the code is the same."""
+    unknown_in: `same` is then null, because nothing says the code is the same. `same` keeps that meaning; when both
+    runs name their declared files (`fingerprint`) or variable names (`env_keys`), the answer adds a `fingerprint` and
+    an `env_keys` block of its own."""
     ca, cb = sa.get("context"), sb.get("context")
     missing = [r for r, context in ((a, ca), (b, cb)) if not context]
     if missing:
         return {"missing_in": missing}
     unknown = [r for r, context in ((a, ca), (b, cb)) if not context.get("git")]
-    if unknown and ca == cb:
-        return {"same": None, "unknown_in": unknown}
-    return {"same": True} if ca == cb else {"same": False, "a": ca, "b": cb, **({"unknown_in": unknown} if unknown else {})}
+    code = lambda c: {k: c.get(k) for k in ("git", "instruments")}
+    if unknown and code(ca) == code(cb):
+        out = {"same": None, "unknown_in": unknown}
+    elif code(ca) == code(cb):
+        out = {"same": True}
+    else:
+        out = {"same": False, "a": ca, "b": cb, **({"unknown_in": unknown} if unknown else {})}
+    files = fingerprint.compare(ca.get("fingerprint"), cb.get("fingerprint"))
+    if files:
+        out["fingerprint"] = files
+    if "env_keys" in ca and "env_keys" in cb:
+        ka, kb = set(ca["env_keys"]), set(cb["env_keys"])
+        out["env_keys"] = {"same": ka == kb, "only_a": sorted(ka - kb), "only_b": sorted(kb - ka)}
+    return out
 
 
 def layer_change(sa, sb, a, b):
@@ -363,11 +379,13 @@ def launched_group(pid):
     # a pid has at most 10 digits; int() raises on a string of over 4300
     return int(text) if len(text) <= 10 and text.isascii() and text.isdigit() and int(text) > 1 else None
 
-def finish(summary, json_path, layer, tier, app_file=None):
+def finish(summary, json_path, layer, tier, app_file=None, context_extra=None):
     """Adds `layer`, the run's `context` and `tier` to the summary, applies METAL_TRACE_MAX_DISK_MB (the run just recorded
     is `json_path`'s; not while another recording runs, whose .trace is being written into the same folder): when files
     had to go, notes it in the summary's `retention`; writes the JSON and returns the summary. Both engines end here."""
     summary["layer"], summary["context"] = layer, run_context()
+    # fingerprint is left out when empty; env_keys is kept even then, so a run with no variables still compares to one with some
+    summary["context"].update({k: v for k, v in (context_extra or {}).items() if v or k == "env_keys"})
     if app_file and (block := app_metrics.safe_read(app_file)):  # the program's own telemetry, when it wrote any
         summary["app_metrics"] = block
     if "common" in summary:  # built before the layer was known
@@ -395,7 +413,7 @@ def record_run(label, seconds, wine, prefix, workdir, command, program_env="", *
 
 
 def run_recording(label, seconds, wine, prefix, workdir, command, program_env="", memory=True, layer=None, counters=False,
-                  background=False, keep_trace=False, tier=None, app_file=None):
+                  background=False, keep_trace=False, tier=None, app_file=None, context_extra=None):
     """Runs perf_record.sh and returns the summary it wrote, stopping the whole recording and deleting its files if
     it overruns; `program_env` adds NAME=VALUE pairs to PERF_ENV, `memory` false sets PERF_MEMORY=0, and `layer`
     names the translation layer a native run goes through (MoltenVK) instead of "native Metal"; `keep_trace` sets KEEP_TRACE=1
@@ -425,7 +443,7 @@ def run_recording(label, seconds, wine, prefix, workdir, command, program_env=""
             raise paths.ToolError(str(error)) from error
         except OSError as error:
             raise paths.ToolError(f"recording failed: {error}") from error
-        return finish(summary, json_path, layer, tier, app_file)
+        return finish(summary, json_path, layer, tier, app_file, context_extra)
     power_start = perf_report.power_state()
     before = set(config.OUT.glob(f"{label}_*"))
     tmp = pathlib.Path(os.environ.get("TMPDIR", "/tmp"))
@@ -482,7 +500,7 @@ def run_recording(label, seconds, wine, prefix, workdir, command, program_env=""
                               "the Wine build, the prefix and the program's own log)")
     if isinstance(summary.get("machine"), dict):  # the machine is known: say its power state at both ends
         summary["machine"]["power"] = perf_report.power_block(power_start, perf_report.power_state())
-    return finish(summary, new[-1], layer, tier, app_file)
+    return finish(summary, new[-1], layer, tier, app_file, context_extra)
 
 
 def record_new_summary(label, **record):
