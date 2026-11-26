@@ -1,0 +1,14 @@
+title = "metal-gpu-trace"
+
+# keep gitleaks' own rules (keys, tokens) and add this project's: no absolute path of a user or a volume in what is versioned
+[extend]
+useDefault = true
+
+[[rules]]
+id = "user-home-path"
+description = "an absolute path under a user's home or a mounted volume: summaries, docs and code name no machine or person"
+regex = '''(?:/Users/|/home/|/Volumes/|[A-Za-z]:\\Users\\)[A-Za-z0-9._-]{2,}'''
+# tests quote invented paths on purpose (the redaction is what they test), the changelog quotes one as the example, and
+# winelog.py and tabledb.py hold the patterns that remove such paths from what they read
+[rules.allowlist]
+paths = ['''^tests/''', '''^CHANGELOG\.md$''', '''^src/metal_gpu_trace/(winelog|tabledb)\.py$''']

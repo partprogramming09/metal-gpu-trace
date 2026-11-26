@@ -5,6 +5,10 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+### Changed
+
+- 🔐 CI's gitleaks scan now also refuses an absolute path under a user's home or a mounted volume (`/Users/…`, `/home/…`, `/Volumes/…`, `C:\Users\…`) in the lines a pull request adds, keeping its default secret rules; tests, the changelog and the two files that hold the redaction patterns are allowed (`.gitleaks.toml`). Proven by staging a probe file with such a path in `src/` and in `docs/` (found) and in `tests/` (allowed).
+
 ## 0.33.0 — 2026-11-26
 
 (Two readers of what a run leaves behind: screenshots that show nothing useful, and what a Wine debug log says is wrong. Its proof is [docs/evidence/v0.33.0.md](docs/evidence/v0.33.0.md).)
