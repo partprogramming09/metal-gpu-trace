@@ -384,7 +384,8 @@ def finish(summary, json_path, layer, tier, app_file=None, context_extra=None):
     is `json_path`'s; not while another recording runs, whose .trace is being written into the same folder): when files
     had to go, notes it in the summary's `retention`; writes the JSON and returns the summary. Both engines end here."""
     summary["layer"], summary["context"] = layer, run_context()
-    summary["context"].update({k: v for k, v in (context_extra or {}).items() if v})  # env_keys, fingerprint
+    # fingerprint is left out when empty; env_keys is kept even then, so a run with no variables still compares to one with some
+    summary["context"].update({k: v for k, v in (context_extra or {}).items() if v or k == "env_keys"})
     if app_file and (block := app_metrics.safe_read(app_file)):  # the program's own telemetry, when it wrote any
         summary["app_metrics"] = block
     if "common" in summary:  # built before the layer was known
