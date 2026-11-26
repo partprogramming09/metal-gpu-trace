@@ -5,6 +5,15 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+## 0.31.0 — 2026-11-26
+
+(Two commands for projects that measure: a CI gate with fixed limits, and the import of VegaFlow bench results. Its proof is [docs/evidence/v0.31.0.md](docs/evidence/v0.31.0.md).)
+
+### Added
+
+- ✨ `metal-gpu-trace gate RUN [--budgets FILE]` judges a recording against the fixed limits of a versioned file in the project (`metal-gpu-trace.budgets.json` by default), so CI in any project can require "FPS never below 55, p95 GPU ms never over 12.5" without a baseline saved on the machine; it prints one JSON line and exits 0 (within limits), 1 (a number is over its max or under its min) or 2 (it could not judge, a budgeted metric the recording cannot measure included). [proof](docs/evidence/v0.31.0.md#gate-judges-a-run-against-a-versioned-file-of-limits)
+- 📥 `metal-gpu-trace import-bench FILE.json...` reads the results VegaFlow's `bench.ps1` leaves as recordings: `perf_runs`, `perf_compare` and `perf_history` list them, date them by the measurement and compare their frame-time jitter. FPS, the lows and the hitches stay null (VegaFlow's formulas differ from ours under the same names) and keep their own names in a `vegaflow_bench` block; no machine name or path is copied. Proven with a real 3078-frame result (imported, then `same` the second time); comparing two imported results is covered by tests only. [proof](docs/evidence/v0.31.0.md#import-bench-reads-vegaflow-bench-results-as-recordings)
+
 ## 0.30.0 — 2026-11-23
 
 (A short command line: `--help`, `doctor`, `runs` and `compare`. Its proof is [docs/evidence/v0.30.0.md](docs/evidence/v0.30.0.md).)

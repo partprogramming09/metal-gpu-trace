@@ -1,0 +1,33 @@
+﻿{
+    "label":  "n09fix-chr4-off-d3d11-1",
+    "process":  "Octopath_Traveler2-Win64-Shipping.exe",
+    "timestamp":  "2026-11-09T16:23:48.7211343-05:00",
+    "seconds":  120,
+    "warmup_seconds":  5,
+    "frames":  3078,
+    "avg_fps":  26.78,
+    "fps_1pct_low":  18.58,
+    "fps_0_1pct_low":  17.17,
+    "frametime_stddev_ms":  3.849,
+    "present_mode":  "Hardware: Legacy Flip",
+    "present_mode_share":  1,
+    "clean":  true,
+    "hitches_2x_median":  0,
+    "hitches_per_min":  0,
+    "display_frames":  3078,
+    "display_stddev_ms":  4.639,
+    "display_late_pct":  0.52,
+    "errors":  [
+                   "1001:Windows Error Reporting",
+                   "1000:ryzenadj.exe",
+                   "1001:Windows Error Reporting",
+                   "1000:ryzenadj.exe",
+                   "1001:Windows Error Reporting",
+                   "1000:ryzenadj.exe",
+                   "1001:Windows Error Reporting",
+                   "1000:ryzenadj.exe",
+                   "1001:Windows Error Reporting",
+                   "1000:ryzenadj.exe"
+               ],
+    "windows_build":  "10.0.26300.0"
+}

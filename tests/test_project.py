@@ -312,6 +312,22 @@ def test_check_cli_exits_2_on_a_bad_project_file(tmp_path):
         restore()
 
 
+def test_gate_cli_exits_2_on_a_bad_project_file(tmp_path):
+    """A broken project file is reported by `gate` as `check` does, not hidden behind a misleading error."""
+    import contextlib
+    import io
+    from metal_gpu_trace import cli, config
+    restore = saved_config()
+    try:
+        config.PROJECT_ERROR = f"{project.FILE_NAME}: unknown key 'folder'"
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert cli.gate_cli(["a"]) == 2
+        assert "folder" in err.getvalue(), err.getvalue()
+    finally:
+        restore()
+
+
 def test_apply_reports_a_missing_or_unusable_project(tmp_path):
     from metal_gpu_trace import config
     restore = saved_config()

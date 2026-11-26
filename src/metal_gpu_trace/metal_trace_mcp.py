@@ -14,7 +14,7 @@ downloads go to ~/Library/Caches/metal-gpu-trace.
 import pathlib
 import sys
 
-__version__ = "0.30.0"
+__version__ = "0.31.0"
 if __package__ in (None, ""):  # run by path: make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from metal_gpu_trace import cli, protocol, stdio, worker  # noqa: E402
@@ -59,8 +59,8 @@ def check_cli(args):
 
 def main():
     """Runs the command in sys.argv: with none it serves newline-delimited JSON-RPC on stdin and stdout until stdin
-    closes (what MCP clients start), and --version, init, check, --http, doctor, runs and compare answer in the
-    terminal (see cli.py)."""
+    closes (what MCP clients start), and --version, init, check, gate, --http, doctor, runs and compare answer in
+    the terminal (see cli.py)."""
     return cli.main(sys.argv[1:], __version__)
 
 

@@ -79,8 +79,12 @@ The pacing keys in `gpu` come from `frame_pacing` (`perf_report_frames.py::frame
 | Part | Content |
 |---|---|
 | Written by the engine | `schema_version`, `label`, `trace` (the name `<run>.trace`, a file that never exists on Windows), `process`, `device`, `template` (`Windows Native Trace`), `duration_s`, `missing_tables` (three fixed names), `gpu`, `encoders`, `gpu_idle`, `metal_memory_mib` (`{"samples": 0}`), `process_rss_mib`, `layer`, `common` |
-| `gpu` | Has `source` (`drawstress-log`, `presentmon` or `dwm-composition`), the pacing keys and `throttling_analysis` |
+| `gpu` | Has `source` (`drawstress-log`, `presentmon`, `dwm-composition` or `vegaflow-bench-json`), the pacing keys and `throttling_analysis` |
 | Added by `finish` | `context`, and `tier`, `retention`, `app_metrics` under the same conditions |
 | Absent | `machine`, `hitches`, `gpu_performance_state_share` and every conditional Metal key: treat each as optional (confirmed: not in the dict at those lines) |
 
 `finish` replaces `layer` with the one `record_run` computed (`recording.py::finish`, `recording.py::record_run`): for a native Windows run `native Metal, no translation layer` (`recording.py::layer_of`) instead of the engine's `native Windows`; `layer_label` calls both `native`, so no reader notices (confirmed by the code, not reproduced).
+
+## Results imported from VegaFlow (`import-bench`)
+
+`metal-gpu-trace import-bench FILE.json...` (`bench_import.py::from_json`) writes a summary from a `bench.ps1` result. Only `gpu.frame_jitter_ms` is filled (`gpu.source` is `vegaflow-bench-json`); the other pacing keys are `null` because VegaFlow's FPS, 1 % low and hitches use other formulas. Its own numbers sit in `vegaflow_bench` under their original names (`avg_fps`, `fps_1pct_low`, `present_mode`, `clean`, `errors`, ...). `clean` says whether the present mode held; it is not `noisy_environment`. `skip_s` does not work on these runs: there is no per-frame file.

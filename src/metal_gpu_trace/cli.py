@@ -1,12 +1,12 @@
 """The short command line in front of the MCP server: `metal-gpu-trace [COMMAND]`.
 
 With no command it serves MCP on stdin and stdout, which is what MCP clients start; the read-only commands here
-(`doctor`, `runs`, `compare`) reuse the functions the tools use, so a shell answer and an MCP answer never differ."""
+(`doctor`, `runs`, `compare`, `gate`) reuse the functions the tools use, so a shell answer and an MCP answer never differ."""
 import json
 import os
 import sys
 
-from metal_gpu_trace import analysis, http_transport, paths, preflight, project, stdio
+from metal_gpu_trace import analysis, budgets, http_transport, paths, preflight, project, stdio
 
 
 USAGE = """usage: metal-gpu-trace [COMMAND]
@@ -16,13 +16,18 @@ With no command it serves MCP on stdin and stdout, which is what MCP clients sta
 Commands:
   init                    add the server to the AI apps installed here
   check RUN BASELINE      judge a run for CI; exits 0, 1 or 2
+  gate RUN [--budgets FILE]
+                          judge a run against the limits in a file of the repo (default metal-gpu-trace.budgets.json);
+                          exits 0, 1 or 2
   --http [--port N]       serve MCP over Streamable HTTP on 127.0.0.1
   doctor                  say what a recording needs that is missing here
   runs [--limit N]        list the recordings, newest first
   compare A B             compare two recordings, A the reference and B after the change (--markdown for a table)
+  import-bench FILE...    read VegaFlow bench.ps1 results as recordings (only the jitter compares)
   --version               print the version
   --help, -h              print this help
 """
+GATE_USAGE = "usage: metal-gpu-trace gate RUN [--budgets FILE]"
 
 
 def _usage_error(message):
@@ -56,6 +61,33 @@ def check_cli(args):
     if "hint" in result or "unpresented" in result:
         return 2
     return 1 if result["verdict"] == "regressed" else 0
+
+
+def gate_cli(args):
+    """Runs `gate RUN [--budgets FILE]` for CI: judges a recording against the fixed limits of a versioned file in the
+    project, prints one JSON line and returns 0 when every metric is within its limits, 1 when one is not, and 2 when
+    it could not be judged (bad arguments, no budgets file or a broken one, no such run, under 100 frames, a program
+    that stopped presenting, or a metric the recording cannot measure)."""
+    rest = list(args)
+    path = None
+    if "--budgets" in rest:
+        index = rest.index("--budgets")
+        path = rest[index + 1] if index + 1 < len(rest) else None
+        del rest[index:index + 2]
+        if not path or path.startswith("--"):
+            print(GATE_USAGE, file=sys.stderr)
+            return 2
+    if len(rest) != 1 or rest[0].startswith("--"):
+        print(GATE_USAGE, file=sys.stderr)
+        return 2
+    try:
+        project.check()
+        result = budgets.gate(rest[0], path)
+    except (paths.ToolError, FileNotFoundError, ValueError) as error:
+        print(f"metal-gpu-trace: {error}", file=sys.stderr)
+        return 2
+    print(json.dumps(result))
+    return 0 if result["verdict"] == "pass" else 1
 
 
 def _cell(value):
@@ -154,6 +186,18 @@ def compare(args):
     return 0
 
 
+def import_bench(args):
+    """Runs `import-bench FILE...` (the importer lives in bench_import.py); the runs folder is the project's."""
+    from metal_gpu_trace import bench_import
+    project.apply()
+    try:
+        project.check()
+    except paths.ToolError as error:
+        print(f"metal-gpu-trace: {error}", file=sys.stderr)
+        return 2
+    return bench_import.main(args)
+
+
 def _http(args):
     """Serves Streamable HTTP on 127.0.0.1 (`--http [--port N]`) and returns `serve_http`'s exit code."""
     if not args:
@@ -177,7 +221,7 @@ def main(args, version):
         print(USAGE, end="")
         return 0
     command, rest = (args[0], args[1:]) if args else (None, [])
-    if command in ("check", "doctor", "runs", "compare") and rest[:1] in (["--help"], ["-h"]):
+    if command in ("check", "doctor", "runs", "compare", "gate", "import-bench") and rest[:1] in (["--help"], ["-h"]):
         print(USAGE, end="")
         return 0
     if command == "init":  # before project.apply(): it only edits client config files
@@ -190,6 +234,9 @@ def main(args, version):
     if command == "check":
         project.apply()
         return check_cli(rest)
+    if command == "gate":
+        project.apply()
+        return gate_cli(rest)
     if command == "--http":
         project.apply()
         return _http(rest)
@@ -199,4 +246,6 @@ def main(args, version):
         return runs(rest)
     if command == "compare":
         return compare(rest)
+    if command == "import-bench":
+        return import_bench(rest)
     return _usage_error(f"unknown command {command!r}")

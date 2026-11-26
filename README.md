@@ -70,12 +70,10 @@ Read it like this: 2 034 frames in 20.8 s. `fps_estimate` is 104.5: it comes fro
 
 ## What's new
 
-Version 0.30.0. Older versions: [changelog](CHANGELOG.md).
+Version 0.31.0. Older versions: [changelog](CHANGELOG.md).
 
-- ✨ **A command line that answers.** `metal-gpu-trace --help` lists the commands, and a wrong command says so and exits 2, instead of waiting for an AI app. [Proof](docs/evidence/v0.30.0.md#the-command-line-answers-help-instead-of-hanging)
-- 🩺 **`doctor`.** `metal-gpu-trace doctor` says what a recording needs on this machine, one line per check with the exact fix. [Proof](docs/evidence/v0.30.0.md#doctor-says-what-a-recording-needs)
-- 🔍 **`runs`.** `metal-gpu-trace runs` lists your recordings newest first, with fps, GPU time and memory. [Proof](docs/evidence/v0.30.0.md#runs-lists-the-recordings)
-- 🔍 **`compare`.** `metal-gpu-trace compare A B` compares two recordings in a table, or as Markdown for a PR comment. [Proof](docs/evidence/v0.30.0.md#compare-compares-two-recordings)
+- ✨ **`gate`.** `metal-gpu-trace gate RUN` judges a recording against the limits of a file in your project (FPS never below 55, p95 GPU ms never over 12.5) and exits 0, 1 or 2, so CI needs no saved baseline. [Proof](docs/evidence/v0.31.0.md#gate-judges-a-run-against-a-versioned-file-of-limits)
+- 📥 **`import-bench`.** `metal-gpu-trace import-bench FILE.json` reads the results of VegaFlow's `bench.ps1` as recordings, so `runs` lists them and `compare` weighs their frame-time jitter, the one number both tools measure the same way. [Proof](docs/evidence/v0.31.0.md#import-bench-reads-vegaflow-bench-results-as-recordings)
 
 ## For developers
 
@@ -220,6 +218,10 @@ jobs:
       - run: PERF_OUT=~/perf-runs zsh path/to/metal-gpu-trace/src/metal_gpu_trace/perf_record.sh pr 30 native - . ./app
       - run: METAL_TRACE_OUT=~/perf-runs metal-gpu-trace check "$(ls -t ~/perf-runs/pr_*.json | head -1 | xargs basename -s .json)" main-ref
 ```
+
+Fixed limits instead of a reference saved on the runner: `metal-gpu-trace gate RUN [--budgets FILE]` reads `metal-gpu-trace.budgets.json` from the project (`{"version": 1, "budgets": {"fps": {"min": 55}, "gpu_ms_p95": {"max": 12.5}}}`) and prints one JSON line with a result per budget, in the file's order. Exit code 0: every number within its limits; 1: one is over its `max` or under its `min`; 2: it could not judge (no budgets file or a malformed one, no such run, under 100 frames, a program that stopped presenting, or a budgeted metric the recording cannot measure). The metrics a file may name are `fps`, `fps_1pct_low`, `gpu_ms_mean`, `gpu_ms_p95`, `frame_interval_ms_p95`, `stutter_rate_pct`, `hitches` and `metal_mib_peak`.
+
+`metal-gpu-trace import-bench FILE.json...` reads the result file VegaFlow's `bench.ps1` leaves for a Windows run and saves it in the runs folder as a recording, so `perf_runs`, `perf_compare` and `perf_history` list it. Only the frame-time jitter is the same measurement in both tools; FPS, the 1 % low and the hitches use other formulas under the same names, so they stay empty and the imported values keep their own names under `vegaflow_bench`. Because of that, `gate` says a metric cannot be measured on an imported run instead of judging it. Importing the same file again prints `same`.
 
 ## If you want to understand...
 
