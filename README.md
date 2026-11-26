@@ -70,12 +70,10 @@ Read it like this: 2 034 frames in 20.8 s. `fps_estimate` is 104.5: it comes fro
 
 ## What's new
 
-Version 0.30.0. Older versions: [changelog](CHANGELOG.md).
+Version 0.31.0. Older versions: [changelog](CHANGELOG.md).
 
-- ✨ **A command line that answers.** `metal-gpu-trace --help` lists the commands, and a wrong command says so and exits 2, instead of waiting for an AI app. [Proof](docs/evidence/v0.30.0.md#the-command-line-answers-help-instead-of-hanging)
-- 🩺 **`doctor`.** `metal-gpu-trace doctor` says what a recording needs on this machine, one line per check with the exact fix. [Proof](docs/evidence/v0.30.0.md#doctor-says-what-a-recording-needs)
-- 🔍 **`runs`.** `metal-gpu-trace runs` lists your recordings newest first, with fps, GPU time and memory. [Proof](docs/evidence/v0.30.0.md#runs-lists-the-recordings)
-- 🔍 **`compare`.** `metal-gpu-trace compare A B` compares two recordings in a table, or as Markdown for a PR comment. [Proof](docs/evidence/v0.30.0.md#compare-compares-two-recordings)
+- ✨ **`gate`.** `metal-gpu-trace gate RUN` judges a recording against the limits of a file in your project (FPS never below 55, p95 GPU ms never over 12.5) and exits 0, 1 or 2, so CI needs no saved baseline. [Proof](docs/evidence/v0.31.0.md#gate-judges-a-run-against-a-versioned-file-of-limits)
+- 📥 **`import-bench`.** `metal-gpu-trace import-bench FILE.json` reads the results of VegaFlow's `bench.ps1` as recordings, so `runs` lists them and `compare` weighs their frame-time jitter. [Proof](docs/evidence/v0.31.0.md#import-bench-reads-vegaflow-bench-results-as-recordings)
 
 ## For developers
 
