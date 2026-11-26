@@ -73,7 +73,7 @@ Read it like this: 2 034 frames in 20.8 s. `fps_estimate` is 104.5: it comes fro
 Version 0.31.0. Older versions: [changelog](CHANGELOG.md).
 
 - ✨ **`gate`.** `metal-gpu-trace gate RUN` judges a recording against the limits of a file in your project (FPS never below 55, p95 GPU ms never over 12.5) and exits 0, 1 or 2, so CI needs no saved baseline. [Proof](docs/evidence/v0.31.0.md#gate-judges-a-run-against-a-versioned-file-of-limits)
-- 📥 **`import-bench`.** `metal-gpu-trace import-bench FILE.json` reads the results of VegaFlow's `bench.ps1` as recordings, so `runs` lists them and `compare` weighs their frame-time jitter. [Proof](docs/evidence/v0.31.0.md#import-bench-reads-vegaflow-bench-results-as-recordings)
+- 📥 **`import-bench`.** `metal-gpu-trace import-bench FILE.json` reads the results of VegaFlow's `bench.ps1` as recordings, so `runs` lists them and `compare` weighs their frame-time jitter, the one number both tools measure the same way. [Proof](docs/evidence/v0.31.0.md#import-bench-reads-vegaflow-bench-results-as-recordings)
 
 ## For developers
 

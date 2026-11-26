@@ -64,8 +64,6 @@ To make a build server do the same, the `metal-gpu-trace check` command gives th
 
 ### Fixed limits in a file
 
-`metal-gpu-trace import-bench FILE.json...` reads the result file VegaFlow's `bench.ps1` leaves for a Windows run and saves it in the runs folder as a recording, so `perf_runs`, `perf_compare` and `perf_history` list it. Only the frame-time jitter is the same measurement in both tools; FPS, the 1 % low and the hitches use other formulas under the same names, so they stay empty and the imported values keep their own names under `vegaflow_bench`. Because of that, `gate` says a metric cannot be measured on an imported run instead of judging it. Importing the same file again prints `same`.
-
 A baseline answers "as good as before". A budget file answers "good enough", the same on any machine. `metal-gpu-trace gate RUN [--budgets FILE]` reads `metal-gpu-trace.budgets.json` from the folder it runs in (version 1) and judges one recording against its numbers:
 
 ```json
@@ -74,6 +72,10 @@ A baseline answers "as good as before". A budget file answers "good enough", the
 ```
 
 Each budget holds `min`, `max` or both, for `fps`, `fps_1pct_low`, `gpu_ms_mean`, `gpu_ms_p95`, `frame_interval_ms_p95`, `stutter_rate_pct`, `hitches` or `metal_mib_peak`. Exit code 0 means every number is within its limit, 1 means one is over its `max` or under its `min`, and 2 means the recording could not be judged: under 100 frames, a program that stopped drawing, no such recording, or a file that is missing or malformed, all with the fix on stderr. A number the recording does not have is never a silent pass: name it in a budget and the answer is 2 until the recording can measure it.
+
+### Importing VegaFlow results
+
+`metal-gpu-trace import-bench FILE.json...` reads the result file VegaFlow's `bench.ps1` leaves for a Windows run and saves it in the runs folder as a recording, so `perf_runs`, `perf_compare` and `perf_history` list it. Only the frame-time jitter is the same measurement in both tools; FPS, the 1 % low and the hitches use other formulas under the same names, so they stay empty and the imported values keep their own names under `vegaflow_bench`. Because of that, `gate` says a metric cannot be measured on an imported run instead of judging it. Importing the same file again prints `same`.
 
 ## 4. When a recording fails
 
