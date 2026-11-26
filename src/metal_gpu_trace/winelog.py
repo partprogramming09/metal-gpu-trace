@@ -65,8 +65,8 @@ def _squeeze(words):
 
 def normalize(text):
     """Returns `text` with quoted strings, paths, GUIDs, hex values and numbers replaced (`"S"`, `<path>`, N), cut to
-    MAX_MESSAGE characters: the same message groups however its numbers change, and no name of a folder, file or person
-    that a log line quotes survives."""
+    MAX_MESSAGE characters: the same message groups however its numbers change, and no quoted text or path survives (a bare
+    file or user name in free text, and a hex address without 0x, can: read the groups before sharing them)."""
     text = unquote(text)
     words, hidden = [], False  # a path may hold spaces ("/Users/Mary Ann"): once one starts, the rest of the line goes
     for word in text.split(" "):
