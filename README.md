@@ -70,11 +70,10 @@ Read it like this: 2 034 frames in 20.8 s. `fps_estimate` is 104.5: it comes fro
 
 ## What's new
 
-Version 0.32.0. Older versions: [changelog](CHANGELOG.md).
+Version 0.33.0. Older versions: [changelog](CHANGELOG.md).
 
-- 🔍 **An honest A/B.** `perf_ab` and `perf_record` can hash the files you name (`fingerprint_paths`), the summary keeps the names of the variables you set, and `perf_compare` warns when two runs are more than a day apart. [Proof](docs/evidence/v0.32.0.md#an-honest-ab-records-what-it-was-made-with)
-- 🩺 **A busy GPU is said before you record.** On a Mac, `doctor` and the check before every recording say when the GPU is already 20 % busy, with the percentage. [Proof](docs/evidence/v0.32.0.md#preflight-says-when-the-gpu-is-busy)
-- 🧪 **Sweep over the program's own numbers.** `perf_sweep` can take a column of the telemetry file the program writes; tested, not yet proven with a real program. [Proof](docs/evidence/v0.32.0.md#perf_sweep-measures-a-column-of-the-programs-telemetry)
+- 🔍 **Screenshots that show nothing.** `screenshots_check` tells you which screenshots of a run are black, one flat colour, frozen or flickering, so a test that "passed" on a black screen does not fool you. [Proof](docs/evidence/v0.33.0.md#screenshots_check-flags-screenshots-that-show-nothing-useful)
+- 🩺 **What Wine says is wrong.** `wine_log_census` reads a Wine debug log and counts the `fixme`, `err` and `warn` lines by message, and finds the longest silence in the log, where a stalled start shows. [Proof](docs/evidence/v0.33.0.md#wine_log_census-counts-what-a-wine-debug-log-says-is-missing-or-wrong)
 
 ## For developers
 

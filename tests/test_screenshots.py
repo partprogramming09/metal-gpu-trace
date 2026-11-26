@@ -1,4 +1,4 @@
-"""0.35, screenshot review: black, flat, frozen and flickering captures, read with a PNG reader of the standard library."""
+"""Screenshot review (release 0.33): black, flat, frozen and flickering captures, read with a PNG reader of the standard library."""
 import json
 import struct
 import zlib

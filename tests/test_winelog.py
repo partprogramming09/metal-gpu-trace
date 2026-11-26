@@ -1,4 +1,4 @@
-"""0.37, the Wine log census: what Wine says is missing or wrong, by message, and the longest silence between stamped lines."""
+"""Wine log census (release 0.33): what Wine says is missing or wrong, by message, and the longest silence between stamped lines."""
 import json
 
 import support  # noqa: F401  (puts src/ on sys.path)
