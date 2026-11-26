@@ -185,3 +185,16 @@ def test_the_summary_gets_the_variable_names_and_the_files(tmp_path):
         recording.run_context, config.MAX_DISK_MB = saved
     assert got["context"] == {"git": None, "instruments": None, "env_keys": ["A"]}, "an empty fingerprint is left out"
     assert again["context"] == {"git": None, "instruments": None}, again
+
+
+def test_a_run_without_variables_still_compares_its_variable_names(tmp_path):
+    """The A side of an A/B has no variables: its empty list must be kept, or no env_keys block is ever reported."""
+    saved = recording.run_context, config.MAX_DISK_MB
+    recording.run_context, config.MAX_DISK_MB = (lambda: {"git": None, "instruments": None}), 0
+    try:
+        a = recording.finish({"gpu": {}}, tmp_path / "a.json", None, None, context_extra={"env_keys": []})
+        b = recording.finish({"gpu": {}}, tmp_path / "b.json", None, None, context_extra={"env_keys": ["PROOF_VAR"]})
+    finally:
+        recording.run_context, config.MAX_DISK_MB = saved
+    got = recording.context_change({"context": a["context"]}, {"context": b["context"]}, "a", "b")
+    assert got["env_keys"] == {"same": False, "only_a": [], "only_b": ["PROOF_VAR"]}, got
