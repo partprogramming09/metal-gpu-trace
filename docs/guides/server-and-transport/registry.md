@@ -4,7 +4,7 @@
 
 [Index](./index.md)
 
-**In short:** the registry is the menu of what an agent can ask for: 26 tools, a few read-only data files and three ready-made prompts. It is plain data, one row per tool; the same row feeds the list the agent sees, the check of its arguments and the function that runs. Tests keep the menu and the README in agreement.
+**In short:** the registry is the menu of what an agent can ask for: 28 tools, a few read-only data files and three ready-made prompts. It is plain data, one row per tool; the same row feeds the list the agent sees, the check of its arguments and the function that runs. Tests keep the menu and the README in agreement.
 
 `registry.py` imports the domain modules (`analysis`, `experiments`, `recording`, `traces`, `workloads`, `project`) and puts their functions in three tables. It runs nothing.
 
@@ -18,7 +18,7 @@
 | `schema` | JSON Schema from `schema(properties, required)` (`registry.py::schema`); the client sees it as `inputSchema`, `worker.check_arguments` checks a call against it |
 | `hints` | From `hints(title, destructive, idempotent, open_world)` (`registry.py::hints`), they become MCP annotations. Default read-only; `destructive=True` or `False` says the tool writes and whether its writes stop programs |
 
-16 of the 26 tools are read-only and 10 write ([E4](./evidence.md#e4-how-many-tools-how-many-write-which-ask-the-person)); the five that record (`perf_record`, `perf_baseline_record`, `perf_sweep`, `perf_ab`, `perf_cold_warm`) carry `destructiveHint: true`, because they stop programs.
+18 of the 28 tools are read-only and 10 write ([E4](./evidence.md#e4-how-many-tools-how-many-write-which-ask-the-person)); the five that record (`perf_record`, `perf_baseline_record`, `perf_sweep`, `perf_ab`, `perf_cold_warm`) carry `destructiveHint: true`, because they stop programs.
 
 What `tools/list` builds from a row (`protocol.py::handle`):
 

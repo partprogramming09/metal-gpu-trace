@@ -5,6 +5,15 @@ and the MCP `initialize` answer (`serverInfo.version`) print the installed one.
 
 ## [Unreleased]
 
+## 0.33.0 — 2026-11-26
+
+(Two readers of what a run leaves behind: screenshots that show nothing useful, and what a Wine debug log says is wrong. Its proof is [docs/evidence/v0.33.0.md](docs/evidence/v0.33.0.md).)
+
+### Added
+
+- 🔍 `screenshots_check` flags screenshots of a run that show nothing useful: `black`, `uniform` (one flat colour) and, for the PNGs of a folder taken in turn (`sequence`), `frozen` (3 identical frames in a row) and `flicker`; `ignore_rects` leaves out a clock or the program's own overlay. It reads 8-bit RGB or RGBA PNGs with a decoder of the standard library that refuses oversized or lying files, only in readable folders, and names no folder. It does not take the screenshots: bring your own (`screencapture`, the Snipping Tool, the program's own capture). Proven with three real 2560 x 1440 captures of this Mac (clean) and the same capture three times (`frozen`); `black`, `uniform` and `flicker` are covered by tests only. [proof](docs/evidence/v0.33.0.md#screenshots_check-flags-screenshots-that-show-nothing-useful)
+- 🩺 `wine_log_census` reads a Wine debug log (or a folder of them, in a readable folder) and counts what Wine says is missing or wrong: `fixme`, `err` and `warn` by level, channel and message, the HRESULTs, and the longest silence between lines that carry `+timestamp` (a stalled start shows as one big gap, with the messages on each side). Quoted text, paths, GUIDs, addresses and numbers are removed from every message so repeats group, and a raw line never comes back; a bare file or user name in free text, or a hex address written without `0x`, can survive, so read the groups before sharing them. Proven with a real 7899-line log of CrossOver's Wine on a fresh bottle: the largest gap, 5.016 s, equals an independent computation over the same file. [proof](docs/evidence/v0.33.0.md#wine_log_census-counts-what-a-wine-debug-log-says-is-missing-or-wrong)
+
 ## 0.32.0 — 2026-11-26
 
 (An A/B that records what it was made with, a sweep over the program's own telemetry, and a warning when the GPU is busy. Its proof is [docs/evidence/v0.32.0.md](docs/evidence/v0.32.0.md).)

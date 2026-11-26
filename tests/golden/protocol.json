@@ -1423,6 +1423,89 @@
      "annotations": {
       "openWorldHint": false,
       "readOnlyHint": true,
+      "title": "Flag black, flat, frozen or flickering screenshots"
+     },
+     "description": "Flags screenshots that show nothing useful: black, uniform (one flat colour) and, with `sequence` (the folder's\nPNGs in name order are frames of one run), frozen (3 identical frames in a row) and flicker. `ignore_rects` leaves\nout areas that change alone, such as a clock. Returns {\"frames\", \"ok\", \"findings\": [{\"file\", \"problem\"}]}.",
+     "inputSchema": {
+      "properties": {
+       "fields": {
+        "description": "result paths to keep, dotted: common.frame_pacing",
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "ignore_rects": {
+        "description": "areas to leave out, [x0, y0, x1, y1] as fractions 0 to 1",
+        "items": {
+         "items": {
+          "type": "number"
+         },
+         "type": "array"
+        },
+        "maxItems": 8,
+        "type": "array"
+       },
+       "path": {
+        "description": "a PNG, or a folder of PNGs (in a readable folder), 100 at most",
+        "type": "string"
+       },
+       "sequence": {
+        "description": "true: the PNGs, in name order, are frames of one run; adds frozen and flicker",
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "type": "object"
+     },
+     "name": "screenshots_check",
+     "outputSchema": {
+      "type": "object"
+     },
+     "title": "Flag black, flat, frozen or flickering screenshots"
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Count what a Wine log says is missing or wrong"
+     },
+     "description": "Counts what a Wine debug log says is missing or wrong, by level, channel and message (numbers, paths and quoted\ntext removed so repeats group), plus HRESULTs and the longest silence between +timestamp lines. No raw line leaves.",
+     "inputSchema": {
+      "properties": {
+       "fields": {
+        "description": "result paths to keep, dotted: common.frame_pacing",
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "path": {
+        "description": "a Wine debug log, or a folder of logs (in a readable folder), 50 at most",
+        "type": "string"
+       },
+       "top": {
+        "description": "messages to list, 1 to 100, default 15",
+        "type": "integer"
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "type": "object"
+     },
+     "name": "wine_log_census",
+     "outputSchema": {
+      "type": "object"
+     },
+     "title": "Count what a Wine log says is missing or wrong"
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
       "title": "Apple GPU family facts"
      },
      "description": "Apple's published facts for one GPU family (\"Apple7\") or chip (\"M1 Pro\"): its chips, what it adds, its limits, the\nlimits shared by all families, footnotes and source URLs.",
@@ -3190,6 +3273,89 @@
       "type": "object"
      },
      "title": "Read a capture's records"
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Flag black, flat, frozen or flickering screenshots"
+     },
+     "description": "Flags screenshots that show nothing useful: black, uniform (one flat colour) and, with `sequence` (the folder's\nPNGs in name order are frames of one run), frozen (3 identical frames in a row) and flicker. `ignore_rects` leaves\nout areas that change alone, such as a clock. Returns {\"frames\", \"ok\", \"findings\": [{\"file\", \"problem\"}]}.",
+     "inputSchema": {
+      "properties": {
+       "fields": {
+        "description": "result paths to keep, dotted: common.frame_pacing",
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "ignore_rects": {
+        "description": "areas to leave out, [x0, y0, x1, y1] as fractions 0 to 1",
+        "items": {
+         "items": {
+          "type": "number"
+         },
+         "type": "array"
+        },
+        "maxItems": 8,
+        "type": "array"
+       },
+       "path": {
+        "description": "a PNG, or a folder of PNGs (in a readable folder), 100 at most",
+        "type": "string"
+       },
+       "sequence": {
+        "description": "true: the PNGs, in name order, are frames of one run; adds frozen and flicker",
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "type": "object"
+     },
+     "name": "screenshots_check",
+     "outputSchema": {
+      "type": "object"
+     },
+     "title": "Flag black, flat, frozen or flickering screenshots"
+    },
+    {
+     "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Count what a Wine log says is missing or wrong"
+     },
+     "description": "Counts what a Wine debug log says is missing or wrong, by level, channel and message (numbers, paths and quoted\ntext removed so repeats group), plus HRESULTs and the longest silence between +timestamp lines. No raw line leaves.",
+     "inputSchema": {
+      "properties": {
+       "fields": {
+        "description": "result paths to keep, dotted: common.frame_pacing",
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       "path": {
+        "description": "a Wine debug log, or a folder of logs (in a readable folder), 50 at most",
+        "type": "string"
+       },
+       "top": {
+        "description": "messages to list, 1 to 100, default 15",
+        "type": "integer"
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "type": "object"
+     },
+     "name": "wine_log_census",
+     "outputSchema": {
+      "type": "object"
+     },
+     "title": "Count what a Wine log says is missing or wrong"
     },
     {
      "annotations": {

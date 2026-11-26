@@ -16,7 +16,7 @@ LAYERS = {
     "config": 0, "logs": 0, "tables": 0, "tabledb": 0, "metrics": 0, "app_metrics": 0, "gputrace_read": 0, "perf_report": 0, "perf_report_frames": 0, "perf_report_host": 0, "perf_record_windows": 0,
     "perf_record_windows_processes": 0, "perf_record_windows_system": 0, "perf_record_windows_presentmon": 0,
     "paths": 0, "fingerprint": 0, "project": 1, "retention": 1,
-    "recording": 2, "preflight": 2, "init": 2, "workloads": 2, "analysis": 2, "analysis_advice": 2, "analysis_compare": 2, "experiments": 2, "traces": 2, "budgets": 2, "bench_import": 2,
+    "recording": 2, "preflight": 2, "init": 2, "workloads": 2, "analysis": 2, "analysis_advice": 2, "analysis_compare": 2, "experiments": 2, "traces": 2, "screenshots": 2, "winelog": 2, "budgets": 2, "bench_import": 2,
     "registry": 3,
     "worker": 4,
     "protocol": 5,
