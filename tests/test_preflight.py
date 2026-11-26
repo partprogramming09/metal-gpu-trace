@@ -531,7 +531,7 @@ def test_windows_is_process_alive_refuses_a_pid_outside_32_bits_before_the_api()
         assert perf_record_windows.is_process_alive(pid) is False, pid
 
 
-# --- 0.36: the GPU's load before recording ----------------------------------------------------------------------------
+# --- release 0.32: the GPU's load before recording ----------------------------------------------------------------------------
 
 def ioreg_with(*percents):
     """The text `ioreg -c IOAccelerator` prints for accelerators using `percents` of their device."""

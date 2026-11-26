@@ -43,7 +43,7 @@ Keys are written in sequence by:
 | `hitches` | `count`, `per_minute`, `threshold_ms`, `causes`, 20 `worst` | `perf_report.py::summarize`; `analysis.py::steady_summary`, `analysis.py::tool_perf_diagnose` |
 | `common` | `frame_pacing`, `memory_pressure`, `boundness`, `submission_overhead`, `api` (its `runtime` is `metal` on macOS and `unknown` on Windows, which does not read it from PresentMon yet), from `metrics.common_block` | `perf_report.py::summarize`, rebuilt `recording.py::finish`; `analysis_compare.py::memory_pressure_change` |
 | `layer` | Translation layer: Wine with overrides and DLL hashes, `none` (native), `unknown` (attached), MoltenVK, Rosetta | `recording.py::finish`; `recording.py::identity`, `metrics.layer_label` |
-| `context` | `git` (short commit and `dirty`, or null) and `instruments` (version, or null); since 0.33 also `env_keys` (the sorted names, never the values, of the variables the run was given) and, when `fingerprint_paths` was passed, `fingerprint` (per file: base name, first 16 hex digits of its SHA-256, size) | `recording.py::finish`, `recording.py::run_context`; `recording.py::context_change` |
+| `context` | `git` (short commit and `dirty`, or null) and `instruments` (version, or null); since 0.32 also `env_keys` (the sorted names, never the values, of the variables the run was given) and, when `fingerprint_paths` was passed, `fingerprint` (per file: base name, first 16 hex digits of its SHA-256, size) | `recording.py::finish`, `recording.py::run_context`; `recording.py::context_change` |
 
 A summary from a hand-run `perf_report.py` has no `layer` or `context`: they come from `recording.finish` (confirmed: assigned only at `recording.py::finish`).
 

@@ -39,6 +39,7 @@ From the top (the entry point) to the bottom (what everything else rests on):
 | 1 | `retention` | Keeps the runs folder under `METAL_TRACE_MAX_DISK_MB`: removes the oldest heavy files, never a summary or a link's target |
 | 1 | `paths` | Names and paths a caller may use, paging, reading a file of the runs folder |
 | 1 | `project` | The `metal-gpu-trace.json` project file: finds it, checks it, points the recordings folder at it |
+| 0 | `fingerprint` | A short hash of the files a run is declared to use, and the names (never the values) of its variables |
 | 0 | `config` | Settings, read as `config.NAME` at use time |
 | 0 | `logs` | One stderr line per tool call |
 | 0 | `tables` | Reads and writes the per-frame and Metal memory tables, `.csv.gz` or the plain `.csv` of older recordings |

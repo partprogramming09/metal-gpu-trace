@@ -14,7 +14,7 @@ downloads go to ~/Library/Caches/metal-gpu-trace.
 import pathlib
 import sys
 
-__version__ = "0.31.0"
+__version__ = "0.32.0"
 if __package__ in (None, ""):  # run by path: make the package importable
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from metal_gpu_trace import cli, protocol, stdio, worker  # noqa: E402

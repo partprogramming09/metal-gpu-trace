@@ -1,4 +1,4 @@
-"""0.33, an honest A/B: the files and variable names a run was made with, and what compare and perf_ab do with them."""
+"""Honest A/B (release 0.32): the files and variable names a run was made with, and what compare and perf_ab do with them."""
 import json
 
 import support  # noqa: F401  (puts src/ on sys.path)
@@ -111,7 +111,7 @@ def test_context_change_keeps_same_for_code_and_reports_files_and_variables_apar
     assert got["fingerprint"] == {"same": False, "changed": ["g"]}, got
     assert got["env_keys"] == {"same": False, "only_a": [], "only_b": ["B"]}, got
     plain = recording.context_change(summary_with({}), summary_with({}), "a", "b")
-    assert plain == {"same": True}, "runs recorded before 0.33 gain no keys"
+    assert plain == {"same": True}, "runs recorded before 0.32 gain no keys"
 
 
 def test_perf_compare_warns_when_the_runs_are_far_apart_in_time(tmp_path):
